@@ -78,10 +78,13 @@ host along with the metrics/spans themselves:
   invocation be correlated with each other.
 - `command`: which command produced the event (e.g. `install`, `update`,
   `update_stage`, `update_finalize`, `commit`, `rollback`, `rebuild_raid`).
-- `source`: which of Trident's three entry points produced the event --
-  `cli` (a command run directly, without a daemon), `daemon` (a command
-  the daemon executed for a gRPC request), or `grpc-client` (the CLI
-  acting as a client, relaying a command to a running daemon).
+- `source`: which of Trident's entry points produced the event -- `cli` (a
+  command run directly, without a daemon) or `daemon` (a command the
+  daemon executed for a gRPC request). A third entry point, `grpc-client`
+  (the CLI acting as a client, relaying a command to a running daemon),
+  is defined but not currently wired up to produce this enrichment --
+  see `logging::operation_context`'s module doc for why that's not
+  considered a gap worth closing.
 
 ## Correlation ID Lifecycle
 
@@ -136,21 +139,17 @@ gantt
     installation_id #1 (since install #1) :done, inst1, 2024-01-01, 9d
     installation_id #2 (since install #2) :done, inst2, 2024-01-10, 2d
 
-    section asset_id*
-    asset_id (never recreated)            :active, done, asset1, 2024-01-01, 11d
+    section asset_id
+    asset_id (never recreated)            :active, asset1, 2024-01-01, 11d
 ```
-
-\* `asset_id` was a real field (a hardware/product-UUID-based identifier,
-read from `/sys/class/dmi/id/product_uuid`) that Trident emitted before
-this design existed. It was removed once `installation_id`/`servicing_id`
-were introduced (see `telemetry: remove asset_id from platform info`) and
-is shown here only for lifecycle contrast with `installation_id` -- it is
-**not** currently emitted by Trident.
 
 Reading the diagram by row, from most to least stable:
 
-- **`asset_id`** (no longer emitted, shown for contrast): would have
-  identified the physical machine itself, surviving every reinstall.
+- **`asset_id`**: identifies the physical machine itself, via its DMI
+  product UUID. The most stable of the four -- read directly from
+  hardware rather than the datastore, so it survives every reinstall,
+  including the second `install` (day 10) that recreates
+  `installation_id`.
 - **`installation_id`**: normally created once at the first `install`
   against a given datastore and never overwritten after that -- but
   recreated whenever a new datastore is created (the second `install`,

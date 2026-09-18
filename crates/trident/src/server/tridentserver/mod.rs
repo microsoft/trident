@@ -190,14 +190,14 @@ impl TridentServer {
         })
     }
 
-    /// Re-checks for a persisted installation ID before a request fires
-    /// its own `command_start` (via `run_command`). The daemon-startup
-    /// attach in `server_main` only ever runs once, at
-    /// startup -- so a daemon that starts before the host is ever
-    /// installed, then serves a request some time after a *different*
-    /// path (e.g. a concurrent CLI invocation, or an earlier servicing
-    /// request on this same daemon) has since created the datastore,
-    /// would otherwise still be missing it. Called from both
+    /// Re-checks for a persisted installation ID and current servicing ID
+    /// before a request fires its own `command_start` (via
+    /// `run_command`). The daemon-startup attach in `server_main` only
+    /// ever runs once, at startup -- so a daemon that starts before the
+    /// host is ever installed, then serves a request some time after a
+    /// *different* path (e.g. a concurrent CLI invocation, or an earlier
+    /// servicing request on this same daemon) has since created the
+    /// datastore, would otherwise still be missing them. Called from both
     /// `servicing_request` and `reading_request`, so read-only RPCs (e.g.
     /// `get_servicing_state`) don't keep reporting a missing ID
     /// indefinitely just because they never happen to run after a write
@@ -208,12 +208,16 @@ impl TridentServer {
     /// transient reload failure can't silently skip the refresh. Does not
     /// create a datastore: silently does nothing if the datastore doesn't
     /// exist yet. But on an existing datastore, this may still *persist*
-    /// a missing ID, via `DataStore::installation_id_or_migrate`'s
-    /// legacy-ID migration (see
-    /// `TraceStream::attach_installation_id_if_present`).
+    /// a missing installation ID, via
+    /// `DataStore::installation_id_or_migrate`'s legacy-ID migration (see
+    /// `TraceStream::attach_ids_if_present`); the servicing-ID half is
+    /// fully read-only. Never skips the installation-ID half (unlike the
+    /// CLI's pre-warm) -- the daemon never receives a multiboot install
+    /// request, so there's no swap-datastore scenario to guard against
+    /// here.
     fn refresh_ids(&self) {
         self.tracestream
-            .attach_installation_id_if_present(self.agent_config.datastore_path());
+            .attach_ids_if_present(self.agent_config.datastore_path(), false);
     }
 
     /// Handles a servicing request by acquiring the necessary locks,

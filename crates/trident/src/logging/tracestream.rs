@@ -142,7 +142,7 @@ impl TraceStream {
     /// point forward, as an additional field, so that all traces/metrics for
     /// a given host installation can be correlated. Expected to be called
     /// once the datastore's persisted installation ID has been retrieved
-    /// (see [`Self::attach_installation_id_if_present`] and
+    /// (see [`Self::attach_ids_if_present`] and
     /// [`Self::ensure_and_attach_installation_id`]).
     pub fn set_installation_id(&self, installation_id: String) {
         match self.installation_id.write() {
@@ -169,12 +169,20 @@ impl TraceStream {
             .unwrap_or(false)
     }
 
-    /// Best-effort attempt to attach this host's installation ID -- either
-    /// already cached from a prior call on this `TraceStream`, or freshly
-    /// read from the datastore at `datastore_path` if one already exists
-    /// there. Never creates a *datastore*, and never creates an
-    /// installation ID for a genuinely unprovisioned host: a command that
-    /// is allowed to initialize a brand-new datastore (see
+    /// Best-effort attempt to attach both this host's installation ID and
+    /// its current servicing ID (if either is present), from a single
+    /// datastore connection opened once and shared between both reads --
+    /// rather than opening separately per ID (the CLI dispatch, the
+    /// daemon's startup attach, and the daemon's per-request backstop all
+    /// used to call a dedicated installation-ID-only version of this,
+    /// each independently opening the datastore just to read one field).
+    ///
+    /// The installation-ID half already-cached from a prior call on this
+    /// `TraceStream`, or freshly read from the datastore at
+    /// `datastore_path` if one already exists there. Never creates a
+    /// *datastore*, and never creates an installation ID for a genuinely
+    /// unprovisioned host: a command that is allowed to initialize a
+    /// brand-new datastore (see
     /// [`crate::datastore::DataStore::may_initialize_datastore_for_command`])
     /// must still call [`Self::ensure_and_attach_installation_id`] instead,
     /// on a datastore handle it already owns.
@@ -187,36 +195,61 @@ impl TraceStream {
     /// [`crate::datastore::DataStore::installation_id_or_migrate`]. Callers
     /// that require true read-only behavior (e.g. a genuinely
     /// unprivileged/diagnostic path) must not assume this call can never
-    /// write to the datastore.
+    /// write to the datastore. The servicing-ID half is fully read-only
+    /// (see [`Self::attach_servicing_id_if_present`]).
+    ///
+    /// `skip_installation_id` lets a caller that knows this invocation may
+    /// go on to swap datastores (a multiboot install) opt out of just the
+    /// installation-ID half -- attaching the pre-swap datastore's
+    /// installation ID here would misattribute this invocation's earliest
+    /// telemetry to the wrong host installation for the remainder of the
+    /// run, the same reason the installation-ID attach used to be skipped
+    /// entirely by `Trident::new_deferring_installation_id`'s caller
+    /// before this function existed. The servicing-ID half is unaffected
+    /// by a multiboot swap (a fresh temporary datastore simply has no
+    /// servicing ID yet), so it's still worth attaching even when
+    /// `skip_installation_id` is true.
     ///
     /// Safe to call from anywhere, any number of times, before any point
-    /// that wants the ID attached: this is the single implementation
+    /// that wants either ID attached: this is the single implementation
     /// shared by every read-only-in-the-common-case attach call site (the
-    /// CLI's dispatch, the daemon's startup attach, the daemon's
-    /// per-request backstop, and `Trident::new`'s own attach), so a
-    /// correctness fix to this logic only needs to happen once.
-    pub fn attach_installation_id_if_present(&self, datastore_path: &Path) {
-        if self.installation_id_cached() || !datastore_path.exists() {
+    /// CLI's dispatch, the daemon's startup attach, and the daemon's
+    /// per-request backstop), so a correctness fix to this logic only
+    /// needs to happen once.
+    pub fn attach_ids_if_present(&self, datastore_path: &Path, skip_installation_id: bool) {
+        if !datastore_path.exists() {
             return;
         }
-        match DataStore::open(datastore_path).and_then(|mut ds| ds.installation_id_or_migrate()) {
-            Ok(Some(installation_id)) => {
-                info!("Installation ID: {installation_id}");
-                self.set_installation_id(installation_id.to_string());
-            }
-            Ok(None) => {
-                debug!("No installation ID persisted yet (host not yet installed)");
-            }
+        let mut datastore = match DataStore::open(datastore_path) {
+            Ok(ds) => ds,
             Err(e) => {
-                warn!("Failed to read installation ID: {e:?}");
+                warn!("Failed to open datastore to attach IDs: {e:?}");
+                return;
+            }
+        };
+
+        if !skip_installation_id && !self.installation_id_cached() {
+            match datastore.installation_id_or_migrate() {
+                Ok(Some(installation_id)) => {
+                    info!("Installation ID: {installation_id}");
+                    self.set_installation_id(installation_id.to_string());
+                }
+                Ok(None) => {
+                    debug!("No installation ID persisted yet (host not yet installed)");
+                }
+                Err(e) => {
+                    warn!("Failed to read installation ID: {e:?}");
+                }
             }
         }
+
+        self.attach_servicing_id_if_present(&datastore);
     }
 
     /// Ensures `datastore` has an installation ID -- creating one if this
     /// is the first access, or reading back the existing one otherwise --
     /// and attaches it. Unlike
-    /// [`Self::attach_installation_id_if_present`], this is only for the
+    /// [`Self::attach_ids_if_present`], this is only for the
     /// one caller that already knows a command genuinely allowed to
     /// initialize a brand-new datastore (per
     /// [`crate::datastore::DataStore::may_initialize_datastore_for_command`])
@@ -269,7 +302,7 @@ impl TraceStream {
     ///
     /// Deliberately always re-reads from `datastore` rather than
     /// short-circuiting on an already-cached value (unlike
-    /// `attach_installation_id_if_present`, which *is* safe to
+    /// `attach_ids_if_present`, which *is* safe to
     /// cache-and-skip): `installation_id` is stable for the entire
     /// lifetime of the `TraceStream`/`DataStore` it's attached to, but
     /// `servicing_id` is not -- a single long-lived daemon `TraceStream` (see
@@ -282,7 +315,7 @@ impl TraceStream {
     /// the datastore itself has moved on.
     ///
     /// Deliberately takes an already-open `datastore` handle rather than a
-    /// path (unlike `attach_installation_id_if_present`): by the time a
+    /// path (unlike `attach_ids_if_present`): by the time a
     /// finalize/commit call reaches this point it already holds one, and
     /// a servicing ID is only ever meaningful in the context of a
     /// datastore that has already been through at least one staged
@@ -343,9 +376,23 @@ impl TraceStream {
     ///
     /// Deliberately regenerates (overwriting any previously-staged value)
     /// whenever `has_stage` is true, even if a servicing operation is
-    /// already staged and this call only ends up finalizing it: any
-    /// invocation that is allowed to stage is entitled to a fresh
-    /// servicing ID for that possibility.
+    /// already staged and this call only ends up finalizing it (e.g. a
+    /// combined `install`/`update` re-run against an unchanged, already-
+    /// staged Host Configuration): any invocation that is allowed to stage
+    /// is entitled to a fresh servicing ID for that possibility, and
+    /// `has_stage` is treated as *operator intent to service* rather than
+    /// "staging will definitely happen." Precisely detecting the latter
+    /// would require the same COSI fetch (`Trident::get_cosi_image`) that
+    /// both the staging and finalize-only branches already need
+    /// unconditionally afterward (its hash is part of either branch's
+    /// return value) -- there's no cheap way to know the real outcome
+    /// before paying that cost, so this is a deliberate tradeoff, not an
+    /// oversight. Consequence: the original stage's servicing ID is
+    /// orphaned in telemetry in that finalize-only-in-practice case (no
+    /// single ID spans that original stage through to this invocation's
+    /// finalize/commit) -- acceptable, since each stage-capable invocation
+    /// is considered its own servicing episode by definition, regardless
+    /// of whether the engine ends up actually restaging anything.
     pub fn refresh_servicing_id(&self, datastore: &mut DataStore, has_stage: bool) {
         let source = operation_context::current().map(|(_, _, source)| source);
         if has_stage && source.is_some_and(operation_context::should_generate_persistent_ids) {
@@ -1333,8 +1380,8 @@ mod tests {
     /// the value directly on a single `TraceStream`
     /// (`test_tracestream_installation_id_written_to_additional_fields`) --
     /// none of them prove that a *separate* `TraceStream` calling
-    /// `attach_installation_id_if_present` actually recovers an
-    /// installation ID created by a different one.
+    /// `attach_ids_if_present` actually recovers an installation ID
+    /// created by a different one.
     fn test_installation_id_stage_then_read_back_across_separate_tracestreams() {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("db.sqlite");
@@ -1362,11 +1409,11 @@ mod tests {
 
         // Read back: a completely separate TraceStream, reading only from
         // disk (via the datastore path, matching the real
-        // attach_installation_id_if_present call site signature), as if
-        // this were a later command or daemon request in the same
-        // process reattaching to an already-provisioned host.
+        // attach_ids_if_present call site signature), as if this were a
+        // later command or daemon request in the same process
+        // reattaching to an already-provisioned host.
         let readback_tracestream = TraceStream::default();
-        readback_tracestream.attach_installation_id_if_present(&db_path);
+        readback_tracestream.attach_ids_if_present(&db_path, false);
 
         assert_eq!(
             readback_tracestream
@@ -1388,13 +1435,13 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("db.sqlite");
 
-        // Create the datastore file itself (so attach_installation_id_if_present's
+        // Create the datastore file itself (so attach_ids_if_present's
         // `datastore_path.exists()` check passes), but never create an
         // installation ID on it.
         DataStore::open_or_create(&db_path).unwrap();
 
         let tracestream = TraceStream::default();
-        tracestream.attach_installation_id_if_present(&db_path);
+        tracestream.attach_ids_if_present(&db_path, false);
 
         assert_eq!(
             tracestream.installation_id_handle().read().unwrap().clone(),
