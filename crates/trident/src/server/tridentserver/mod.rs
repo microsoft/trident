@@ -264,8 +264,8 @@ impl TridentServer {
             return Err(Status::failed_precondition("Host is not provisioned"));
         }
 
-        // Re-check for a persisted installation ID and datastore ID before
-        // this request fires its own command_start (below, via
+        // Re-check for a persisted installation ID and current servicing
+        // ID before this request fires its own command_start (below, via
         // run_with_operation). server_main's daemon-startup attach only
         // ever runs once, at startup -- so a request that arrives before
         // any datastore exists (e.g. this daemon's very first install)
