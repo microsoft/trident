@@ -51,7 +51,7 @@ func (s *TridentE2EScenario) manualRollback(tc storm.TestCase) error {
 	}
 
 	// Serve phonehome + capture the serial log across the rollback reboot.
-	if _, err := startPhonehomeListener(tc.Context(), &netlaunch.NetListenConfig{
+	stopListener, err := startPhonehomeListener(tc.Context(), &netlaunch.NetListenConfig{
 		NetCommonConfig: netlaunch.NetCommonConfig{
 			ListenPort:           defaultNetlaunchListenPort,
 			LogstreamFile:        s.args.LogstreamFile,
@@ -59,9 +59,13 @@ func (s *TridentE2EScenario) manualRollback(tc storm.TestCase) error {
 			ServeDirectory:       s.args.TestImageDir,
 			MaxPhonehomeFailures: s.configParams.MaxExpectedFailures,
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		return err
 	}
+	// The listener binds a fixed port, so it must be released before the next
+	// servicing case starts its own.
+	defer stopListener()
 
 	monitorCtx, cancel := context.WithCancel(tc.Context())
 	defer cancel()

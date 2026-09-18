@@ -84,6 +84,17 @@ func SetupTraceStream(mux *http.ServeMux, filepath string, result chan<- PhoneHo
 	return traceFile, nil
 }
 
+// reportTraceStreamError surfaces a trace-stream failure without blocking.
+//
+// The send is deliberately non-blocking, and the drop path is deliberate too.
+// The channel is buffered, so a drop only happens when a phone-home result is
+// already queued -- that result IS the servicing outcome the run exists to
+// check, and it must not be displaced by a telemetry failure. Blocking instead
+// would risk hanging the handler once the listen loop has stopped consuming.
+//
+// Losing trace data is therefore logged loudly rather than allowed to fail the
+// run: a servicing operation that succeeded should not be reported as failed
+// because its metrics could not be written.
 func reportTraceStreamError(result chan<- PhoneHomeResult, err error) {
 	if result == nil {
 		return
@@ -92,6 +103,6 @@ func reportTraceStreamError(result chan<- PhoneHomeResult, err error) {
 	select {
 	case result <- errorPhoneHomeResult(err):
 	default:
-		log.WithError(err).Error("could not report trace stream error")
+		log.WithError(err).Error("trace stream error could not be reported; a servicing result is already pending")
 	}
 }
