@@ -77,10 +77,13 @@ host along with the metrics/spans themselves:
   invocation be correlated with each other.
 - `command`: which command produced the event (e.g. `install`, `update`,
   `update_stage`, `update_finalize`, `commit`, `rollback`, `rebuild_raid`).
-- `source`: which of Trident's three entry points produced the event --
-  `cli` (a command run directly, without a daemon), `daemon` (a command
-  the daemon executed for a gRPC request), or `grpc-client` (the CLI
-  acting as a client, relaying a command to a running daemon).
+- `source`: which of Trident's entry points produced the event -- `cli` (a
+  command run directly, without a daemon) or `daemon` (a command the
+  daemon executed for a gRPC request). A third entry point, `grpc-client`
+  (the CLI acting as a client, relaying a command to a running daemon),
+  is defined but not currently wired up to produce this enrichment --
+  see `logging::operation_context`'s module doc for why that's not
+  considered a gap worth closing.
 
 ## Correlation ID Lifecycle
 

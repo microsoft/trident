@@ -164,17 +164,39 @@ fn run_trident(
         }
     };
 
-    // Attach this host's installation ID to the shared TraceStream before
-    // run_command below fires command_start: Trident::new (further down,
-    // inside the closure) is the usual place it gets attached, but that's
-    // too late for command_start, which run_command fires immediately,
-    // before the closure even runs. Does not create a *datastore* (see
-    // `TraceStream::attach_installation_id_if_present`) -- silently does
-    // nothing if the datastore doesn't exist yet, which is expected for a
-    // host's first-ever install. But not purely read-only: on an existing
+    // Determine this up front, before the pre-warm attach below: a
+    // multiboot install may swap to a brand-new temporary datastore
+    // inside `Trident::install` (see there), distinct from
+    // `datastore_path` here (the existing host's persistent datastore) --
+    // so skip attaching an installation ID from the pre-swap datastore
+    // until `install` has settled on which one it actually uses, rather
+    // than attaching the existing host's here and having it (and every
+    // event emitted before the swap decision) be wrong for the rest of
+    // the run. See `new_deferring_installation_id`'s doc comment for the
+    // full rationale.
+    let defer_installation_id = matches!(
+        args.command,
+        Commands::Install {
+            multiboot: true,
+            ..
+        }
+    );
+
+    // Attach this host's installation ID and current servicing ID to the
+    // shared TraceStream before run_command below fires command_start:
+    // Trident::new (further down, inside the closure) is the usual place
+    // installation ID gets attached, but that's too late for
+    // command_start, which run_command fires immediately, before the
+    // closure even runs. Does not create a *datastore* (see
+    // `TraceStream::attach_ids_if_present`) -- silently does nothing if
+    // the datastore doesn't exist yet, which is expected for a host's
+    // first-ever install. But not purely read-only: on an existing
     // datastore that predates `installation_id`, this can perform a
     // one-time migration write to mint one (see
-    // `DataStore::installation_id_or_migrate`).
+    // `DataStore::installation_id_or_migrate`). Skips the installation-ID
+    // half specifically (but still attaches servicing ID, unaffected by a
+    // multiboot swap) when `defer_installation_id` is set, for the same
+    // reason `Trident::new_deferring_installation_id` is used below.
     // Load once and reuse the same snapshot inside the run_command
     // closure below, rather than reloading there: calling
     // `AgentConfig::load()` a second time could observe a different
@@ -184,7 +206,7 @@ fn run_trident(
     // against.
     let agent_config_result = AgentConfig::load();
     if let Ok(agent_config) = &agent_config_result {
-        tracestream.attach_installation_id_if_present(agent_config.datastore_path());
+        tracestream.attach_ids_if_present(agent_config.datastore_path(), defer_installation_id);
     }
 
     // Determined up front so a missing/nonexistent --config is rejected
@@ -247,22 +269,6 @@ fn run_trident(
                             .message("Datastore file does not exist");
                     }
 
-                    // A multiboot install may swap to a brand-new temporary
-                    // datastore inside `Trident::install` (see there),
-                    // distinct from `datastore_path` here (the existing
-                    // host's persistent datastore) -- so defer attaching an
-                    // installation ID until `install` has settled on which
-                    // datastore it actually uses, rather than attaching the
-                    // existing host's here and having it be wrong for the
-                    // rest of the run. See `new_deferring_installation_id`'s
-                    // doc comment for the full rationale.
-                    let defer_installation_id = matches!(
-                        args.command,
-                        Commands::Install {
-                            multiboot: true,
-                            ..
-                        }
-                    );
                     let mut trident = if defer_installation_id {
                         Trident::new_deferring_installation_id(
                             config_path.map(HostConfigurationSource::File),
