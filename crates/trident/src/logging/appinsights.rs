@@ -201,10 +201,6 @@ pub struct AppInsightsSender {
     /// so Application Insights events can be correlated back to a specific
     /// host installation the same way tracestream metrics already are.
     installation_id: Arc<RwLock<Option<String>>>,
-    /// The same persistent database ID handle used by `TraceStream`/
-    /// `TraceSender` (see `TraceStream::datastore_id_handle`), stable for
-    /// the datastore's entire lifetime rather than a single install.
-    datastore_id: Arc<RwLock<Option<String>>>,
     /// The same servicing ID handle used by `TraceStream`/`TraceSender`
     /// (see `TraceStream::servicing_id_handle`), correlating events across
     /// a stage/finalize/commit sequence for one servicing operation.
@@ -226,7 +222,6 @@ impl AppInsightsSender {
         connection_string: &str,
         uploader: BackgroundUploadHandle,
         installation_id: Arc<RwLock<Option<String>>>,
-        datastore_id: Arc<RwLock<Option<String>>>,
         servicing_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
         let parts = parse_connection_string(connection_string)?;
@@ -240,14 +235,13 @@ impl AppInsightsSender {
                 return None;
             }
         }
-        Self::from_parts(parts, uploader, installation_id, datastore_id, servicing_id)
+        Self::from_parts(parts, uploader, installation_id, servicing_id)
     }
 
     fn from_parts(
         parts: ConnParts,
         uploader: BackgroundUploadHandle,
         installation_id: Arc<RwLock<Option<String>>>,
-        datastore_id: Arc<RwLock<Option<String>>>,
         servicing_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
         let track_url = parts.track_url()?;
@@ -256,7 +250,6 @@ impl AppInsightsSender {
             track_url,
             uploader,
             installation_id,
-            datastore_id,
             servicing_id,
         })
     }
@@ -279,13 +272,6 @@ impl AppInsightsSender {
                 properties
                     .entry("installation_id".to_string())
                     .or_insert_with(|| json!(installation_id));
-            }
-        }
-        if let Ok(datastore_id) = self.datastore_id.read() {
-            if let Some(datastore_id) = datastore_id.as_ref() {
-                properties
-                    .entry("datastore_id".to_string())
-                    .or_insert_with(|| json!(datastore_id));
             }
         }
         if let Ok(servicing_id) = self.servicing_id.read() {
@@ -612,7 +598,6 @@ mod tests {
             BackgroundUploadHandle::new_mock(),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
-            Arc::new(RwLock::new(None)),
         )
         .is_none());
     }
@@ -622,7 +607,6 @@ mod tests {
         let sender = AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=https://region.example/",
             BackgroundUploadHandle::new_mock(),
-            Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
@@ -642,7 +626,6 @@ mod tests {
         assert!(AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=http://region.example/",
             BackgroundUploadHandle::new_mock(),
-            Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
@@ -755,7 +738,6 @@ mod functional_test {
             },
             uploader.get_handle().expect("uploader should be alive"),
             Arc::new(RwLock::new(Some("test-installation-id".to_string()))),
-            Arc::new(RwLock::new(Some("test-datastore-id".to_string()))),
             Arc::new(RwLock::new(Some("test-servicing-id".to_string()))),
         )
         .expect("should build sender")
@@ -790,7 +772,6 @@ mod functional_test {
         assert!(combined.contains("\"name\":\"test_metric\""));
         assert!(combined.contains("\"iKey\":\"test-key\""));
         assert!(combined.contains("\"installation_id\":\"test-installation-id\""));
-        assert!(combined.contains("\"datastore_id\":\"test-datastore-id\""));
         assert!(combined.contains("\"servicing_id\":\"test-servicing-id\""));
         assert!(combined.contains("\"command\":\"test_command\""));
         assert!(combined.contains("\"operation_id\":"));
