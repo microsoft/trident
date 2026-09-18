@@ -70,7 +70,7 @@ impl TridentServer {
         // including up to a 5-second busy-timeout wait -- so it needs the
         // same "about to block" signal to the runtime as `run_command`.
         let _ = tokio::task::block_in_place(|| {
-            self.refresh_ids();
+            TridentServer::refresh_ids(&self.tracestream, self.agent_config.datastore_path());
             operation_context::run_command(
                 command,
                 operation_context::OperationSource::Daemon,
@@ -101,7 +101,7 @@ impl TridentServer {
         });
         // See the `block_in_place` comment in `reject_invalid_argument`.
         let _ = tokio::task::block_in_place(|| {
-            self.refresh_ids();
+            TridentServer::refresh_ids(&self.tracestream, self.agent_config.datastore_path());
             operation_context::run_command(
                 command,
                 operation_context::OperationSource::Daemon,

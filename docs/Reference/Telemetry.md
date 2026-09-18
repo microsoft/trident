@@ -5,13 +5,21 @@ sidebar_position: 4
 # Telemetry
 
 Trident records the same metrics/spans locally in two places regardless of
-whether remote telemetry is enabled: appended to
-`/var/log/trident-metrics.jsonl`, and logged to journald under the
-`trident-tracing` syslog identifier. Retrieve the journald copy with:
+whether remote telemetry is enabled: `/var/log/trident-metrics.jsonl`, and
+journald under the `trident-tracing` syslog identifier. Retrieve the
+journald copy with:
 
 ``` bash
 journalctl -t trident-tracing
 ```
+
+The local metrics file is recreated (truncated) at the start of most
+command invocations, then appended to with that invocation's own metrics
+as they're emitted -- it holds one command's telemetry, not a durable,
+ever-growing history across the host's lifetime. `diagnose` is the
+exception: it appends to the existing file instead of truncating it, since
+it reads back and repackages that file's pre-existing content into a
+support bundle.
 
 On top of these local copies, Trident can optionally send this same
 best-effort stream of tracing data to Azure Monitor / Application
