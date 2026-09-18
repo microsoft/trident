@@ -227,14 +227,47 @@ impl DataStore {
             self.host_status.is_management_os = false;
             self.host_status.trident_version =
                 TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
-            Self::write_host_status(&persistent_db, self.host_status())?;
 
-            // Carry over any generic key-value entries (e.g. the installation ID)
-            // recorded in the temporary datastore into the persistent one, so
-            // they survive the transition from temporary to persistent
-            // storage.
-            if let Some(temporary_db) = self.db.as_ref() {
-                Self::copy_key_values(temporary_db, &persistent_db)?;
+            // Read every generic key-value entry (e.g. the installation
+            // ID) out of the temporary datastore before starting any
+            // destination writes below: this both avoids a same-file
+            // read/write lock deadlock when `path` is the datastore's own
+            // current path (see `write_key_values`'s doc comment) and lets
+            // the HostStatus write and every key-value insert run inside a
+            // single destination transaction.
+            let key_values = match self.db.as_ref() {
+                Some(temporary_db) => Self::read_key_values(temporary_db)?,
+                None => Vec::new(),
+            };
+
+            // Wrap the HostStatus write and all key-value inserts in one
+            // destination transaction. Without this, a failure partway
+            // through (e.g. a single bad key-value row) would leave the
+            // HostStatus row -- already written with is_management_os =
+            // false -- autocommitted on its own, so a later `open()` would
+            // treat this half-written file as a normal, fully-provisioned,
+            // non-temporary datastore even though this call reports
+            // failure to its caller and no key-value data (or only a
+            // partial prefix of it) actually made it across.
+            persistent_db
+                .execute("BEGIN")
+                .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
+            let result = Self::write_host_status(&persistent_db, self.host_status())
+                .and_then(|()| Self::write_key_values(&persistent_db, &key_values));
+            match result {
+                Ok(()) => {
+                    persistent_db
+                        .execute("COMMIT")
+                        .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
+                }
+                Err(e) => {
+                    if let Err(rollback_err) = persistent_db.execute("ROLLBACK") {
+                        warn!(
+                            "Failed to roll back incomplete persist transaction: {rollback_err:?}"
+                        );
+                    }
+                    return Err(e);
+                }
             }
 
             self.db = Some(persistent_db);
@@ -244,9 +277,46 @@ impl DataStore {
         Ok(())
     }
 
-    /// Copy all rows of the generic key-value table from `source` into
-    /// `destination`, overwriting any conflicting keys already present in
-    /// `destination`.
+    /// Read all rows of the generic key-value table out of `source`,
+    /// fully materializing them into memory before returning so the
+    /// caller can finalize this query (releasing any lock it holds)
+    /// before issuing writes against a destination that might be the very
+    /// same underlying file -- see `write_key_values`'s doc comment.
+    fn read_key_values(source: &sqlite::Connection) -> Result<Vec<(String, String)>, TridentError> {
+        let mut rows: Vec<(String, String)> = Vec::new();
+
+        let mut query_statement = source
+            .prepare("SELECT key, contents FROM keyvalue")
+            .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+
+        loop {
+            match query_statement.next() {
+                Ok(State::Done) => break,
+                Err(e) => {
+                    return Err(e)
+                        .structured(ServicingError::from(DatastoreError::ReadDatastore))
+                        .message("Failed to get next keyvalue row while copying datastore");
+                }
+                Ok(State::Row) => {} // continue below
+            }
+
+            let key = query_statement
+                .read::<String, _>(0)
+                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+            let contents = query_statement
+                .read::<String, _>(1)
+                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
+
+            rows.push((key, contents));
+        }
+        // `query_statement` is dropped here, finalizing the source SELECT
+        // and releasing its read lock before any writes below.
+
+        Ok(rows)
+    }
+
+    /// Write every `(key, contents)` pair into `destination`'s generic
+    /// key-value table, overwriting any conflicting keys already present.
     ///
     /// `source` and `destination` may be two live connections to the *same*
     /// underlying SQLite file (e.g. an offline `persist` whose destination
@@ -255,43 +325,13 @@ impl DataStore {
     /// lock that a write from `destination` on the same file would have to
     /// wait on -- and since both connections are driven from this single
     /// thread, that wait can never be satisfied ("database is locked").
-    /// To avoid this, fully read and finalize the source query *before*
-    /// issuing any writes to `destination`.
-    fn copy_key_values(
-        source: &sqlite::Connection,
+    /// To avoid this, `read_key_values` fully reads and finalizes the
+    /// source query *before* this function ever runs.
+    fn write_key_values(
         destination: &sqlite::Connection,
+        key_values: &[(String, String)],
     ) -> Result<(), TridentError> {
-        let mut rows: Vec<(String, String)> = Vec::new();
-        {
-            let mut query_statement = source
-                .prepare("SELECT key, contents FROM keyvalue")
-                .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
-
-            loop {
-                match query_statement.next() {
-                    Ok(State::Done) => break,
-                    Err(e) => {
-                        return Err(e)
-                            .structured(ServicingError::from(DatastoreError::ReadDatastore))
-                            .message("Failed to get next keyvalue row while copying datastore");
-                    }
-                    Ok(State::Row) => {} // continue below
-                }
-
-                let key = query_statement
-                    .read::<String, _>(0)
-                    .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
-                let contents = query_statement
-                    .read::<String, _>(1)
-                    .structured(ServicingError::from(DatastoreError::ReadDatastore))?;
-
-                rows.push((key, contents));
-            }
-            // `query_statement` is dropped here, finalizing the source
-            // SELECT and releasing its read lock before any writes below.
-        }
-
-        for (key, contents) in rows {
+        for (key, contents) in key_values {
             let mut insert_statement = destination
                 .prepare(
                     "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
@@ -301,19 +341,19 @@ impl DataStore {
                     inner: DatastoreError::WriteKeyValue { key: key.clone() },
                 })?;
             insert_statement
-                .bind((1, &*key))
+                .bind((1, key.as_str()))
                 .structured(ServicingError::Datastore {
                     inner: DatastoreError::WriteKeyValue { key: key.clone() },
                 })?;
-            insert_statement
-                .bind((2, &*contents))
-                .structured(ServicingError::Datastore {
+            insert_statement.bind((2, contents.as_str())).structured(
+                ServicingError::Datastore {
                     inner: DatastoreError::WriteKeyValue { key: key.clone() },
-                })?;
+                },
+            )?;
             insert_statement
                 .next()
                 .structured(ServicingError::Datastore {
-                    inner: DatastoreError::WriteKeyValue { key },
+                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
                 })?;
         }
 
@@ -792,7 +832,7 @@ mod tests {
     #[test]
     /// Regression test: `persist` supports a destination path equal to the
     /// currently-open (temporary) datastore's own path -- the offline
-    /// provisioning flow does this. `copy_key_values` fully reads and
+    /// provisioning flow does this. `read_key_values` fully reads and
     /// finalizes the source `SELECT` before writing to the destination
     /// connection, so a self-persist (both connections pointing at the
     /// same file) does not block the destination write on the source's
@@ -812,6 +852,59 @@ mod tests {
             installation_id,
             "Installation ID should survive a self-persist"
         );
+    }
+
+    #[test]
+    /// Regression test: a failure partway through `persist`'s destination
+    /// writes must not leave a half-written file that reopens as a
+    /// seemingly-valid, fully-provisioned (`is_persistent()`) datastore.
+    /// Reproduces the failure point directly (`write_host_status` then a
+    /// forced-failing `write_key_values`, via `PRAGMA query_only` flipped
+    /// on mid-connection) rather than going through the full `persist`
+    /// call, since there's no other way to deterministically fail a
+    /// `write_key_values` call from outside the module. Asserts that the
+    /// transaction wrapping both writes was rolled back: reopening the
+    /// destination file afterward must find no committed `hoststatus` row
+    /// (so it reopens as a fresh temporary/unprovisioned datastore, not a
+    /// provisioned one missing its key-value data).
+    fn test_persist_rolls_back_on_partial_failure() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+
+        {
+            let db = super::DataStore::make_datastore(&path).unwrap();
+            db.execute("BEGIN").unwrap();
+
+            let host_status = super::HostStatus {
+                is_management_os: false,
+                ..Default::default()
+            };
+            super::DataStore::write_host_status(&db, &host_status).unwrap();
+
+            // Force the subsequent key-value write to fail, simulating a
+            // real-world failure partway through persist's destination
+            // writes (after HostStatus has already been written within
+            // the same transaction, but before COMMIT).
+            db.execute("PRAGMA query_only = ON;").unwrap();
+            let result = super::DataStore::write_key_values(
+                &db,
+                &[("test-key".to_string(), "test-value".to_string())],
+            );
+            assert!(
+                result.is_err(),
+                "write_key_values should fail against a read-only connection"
+            );
+
+            db.execute("ROLLBACK").unwrap();
+        }
+
+        let datastore = super::DataStore::open(&path).unwrap();
+        assert!(
+            !datastore.is_persistent(),
+            "a rolled-back persist must not leave a datastore that reopens as persistent"
+        );
+
+        temp_dir.close().unwrap();
     }
 
     #[test]
