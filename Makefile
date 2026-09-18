@@ -554,7 +554,11 @@ bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/mkcosi ./cmd/mkcosi
 
-bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
+# Prerequisites must cover everything linked into the binary, not just the
+# suite's own tree: it also imports tools/pkg and is pinned by the module
+# files. Without them an incremental build can consider a stale binary current
+# and silently run code that predates the change under test.
+bin/storm-trident: tools/cmd/storm-trident/main.go tools/go.mod tools/go.sum $(shell find tools/storm tools/pkg -name '*.go' 2>/dev/null)
 	@mkdir -p bin
 	# storm-trident transitively depends on the gRPC stubs and the RCP TLS
 	# certs, both of which are gitignored, so a fresh checkout has neither.

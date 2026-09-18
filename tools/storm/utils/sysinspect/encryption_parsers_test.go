@@ -68,15 +68,47 @@ UUID: CRYPT-LUKS2-475f03514bb749bbb9af1f53f94b91cb-web`
 }
 
 func TestParseFindmnt(t *testing.T) {
-	sample := `TARGET SOURCE FSTYPE OPTIONS
-/mnt/web /dev/mapper/web ext4 rw,relatime`
-	rows := ParseFindmnt(sample)
+	sample := `{"filesystems":[{"target":"/mnt/web","source":"/dev/mapper/web","fstype":"ext4","options":"rw,relatime"}]}`
+	rows, err := ParseFindmnt(sample)
+	if err != nil {
+		t.Fatalf("ParseFindmnt: %v", err)
+	}
 	if len(rows) != 1 {
 		t.Fatalf("got %d rows, want 1", len(rows))
 	}
 	r := rows[0]
 	if r.Target != "/mnt/web" || r.Source != "/dev/mapper/web" || r.FsType != "ext4" {
 		t.Errorf("row = %+v", r)
+	}
+}
+
+// A mount point may contain whitespace. The table output separates columns
+// with spaces and does not escape them there, so the previous whitespace split
+// shifted every field and reported a mismatch for a valid mount point. JSON
+// carries the value verbatim.
+func TestParseFindmntHandlesWhitespaceInTargets(t *testing.T) {
+	sample := `{"filesystems":[{"target":"/mnt/my data","source":"/dev/mapper/web","fstype":"ext4","options":"rw"}]}`
+	rows, err := ParseFindmnt(sample)
+	if err != nil {
+		t.Fatalf("ParseFindmnt: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want 1", len(rows))
+	}
+	if rows[0].Target != "/mnt/my data" {
+		t.Errorf("target = %q, want %q", rows[0].Target, "/mnt/my data")
+	}
+	if rows[0].FsType != "ext4" {
+		t.Errorf("fstype = %q; a shifted column means the split corrupted the row", rows[0].FsType)
+	}
+}
+
+// findmnt prints nothing and exits non-zero when the target is not mounted;
+// callers check the status themselves, so an empty body is not a parse error.
+func TestParseFindmntTreatsEmptyOutputAsNoRows(t *testing.T) {
+	rows, err := ParseFindmnt("")
+	if err != nil || rows != nil {
+		t.Errorf("got (%v, %v), want (nil, nil)", rows, err)
 	}
 }
 
