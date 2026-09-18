@@ -272,14 +272,14 @@ pub(super) fn check_verity_partition_types(
                     ),
                 })?;
 
-        let hash_device_idx =
+        // Inline verity keeps its hash tree inside the data partition, so there
+        // is no separate hash device reference and no hash partition type to
+        // cross-check against the data partition type.
+        let Some(hash_device_idx) =
             graph::find_special_reference(graph, idx, SpecialReferenceKind::VerityHashDevice)
-                .ok_or_else(|| StorageGraphBuildError::InternalError {
-                    body: format!(
-                        "Verity device '{}' does not have a hash device reference.",
-                        dev.name
-                    ),
-                })?;
+        else {
+            continue;
+        };
 
         // Get the partition types of the data and hash devices.
         let data_dev_partition_type = *explore_tree_partitions(

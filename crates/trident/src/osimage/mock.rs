@@ -107,6 +107,9 @@ pub struct MockImage {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MockVerity {
     pub roothash: String,
+
+    /// Byte offset of the hash tree for inline verity images.
+    pub hash_offset: Option<u64>,
 }
 
 fn mock_os_image_file() -> OsImageFile {
@@ -170,6 +173,7 @@ impl MockOsImage {
                 part_type: esp_img.part_type,
                 image_file: mock_os_image_file(),
                 verity: esp_img.verity.as_ref().map(|verity| OsImageVerityHash {
+                    hash_offset: verity.hash_offset,
                     roothash: verity.roothash.clone(),
                     hash_image_file: mock_os_image_file(),
                 }),
@@ -191,6 +195,7 @@ impl MockOsImage {
                 part_type: image.part_type,
                 image_file: mock_os_image_file(),
                 verity: image.verity.as_ref().map(|verity| OsImageVerityHash {
+                    hash_offset: verity.hash_offset,
                     roothash: verity.roothash.clone(),
                     hash_image_file: mock_os_image_file(),
                 }),
@@ -244,6 +249,7 @@ impl MockImage {
             part_type,
             fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
             verity: roothash.map(|roothash| MockVerity {
+                hash_offset: None,
                 roothash: roothash.as_ref().to_owned(),
             }),
         }

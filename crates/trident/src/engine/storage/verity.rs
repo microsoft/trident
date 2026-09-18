@@ -35,8 +35,17 @@ pub(crate) fn get_updated_device_name(device_name: &str) -> String {
     format!("{device_name}_new")
 }
 
-/// Get the root-verity root hash.
-fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
+/// Verity facts that come from the OS image rather than the Host Configuration.
+#[derive(Debug)]
+struct VerityImageInfo {
+    roothash: String,
+
+    /// Byte offset of the hash tree, for images that store it inline.
+    hash_offset: Option<u64>,
+}
+
+/// Get the root-verity information from the OS image.
+fn get_root_verity_info(ctx: &EngineContext) -> Result<VerityImageInfo, Error> {
     // Extract information from the OS image.
     let Some(os_img) = ctx.image.as_ref() else {
         bail!("Image is not available");
@@ -51,11 +60,14 @@ fn get_root_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
         bail!("Root filesystem in OS image is not verity enabled");
     };
 
-    Ok(verity.roothash.clone())
+    Ok(VerityImageInfo {
+        roothash: verity.roothash.clone(),
+        hash_offset: verity.hash_offset,
+    })
 }
 
-/// Gets the usr-verity root hash.
-fn get_usr_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
+/// Gets the usr-verity information from the OS image.
+fn get_usr_verity_info(ctx: &EngineContext) -> Result<VerityImageInfo, Error> {
     // Extract information from the OS image.
     let Some(os_img) = ctx.image.as_ref() else {
         bail!("Image is not available");
@@ -71,7 +83,10 @@ fn get_usr_verity_root_hash(ctx: &EngineContext) -> Result<String, Error> {
         bail!("usr filesystem in OS image is not verity enabled");
     };
 
-    Ok(verity.roothash.clone())
+    Ok(VerityImageInfo {
+        roothash: verity.roothash.clone(),
+        hash_offset: verity.hash_offset,
+    })
 }
 
 /// Setup verity devices.
@@ -89,20 +104,20 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
     let (data_dev, hash_dev) = get_verity_device_paths(ctx, verity_device)?;
     let update_name = get_updated_device_name(&verity_device.name);
 
-    let root_hash = if ctx.storage_graph.root_fs_is_verity() {
+    let verity_info = if ctx.storage_graph.root_fs_is_verity() {
         debug!(
             "Setting up verity device '{}' for root filesystem",
             verity_device.id
         );
 
-        get_root_verity_root_hash(ctx)?
+        get_root_verity_info(ctx)?
     } else if ctx.storage_graph.usr_fs_is_verity() {
         debug!(
             "Setting up verity device '{}' for usr filesystem",
             verity_device.id
         );
 
-        get_usr_verity_root_hash(ctx)?
+        get_usr_verity_info(ctx)?
     } else {
         bail!(
             "Verity device '{}' is not on a supported filesystem.",
@@ -110,8 +125,19 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
         );
     };
 
+    // Inline verity has no hash device of its own, so the OS image must tell us
+    // where inside the data device the hash tree starts.
+    if verity_device.is_inline() && verity_info.hash_offset.is_none() {
+        bail!(
+            "Verity device '{}' has no hash device, but the OS image does not provide a hash \
+            offset for it.",
+            verity_device.name
+        );
+    }
+
     // Create the internal representation of the verity device.
-    let verity_dev = VerityDeviceUtils::new(update_name, data_dev, hash_dev, root_hash);
+    let verity_dev = VerityDeviceUtils::new(update_name, data_dev, hash_dev, verity_info.roothash)
+        .with_hash_offset(verity_info.hash_offset);
 
     // Check internal parameters for verity signatures.
     if let Some(signature_file_map) = ctx
@@ -315,6 +341,8 @@ pub fn get_verity_device_paths(
             verity_device.data_device_id
         ))?;
 
+    // For inline verity this resolves to the same path as the data device,
+    // which is exactly what `veritysetup` expects alongside `--hash-offset`.
     let verity_hash_path = ctx
         .get_block_device_path(&verity_device.hash_device_id)
         .context(format!(
@@ -457,7 +485,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_usr_verity_root_hash() {
+    fn test_get_usr_verity_info() {
         let expected_root_hash = "sample-roothash";
         let mut mock = MockOsImage::new().with_image(MockImage::new(
             USR_MOUNT_POINT_PATH,
@@ -472,7 +500,7 @@ mod tests {
         };
 
         assert_eq!(
-            get_usr_verity_root_hash(&as_ctx(&mock)).unwrap(),
+            get_usr_verity_info(&as_ctx(&mock)).unwrap().roothash,
             expected_root_hash,
             "Root hash does not match expected"
         );
@@ -480,9 +508,7 @@ mod tests {
         // test failure when root filesystem is not verity enabled
         mock.images[0].verity = None;
         assert_eq!(
-            get_usr_verity_root_hash(&as_ctx(&mock))
-                .unwrap_err()
-                .to_string(),
+            get_usr_verity_info(&as_ctx(&mock)).unwrap_err().to_string(),
             "usr filesystem in OS image is not verity enabled",
             "Got unexpected error"
         );
@@ -490,16 +516,14 @@ mod tests {
         // test failure when root filesystem is not found
         mock.images.clear();
         assert_eq!(
-            get_usr_verity_root_hash(&as_ctx(&mock))
-                .unwrap_err()
-                .to_string(),
+            get_usr_verity_info(&as_ctx(&mock)).unwrap_err().to_string(),
             "Failed to get usr filesystem from OS image",
             "Got unexpected error"
         );
     }
 
     #[test]
-    fn test_get_root_verity_root_hash() {
+    fn test_get_root_verity_info() {
         let expected_root_hash = "sample-roothash";
         let mut mock = MockOsImage::new().with_image(MockImage::new(
             ROOT_MOUNT_POINT_PATH,
@@ -514,7 +538,7 @@ mod tests {
         };
 
         assert_eq!(
-            get_root_verity_root_hash(&as_ctx(&mock)).unwrap(),
+            get_root_verity_info(&as_ctx(&mock)).unwrap().roothash,
             expected_root_hash,
             "Root hash does not match expected"
         );
@@ -522,7 +546,7 @@ mod tests {
         // test failure when root filesystem is not verity enabled
         mock.images[0].verity = None;
         assert_eq!(
-            get_root_verity_root_hash(&as_ctx(&mock))
+            get_root_verity_info(&as_ctx(&mock))
                 .unwrap_err()
                 .to_string(),
             "Root filesystem in OS image is not verity enabled",
@@ -532,7 +556,7 @@ mod tests {
         // test failure when root filesystem is not found
         mock.images.clear();
         assert_eq!(
-            get_root_verity_root_hash(&as_ctx(&mock))
+            get_root_verity_info(&as_ctx(&mock))
                 .unwrap_err()
                 .to_string(),
             "Failed to get root filesystem from OS image",

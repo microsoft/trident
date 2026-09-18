@@ -36,6 +36,15 @@ pub fn get_partition_label(device_path: impl AsRef<Path>) -> Result<String, Erro
     run(device_path, "PARTLABEL")
 }
 
+/// Returns the filesystem label of the filesystem at `device_path`, which may
+/// be a block device or a filesystem image file.
+///
+/// This is the label `/dev/disk/by-label/` is built from, and is distinct from
+/// the GPT partition name returned by [`get_partition_label`].
+pub fn get_filesystem_label(device_path: impl AsRef<Path>) -> Result<String, Error> {
+    run(device_path, "LABEL")
+}
+
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
