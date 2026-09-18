@@ -190,21 +190,21 @@ impl TridentServer {
         })
     }
 
-/// Re-attaches a persisted installation ID and current servicing ID
-/// to `tracestream`, if either is now available but wasn't at
-/// daemon-startup time (`server_main`'s one-time attach runs before
-/// any request has had a chance to create a datastore, so a request
-/// that arrives before the very first install/update -- and whose
-/// own handler goes on to create that datastore -- would otherwise
-/// still be missing them). Takes an explicit `tracestream`/
-/// `datastore_path` (rather than `&self`) so it can be called from
-/// inside the `'static` closure `servicing_request` hands to
-/// `spawn_servicing_task` -- see the call site there for why this
-/// runs inside `spawn_blocking` instead of synchronously on the
-/// gRPC handler's async Tokio worker thread. Does not create a
-/// datastore: silently does nothing if the datastore doesn't exist
-/// yet. But on an existing datastore, this may still *persist* a
-/// missing installation ID, via
+    /// Re-attaches a persisted installation ID and current servicing ID
+    /// to `tracestream`, if either is now available but wasn't at
+    /// daemon-startup time (`server_main`'s one-time attach runs before
+    /// any request has had a chance to create a datastore, so a request
+    /// that arrives before the very first install/update -- and whose
+    /// own handler goes on to create that datastore -- would otherwise
+    /// still be missing them). Takes an explicit `tracestream`/
+    /// `datastore_path` (rather than `&self`) so it can be called from
+    /// inside the `'static` closure `servicing_request` hands to
+    /// `spawn_servicing_task` -- see the call site there for why this
+    /// runs inside `spawn_blocking` instead of synchronously on the
+    /// gRPC handler's async Tokio worker thread. Does not create a
+    /// datastore: silently does nothing if the datastore doesn't exist
+    /// yet. But on an existing datastore, this may still *persist* a
+    /// missing installation ID, via
     /// `DataStore::installation_id_or_migrate`'s legacy-ID migration (see
     /// `TraceStream::attach_ids_if_present`); the servicing-ID half is
     /// fully read-only. Never skips the installation-ID half (unlike the
