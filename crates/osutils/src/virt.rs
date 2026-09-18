@@ -1,10 +1,10 @@
 //! Detects whether Trident is running inside a virtual machine, and if so,
 //! which hypervisor, by reading DMI/SMBIOS sysfs files. Shared by
-//! `trident::diagnostics` (the support-bundle `HostDescription`) and
-//! `trident::logging::tracestream` (the `platform_info.vm`/
-//! `platform_info.virt_type` telemetry fields), so the two never diverge on
-//! what counts as "virtual". Also home to the unrelated `virtdeploy`
-//! best-effort detection used by boot-order workarounds.
+//! `trident::diagnostics` (the support-bundle `HostDescription::virt_type`,
+//! the detected hypervisor name or `None`) and `trident::logging::tracestream`
+//! (the `platform_info.vm` telemetry field, a plain boolean), so the two
+//! never diverge on what counts as "virtual". Also home to the unrelated
+//! `virtdeploy` best-effort detection used by boot-order workarounds.
 //!
 //! `detect_hypervisor` only recognizes hypervisors that override the DMI
 //! vendor/product strings to a known value (QEMU/KVM, Hyper-V). It does not
