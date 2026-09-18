@@ -90,10 +90,6 @@ pub struct TraceStream {
     // >=1.70
     target: Arc<RwLock<Option<String>>>,
     installation_id: Arc<RwLock<Option<String>>>,
-    /// Stable for the lifetime of the datastore, unlike `installation_id`
-    /// which is tied to a specific `Trident::install` invocation. See
-    /// `crate::datastore::DataStore::datastore_id`.
-    datastore_id: Arc<RwLock<Option<String>>>,
     /// Identifies one logical servicing operation (an install, update, or
     /// manual rollback) that may span multiple invocations -- a stage
     /// call, a later finalize call, and a later still `commit` call each
@@ -170,61 +166,6 @@ impl TraceStream {
             .read()
             .map(|v| v.is_some())
             .unwrap_or(false)
-    }
-
-    /// Set the database ID to attach to every trace entry sent from this
-    /// point forward, as an additional field, so that all traces/metrics
-    /// against a given datastore can be correlated. Unlike
-    /// `installation_id`, this is stable for the datastore's entire
-    /// lifetime, not just a single `Trident::install` invocation. Expected
-    /// to be called once the datastore's persisted database ID has been
-    /// retrieved (see [`Self::attach_datastore_id_if_present`]).
-    pub fn set_datastore_id(&self, datastore_id: String) {
-        match self.datastore_id.write() {
-            Ok(mut val) => {
-                val.replace(datastore_id);
-            }
-            Err(_) => warn!("Failed to lock tracestream to set database ID"),
-        }
-    }
-
-    /// Returns a clone of the shared database-ID handle -- the same
-    /// underlying `Arc<RwLock<..>>` written by `set_datastore_id` -- so
-    /// other telemetry sinks (namely `AppInsightsSender`) can read the
-    /// current value at send-time without needing their own copy of the
-    /// logic that sets it.
-    pub fn datastore_id_handle(&self) -> Arc<RwLock<Option<String>>> {
-        self.datastore_id.clone()
-    }
-
-    fn datastore_id_cached(&self) -> bool {
-        self.datastore_id
-            .read()
-            .map(|v| v.is_some())
-            .unwrap_or(false)
-    }
-
-    /// Best-effort attempt to attach this datastore's database ID -- either
-    /// already cached from a prior call on this `TraceStream`, or freshly
-    /// read from the datastore at `datastore_path` if one already exists
-    /// there. Never creates a datastore: unlike `installation_id`, the
-    /// database ID's get-or-create semantics only ever run against a
-    /// datastore that has already been opened for real (see
-    /// `crate::datastore::DataStore::datastore_id`), so it is safe to call
-    /// this any time a datastore is known to already exist.
-    pub fn attach_datastore_id_if_present(&self, datastore_path: &Path) {
-        if self.datastore_id_cached() || !datastore_path.exists() {
-            return;
-        }
-        match DataStore::open(datastore_path).and_then(|mut ds| ds.datastore_id()) {
-            Ok(datastore_id) => {
-                info!("Datastore ID: {datastore_id}");
-                self.set_datastore_id(datastore_id.to_string());
-            }
-            Err(e) => {
-                warn!("Failed to read/create database ID: {e:?}");
-            }
-        }
     }
 
     /// Best-effort attempt to attach this host's installation ID -- either
@@ -327,11 +268,10 @@ impl TraceStream {
     ///
     /// Deliberately always re-reads from `datastore` rather than
     /// short-circuiting on an already-cached value (unlike
-    /// `attach_installation_id_if_present`/`attach_datastore_id_if_present`,
-    /// which *are* safe to cache-and-skip): `installation_id`/
-    /// `datastore_id` are stable for the entire lifetime of the
-    /// `TraceStream`/`DataStore` they're attached to, but `servicing_id`
-    /// is not -- a single long-lived daemon `TraceStream` (see
+    /// `attach_installation_id_if_present`, which *is* safe to
+    /// cache-and-skip): `installation_id` is stable for the entire
+    /// lifetime of the `TraceStream`/`DataStore` it's attached to, but
+    /// `servicing_id` is not -- a single long-lived daemon `TraceStream` (see
     /// `server::tridentserver`, which owns one `TraceStream` shared across
     /// every request it serves) can legitimately see a *different*
     /// already-staged servicing operation across separate finalize/commit
@@ -434,7 +374,6 @@ impl TraceStream {
         Box::new(TraceSender::new(
             self.target.clone(),
             self.installation_id.clone(),
-            self.datastore_id.clone(),
             self.servicing_id.clone(),
             metrics_file_path,
         ))
@@ -444,7 +383,6 @@ impl TraceStream {
 pub struct TraceSender {
     server: Arc<RwLock<Option<String>>>,
     installation_id: Arc<RwLock<Option<String>>>,
-    datastore_id: Arc<RwLock<Option<String>>>,
     servicing_id: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
     metrics_file: Option<File>,
@@ -460,14 +398,12 @@ impl TraceSender {
     fn new(
         server: Arc<RwLock<Option<String>>>,
         installation_id: Arc<RwLock<Option<String>>>,
-        datastore_id: Arc<RwLock<Option<String>>>,
         servicing_id: Arc<RwLock<Option<String>>>,
         metrics_file_path: &str,
     ) -> Self {
         Self {
             server,
             installation_id,
-            datastore_id,
             servicing_id,
             client: reqwest::blocking::Client::new(),
             metrics_file: match files::create_file(metrics_file_path) {
@@ -524,11 +460,6 @@ impl TraceSender {
         if let Ok(installation_id) = self.installation_id.read() {
             if let Some(installation_id) = installation_id.as_ref() {
                 fields.insert("installation_id".to_string(), json!(installation_id));
-            }
-        }
-        if let Ok(datastore_id) = self.datastore_id.read() {
-            if let Some(datastore_id) = datastore_id.as_ref() {
-                fields.insert("datastore_id".to_string(), json!(datastore_id));
             }
         }
         if let Ok(servicing_id) = self.servicing_id.read() {
@@ -1166,45 +1097,6 @@ mod tests {
             metric_found,
             "Expected commit's metric to keep the previously-staged servicing_id, \
              not have it overridden"
-        );
-    }
-
-    #[test]
-    /// Regression test: `TraceStream::set_datastore_id` must actually
-    /// reach the serialized trace entry's `additional_fields.datastore_id`,
-    /// independently of installation_id.
-    fn test_tracestream_datastore_id_written_to_additional_fields() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let metrics_path = temp_dir.path().join("metrics.jsonl");
-        let tracestream = TraceStream::default();
-        tracestream.set_datastore_id("test-datastore-id".to_string());
-        let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
-            .with_filter(filter::LevelFilter::INFO);
-
-        // See test_tracestream_write_metric_event_to_file for why a scoped
-        // (not global) default subscriber is used here.
-        let _guard = tracing::subscriber::set_default(
-            tracing_subscriber::Registry::default().with(trace_sender),
-        );
-
-        tracing::info!(metric_name = "test_metric_with_datastore_id", value = true);
-
-        // Ensure the trace system has time to write the file.
-        std::thread::sleep(std::time::Duration::from_millis(100));
-
-        let file = File::open(&metrics_path).unwrap();
-        let reader = BufReader::new(file);
-        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
-
-        let metric_found = lines.iter().any(|line| {
-            line.contains(r#""metric_name":"test_metric_with_datastore_id""#)
-                && line.contains(r#""datastore_id":"test-datastore-id""#)
-        });
-
-        assert!(
-            metric_found,
-            "Expected metric with datastore_id field not found in the local metrics file"
         );
     }
 

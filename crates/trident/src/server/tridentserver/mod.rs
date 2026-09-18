@@ -178,29 +178,24 @@ impl TridentServer {
         })
     }
 
-    /// Re-attaches a persisted installation ID and datastore ID to
-    /// `self.tracestream`, if either is now available but wasn't at
-    /// daemon-startup time (`server_main`'s one-time attach runs before any
-    /// request has had a chance to create a datastore, so a request that
-    /// arrives before the very first install/update -- and whose own
-    /// handler goes on to create that datastore -- would otherwise still be
-    /// missing both IDs. Uses `self.agent_config` (the same configuration
-    /// the request itself operates on) rather than reloading from disk, so
-    /// this can't refresh from a different datastore path than the one in
-    /// effect for this request, and a transient reload failure can't
-    /// silently skip the refresh. Neither call creates a datastore: both
-    /// silently do nothing if the datastore doesn't exist yet. But on an
-    /// existing datastore, either call may still *persist* a missing ID --
-    /// `attach_datastore_id_if_present` via `DataStore::datastore_id`'s
-    /// get-or-create semantics, and `attach_installation_id_if_present` via
+    /// Re-attaches a persisted installation ID to `self.tracestream`, if
+    /// one is now available but wasn't at daemon-startup time
+    /// (`server_main`'s one-time attach runs before any request has had a
+    /// chance to create a datastore, so a request that arrives before the
+    /// very first install/update -- and whose own handler goes on to
+    /// create that datastore -- would otherwise still be missing it).
+    /// Uses `self.agent_config` (the same configuration the request itself
+    /// operates on) rather than reloading from disk, so this can't refresh
+    /// from a different datastore path than the one in effect for this
+    /// request, and a transient reload failure can't silently skip the
+    /// refresh. Does not create a datastore: silently does nothing if the
+    /// datastore doesn't exist yet. But on an existing datastore, this may
+    /// still *persist* a missing ID, via
     /// `DataStore::installation_id_or_migrate`'s legacy-ID migration (see
-    /// `TraceStream::attach_installation_id_if_present` and
-    /// `TraceStream::attach_datastore_id_if_present`).
+    /// `TraceStream::attach_installation_id_if_present`).
     fn refresh_ids(&self) {
         self.tracestream
             .attach_installation_id_if_present(self.agent_config.datastore_path());
-        self.tracestream
-            .attach_datastore_id_if_present(self.agent_config.datastore_path());
     }
 
     /// Handles a servicing request by acquiring the necessary locks,

@@ -193,31 +193,28 @@ fn run_trident(
                     }
                 }
 
-                // Attach this host's installation ID and database ID to
-                // the shared TraceStream before run_with_operation below
-                // fires command_start: Trident::new (further down, inside
-                // the closure) is the usual place both get attached, but
-                // that's too late for command_start, which
-                // run_with_operation fires immediately, before the closure
-                // even runs. Both are read-only and side-effect-free:
-                // neither creates a datastore or an ID (see
-                // `TraceStream::attach_installation_id_if_present` and
-                // `TraceStream::attach_datastore_id_if_present`) -- silently
-                // does nothing if the datastore doesn't exist yet, which is
-                // expected for a host's first-ever install.
+                // Attach this host's installation ID to the shared
+                // TraceStream before run_with_operation below fires
+                // command_start: Trident::new (further down, inside the
+                // closure) is the usual place it gets attached, but that's
+                // too late for command_start, which run_with_operation
+                // fires immediately, before the closure even runs. This is
+                // read-only and side-effect-free (see
+                // `TraceStream::attach_installation_id_if_present`) --
+                // silently does nothing if the datastore doesn't exist
+                // yet, which is expected for a host's first-ever install.
                 //
                 // Load once and reuse the same snapshot for both the
                 // pre-warm attach here and the operation closure below:
                 // calling `AgentConfig::load()` a second time inside the
                 // closure could observe a different `DatastorePath` (e.g. a
                 // CIH bootstrap swap between the two reads), leaving the
-                // IDs cached on `tracestream` here attributed to a
+                // ID cached on `tracestream` here attributed to a
                 // different datastore than the one the operation actually
                 // runs against.
                 let agent_config_result = AgentConfig::load();
                 if let Ok(agent_config) = &agent_config_result {
                     tracestream.attach_installation_id_if_present(agent_config.datastore_path());
-                    tracestream.attach_datastore_id_if_present(agent_config.datastore_path());
                 }
 
                 run_with_operation(&command, OperationSource::Cli, || {
@@ -550,7 +547,6 @@ fn setup_tracing(
                         trident::AZURE_MONITOR_CONNECTION_STRING,
                         handle,
                         tracestream.installation_id_handle(),
-                        tracestream.datastore_id_handle(),
                         tracestream.servicing_id_handle(),
                     ) {
                         Some(sender) => {
