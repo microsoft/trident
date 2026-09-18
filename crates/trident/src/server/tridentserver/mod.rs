@@ -178,24 +178,29 @@ impl TridentServer {
         })
     }
 
-    /// Re-attaches a persisted installation ID to `self.tracestream`, if
-    /// one is now available but wasn't at daemon-startup time
-    /// (`server_main`'s one-time attach runs before any request has had a
-    /// chance to create a datastore, so a request that arrives before the
-    /// very first install/update -- and whose own handler goes on to
-    /// create that datastore -- would otherwise still be missing it).
-    /// Uses `self.agent_config` (the same configuration the request itself
-    /// operates on) rather than reloading from disk, so this can't refresh
-    /// from a different datastore path than the one in effect for this
-    /// request, and a transient reload failure can't silently skip the
-    /// refresh. Does not create a datastore: silently does nothing if the
-    /// datastore doesn't exist yet. But on an existing datastore, this may
-    /// still *persist* a missing ID, via
+    /// Re-attaches a persisted installation ID and current servicing ID
+    /// to `self.tracestream`, if either is now available but wasn't at
+    /// daemon-startup time (`server_main`'s one-time attach runs before
+    /// any request has had a chance to create a datastore, so a request
+    /// that arrives before the very first install/update -- and whose
+    /// own handler goes on to create that datastore -- would otherwise
+    /// still be missing them). Uses `self.agent_config` (the same
+    /// configuration the request itself operates on) rather than
+    /// reloading from disk, so this can't refresh from a different
+    /// datastore path than the one in effect for this request, and a
+    /// transient reload failure can't silently skip the refresh. Does
+    /// not create a datastore: silently does nothing if the datastore
+    /// doesn't exist yet. But on an existing datastore, this may still
+    /// *persist* a missing installation ID, via
     /// `DataStore::installation_id_or_migrate`'s legacy-ID migration (see
-    /// `TraceStream::attach_installation_id_if_present`).
+    /// `TraceStream::attach_ids_if_present`); the servicing-ID half is
+    /// fully read-only. Never skips the installation-ID half (unlike the
+    /// CLI's pre-warm) -- the daemon never receives a multiboot install
+    /// request, so there's no swap-datastore scenario to guard against
+    /// here.
     fn refresh_ids(&self) {
         self.tracestream
-            .attach_installation_id_if_present(self.agent_config.datastore_path());
+            .attach_ids_if_present(self.agent_config.datastore_path(), false);
     }
 
     /// Handles a servicing request by acquiring the necessary locks,

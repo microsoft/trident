@@ -7,17 +7,24 @@
 //! `Trident::*`, etc.) needing to pass them explicitly.
 //!
 //! A thread-local (rather than e.g. a `tracing` span) is enough here
-//! because all three places that set this context run the entire command
-//! synchronously on a single, dedicated thread for the command's whole
-//! duration:
+//! because both places that actually install this context run the entire
+//! command synchronously on a single, dedicated thread for the command's
+//! whole duration:
 //! - CLI: `run_trident`'s command dispatch (synchronous, main thread),
 //!   tagged [`OperationSource::Cli`].
 //! - gRPC/daemon: `servicing_request`'s closure runs inside
 //!   `tokio::task::spawn_blocking`, which gives it its own OS thread for
 //!   as long as the closure runs, tagged [`OperationSource::Daemon`].
-//! - gRPC client: `grpc_client`'s command dispatch (synchronous, main
-//!   thread of the CLI process acting as a client of a running daemon),
-//!   tagged [`OperationSource::GrpcClient`].
+//!
+//! [`OperationSource::GrpcClient`] is defined for a third entry point --
+//! `grpc_client`'s command dispatch (the CLI acting as a client of a
+//! running daemon) -- but nothing currently wraps that dispatch with
+//! `run_with_operation`, so client-side telemetry is not enriched with
+//! `operation_id`/`command`/`source` today. Not considered worth closing:
+//! the daemon side of that same request already produces the interesting
+//! `source = daemon` telemetry, so a client-side `source = grpc-client`
+//! event would mostly just duplicate it from a less informative vantage
+//! point.
 //!
 //! `operation_id` is a fresh, random ID generated once per command
 //! invocation (distinct from the persisted `installation_id`/

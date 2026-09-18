@@ -265,10 +265,11 @@ impl Trident {
             info!("Running Trident in a container");
         }
 
-        // Attach this host's installation ID -- if one has already been
-        // stamped -- to the shared TraceStream before any startup metrics
-        // are emitted, so every trace/metric -- including this very
-        // "trident_start" event -- carries it once available. Normally
+        // Attach this host's installation ID and its current servicing ID
+        // -- if either has already been stamped -- to the shared
+        // TraceStream before any startup metrics are emitted, so every
+        // trace/metric -- including this very "trident_start" event --
+        // carries them once available. Installation ID is normally
         // created by `Trident::install` (at the start of staging), so
         // every other caller of `Trident::new`
         // (update/commit/rollback/rebuild-raid, and every daemon RPC
@@ -281,15 +282,17 @@ impl Trident {
         // the CIH update-bootstrap path (below, in `update`) creates one
         // via `ensure_and_attach_installation_id`. Neither ever creates a
         // *datastore*, only (at most) writes into one that already
-        // exists.
+        // exists. The servicing-ID half is fully read-only.
         //
-        // Skipped entirely when `attach_installation_id` is false (see
+        // Skips the installation-ID half specifically (but still attaches
+        // servicing ID) when `attach_installation_id` is false (see
         // `new_deferring_installation_id`): attaching would stamp this
         // invocation with the wrong (pre-swap) datastore's ID for a
         // multiboot install that later swaps to a different datastore.
-        if attach_installation_id {
-            tracestream.attach_installation_id_if_present(datastore_path);
-        }
+        // Servicing ID is unaffected by that swap (a fresh temporary
+        // datastore simply has no servicing ID yet), so it's still worth
+        // attaching here even in that case.
+        tracestream.attach_ids_if_present(datastore_path, !attach_installation_id);
 
         // Trace features enabled in the Host Configuration.
         if let Some(hc) = &host_config {

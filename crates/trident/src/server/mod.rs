@@ -107,21 +107,26 @@ pub fn server_main(
         }
     };
 
-    // Attach this host's installation ID to the shared TraceStream before
-    // accepting any RPCs. `Trident::new()` attaches it the same way on
-    // every request, but the very first servicing request this daemon
-    // process ever handles would otherwise have its command_start (fired
-    // by run_with_operation before that request's own Trident::new() call
-    // runs) go out untagged, so attach it up front instead. Every later
-    // request is unaffected either way, since the shared TraceStream keeps
-    // whatever was set here (or by the first request) for the rest of the
-    // daemon's lifetime. Does not create a datastore (see
-    // `TraceStream::attach_installation_id_if_present`), but is not
-    // purely read-only: starting the daemon can mutate a legacy/
+    // Attach this host's installation ID and current servicing ID to the
+    // shared TraceStream before accepting any RPCs. `Trident::new()`
+    // attaches installation ID the same way on every request, but the
+    // very first servicing request this daemon process ever handles would
+    // otherwise have its command_start (fired by run_with_operation before
+    // that request's own Trident::new() call runs) go out untagged, so
+    // attach it up front instead. Every later request is unaffected either
+    // way, since the shared TraceStream keeps whatever was set here (or by
+    // the first request) for the rest of the daemon's lifetime. Does not
+    // create a datastore (see `TraceStream::attach_ids_if_present`), but
+    // is not purely read-only: starting the daemon can mutate a legacy/
     // offline-provisioned datastore that predates `installation_id`,
     // performing a one-time migration write to mint one (see
     // `DataStore::installation_id_or_migrate`) before accepting RPCs.
-    tracestream.attach_installation_id_if_present(agent_config.datastore_path());
+    // Never skips the installation-ID half here (unlike the CLI's
+    // pre-warm): the daemon never receives a multiboot install request --
+    // every `install.rs` service handler call site hardcodes
+    // `multiboot: false` -- so there's no swap-datastore scenario to guard
+    // against on this path.
+    tracestream.attach_ids_if_present(agent_config.datastore_path(), false);
 
     let shutdown_signals = match ShutdownSignals::setup_signal_handlers() {
         Ok(signals) => signals,
