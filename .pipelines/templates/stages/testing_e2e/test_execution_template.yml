@@ -128,13 +128,6 @@ stages:
 
               ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 2
 
-              # Install ORAS for the ACR push.
-              VERSION="1.2.2"
-              curl -LO "https://github.com/oras-project/oras/releases/download/v${VERSION}/oras_${VERSION}_linux_amd64.tar.gz"
-              mkdir -p oras-install/
-              tar -zxf oras_${VERSION}_*.tar.gz -C oras-install/
-              sudo mv oras-install/oras /usr/local/bin/
-              rm -rf oras_${VERSION}_*.tar.gz oras-install/
             displayName: "Build extension images (extensions only)"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             retryCountOnTaskFailure: 3
@@ -156,10 +149,15 @@ stages:
                 # wins and the other job fails its sha384 check. It would also
                 # let this job's ACR cleanup delete images legacy is still
                 # using. The cleanup step below follows via SYSEXT_REPO.
-                # Invoked for every configuration. acr-push resolves what a
-                # configuration needs hosted in ACR and no-ops for the ones
-                # that need nothing, so there is no branch here.
-                ./bin/storm-trident script acr-push \
+                # az only mints the token: the service connection is an
+                # Azure DevOps construct, so acquiring credentials is the one
+                # part that cannot live in the binary. The transfer itself is
+                # done in-process with oras-go.
+                # xtrace off around the token so it is not echoed into the log.
+                set +x
+                export ACR_REFRESH_TOKEN=$(az acr login -n $(ACR_NAME) --expose-token --output tsv --query accessToken)
+                set -x
+                ./bin/storm-trident script storm-acr-push \
                     --config $(tridentConfigurationName) \
                     --deployment-environment $(tridentDeploymentEnv) \
                     --runtime-env $(tridentRuntimeEnv) \
@@ -233,7 +231,11 @@ stages:
               inlineScript: |
                 set -eux
                 cd $(TRIDENT_SOURCE_DIR)
-                ./bin/storm-trident script acr-delete \
+                # xtrace off around the token so it is not echoed into the log.
+                set +x
+                export ACR_REFRESH_TOKEN=$(az acr login -n $(ACR_NAME) --expose-token --output tsv --query accessToken)
+                set -x
+                ./bin/storm-trident script storm-acr-delete \
                     --config $(tridentConfigurationName) \
                     --deployment-environment $(tridentDeploymentEnv) \
                     --runtime-env $(tridentRuntimeEnv) \
