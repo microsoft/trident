@@ -19,9 +19,17 @@ impl StreamingService for TridentServer {
         let req = request.into_inner();
 
         // Parse the image URL from the request, returning an error if it is invalid.
-        let url = Url::parse(&req.image_url).map_err(|e| {
-            Status::invalid_argument(format!("Invalid image URL '{}': {}", req.image_url, e))
-        })?;
+        let url = match Url::parse(&req.image_url) {
+            Ok(url) => url,
+            Err(e) => {
+                return Err(self.reject_invalid_field(
+                    "stream_disk",
+                    "image_url",
+                    e.to_string(),
+                    format!("Invalid image URL '{}': {}", req.image_url, e),
+                ));
+            }
+        };
 
         // If the image hash is not provided, we use the constant for ignored checksum.
         let image_hash = req

@@ -60,10 +60,18 @@ impl RollbackService for TridentServer {
     ) -> Result<Response<Self::RollbackStream>, Status> {
         let req = request.into_inner();
         let Some(stage) = req.stage else {
-            return Err(Status::invalid_argument("Missing stage configuration"));
+            return Err(self.reject_invalid_argument(
+                "rollback",
+                "stage",
+                "Missing stage configuration",
+            ));
         };
         let Some(finalize) = req.finalize else {
-            return Err(Status::invalid_argument("Missing finalize configuration"));
+            return Err(self.reject_invalid_argument(
+                "rollback",
+                "finalize",
+                "Missing finalize configuration",
+            ));
         };
 
         let data_store_path = self.agent_config.datastore_path().to_owned();

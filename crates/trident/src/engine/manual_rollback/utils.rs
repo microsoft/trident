@@ -23,6 +23,7 @@ lazy_static! {
 }
 
 /// ManualRollbackRequestKind represents the kind of manual rollback request.
+#[derive(Debug, Clone, Copy)]
 pub enum ManualRollbackRequestKind {
     RollbackOnlyIfNextIsRuntimeUpdate,
     RollbackAvailableAbUpdate,
