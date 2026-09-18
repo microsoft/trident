@@ -189,13 +189,34 @@ func (s *TridentE2EScenario) signingCertFile() (string, error) {
 		}
 		return "", nil
 	}
-	if _, err := os.Stat(s.args.CertFile); err != nil {
+	// A directory satisfies both os.Stat here and netlaunch's os.Open
+	// preflight, so without the regular-file check an invalid path is accepted
+	// and only fails later, during VM firmware-variable setup, as an opaque
+	// boot failure.
+	if err := readableRegularFile(s.args.CertFile); err != nil {
 		if s.configParams.IsUki {
-			return "", fmt.Errorf("image signing certificate %q is required for UKI configurations but could not be read: %w",
+			return "", fmt.Errorf("image signing certificate %q is required for UKI configurations but is unusable: %w",
 				s.args.CertFile, err)
 		}
-		log.Infof("No image signing certificate at %q; continuing without one.", s.args.CertFile)
+		log.Infof("No usable image signing certificate at %q (%v); continuing without one.", s.args.CertFile, err)
 		return "", nil
 	}
 	return s.args.CertFile, nil
+}
+
+// readableRegularFile reports whether path is a regular file the process can
+// actually read, rather than merely something that exists.
+func readableRegularFile(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("not a regular file (mode %s)", info.Mode())
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
