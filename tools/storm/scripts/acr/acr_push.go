@@ -75,6 +75,23 @@ type pushPlan struct {
 //   - misc installs its COSI from an OCI registry rather than over HTTP, and is
 //     the only coverage of the OCI image source. Ported from the legacy suite's
 //     trident-prep.yml, which passed --ociCosiUrl for misc alone.
+//
+// validateExplicit rejects a half-specified explicit invocation. Falling
+// through to the derived plan when only one of the pair is given would act on
+// a repository the caller never named -- for cleanup that means deleting
+// somebody else's images.
+func validateExplicit(repoName string, count int) error {
+	switch {
+	case count < 0:
+		return fmt.Errorf("image count must not be negative, got %d", count)
+	case repoName != "" && count == 0:
+		return fmt.Errorf("--repo-name was given without the images to act on; supply both or neither")
+	case repoName == "" && count > 0:
+		return fmt.Errorf("images were given without --repo-name; supply both or neither")
+	}
+	return nil
+}
+
 func (s *AcrPushScript) planFor() (pushPlan, bool) {
 	// Explicit mode wins: the caller already decided, so honour it verbatim and
 	// keep the old emit-if-named semantics for the output variables.
@@ -122,6 +139,10 @@ func (s *AcrPushScript) planFor() (pushPlan, bool) {
 }
 
 func (s *AcrPushScript) Run(suite core.SuiteContext) error {
+	if err := validateExplicit(s.RepoName, len(s.FilePaths)); err != nil {
+		return err
+	}
+
 	plan, needed := s.planFor()
 	if !needed {
 		logrus.Infof("Configuration %q hosts no images in ACR; nothing to push.", s.Config)

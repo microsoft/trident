@@ -29,6 +29,10 @@ type AcrDeleteScript struct {
 func (s *AcrDeleteScript) Run() error {
 	// Resolve what this configuration pushed from the same place acr-push
 	// does, so cleanup cannot drift from the push and leak images.
+	if err := validateExplicit(s.RepoName, s.NumClones); err != nil {
+		return err
+	}
+
 	push := AcrPushScript{
 		Config:     s.Config,
 		RuntimeEnv: s.RuntimeEnv,

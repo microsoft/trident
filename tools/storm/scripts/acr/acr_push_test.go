@@ -206,3 +206,40 @@ func TestLegacyExplicitInvocationStillWorks(t *testing.T) {
 		t.Errorf("delete plan = %q/%d, want trident-testimage/4", delPlan.repoName, len(delPlan.files))
 	}
 }
+
+// The explicit arguments are a pair. Accepting half of one would silently fall
+// through to the derived plan and act on a repository the caller never named --
+// for cleanup, that means deleting a different repository's images.
+func TestPartialExplicitInputIsRejected(t *testing.T) {
+	tests := []struct {
+		name  string
+		repo  string
+		count int
+		valid bool
+	}{
+		{"neither: derive the plan", "", 0, true},
+		{"both: explicit", "some-repo", 4, true},
+		{"repo without images", "some-repo", 0, false},
+		{"images without repo", "", 4, false},
+		{"negative count", "some-repo", -1, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateExplicit(tt.repo, tt.count)
+			if tt.valid && err != nil {
+				t.Errorf("rejected a valid combination: %v", err)
+			}
+			if !tt.valid && err == nil {
+				t.Error("accepted an invalid combination")
+			}
+		})
+	}
+}
+
+// A negative count previously reached make([]string, n) and panicked.
+func TestNegativeCountDoesNotPanic(t *testing.T) {
+	del := AcrDeleteScript{Config: "misc", RepoName: "r", NumClones: -1}
+	if err := validateExplicit(del.RepoName, del.NumClones); err == nil {
+		t.Fatal("a negative image count must be rejected before it reaches make()")
+	}
+}
