@@ -594,6 +594,16 @@ fn setup_tracing(
 /// event.
 const TELEMETRY_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(5);
 
+/// Maximum number of pending telemetry uploads queued at once. Telemetry
+/// volume is low and the daemon is typically short-lived between sparse
+/// requests, so this is not expected to matter in practice, but it caps
+/// how large the backlog (and its memory) can grow if a telemetry
+/// endpoint is merely slow rather than outright failing -- a failing one
+/// is already self-limiting via `BackgroundUploader`'s per-origin
+/// cooldown. Once full, the oldest not-yet-attempted event is dropped in
+/// favor of the newest.
+const TELEMETRY_QUEUE_CAPACITY: usize = 1000;
+
 /// Wraps a `BackgroundUploader` so it is always shut down with a bounded
 /// deadline when dropped, regardless of which of `main`'s many return
 /// points is taken -- `BackgroundUploader`'s own `Drop` impl (used
@@ -640,13 +650,17 @@ fn main() -> ExitCode {
     // simply becomes a no-op, mirroring failure handling on the handle
     // itself.
     let telemetry_uploader = telemetry_enabled
-        .then(|| match BackgroundUploader::new() {
-            Ok(uploader) => Some(uploader),
-            Err(e) => {
-                eprintln!("Failed to initialize telemetry uploader, disabling telemetry: {e:?}");
-                None
-            }
-        })
+        .then(
+            || match BackgroundUploader::new_ring(TELEMETRY_QUEUE_CAPACITY) {
+                Ok(uploader) => Some(uploader),
+                Err(e) => {
+                    eprintln!(
+                        "Failed to initialize telemetry uploader, disabling telemetry: {e:?}"
+                    );
+                    None
+                }
+            },
+        )
         .flatten();
     // Wrapped immediately so every return path in main() below shuts it
     // down with a bounded deadline, not BackgroundUploader's own unbounded
