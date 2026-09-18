@@ -12,7 +12,13 @@ import (
 // ActiveSwaps returns the set of active swap device paths, canonicalized via
 // `readlink -f`. Mirrors encryption_test.py::get_active_swaps.
 func ActiveSwaps(client *ssh.Client) (map[string]struct{}, error) {
-	cmd := "swapon --show=NAME --raw --bytes --noheadings | xargs -r -I @ readlink -f @"
+	// Capture swapon's output before canonicalizing it. Piping straight into
+	// xargs takes the pipeline's status from xargs, which succeeds on empty
+	// input, so a swapon failure would surface as "no swaps are active" and
+	// the encryption validator would report a missing swap rather than the
+	// inspection error.
+	cmd := "out=$(swapon --show=NAME --raw --bytes --noheadings) || exit $?; " +
+		"printf '%s\n' \"$out\" | xargs -r -I @ readlink -f @"
 	out, err := sshutils.CommandOutput(client, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list active swaps: %w", err)
