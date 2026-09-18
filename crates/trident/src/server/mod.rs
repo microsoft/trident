@@ -117,9 +117,12 @@ pub fn server_main(
     // runs) go out untagged, so attach it up front instead. Every later
     // request is unaffected either way, since the shared TraceStream keeps
     // whatever was set here (or by the first request) for the rest of the
-    // daemon's lifetime. This is read-only and side-effect-free: it does
-    // not create a datastore or an ID (see
-    // `TraceStream::attach_installation_id_if_present`).
+    // daemon's lifetime. Does not create a datastore (see
+    // `TraceStream::attach_installation_id_if_present`), but is not
+    // purely read-only: starting the daemon can mutate a legacy/
+    // offline-provisioned datastore that predates `installation_id`,
+    // performing a one-time migration write to mint one (see
+    // `DataStore::installation_id_or_migrate`) before accepting RPCs.
     tracestream.attach_installation_id_if_present(agent_config.datastore_path());
 
     let shutdown_signals = match ShutdownSignals::setup_signal_handlers() {

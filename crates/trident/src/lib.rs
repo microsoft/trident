@@ -269,12 +269,20 @@ impl Trident {
         // Attach this host's installation ID -- if one has already been
         // stamped -- to the shared TraceStream before any startup metrics
         // are emitted, so every trace/metric -- including this very
-        // "trident_start" event -- carries it once available. Read-only:
-        // the installation ID is only ever *created* by `Trident::install`
-        // (at the start of staging), never here, so every other caller of
-        // `Trident::new` (update/commit/rollback/rebuild-raid, and every
-        // daemon RPC handler) just attaches whatever was already
-        // persisted at install time.
+        // "trident_start" event -- carries it once available. Normally
+        // created by `Trident::install` (at the start of staging), so
+        // every other caller of `Trident::new`
+        // (update/commit/rollback/rebuild-raid, and every daemon RPC
+        // handler) just attaches whatever was already persisted at
+        // install time. But not purely read-only: two other paths can
+        // also mint one here on first attach --
+        // `installation_id_or_migrate` performs a one-time migration
+        // write for a legacy/offline-provisioned datastore that predates
+        // this field (see `DataStore::installation_id_or_migrate`), and
+        // the CIH update-bootstrap path (below, in `update`) creates one
+        // via `ensure_and_attach_installation_id`. Neither ever creates a
+        // *datastore*, only (at most) writes into one that already
+        // exists.
         //
         // Skipped entirely when `attach_installation_id` is false (see
         // `new_deferring_installation_id`): attaching would stamp this

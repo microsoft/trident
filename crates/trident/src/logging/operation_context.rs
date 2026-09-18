@@ -20,8 +20,8 @@
 //!   tagged [`OperationSource::GrpcClient`].
 //!
 //! `operation_id` is a fresh, random ID generated once per command
-//! invocation (distinct from the persistent, per-host
-//! `DataStore::correlation_id`, which is unrelated and set separately on
+//! invocation (distinct from the persisted `installation_id`/
+//! `servicing_id`, which are unrelated and set separately on
 //! `TraceStream`/`AppInsightsSender`).
 
 use std::{
