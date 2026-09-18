@@ -42,8 +42,9 @@ host along with the metrics/spans themselves:
   `/sys/class/dmi/id/product_name`). Best-effort: reports `false` if the
   DMI files are unreadable or the hypervisor is not one of the recognized
   vendors, not necessarily "definitely bare metal".
-- `arch`: the CPU architecture Trident is running on (e.g. `x86_64`,
-  `aarch64`).
+- `arch`: the CPU architecture Trident is running on, as reported by
+  `SystemArchitecture` (e.g. `amd64`, `arm64` -- not the kernel's own
+  `x86_64`/`aarch64` naming).
 - `acl`: whether the host is running Azure Container Linux (ACL), as a
   string -- `"true"`, `"false"`, or `"unknown"` if detection itself
   failed. Best-effort, like `vm` above: an `"unknown"` detection failure
