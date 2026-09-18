@@ -190,36 +190,30 @@ impl TridentServer {
         })
     }
 
-    /// Re-checks for a persisted installation ID and database ID before a
-    /// request fires its own `command_start` (via `run_command`). The
-    /// daemon-startup attach in `server_main` only ever runs once, at
+    /// Re-checks for a persisted installation ID before a request fires
+    /// its own `command_start` (via `run_command`). The daemon-startup
+    /// attach in `server_main` only ever runs once, at
     /// startup -- so a daemon that starts before the host is ever
     /// installed, then serves a request some time after a *different*
     /// path (e.g. a concurrent CLI invocation, or an earlier servicing
     /// request on this same daemon) has since created the datastore,
-    /// would otherwise still be missing both IDs. Called from both
+    /// would otherwise still be missing it. Called from both
     /// `servicing_request` and `reading_request`, so read-only RPCs (e.g.
-    /// `get_servicing_state`) don't keep reporting missing IDs
+    /// `get_servicing_state`) don't keep reporting a missing ID
     /// indefinitely just because they never happen to run after a write
-    /// request has attached them. Uses `self.agent_config` (the same
+    /// request has attached it. Uses `self.agent_config` (the same
     /// configuration the request itself operates on) rather than
     /// reloading from disk, so this can't refresh from a different
     /// datastore path than the one in effect for this request, and a
-    /// transient reload failure can't silently skip the refresh. Neither
-    /// call creates a datastore: both silently do nothing if the
-    /// datastore doesn't exist yet. But on an existing datastore, either
-    /// call may still *persist* a missing ID --
-    /// `attach_datastore_id_if_present` via `DataStore::datastore_id`'s
-    /// get-or-create semantics, and `attach_installation_id_if_present`
-    /// via `DataStore::installation_id_or_migrate`'s legacy-ID migration
-    /// (see
-    /// `TraceStream::attach_installation_id_if_present` and
-    /// `TraceStream::attach_datastore_id_if_present`).
+    /// transient reload failure can't silently skip the refresh. Does not
+    /// create a datastore: silently does nothing if the datastore doesn't
+    /// exist yet. But on an existing datastore, this may still *persist*
+    /// a missing ID, via `DataStore::installation_id_or_migrate`'s
+    /// legacy-ID migration (see
+    /// `TraceStream::attach_installation_id_if_present`).
     fn refresh_ids(&self) {
         self.tracestream
             .attach_installation_id_if_present(self.agent_config.datastore_path());
-        self.tracestream
-            .attach_datastore_id_if_present(self.agent_config.datastore_path());
     }
 
     /// Handles a servicing request by acquiring the necessary locks,

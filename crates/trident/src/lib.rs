@@ -284,16 +284,6 @@ impl Trident {
             tracestream.attach_installation_id_if_present(datastore_path);
         }
 
-        // Attach this datastore's database ID (stable for its entire
-        // lifetime, unlike installation_id) whenever a datastore already
-        // exists at `datastore_path` -- never creates one. Not gated on
-        // `attach_installation_id`/multiboot: a multiboot install's
-        // temporary datastore does not exist yet at this point, so this
-        // is a no-op until the datastore is actually created/opened
-        // further down (see the `datastore_id()` calls near
-        // `ensure_and_attach_installation_id` below).
-        tracestream.attach_datastore_id_if_present(datastore_path);
-
         // Trace features enabled in the Host Configuration.
         if let Some(hc) = &host_config {
             hc.feature_tracing();
@@ -618,18 +608,6 @@ impl Trident {
             // deliberate unconditional regeneration on `has_stage`).
             tracestream.refresh_servicing_id(datastore, allowed_operations.has_stage());
 
-            // Get (or, for a brand-new datastore, create) this datastore's
-            // database ID and attach it. Best-effort, same rationale as
-            // installation ID above: telemetry attribution must never
-            // block servicing.
-            match datastore.datastore_id() {
-                Ok(datastore_id) => {
-                    info!("Datastore ID: {datastore_id}");
-                    tracestream.set_datastore_id(datastore_id.to_string());
-                }
-                Err(e) => warn!("Failed to get/create database ID: {e:?}"),
-            }
-
             // Use a prefetched image if provided, otherwise load the image
             // specified in the Host Configuration.
             let image = match prefetched_image {
@@ -757,16 +735,6 @@ impl Trident {
                     if let Err(e) = tracestream.ensure_and_attach_installation_id(datastore) {
                         warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
                     }
-
-                    match datastore.datastore_id() {
-                        Ok(datastore_id) => {
-                            info!("Datastore ID: {datastore_id}");
-                            tracestream.set_datastore_id(datastore_id.to_string());
-                        }
-                        Err(e) => {
-                            warn!("Failed to get/create database ID during CIH bootstrap: {e:?}")
-                        }
-                    }
                 } else {
                     // For non-CIH images, if the datastore is not persistent, return error
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
@@ -780,10 +748,10 @@ impl Trident {
             // here -- after the datastore is guaranteed to exist (whether
             // via the CIH bootstrap above or a pre-existing persistent
             // one) -- so it covers both the CIH-bootstrap and normal
-            // update paths uniformly, unlike installation_id/database_id
-            // (which are attached earlier, in `Trident::new`, for the
-            // normal path). See `TraceStream::refresh_servicing_id`'s doc
-            // comment for the full rationale.
+            // update paths uniformly, unlike installation_id (which is
+            // attached earlier, in `Trident::new`, for the normal path).
+            // See `TraceStream::refresh_servicing_id`'s doc comment for
+            // the full rationale.
             tracestream.refresh_servicing_id(datastore, allowed_operations.has_stage());
 
             // The storage section is optional for updates if COSI is in use.
