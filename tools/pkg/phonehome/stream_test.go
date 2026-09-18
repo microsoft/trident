@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 const malformedRequestHelperEnv = "PHONEHOME_MALFORMED_REQUEST_HELPER"
@@ -60,8 +59,7 @@ func runMalformedStreamRequestHelper(t *testing.T) {
 	}
 	defer logFile.Close()
 
-	result := make(chan PhoneHomeResult, 1)
-	traceFile, err := SetupTraceStream(mux, filepath.Join(dir, "trace.jsonl"), result)
+	traceFile, err := SetupTraceStream(mux, filepath.Join(dir, "trace.jsonl"))
 	if err != nil {
 		t.Fatalf("setup tracestream: %v", err)
 	}
@@ -79,17 +77,17 @@ func runMalformedStreamRequestHelper(t *testing.T) {
 	validTrace := `{"timestamp":"now","metric_name":"boot","value":1,"additional_fields":{},"platform_info":{}}`
 	assertPostStatus(t, server.URL+"/tracestream", validTrace, http.StatusInternalServerError)
 
-	select {
-	case got := <-result:
-		if got.State != PhoneHomeResultError {
-			t.Fatalf("trace write failure state = %q, want %q", got.State, PhoneHomeResultError)
-		}
-		if !strings.Contains(got.Message, "failed to write trace data to file") {
-			t.Fatalf("trace write failure message = %q", got.Message)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("trace write failure was not reported through the result channel")
-	}
+	// The 500 above is the whole contract for a trace write failure: it is
+	// logged and answered, and the process is still alive to answer it.
+	//
+	// It deliberately does NOT reach the phone-home result channel. That
+	// channel carries the servicing outcome, and netlisten's ListenLoop runs
+	// with waitForProvisioned=false, so any non-Failure result there makes it
+	// return immediately -- aborting a servicing run because its telemetry
+	// could not be written. A missing metric is caught later by the suite's
+	// trace-file validation instead, which is the check actually about
+	// telemetry.
+	assertPostStatus(t, server.URL+"/logstream", `{"message":"still alive"}`, http.StatusCreated)
 }
 
 func assertPostStatus(t *testing.T, url string, body string, want int) {

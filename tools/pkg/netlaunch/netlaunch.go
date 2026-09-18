@@ -223,7 +223,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		defer logstreamFull.Close()
 
 		// Set up listening for tracestream
-		traceFile, err := phonehome.SetupTraceStream(mux, config.TracestreamFile, result)
+		traceFile, err := phonehome.SetupTraceStream(mux, config.TracestreamFile)
 		if err != nil {
 			return fmt.Errorf("failed to setup tracestream: %w", err)
 		}

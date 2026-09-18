@@ -18,7 +18,7 @@ type TraceEntry struct {
 	PlatformInfo     map[string]interface{} `json:"platform_info"`
 }
 
-func SetupTraceStream(mux *http.ServeMux, filepath string, result chan<- PhoneHomeResult) (*os.File, error) {
+func SetupTraceStream(mux *http.ServeMux, filepath string) (*os.File, error) {
 	if filepath == "" {
 		return nil, nil
 	}
@@ -63,7 +63,6 @@ func SetupTraceStream(mux *http.ServeMux, filepath string, result chan<- PhoneHo
 		if err != nil {
 			err = fmt.Errorf("failed to write trace data to file: %w", err)
 			log.WithError(err).Error("trace stream failed")
-			reportTraceStreamError(result, err)
 			http.Error(w, "failed to write trace data to file", http.StatusInternalServerError)
 			return
 		}
@@ -72,7 +71,6 @@ func SetupTraceStream(mux *http.ServeMux, filepath string, result chan<- PhoneHo
 		if err != nil {
 			err = fmt.Errorf("failed to sync trace file: %w", err)
 			log.WithError(err).Error("trace stream failed")
-			reportTraceStreamError(result, err)
 			http.Error(w, "failed to sync trace file", http.StatusInternalServerError)
 			return
 		}
@@ -84,25 +82,15 @@ func SetupTraceStream(mux *http.ServeMux, filepath string, result chan<- PhoneHo
 	return traceFile, nil
 }
 
-// reportTraceStreamError surfaces a trace-stream failure without blocking.
+// Trace-stream failures are logged and answered with a 500, and deliberately
+// NOT sent on the phone-home result channel.
 //
-// The send is deliberately non-blocking, and the drop path is deliberate too.
-// The channel is buffered, so a drop only happens when a phone-home result is
-// already queued -- that result IS the servicing outcome the run exists to
-// check, and it must not be displaced by a telemetry failure. Blocking instead
-// would risk hanging the handler once the listen loop has stopped consuming.
+// That channel carries the servicing outcome: netlisten's ListenLoop runs with
+// waitForProvisioned=false, so any non-Failure result makes it return
+// immediately via ToError. Enqueuing a telemetry error there would therefore
+// abort the servicing run because its metrics could not be written, which is
+// the wrong verdict -- the operation under test may have succeeded.
 //
-// Losing trace data is therefore logged loudly rather than allowed to fail the
-// run: a servicing operation that succeeded should not be reported as failed
-// because its metrics could not be written.
-func reportTraceStreamError(result chan<- PhoneHomeResult, err error) {
-	if result == nil {
-		return
-	}
-
-	select {
-	case result <- errorPhoneHomeResult(err):
-	default:
-		log.WithError(err).Error("trace stream error could not be reported; a servicing result is already pending")
-	}
-}
+// Losing trace data is not silent either: the suite validates the captured
+// trace file afterwards, so a missing metric is reported there, against the
+// check that is actually about telemetry.
