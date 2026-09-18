@@ -223,38 +223,57 @@ impl DataStore {
                 None => Vec::new(),
             };
 
-            // Wrap the HostStatus write and all key-value inserts in one
-            // destination transaction. Without this, a failure partway
-            // through (e.g. a single bad key-value row) would leave the
-            // HostStatus row -- already written with is_management_os =
-            // false -- autocommitted on its own, so a later `open()` would
-            // treat this half-written file as a normal, fully-provisioned,
-            // non-temporary datastore even though this call reports
-            // failure to its caller and no key-value data (or only a
-            // partial prefix of it) actually made it across.
-            persistent_db
-                .execute("BEGIN")
-                .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
-            let result = Self::write_host_status(&persistent_db, self.host_status())
-                .and_then(|()| Self::write_key_values(&persistent_db, &key_values));
-            match result {
-                Ok(()) => {
-                    persistent_db
-                        .execute("COMMIT")
-                        .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
-                }
-                Err(e) => {
-                    if let Err(rollback_err) = persistent_db.execute("ROLLBACK") {
-                        warn!(
-                            "Failed to roll back incomplete persist transaction: {rollback_err:?}"
-                        );
-                    }
-                    return Err(e);
-                }
-            }
+            Self::write_persistent_data(&persistent_db, self.host_status(), &key_values)?;
 
             self.db = Some(persistent_db);
             self.temporary = false;
+        }
+
+        Ok(())
+    }
+
+    /// Write `host_status` and every `key_values` pair into `destination`
+    /// inside a single transaction: `BEGIN`, then the HostStatus write and
+    /// all key-value inserts, then `COMMIT` on success or `ROLLBACK` on
+    /// any failure.
+    ///
+    /// This exists as its own function (rather than being inlined into
+    /// `persist`) specifically so tests can call it directly and exercise
+    /// the *real* transaction-control path -- see
+    /// `test_persist_rolls_back_on_partial_failure`, which would not
+    /// actually catch a regression that dropped the `BEGIN`/`COMMIT`/
+    /// `ROLLBACK` here if it only re-implemented that logic itself
+    /// instead of calling this function.
+    ///
+    /// Without this transaction, a failure partway through (e.g. a single
+    /// bad key-value row) would leave the HostStatus row -- already
+    /// written with `is_management_os = false` -- autocommitted on its
+    /// own, so a later `open()` would treat the half-written destination
+    /// as a normal, fully-provisioned, non-temporary datastore even though
+    /// this call reports failure to its caller and no key-value data (or
+    /// only a partial prefix of it) actually made it across.
+    fn write_persistent_data(
+        destination: &sqlite::Connection,
+        host_status: &HostStatus,
+        key_values: &[(String, String)],
+    ) -> Result<(), TridentError> {
+        destination
+            .execute("BEGIN")
+            .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
+        let result = Self::write_host_status(destination, host_status)
+            .and_then(|()| Self::write_key_values(destination, key_values));
+        match result {
+            Ok(()) => {
+                destination
+                    .execute("COMMIT")
+                    .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
+            }
+            Err(e) => {
+                if let Err(rollback_err) = destination.execute("ROLLBACK") {
+                    warn!("Failed to roll back incomplete persist transaction: {rollback_err:?}");
+                }
+                return Err(e);
+            }
         }
 
         Ok(())
@@ -657,52 +676,58 @@ mod tests {
 
     #[test]
     /// Regression test: a failure partway through `persist`'s destination
-    /// writes must not leave a half-written file that reopens as a
-    /// seemingly-valid, fully-provisioned (`is_persistent()`) datastore.
-    /// Reproduces the failure point directly (`write_host_status` then a
-    /// forced-failing `write_key_values`, via `PRAGMA query_only` flipped
-    /// on mid-connection) rather than going through the full `persist`
-    /// call, since there's no other way to deterministically fail a
-    /// `write_key_values` call from outside the module. Asserts that the
-    /// transaction wrapping both writes was rolled back: reopening the
-    /// destination file afterward must find no committed `hoststatus` row
-    /// (so it reopens as a fresh temporary/unprovisioned datastore, not a
-    /// provisioned one missing its key-value data).
+    /// writes -- specifically, *after* the HostStatus write has already
+    /// succeeded within the transaction -- must not leave that write
+    /// durably committed on its own. Calls `write_persistent_data`
+    /// directly (the same transaction-wrapping function `persist` itself
+    /// calls) rather than re-implementing its `BEGIN`/`COMMIT`/`ROLLBACK`
+    /// logic in the test, so a regression that dropped that transaction
+    /// wrapping would actually be caught here.
+    ///
+    /// Forces the failure via a trigger that rejects one specific
+    /// key-value row (rather than e.g. `PRAGMA query_only`, which would
+    /// also block the *first* write and so could never distinguish "the
+    /// transaction rolled back an already-succeeded write" from "the
+    /// first write never succeeded in the first place"). `RAISE(ABORT)`
+    /// only fails the one offending statement, leaving the surrounding
+    /// transaction open for our own explicit `ROLLBACK`.
     fn test_persist_rolls_back_on_partial_failure() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("db.sqlite");
 
         {
             let db = super::DataStore::make_datastore(&path).unwrap();
-            db.execute("BEGIN").unwrap();
+            db.execute(
+                "CREATE TRIGGER fail_on_sentinel_key
+                 BEFORE INSERT ON keyvalue
+                 WHEN NEW.key = 'force-fail'
+                 BEGIN
+                     SELECT RAISE(ABORT, 'simulated failure for test');
+                 END;",
+            )
+            .unwrap();
 
             let host_status = super::HostStatus {
                 is_management_os: false,
                 ..Default::default()
             };
-            super::DataStore::write_host_status(&db, &host_status).unwrap();
-
-            // Force the subsequent key-value write to fail, simulating a
-            // real-world failure partway through persist's destination
-            // writes (after HostStatus has already been written within
-            // the same transaction, but before COMMIT).
-            db.execute("PRAGMA query_only = ON;").unwrap();
-            let result = super::DataStore::write_key_values(
+            let result = super::DataStore::write_persistent_data(
                 &db,
-                &[("test-key".to_string(), "test-value".to_string())],
+                &host_status,
+                &[("force-fail".to_string(), "test-value".to_string())],
             );
             assert!(
                 result.is_err(),
-                "write_key_values should fail against a read-only connection"
+                "write_persistent_data should fail when a key-value insert is rejected"
             );
-
-            db.execute("ROLLBACK").unwrap();
         }
 
         let datastore = super::DataStore::open(&path).unwrap();
         assert!(
             !datastore.is_persistent(),
-            "a rolled-back persist must not leave a datastore that reopens as persistent"
+            "a rolled-back persist must not leave a datastore that reopens as persistent, \
+             even though the HostStatus write within the same transaction succeeded \
+             before the key-value write failed"
         );
 
         temp_dir.close().unwrap();
