@@ -66,6 +66,15 @@ host along with the metrics/spans themselves:
   one-time write persists an `installation_id` for it (without touching
   any other data), so older or externally-adopted hosts pick up the field
   on their next command rather than remaining permanently without one.
+  A `grpc-client` invocation always falls into this stand-in case, never
+  the real persisted value: unlike `cli`/`daemon`, it is never given a
+  `TraceStream` to attach the datastore's actual `installation_id` to, so
+  every one of its events reports a fresh, non-persisted `operation_id`
+  in this field instead -- not correlatable across separate `grpc-client`
+  invocations from the same host. Not considered worth closing today, for
+  the same reason noted under `source` below: `grpc-client` is currently
+  only exercised by tests as a way to drive the daemon, not a real
+  telemetry-producing entry point.
 - `servicing_id`: an ID that lets events emitted across a whole servicing
   operation (an install, update, or manual rollback) be correlated with
   each other -- including across separate stage/finalize invocations
@@ -88,12 +97,14 @@ host along with the metrics/spans themselves:
 - `command`: which command produced the event (e.g. `install`, `update`,
   `update_stage`, `update_finalize`, `commit`, `rollback`, `rebuild_raid`).
 - `source`: which of Trident's entry points produced the event -- `cli` (a
-  command run directly, without a daemon) or `daemon` (a command the
-  daemon executed for a gRPC request). A third entry point, `grpc-client`
-  (the CLI acting as a client, relaying a command to a running daemon),
-  is defined but not currently wired up to produce this enrichment --
-  see `logging::operation_context`'s module doc for why that's not
-  considered a gap worth closing.
+  command run directly, without a daemon), `daemon` (a command the daemon
+  executed for a gRPC request), or `grpc-client` (the CLI acting as a
+  client, relaying a command to a running daemon). All three are wired up
+  to produce `operation_id`/`command`/`source` itself; `grpc-client` is
+  the one that never gets a real, persisted `installation_id`/
+  `servicing_id` (see those fields above) -- see
+  `logging::operation_context`'s module doc for why that's not
+  considered a gap worth closing today.
 
 ## Correlation ID Lifecycle
 
