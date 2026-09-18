@@ -168,11 +168,13 @@ fn run_trident(
     // run_command below fires command_start: Trident::new (further down,
     // inside the closure) is the usual place it gets attached, but that's
     // too late for command_start, which run_command fires immediately,
-    // before the closure even runs. This is read-only and
-    // side-effect-free (see
+    // before the closure even runs. Does not create a *datastore* (see
     // `TraceStream::attach_installation_id_if_present`) -- silently does
     // nothing if the datastore doesn't exist yet, which is expected for a
-    // host's first-ever install.
+    // host's first-ever install. But not purely read-only: on an existing
+    // datastore that predates `installation_id`, this can perform a
+    // one-time migration write to mint one (see
+    // `DataStore::installation_id_or_migrate`).
     // Load once and reuse the same snapshot inside the run_command
     // closure below, rather than reloading there: calling
     // `AgentConfig::load()` a second time could observe a different
