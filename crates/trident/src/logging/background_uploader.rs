@@ -231,32 +231,53 @@ impl TelemetryRing {
         })
     }
 
-    fn push(&self, item: UploadData) {
+    /// Enqueues `item`, or refuses it once shutdown has been signaled.
+    ///
+    /// The stop check and the enqueue happen under the same `queue` lock
+    /// that `signal_stop` and `pop` also take, so a handle can never
+    /// observe `stop_requested` as unset, then have its item land in the
+    /// queue *after* `pop` has already decided (under that same lock)
+    /// that the queue is empty and shutdown is complete -- which would
+    /// otherwise let `push` return `Ok(())` for an item that is silently
+    /// dropped instead of ever being processed.
+    fn push(&self, item: UploadData) -> Result<(), Error> {
         let mut queue = self.queue.lock().unwrap();
+        if self.stop_requested.load(Ordering::Acquire) {
+            bail!("Background uploader has been shut down");
+        }
         if queue.len() >= self.capacity {
             queue.pop_front();
         }
         queue.push_back(item);
         drop(queue);
         self.notify.notify_one();
+        Ok(())
     }
 
     /// Waits for and returns the next item, or `None` once shutdown has
     /// been requested and the queue has been fully drained.
     async fn pop(&self) -> Option<UploadData> {
         loop {
-            if let Some(item) = self.queue.lock().unwrap().pop_front() {
-                return Some(item);
-            }
-            if self.stop_requested.load(Ordering::Acquire) {
-                return None;
+            {
+                let mut queue = self.queue.lock().unwrap();
+                if let Some(item) = queue.pop_front() {
+                    return Some(item);
+                }
+                if self.stop_requested.load(Ordering::Acquire) {
+                    return None;
+                }
             }
             self.notify.notified().await;
         }
     }
 
+    /// Signals shutdown under the same `queue` lock `push`/`pop` use, so
+    /// no concurrent `push` can slip an item past this point without
+    /// observing `stop_requested` -- see `push`'s doc comment.
     fn signal_stop(&self) {
+        let _queue = self.queue.lock().unwrap();
         self.stop_requested.store(true, Ordering::Release);
+        drop(_queue);
         self.notify.notify_one();
     }
 }
@@ -556,8 +577,7 @@ impl BackgroundUploadHandle {
             }
             HandleInner::Ring(ring) => {
                 if let Some(ring) = ring.upgrade() {
-                    ring.push(data);
-                    Ok(())
+                    ring.push(data)
                 } else {
                     bail!("Background uploader has been shut down");
                 }
@@ -980,10 +1000,10 @@ mod tests {
         let ring = TelemetryRing::new(2);
         let url = Url::parse("http://example.invalid/").unwrap();
 
-        ring.push(mock_upload(url.clone(), "first"));
-        ring.push(mock_upload(url.clone(), "second"));
+        ring.push(mock_upload(url.clone(), "first")).unwrap();
+        ring.push(mock_upload(url.clone(), "second")).unwrap();
         // Over capacity: "first" should be evicted, not "second".
-        ring.push(mock_upload(url.clone(), "third"));
+        ring.push(mock_upload(url.clone(), "third")).unwrap();
 
         run_in_runtime(async {
             let first = ring.pop().await.unwrap();
@@ -1009,7 +1029,7 @@ mod tests {
             // pushing, so this also exercises the `Notify` wakeup path
             // rather than just the "already queued" fast path.
             tokio::time::sleep(Duration::from_millis(20)).await;
-            ring.push(mock_upload(url, "hello"));
+            ring.push(mock_upload(url, "hello")).unwrap();
 
             let item = tokio::time::timeout(Duration::from_secs(1), waiter)
                 .await
@@ -1025,7 +1045,7 @@ mod tests {
     fn test_telemetry_ring_pop_returns_none_after_stop_and_drain() {
         let ring = TelemetryRing::new(4);
         let url = Url::parse("http://example.invalid/").unwrap();
-        ring.push(mock_upload(url, "queued-before-stop"));
+        ring.push(mock_upload(url, "queued-before-stop")).unwrap();
         ring.signal_stop();
 
         run_in_runtime(async {
@@ -1064,11 +1084,13 @@ mod tests {
         ring.push(mock_upload(
             Url::parse(&server.url()).unwrap().join("/fail").unwrap(),
             "will-fail",
-        ));
+        ))
+        .unwrap();
         ring.push(mock_upload(
             Url::parse(&server.url()).unwrap().join("/skip").unwrap(),
             "should-be-abandoned",
-        ));
+        ))
+        .unwrap();
         // Signal stop *before* the loop starts draining, so both queued
         // items are already present when draining begins.
         ring.signal_stop();
