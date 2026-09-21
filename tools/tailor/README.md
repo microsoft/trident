@@ -156,10 +156,15 @@ gh attestation verify "${binary}" \
 
 ### From source
 
-The crate is not published to crates.io yet.
+The crate is not published to crates.io yet. Install it straight from the monorepo:
 
 ```bash
-# From a local checkout:
+cargo install --git https://github.com/microsoft/trident tailor
+```
+
+Or from a local checkout of this directory:
+
+```bash
 cargo install --path crates/tailor
 ```
 
