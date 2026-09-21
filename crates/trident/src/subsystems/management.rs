@@ -7,7 +7,7 @@ use std::{
 
 use log::info;
 
-use osutils::path;
+use osutils::{files::atomic_write_file, path};
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
     constants::{
@@ -152,7 +152,10 @@ fn configure_agent_config(
             updated_contents.push('\n');
         }
         updated_contents.push_str(&format!("DatastorePath={}\n", datastore_path.display()));
-        fs::write(agent_config_path, updated_contents).structured(
+        // Write atomically: a partial write here (e.g. ENOSPC, or a crash
+        // partway through) must not truncate the existing file and lose
+        // the settings (e.g. Telemetry=) it was preserving.
+        atomic_write_file(Path::new(agent_config_path), &updated_contents).structured(
             ServicingError::CreateConfigurationFile {
                 path: agent_config_path.into(),
             },
