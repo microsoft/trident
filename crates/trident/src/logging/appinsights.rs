@@ -295,7 +295,7 @@ impl AppInsightsSender {
         let envelope = json!({
             "name": format!(
                 "Microsoft.ApplicationInsights.{}.Event",
-                self.instrumentation_key
+                self.instrumentation_key.replace('-', "")
             ),
             "time": now,
             "iKey": self.instrumentation_key,
@@ -769,6 +769,10 @@ mod functional_test {
         let combined = requests.join("\n");
 
         assert!(combined.contains("POST /v2/track"));
+        // The envelope's outer "name" strips dashes from the instrumentation
+        // key (per the Application Insights envelope convention), while
+        // "iKey" below keeps the original dashed key.
+        assert!(combined.contains("\"name\":\"Microsoft.ApplicationInsights.testkey.Event\""));
         assert!(combined.contains("\"name\":\"test_metric\""));
         assert!(combined.contains("\"iKey\":\"test-key\""));
         assert!(combined.contains("\"installation_id\":\"test-installation-id\""));
