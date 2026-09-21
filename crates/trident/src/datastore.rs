@@ -223,11 +223,6 @@ impl DataStore {
 
     pub(crate) fn persist(&mut self, path: &Path) -> Result<(), TridentError> {
         if self.temporary {
-            let persistent_db = Self::make_datastore(path)?;
-            self.host_status.is_management_os = false;
-            self.host_status.trident_version =
-                TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
-
             // Read every generic key-value entry (e.g. the installation
             // ID) out of the temporary datastore before starting any
             // destination writes below: this both avoids a same-file
@@ -235,10 +230,21 @@ impl DataStore {
             // current path (see `write_key_values`'s doc comment) and lets
             // the HostStatus write and every key-value insert run inside a
             // single destination transaction.
-            let key_values = match self.db.as_ref() {
-                Some(temporary_db) => Self::read_key_values(temporary_db)?,
-                None => Vec::new(),
-            };
+            //
+            // The temporary datastore must still be open at this point: a
+            // closed datastore (see `close()`) cannot be read from, and
+            // silently treating it as having no key-value rows would drop
+            // its data while still reporting a successful persist.
+            let key_values = Self::read_key_values(
+                self.db
+                    .as_ref()
+                    .structured(ServicingError::from(DatastoreError::WriteToClosedDatastore))?,
+            )?;
+
+            let persistent_db = Self::make_datastore(path)?;
+            self.host_status.is_management_os = false;
+            self.host_status.trident_version =
+                TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
 
             Self::write_persistent_data(&persistent_db, self.host_status(), &key_values)?;
 
@@ -783,6 +789,8 @@ impl DataStore {
 
 #[cfg(test)]
 mod tests {
+    use trident_api::error::{DatastoreError, ErrorKind, ServicingError};
+
     #[test]
     /// `may_initialize_datastore_for_command` is the single shared
     /// classifier answering "may this command/request proceed without an
@@ -875,6 +883,35 @@ mod tests {
             datastore.ensure_installation_id().unwrap(),
             installation_id,
             "Installation ID should survive a self-persist"
+        );
+    }
+
+    #[test]
+    /// Regression test: `persist` on a closed temporary datastore must
+    /// fail with `WriteToClosedDatastore` rather than silently treating
+    /// the closed connection as having no key-value rows and reporting a
+    /// successful persist that actually dropped all of its data.
+    fn test_persist_on_closed_datastore_fails() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let datastore_temp_path = temp_dir.path().join("db-tmp.sqlite");
+        let datastore_path = temp_dir.path().join("db.sqlite");
+
+        let mut datastore = super::DataStore::open_or_create(&datastore_temp_path).unwrap();
+        datastore
+            .set_value("test-key", &"test-value".to_string())
+            .unwrap();
+
+        datastore.close();
+
+        assert_eq!(
+            datastore.persist(&datastore_path).unwrap_err().kind(),
+            &ErrorKind::Servicing(ServicingError::Datastore {
+                inner: DatastoreError::WriteToClosedDatastore
+            })
+        );
+        assert!(
+            !datastore_path.exists(),
+            "persist should not create a destination datastore when the source is closed"
         );
     }
 
