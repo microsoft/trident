@@ -496,11 +496,12 @@ impl DataStore {
                                 key: key.to_string(),
                             },
                         })?;
-                let value = serde_json::from_str(&contents).structured(
-                    InternalError::DeserializeValue {
-                        key: key.to_string(),
-                    },
-                )?;
+                let value =
+                    serde_json::from_str(&contents).structured(ServicingError::Datastore {
+                        inner: DatastoreError::DeserializeValue {
+                            key: key.to_string(),
+                        },
+                    })?;
                 Ok(Some(value))
             }
             State::Done => Ok(None),
@@ -521,8 +522,10 @@ impl DataStore {
     /// it -- is a first-party caller of this unconditional-overwrite
     /// form.
     pub(crate) fn set_value<T: Serialize>(&self, key: &str, value: &T) -> Result<(), TridentError> {
-        let contents = serde_json::to_string(value).structured(InternalError::SerializeValue {
-            key: key.to_string(),
+        let contents = serde_json::to_string(value).structured(ServicingError::Datastore {
+            inner: DatastoreError::SerializeValue {
+                key: key.to_string(),
+            },
         })?;
         self.write_key_value_row(
             key,
@@ -543,8 +546,10 @@ impl DataStore {
         key: &str,
         value: &T,
     ) -> Result<(), TridentError> {
-        let contents = serde_json::to_string(value).structured(InternalError::SerializeValue {
-            key: key.to_string(),
+        let contents = serde_json::to_string(value).structured(ServicingError::Datastore {
+            inner: DatastoreError::SerializeValue {
+                key: key.to_string(),
+            },
         })?;
         self.write_key_value_row(
             key,
