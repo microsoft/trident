@@ -13,7 +13,7 @@ use trident::{
     manual_rollback::{self, utils::ManualRollbackRequestKind},
     run_command, run_reboot_command, save_reboot_operation, validation, AppInsightsSender,
     BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogForwarder, Logstream,
-    OperationSource, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    OperationSource, TelemetryUploader, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -507,12 +507,12 @@ impl TelemetryStatus {
 fn setup_tracing(
     args: &Cli,
     telemetry_enabled: bool,
-    // Dedicated to Application Insights telemetry -- deliberately *not* the
-    // same `BackgroundUploader` instance used for log forwarding (see
+    // Dedicated to Application Insights telemetry -- a `TelemetryUploader`
+    // rather than the `BackgroundUploader` used for log forwarding (see
     // `main`), so a slow-but-successful telemetry endpoint can never build a
     // backlog that delays real log uploads. `None` if telemetry is disabled
     // or its uploader failed to start; either way telemetry becomes a no-op.
-    telemetry_uploader: Option<&BackgroundUploader>,
+    telemetry_uploader: Option<&TelemetryUploader>,
 ) -> Result<(TraceStream, TelemetryStatus), Error> {
     use tracing_subscriber::{filter, layer::SubscriberExt, Layer, Registry};
 
@@ -665,7 +665,7 @@ fn setup_tracing(
 
 /// How long to wait for the dedicated telemetry uploader to drain and
 /// shut down before abandoning it (see
-/// `BackgroundUploader::shutdown_with_deadline`). Telemetry must never
+/// `TelemetryUploader::shutdown_with_deadline`). Telemetry must never
 /// meaningfully delay Trident's actual work, including at shutdown -- a
 /// slow-but-successful Application Insights endpoint could otherwise
 /// stall process exit for as long as it takes to drain every queued
@@ -677,17 +677,17 @@ const TELEMETRY_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(5);
 /// requests, so this is not expected to matter in practice, but it caps
 /// how large the backlog (and its memory) can grow if a telemetry
 /// endpoint is merely slow rather than outright failing -- a failing one
-/// is already self-limiting via `BackgroundUploader`'s per-origin
-/// cooldown. Once full, the oldest not-yet-attempted event is dropped in
-/// favor of the newest.
+/// is already self-limiting via the shared per-origin cooldown (see
+/// `trident::logging::upload_core`). Once full, the oldest not-yet-attempted
+/// event is dropped in favor of the newest.
 const TELEMETRY_QUEUE_CAPACITY: usize = 1000;
 
-/// Wraps a `BackgroundUploader` so it is always shut down with a bounded
+/// Wraps a `TelemetryUploader` so it is always shut down with a bounded
 /// deadline when dropped, regardless of which of `main`'s many return
-/// points is taken -- `BackgroundUploader`'s own `Drop` impl (used
-/// elsewhere, e.g. for `bg_uploader`, which carries real log delivery and
-/// is expected to drain fully) waits unboundedly instead.
-struct TelemetryUploaderGuard(Option<BackgroundUploader>);
+/// points is taken -- `TelemetryUploader`'s own `Drop` impl waits
+/// unboundedly instead, which is fine for `bg_uploader` (real log
+/// delivery, expected to drain fully) but not for telemetry.
+struct TelemetryUploaderGuard(Option<TelemetryUploader>);
 
 impl Drop for TelemetryUploaderGuard {
     fn drop(&mut self) {
@@ -721,15 +721,14 @@ fn main() -> ExitCode {
 
     // Application Insights telemetry gets its own dedicated uploader/queue,
     // entirely separate from `bg_uploader` (which carries real log
-    // forwarding). Both uploaders drain their queue sequentially on a single
-    // background thread, so sharing one between telemetry and logs would let
-    // a slow-but-successful telemetry endpoint build a backlog that delays
-    // operational log uploads. Failure to start is not fatal: telemetry
-    // simply becomes a no-op, mirroring failure handling on the handle
-    // itself.
+    // forwarding): a `TelemetryUploader` rather than a `BackgroundUploader`,
+    // so a slow-but-successful telemetry endpoint can never build a backlog
+    // that delays operational log uploads. Failure to start is not fatal:
+    // telemetry simply becomes a no-op, mirroring failure handling on the
+    // handle itself.
     let telemetry_uploader = telemetry_enabled
         .then(
-            || match BackgroundUploader::new_ring(TELEMETRY_QUEUE_CAPACITY) {
+            || match TelemetryUploader::new(TELEMETRY_QUEUE_CAPACITY) {
                 Ok(uploader) => Some(uploader),
                 Err(e) => {
                     eprintln!(
@@ -741,7 +740,7 @@ fn main() -> ExitCode {
         )
         .flatten();
     // Wrapped immediately so every return path in main() below shuts it
-    // down with a bounded deadline, not BackgroundUploader's own unbounded
+    // down with a bounded deadline, not TelemetryUploader's own unbounded
     // Drop.
     let telemetry_uploader = TelemetryUploaderGuard(telemetry_uploader);
 
