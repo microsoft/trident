@@ -11,7 +11,7 @@ use std::{
 
 use anyhow::{bail, Context, Error};
 use log::{debug, error};
-use reqwest::Client;
+use reqwest::{redirect::Policy, Client};
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender, WeakUnboundedSender},
     oneshot, Notify,
@@ -19,7 +19,24 @@ use tokio::sync::{
 use url::{Origin, Url};
 
 /// A static HTTP client for background uploads.
-static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
+///
+/// Redirects are only followed while the redirected URL stays `https`.
+/// Telemetry uploads (e.g. Application Insights) carry host identifiers,
+/// so an HTTPS-only endpoint must never be silently downgraded to
+/// plaintext via a 307/308 redirect to an `http://` URL -- reqwest's
+/// default policy follows redirects of any scheme.
+static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .redirect(Policy::custom(|attempt| {
+            if attempt.url().scheme() == "https" {
+                attempt.follow()
+            } else {
+                attempt.error("refusing to follow redirect to a non-https URL")
+            }
+        }))
+        .build()
+        .expect("failed to build HTTP_ASYNC_CLIENT")
+});
 
 /// The module path of the background uploader. Can be used for filtering logs.
 pub(super) const BACKGROUND_LOG_MODULE: &str = module_path!();
@@ -844,6 +861,50 @@ mod tests {
 
         redirect_mock.assert();
         should_not_hit.assert();
+    }
+
+    #[test]
+    /// The HTTP client must refuse to follow a redirect whose target is not
+    /// `https`, even though the redirect response itself succeeds -- an
+    /// HTTPS-only telemetry endpoint must never be silently downgraded to
+    /// plaintext by a 307/308 redirect to an `http://` URL.
+    fn test_upload_loop_rejects_redirect_to_non_https_url() {
+        init_test_logging();
+
+        let mut server = Server::new();
+        let redirect_mock = server
+            .mock("POST", "/redirect")
+            .with_status(307)
+            .with_header("location", "http://example.invalid/plaintext-upload")
+            .expect(1)
+            .create();
+
+        let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
+
+        sender
+            .send(UploadData {
+                url: Url::parse(&server.url())
+                    .unwrap()
+                    .join("/redirect")
+                    .unwrap(),
+                body: b"redirect-me".to_vec(),
+                timeout: Duration::from_secs(2),
+                content_type: None,
+                response_validator: None,
+            })
+            .unwrap();
+
+        drop(sender);
+
+        run_in_runtime(async {
+            BackgroundUploader::upload_loop(receiver).await;
+        });
+
+        // The redirect response was received, but the client must not have
+        // actually sent a request to the plaintext `http://example.invalid`
+        // target -- there is no mock for it, so a follow would panic/error
+        // out with a connection failure rather than silently succeeding.
+        redirect_mock.assert();
     }
 
     #[test]
