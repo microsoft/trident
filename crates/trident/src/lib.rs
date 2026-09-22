@@ -161,7 +161,10 @@ impl Trident {
     /// Identical to [`Self::new`], except it never attaches a persisted
     /// `installation_id` to `tracestream` at construction time (this
     /// invocation's earliest events, up to and including `trident_start`,
-    /// are simply left unattributed).
+    /// have no persisted installation_id attached here -- though
+    /// `merge_operation_context` still backfills `installation_id` with
+    /// this invocation's own `operation_id` as a fallback, so they are not
+    /// entirely unattributed).
     ///
     /// Only meant for the CLI's multiboot install path (see `main.rs`): a
     /// multiboot install on an already-provisioned host may go on to swap

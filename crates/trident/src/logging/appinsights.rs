@@ -716,7 +716,7 @@ mod functional_test {
             }
         });
 
-        let uploader = crate::BackgroundUploader::new().expect("should build uploader");
+        let uploader = crate::TelemetryUploader::new(16).expect("should build uploader");
         let sender = AppInsightsSender::from_parts(
             ConnParts {
                 ingestion_endpoint: format!("http://{addr}"),

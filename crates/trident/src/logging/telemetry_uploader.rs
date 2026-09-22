@@ -103,6 +103,9 @@ impl TelemetryUploader {
     /// Telemetry producers must never block on enqueue, but a slow endpoint
     /// still should not be allowed to grow backlog without bound.
     pub fn new(capacity: usize) -> Result<Self, Error> {
+        if capacity == 0 {
+            bail!("telemetry uploader capacity must be greater than zero");
+        }
         let ring = TelemetryRing::new(capacity);
         let handle = upload_core::spawn_uploader_thread(Self::ring_upload_loop(ring.clone()))?;
         Ok(Self {

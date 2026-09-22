@@ -241,7 +241,14 @@ impl TridentServer {
         // Untelemetered, same as the lock-busy rejections above: this is
         // admission control, not a distinct servicing outcome.
         if !DataStore::may_initialize_datastore_for_command(name)
-            && !self.agent_config.datastore_path().exists()
+            && !self
+                .agent_config
+                .datastore_path()
+                .try_exists()
+                .map_err(|e| {
+                    error!("Failed to check datastore existence: {e}");
+                    Status::internal("failed to check datastore state")
+                })?
         {
             warn!("Rejected request '{}': datastore does not exist", name);
             return Err(Status::failed_precondition("Host is not provisioned"));

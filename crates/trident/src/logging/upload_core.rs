@@ -19,18 +19,26 @@ use url::{Origin, Url};
 
 /// A static HTTP client for background uploads.
 ///
-/// Redirects are only followed while the redirected URL stays `https`.
-/// Telemetry uploads (e.g. Application Insights) carry host identifiers,
-/// so an HTTPS-only endpoint must never be silently downgraded to
-/// plaintext via a 307/308 redirect to an `http://` URL -- reqwest's
-/// default policy follows redirects of any scheme.
+/// Redirects are followed unless they would downgrade an HTTPS request to
+/// a non-HTTPS URL. Telemetry uploads (e.g. Application Insights) always
+/// start as HTTPS and so stay protected, while HTTP endpoints (e.g.
+/// logstream/tracestream forwarding, which this client is also used for)
+/// may still redirect within HTTP -- reqwest's default policy would
+/// otherwise follow redirects of any scheme, and a naive https-only check
+/// would wrongly break those HTTP redirects.
 pub(super) static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(|| {
     Client::builder()
         .redirect(Policy::custom(|attempt| {
-            if attempt.url().scheme() == "https" {
-                attempt.follow()
+            let started_https = attempt
+                .previous()
+                .first()
+                .is_some_and(|u| u.scheme() == "https");
+            if started_https && attempt.url().scheme() != "https" {
+                attempt.error("refusing to follow an HTTPS -> non-HTTPS redirect")
+            } else if attempt.previous().len() >= 10 {
+                attempt.error("too many redirects")
             } else {
-                attempt.error("refusing to follow redirect to a non-https URL")
+                attempt.follow()
             }
         }))
         .build()
