@@ -17,20 +17,53 @@ use reqwest::{redirect::Policy, Client};
 use tokio::sync::oneshot;
 use url::{Origin, Url};
 
+/// Maximum redirect chain length. `Policy::custom` disables reqwest's
+/// built-in cap, so this replicates it (reqwest's `Policy::default()`
+/// also stops following after 10 redirects).
+const MAX_REDIRECTS: usize = 10;
+
+/// Decides whether a redirect should be followed, given whether the
+/// original request started as `https` and the scheme of the redirect
+/// target. Pulled out of the `Policy::custom` closure below so it can be
+/// unit-tested directly (mockito only serves plain HTTP, so an HTTPS ->
+/// HTTP downgrade can't be exercised end-to-end without a real TLS
+/// endpoint).
+///
+/// Returns `Ok(())` to follow the redirect, or `Err(reason)` to refuse it.
+fn redirect_decision(
+    started_https: bool,
+    target_scheme: &str,
+    redirects_so_far: usize,
+) -> Result<(), &'static str> {
+    if started_https && target_scheme != "https" {
+        Err("refusing to follow an HTTPS -> non-HTTPS redirect")
+    } else if redirects_so_far >= MAX_REDIRECTS {
+        Err("too many redirects")
+    } else {
+        Ok(())
+    }
+}
+
 /// A static HTTP client for background uploads.
 ///
-/// Redirects are only followed while the redirected URL stays `https`.
-/// Telemetry uploads (e.g. Application Insights) carry host identifiers,
-/// so an HTTPS-only endpoint must never be silently downgraded to
-/// plaintext via a 307/308 redirect to an `http://` URL -- reqwest's
-/// default policy follows redirects of any scheme.
+/// Redirects are followed unless they would downgrade an HTTPS request to
+/// a non-HTTPS URL. Telemetry uploads (e.g. Application Insights) always
+/// start as HTTPS and so stay protected, while HTTP endpoints (e.g.
+/// logstream/tracestream forwarding, which this client is also used for)
+/// may still redirect within HTTP -- reqwest's default policy would
+/// otherwise follow redirects of any scheme, and a naive https-only check
+/// would wrongly break those HTTP redirects.
 pub(super) static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(|| {
     Client::builder()
         .redirect(Policy::custom(|attempt| {
-            if attempt.url().scheme() == "https" {
-                attempt.follow()
-            } else {
-                attempt.error("refusing to follow redirect to a non-https URL")
+            let started_https = attempt
+                .previous()
+                .first()
+                .is_some_and(|u| u.scheme() == "https");
+            match redirect_decision(started_https, attempt.url().scheme(), attempt.previous().len())
+            {
+                Ok(()) => attempt.follow(),
+                Err(reason) => attempt.error(reason),
             }
         }))
         .build()
@@ -378,18 +411,47 @@ mod tests {
     }
 
     #[test]
-    /// The client must refuse redirects whose target is not `https`, even
-    /// if the redirect response itself succeeds.
-    fn test_attempt_upload_rejects_redirect_to_non_https_url() {
+    /// `redirect_decision` must refuse a redirect that downgrades an
+    /// HTTPS request to a non-HTTPS target. This is the actual regression
+    /// coverage for the HTTPS-downgrade protection: mockito only serves
+    /// plain HTTP, so this can't be exercised end-to-end with a real
+    /// request (see `test_attempt_upload_follows_http_to_http_redirect`
+    /// below for the end-to-end HTTP -> HTTP case this client also needs
+    /// to support).
+    fn test_redirect_decision_rejects_https_to_http_downgrade() {
+        assert!(redirect_decision(true, "http", 0).is_err());
+    }
+
+    #[test]
+    /// An HTTPS request redirecting to another HTTPS target is unaffected.
+    fn test_redirect_decision_allows_https_to_https() {
+        assert!(redirect_decision(true, "https", 0).is_ok());
+    }
+
+    #[test]
+    /// `redirect_decision` caps the redirect chain length, since
+    /// `Policy::custom` disables reqwest's own default limit.
+    fn test_redirect_decision_enforces_redirect_limit() {
+        assert!(redirect_decision(false, "http", MAX_REDIRECTS).is_err());
+        assert!(redirect_decision(false, "http", MAX_REDIRECTS - 1).is_ok());
+    }
+
+    #[test]
+    /// End-to-end: an HTTP -> HTTP redirect must actually be followed
+    /// (unlike the old https-only policy this replaced, which would have
+    /// wrongly rejected this and broken supported HTTP logstream/
+    /// tracestream redirects).
+    fn test_attempt_upload_follows_http_to_http_redirect() {
         init_test_logging();
 
         let mut server = Server::new();
         let redirect_mock = server
             .mock("POST", "/redirect")
             .with_status(307)
-            .with_header("location", "http://example.invalid/plaintext-upload")
+            .with_header("location", "/redirect-target")
             .expect(1)
             .create();
+        let target_mock = server.mock("POST", "/redirect-target").expect(1).create();
 
         let url = Url::parse(&server.url())
             .unwrap()
@@ -401,15 +463,12 @@ mod tests {
             let outcome = attempt_upload(&mut cooldowns, mock_upload(url, "redirect-me")).await;
             assert!(matches!(
                 outcome,
-                AttemptOutcome::Attempted { succeeded: false }
+                AttemptOutcome::Attempted { succeeded: true }
             ));
         });
 
-        // The redirect response was received, but the client must not have
-        // actually sent a request to the plaintext `http://example.invalid`
-        // target -- there is no mock for it, so a follow would panic/error
-        // out with a connection failure rather than silently succeeding.
         redirect_mock.assert();
+        target_mock.assert();
     }
 
     #[test]
