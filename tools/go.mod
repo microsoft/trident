@@ -10,7 +10,7 @@ require (
 	github.com/flatcar/nebraska/backend v0.0.0-20260806113018-30a488d8d300
 	github.com/google/uuid v1.6.0
 	github.com/knqyf263/go-rpmdb v0.1.1
-	github.com/microsoft/storm v0.4.0-alpha1.0.20260915230908-b0077be6100d
+	github.com/microsoft/storm v0.4.0-alpha2
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.9
