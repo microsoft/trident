@@ -7,15 +7,10 @@
 //! *connection string* (`InstrumentationKey=<k>;IngestionEndpoint=<url>;...`)
 //! ourselves and build the raw Application Insights `EventData` envelope.
 //!
-//! Sending is delegated to the same [`super::background_uploader`] used by
-//! [`super::logstream::Logstream`]: `send_event` only enqueues the envelope
-//! and returns immediately, so tracing-layer callbacks (which run on
-//! whichever thread emitted the event) are never blocked on network I/O.
-//! The background uploader performs the actual `POST` to
-//! `${ingestion_endpoint}/v2/track` with a short, bounded timeout on its own
-//! dedicated thread. Failures (enqueue, network, non-2xx, etc.) are
-//! logged and otherwise swallowed -- telemetry must never be able to affect
-//! servicing outcomes.
+//! Sending is delegated to [`super::telemetry_uploader`], separate from the
+//! log-forwarding uploader used by [`super::logstream::Logstream`].
+//! `send_event` only enqueues the envelope; the actual POST runs on a dedicated
+//! thread, and failures are logged but never allowed to affect servicing.
 
 use std::{
     collections::BTreeMap,
@@ -34,7 +29,7 @@ use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 use url::Url;
 
 use super::{
-    background_uploader::BackgroundUploadHandle,
+    telemetry_uploader::TelemetryUploadHandle,
     tracestream::{merge_operation_context, PLATFORM_INFO},
 };
 use crate::TRIDENT_VERSION;
@@ -195,7 +190,7 @@ fn stringify(value: &Value) -> String {
 pub struct AppInsightsSender {
     instrumentation_key: String,
     track_url: Url,
-    uploader: BackgroundUploadHandle,
+    uploader: TelemetryUploadHandle,
     /// The same persistent, per-host installation ID handle used by
     /// `TraceStream`/`TraceSender` (see `TraceStream::installation_id_handle`),
     /// so Application Insights events can be correlated back to a specific
@@ -220,7 +215,7 @@ impl AppInsightsSender {
     /// Monitor ingestion endpoints require HTTPS.
     pub fn from_connection_string(
         connection_string: &str,
-        uploader: BackgroundUploadHandle,
+        uploader: TelemetryUploadHandle,
         installation_id: Arc<RwLock<Option<String>>>,
         servicing_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
@@ -240,7 +235,7 @@ impl AppInsightsSender {
 
     fn from_parts(
         parts: ConnParts,
-        uploader: BackgroundUploadHandle,
+        uploader: TelemetryUploadHandle,
         installation_id: Arc<RwLock<Option<String>>>,
         servicing_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
@@ -331,18 +326,9 @@ impl AppInsightsSender {
 }
 
 /// Response validator for the Application Insights `/v2/track` endpoint
-/// (see [`BackgroundUploadHandle::upload_with_validator`]). A 2xx status
-/// alone is not sufficient here: the endpoint returns 206 Partial Success
-/// when only some of the submitted items were accepted, with an
-/// `itemsReceived`/`itemsAccepted` body. Since every request from this
-/// sender carries exactly one envelope, the only response that actually
-/// means "accepted" is `itemsReceived == 1 && itemsAccepted == 1` --
-/// checking mere equality between the two counts would also accept
-/// impossible pairs for a one-envelope request (e.g. `0/0` or `2/2`),
-/// silently clearing backoff even though the event wasn't received as
-/// expected. Anything other than exactly `1/1` is treated as a failure so
-/// it goes through the same retry/backoff path as a network-level error,
-/// instead of being silently discarded as a false "success".
+/// (see [`TelemetryUploadHandle::upload_with_validator`]). Each request here
+/// carries exactly one envelope, so only `itemsReceived == 1 && itemsAccepted == 1`
+/// counts as success; anything else is treated like a failed upload.
 fn validate_track_response(status: reqwest::StatusCode, body: &[u8]) -> Result<(), anyhow::Error> {
     if status != reqwest::StatusCode::PARTIAL_CONTENT {
         return Ok(());
@@ -595,7 +581,7 @@ mod tests {
     fn test_from_connection_string_empty_is_none() {
         assert!(AppInsightsSender::from_connection_string(
             "",
-            BackgroundUploadHandle::new_mock(),
+            TelemetryUploadHandle::new_mock(),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
@@ -606,7 +592,7 @@ mod tests {
     fn test_from_connection_string_builds_sender() {
         let sender = AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=https://region.example/",
-            BackgroundUploadHandle::new_mock(),
+            TelemetryUploadHandle::new_mock(),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
@@ -625,7 +611,7 @@ mod tests {
     fn test_from_connection_string_rejects_non_https_endpoint() {
         assert!(AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=http://region.example/",
-            BackgroundUploadHandle::new_mock(),
+            TelemetryUploadHandle::new_mock(),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
