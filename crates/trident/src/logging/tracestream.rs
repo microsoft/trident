@@ -1094,6 +1094,55 @@ mod tests {
     }
 
     #[test]
+    /// Regression test for a Copilot review finding on PR #778 (lib.rs's
+    /// `trident_start` clock-read fallback): claimed that `f64::NAN`,
+    /// passed through `tracing::info!(value = ...)` to
+    /// `TraceEntryVisitor::record_f64`'s `json!(value)`, would make
+    /// `serde_json` unable to serialize the entry, panicking instead of
+    /// staying best-effort. Verifies end-to-end through the real
+    /// tracing -> visitor -> file-write pipeline (not just a standalone
+    /// `serde_json` snippet) that this doesn't happen: `json!(f64)` goes
+    /// through `Value::from(f64)`, which maps non-finite floats to
+    /// `Value::Null` rather than erroring, so the written line contains a
+    /// valid JSON `"value":null` and the file write completes normally.
+    fn test_tracestream_nan_metric_value_serializes_as_json_null() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
+            .with_filter(filter::LevelFilter::INFO);
+
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        tracing::info!(metric_name = "trident_start", value = f64::NAN);
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let entry_line = lines
+            .iter()
+            .find(|line| line.contains(r#""metric_name":"trident_start""#))
+            .expect("expected trident_start metric not found in the local metrics file");
+
+        // Confirm the line is valid, parseable JSON (i.e. writing a NaN
+        // value never broke serialization) and that the value field landed
+        // as JSON null rather than a literal 0 or a serialization failure.
+        let parsed: serde_json::Value =
+            serde_json::from_str(entry_line).expect("trace entry line must be valid JSON");
+        assert_eq!(
+            parsed.get("value"),
+            Some(&Value::Null),
+            "NaN metric value should serialize as JSON null, not a literal 0 or an error"
+        );
+    }
+
+    #[test]
     /// Regression test: `TraceStream::set_installation_id` must actually
     /// reach the serialized trace entry's `additional_fields.installation_id`
     /// -- the metric/span tests above only assert on `metric_name`/`value`
