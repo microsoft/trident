@@ -319,20 +319,11 @@ impl Trident {
             ));
         }
 
-        // CLOCK_BOOTTIME gives nanosecond-resolution time since boot
-        // (including any suspended time), unlike sysinfo::System::uptime()
-        // (or a naive /proc/uptime parse), which only exposes whole-second
-        // resolution. Best-effort: clock_gettime with a valid clock ID
-        // essentially never fails on Linux, but fall back to NaN (which
-        // serde_json serializes as JSON `null`, a genuine "not available"
-        // rather than a misleading literal zero) rather than failing
-        // startup if it somehow does.
-        let uptime_secs = nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME)
-            .map(|ts| Duration::from(ts).as_secs_f64())
-            .unwrap_or_else(|e| {
-                warn!("Failed to read CLOCK_BOOTTIME: {e}");
-                f64::NAN
-            });
+        // See `logging::tracestream::clock_boottime_uptime_secs` for the
+        // NaN-fallback rationale and its regression test.
+        let uptime_secs = logging::tracestream::clock_boottime_uptime_secs(
+            nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME),
+        );
         // `acl` and `arch` are process-lifetime, host-level facts (like
         // `vm`), so they're stamped onto every telemetry event via
         // `PLATFORM_INFO` (see

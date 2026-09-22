@@ -21,6 +21,31 @@ use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 
 use trident_api::error::TridentError;
 
+/// Reads `CLOCK_BOOTTIME` (nanosecond-resolution time since boot,
+/// including any suspended time -- unlike `sysinfo::System::uptime()` or a
+/// naive `/proc/uptime` parse, which only expose whole-second resolution)
+/// and converts it into the `trident_start` uptime metric value. Used by
+/// `Trident::new`'s startup telemetry (see the `trident_start` call site
+/// in `lib.rs`), which passes it the live `nix::time::clock_gettime`
+/// result.
+///
+/// Best-effort: `clock_gettime` with a valid clock ID essentially never
+/// fails on Linux, but falls back to `f64::NAN` -- which `json!()`
+/// serializes as JSON `null`, a genuine "not available" rather than a
+/// misleading literal zero (see
+/// `test_clock_boottime_uptime_secs_nan_fallback_serializes_as_json_null`
+/// below) -- rather than failing startup if it somehow does.
+pub(crate) fn clock_boottime_uptime_secs(
+    clock_read: Result<nix::sys::time::TimeSpec, nix::errno::Errno>,
+) -> f64 {
+    clock_read
+        .map(|ts| std::time::Duration::from(ts).as_secs_f64())
+        .unwrap_or_else(|e| {
+            warn!("Failed to read CLOCK_BOOTTIME: {e}");
+            f64::NAN
+        })
+}
+
 use osutils::{
     osrelease::{OsRelease, OS_RELEASE_PATH},
     uname, virt,
@@ -1094,18 +1119,26 @@ mod tests {
     }
 
     #[test]
-    /// Regression test for a Copilot review finding on PR #778 (lib.rs's
-    /// `trident_start` clock-read fallback): claimed that `f64::NAN`,
-    /// passed through `tracing::info!(value = ...)` to
+    /// Regression test for a Copilot review finding on PR #778: claimed
+    /// that `clock_boottime_uptime_secs`'s `f64::NAN` fallback, passed
+    /// through `tracing::info!(value = ...)` to
     /// `TraceEntryVisitor::record_f64`'s `json!(value)`, would make
     /// `serde_json` unable to serialize the entry, panicking instead of
-    /// staying best-effort. Verifies end-to-end through the real
-    /// tracing -> visitor -> file-write pipeline (not just a standalone
-    /// `serde_json` snippet) that this doesn't happen: `json!(f64)` goes
+    /// staying best-effort. Calls the exact function `lib.rs`'s
+    /// `trident_start` metric uses (see its call site), forcing the
+    /// failure branch with a synthetic `Errno`, then sends the resulting
+    /// value through the real tracing -> visitor -> file-write pipeline
+    /// (not just a standalone `serde_json` snippet): `json!(f64)` goes
     /// through `Value::from(f64)`, which maps non-finite floats to
     /// `Value::Null` rather than erroring, so the written line contains a
     /// valid JSON `"value":null` and the file write completes normally.
-    fn test_tracestream_nan_metric_value_serializes_as_json_null() {
+    fn test_clock_boottime_uptime_secs_nan_fallback_serializes_as_json_null() {
+        let uptime_secs = clock_boottime_uptime_secs(Err(nix::errno::Errno::EINVAL));
+        assert!(
+            uptime_secs.is_nan(),
+            "a failed clock read must fall back to NaN, not a misleading literal value"
+        );
+
         let temp_dir = tempfile::tempdir().unwrap();
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
@@ -1117,7 +1150,7 @@ mod tests {
             tracing_subscriber::Registry::default().with(trace_sender),
         );
 
-        tracing::info!(metric_name = "trident_start", value = f64::NAN);
+        tracing::info!(metric_name = "trident_start", value = uptime_secs);
 
         std::thread::sleep(std::time::Duration::from_millis(100));
 
