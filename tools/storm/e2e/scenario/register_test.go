@@ -241,7 +241,10 @@ func TestSplitTestsSkippedForCurrentRing_UsesPipelineOrderNotLexical(t *testing.
 		wantSkip bool
 	}{
 		{testrings.TestRingPrE2e, true},
-		{testrings.TestRingCi, true},
+		// Split A/B runs from 'ci' upwards, matching the legacy suite: its
+		// e2e-test-run.yml included the stage-finalize test for daily,
+		// validation, weekly and post_merge, and post_merge maps to 'ci'.
+		{testrings.TestRingCi, false},
 		{testrings.TestRingPre, false},
 		{testrings.TestRingFullValidation, false},
 	} {

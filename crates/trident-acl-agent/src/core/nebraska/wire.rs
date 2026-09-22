@@ -402,6 +402,28 @@ mod tests {
     }
 
     #[test]
+    fn bare_app_request_shape() {
+        // The request Client::probe() sends: neither <ping/> nor
+        // <updatecheck/>. Nebraska's Omaha handler only calls RegisterInstance
+        // when it sees <ping>, so a self-closing <app .../> with no child
+        // elements at all is what makes probe() a true no-op server-side.
+        let xml = xml_of(bare_app());
+
+        assert!(xml.contains(r#"appid="app-1""#), "{xml}");
+        assert!(!xml.contains("<event"), "{xml}");
+        assert!(!xml.contains("<ping"), "{xml}");
+        assert!(!xml.contains("<updatecheck"), "{xml}");
+        // The <app> element must be entirely self-closing (no children at
+        // all), not merely missing <ping>/<updatecheck> individually -- a
+        // regression that adds any other child element would still leave
+        // this probe non-inert.
+        assert!(
+            xml.contains(r#"machineid="mid-1"/>"#),
+            "expected a self-closing <app> with no children: {xml}"
+        );
+    }
+
+    #[test]
     fn update_check_request_shape() {
         let app = App::new(
             "app-1".into(),

@@ -10,6 +10,10 @@ use anyhow::{Context, Error, Result};
 pub const UKI_ADDON_DIR_SUFFIX: &str = ".extra.d";
 /// UKI Addon file suffix.
 pub const UKI_ADDON_FILE_SUFFIX: &str = ".addon.efi";
+/// UKI credential file suffix. Files with this suffix contain encrypted
+/// systemd credentials (produced by `systemd-creds`) and are consumed by
+/// systemd-stub at boot, alongside `.addon.efi` files.
+pub const UKI_CRED_FILE_SUFFIX: &str = ".cred";
 
 /// Returns the path to the addon directory associated with the given UKI file,
 /// which is expected to be named `<UKI_filename>.extra.d/`. For example, if the

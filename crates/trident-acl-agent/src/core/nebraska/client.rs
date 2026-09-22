@@ -419,6 +419,43 @@ impl<T: Transport> Client<T> {
         self.interpret_check(response)
     }
 
+    /// Proves the server is reachable, speaks Omaha, and resolves this
+    /// client's app/track, **without** any Nebraska-side registration or
+    /// update side effect.
+    ///
+    /// Despite the name, this deliberately does **not** send an Omaha
+    /// `<ping/>`: Nebraska's Omaha handler calls `RegisterInstance`
+    /// (upserting the instance's row, including the version this request
+    /// reports) whenever `<ping>` is present, entirely independent of
+    /// `<updatecheck>` -- a real Omaha `<ping/>` is *not* a no-op against
+    /// Nebraska. This sends a **bare** `<app>` with neither `<updatecheck/>`
+    /// nor `<ping/>`. Omitting both still exercises appid/group/track
+    /// resolution (Nebraska looks those up before considering either child
+    /// element) without writing anything, which is what a pure connectivity
+    /// probe needs.
+    ///
+    /// `check_for_update` is unsuitable for a connectivity probe for the
+    /// same reason plus more: it also grants -- and therefore marks
+    /// in-progress -- an update for the caller's machine id, which can then
+    /// collide with a real stage/finalize request for the same machine id
+    /// (see `error-updateInProgressOnInstance` on
+    /// [`AppStatus`](super::status::AppStatus)).
+    ///
+    /// `error-updateInProgressOnInstance` is treated as success here, same as
+    /// [`interpret_check`](Client::interpret_check): it only means some other
+    /// update is genuinely in flight for this instance, which still proves
+    /// the server is reachable and resolved the app/track.
+    pub fn probe(&self, current_version: &Version) -> Result<(), NebraskaError> {
+        let app = self.app(current_version);
+        let response = self.send(app)?;
+        let app_response = self.app_response(&response)?;
+        if app_response.status.is_ok() || app_response.status.is_update_in_progress() {
+            Ok(())
+        } else {
+            Err(NebraskaError::ServerError(app_response.status.to_string()))
+        }
+    }
+
     /// Reports a [`ProgressEvent`] for an in-flight update.
     ///
     /// Only valid after a successful [`check_for_update`](Client::check_for_update)
@@ -1080,6 +1117,54 @@ mod tests {
             matches!(err, NebraskaError::UnexpectedResponse(_)),
             "got {err:?}"
         );
+    }
+
+    #[test]
+    fn probe_sends_neither_ping_nor_update_check_element() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"/></response>"#,
+        );
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+        let body = client.transport.last_body.borrow().clone().unwrap();
+        assert!(
+            !body.contains("<ping"),
+            "probe() must not send an Omaha <ping/>: Nebraska calls RegisterInstance \
+             (upserting the instance's row) whenever it sees one, independent of \
+             <updatecheck/>: {body}"
+        );
+        assert!(
+            !body.contains("<updatecheck"),
+            "probe() must not request an update check: {body}"
+        );
+    }
+
+    #[test]
+    fn probe_succeeds_on_ok_status() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"/></response>"#,
+        );
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+    }
+
+    #[test]
+    fn probe_succeeds_on_update_in_progress_status() {
+        // Some other update already in flight for this instance still proves
+        // the server is reachable and resolved the app/track -- probe() must
+        // not treat this as a failure, mirroring check_for_update's own
+        // handling of this status via interpret_check.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"/></response>"#,
+        );
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+    }
+
+    #[test]
+    fn probe_fails_on_other_error_status() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-unknownApplication"/></response>"#,
+        );
+        let err = client.probe(&Version::new(1, 0, 0)).unwrap_err();
+        assert!(matches!(err, NebraskaError::ServerError(_)), "{err:?}");
     }
 
     #[test]
