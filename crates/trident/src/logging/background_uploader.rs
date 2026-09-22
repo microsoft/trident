@@ -18,10 +18,8 @@ use super::upload_core::{
 pub(super) use super::upload_core::BACKGROUND_LOG_MODULE;
 
 /// A background uploader that sends log data to a remote server
-/// asynchronously, via an unbounded pending-upload queue -- used for real
-/// log forwarding, where losing queued data is not acceptable. See
-/// [`super::telemetry_uploader::TelemetryUploader`] for the bounded
-/// counterpart used by best-effort telemetry.
+/// asynchronously, via an unbounded pending-upload queue -- losing queued
+/// data is not acceptable, so items are never dropped under backpressure.
 ///
 /// When dropped it will finish any pending uploads and shut down the background
 /// thread.
@@ -65,10 +63,7 @@ impl BackgroundUploader {
     }
 
     /// Signals the uploader to shut down, waiting up to `deadline` for its
-    /// background thread to drain whatever is already queued and exit. See
-    /// [`super::telemetry_uploader::TelemetryUploader::shutdown_with_deadline`]
-    /// for the ring-backed uploader's counterpart, which is used instead of
-    /// this by callers with a stricter shutdown bound.
+    /// background thread to drain whatever is already queued and exit.
     pub fn shutdown_with_deadline(mut self, deadline: Duration) {
         let Some((sender, handle)) = self.inner.take() else {
             return;
