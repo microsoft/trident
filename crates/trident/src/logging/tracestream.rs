@@ -136,10 +136,7 @@ impl TraceStream {
     /// metrics-writing pipeline against a throwaway temp file instead of a
     /// real, shared host path, so they can be plain `#[test]`s instead of
     /// needing a VM.
-    pub(crate) fn make_trace_sender_with_metrics_path(
-        &self,
-        metrics_file_path: &str,
-    ) -> Box<TraceSender> {
+    fn make_trace_sender_with_metrics_path(&self, metrics_file_path: &str) -> Box<TraceSender> {
         Box::new(TraceSender::new(self.target.clone(), metrics_file_path))
     }
 }
@@ -175,12 +172,6 @@ impl TraceSender {
 
     fn get_server(&self) -> Option<String> {
         self.server.read().map(|s| s.clone()).unwrap_or_default()
-    }
-
-    /// Build the `additional_fields` map for a trace entry from the static
-    /// `ADDITIONAL_FIELDS`.
-    fn additional_fields(&self) -> BTreeMap<String, Value> {
-        ADDITIONAL_FIELDS.clone()
     }
 
     fn write_metric_to_file(&self, metric: String) {
@@ -248,7 +239,7 @@ where
             timestamp: Utc::now(),
             metric_name,
             value: json!(value),
-            additional_fields: self.additional_fields(),
+            additional_fields: ADDITIONAL_FIELDS.clone(),
             platform_info: PLATFORM_INFO.clone(),
         };
 
@@ -328,7 +319,7 @@ where
             timestamp: Utc::now(),
             metric_name: span.name().to_string(),
             value: json!(visitor.fields),
-            additional_fields: self.additional_fields(),
+            additional_fields: ADDITIONAL_FIELDS.clone(),
             platform_info: PLATFORM_INFO.clone(),
         };
 
