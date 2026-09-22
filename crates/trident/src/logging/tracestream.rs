@@ -4,7 +4,7 @@ use std::{
     io::Write,
     path::Path,
     sync::{Arc, RwLock},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Context, Error};
@@ -501,7 +501,26 @@ impl TraceSender {
             server,
             installation_id,
             servicing_id,
-            client: reqwest::blocking::Client::new(),
+            // Bounded so a hung/slow tracestream endpoint can only stall a
+            // caller for this long, not indefinitely -- `on_event`'s POST
+            // below can run inside `tokio::task::block_in_place` (see the
+            // `block_in_place` comment in `services/mod.rs`), which keeps
+            // it on a shared async runtime worker thread rather than a
+            // dedicated one, so an unbounded client here could tie up that
+            // worker forever. This is a stopgap, not a full fix: enough
+            // concurrent malformed requests can still occupy every worker
+            // thread for up to this timeout at once, repeatedly, for as
+            // long as the endpoint stays slow. The real fix is to stop
+            // sending this POST from the shared worker thread at all --
+            // e.g. hand it off to a bounded-queue background
+            // uploader/thread, the same pattern `AppInsightsSender`/
+            // `TelemetryUploader` already use (see `logging/appinsights.rs`
+            // and `logging/telemetry_uploader.rs`) -- so a hung endpoint
+            // can never block RPC handling, regardless of request volume.
+            client: reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+                .expect("failed to build tracestream HTTP client"),
             metrics_file: match metrics_file {
                 Ok(f) => Some(f),
                 Err(err) => {
