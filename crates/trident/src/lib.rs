@@ -65,6 +65,7 @@ pub use crate::{
             run_with_captured_operation, run_with_operation, save_reboot_operation,
             take_reboot_operation, OperationSource,
         },
+        telemetry_uploader::TelemetryUploader,
         tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
