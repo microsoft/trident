@@ -7,13 +7,14 @@
 //! *connection string* (`InstrumentationKey=<k>;IngestionEndpoint=<url>;...`)
 //! ourselves and build the raw Application Insights `EventData` envelope.
 //!
-//! Sending is delegated to the same [`super::background_uploader`] used by
-//! [`super::logstream::Logstream`]: `send_event` only enqueues the envelope
-//! and returns immediately, so tracing-layer callbacks (which run on
-//! whichever thread emitted the event) are never blocked on network I/O.
-//! The background uploader performs the actual `POST` to
-//! `${ingestion_endpoint}/v2/track` with a short, bounded timeout on its own
-//! dedicated thread. Failures (enqueue, network, non-2xx, etc.) are
+//! Sending is delegated to [`super::telemetry_uploader`], a dedicated
+//! best-effort uploader separate from the one
+//! [`super::logstream::Logstream`] uses for real log forwarding: `send_event`
+//! only enqueues the envelope and returns immediately, so tracing-layer
+//! callbacks (which run on whichever thread emitted the event) are never
+//! blocked on network I/O. The telemetry uploader performs the actual `POST`
+//! to `${ingestion_endpoint}/v2/track` with a short, bounded timeout on its
+//! own dedicated thread. Failures (enqueue, network, non-2xx, etc.) are
 //! logged and otherwise swallowed -- telemetry must never be able to affect
 //! servicing outcomes.
 
@@ -34,7 +35,7 @@ use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 use url::Url;
 
 use super::{
-    background_uploader::BackgroundUploadHandle,
+    telemetry_uploader::TelemetryUploadHandle,
     tracestream::{merge_operation_context, PLATFORM_INFO},
 };
 use crate::TRIDENT_VERSION;
@@ -195,7 +196,7 @@ fn stringify(value: &Value) -> String {
 pub struct AppInsightsSender {
     instrumentation_key: String,
     track_url: Url,
-    uploader: BackgroundUploadHandle,
+    uploader: TelemetryUploadHandle,
     /// The same persistent, per-host installation ID handle used by
     /// `TraceStream`/`TraceSender` (see `TraceStream::installation_id_handle`),
     /// so Application Insights events can be correlated back to a specific
@@ -220,7 +221,7 @@ impl AppInsightsSender {
     /// Monitor ingestion endpoints require HTTPS.
     pub fn from_connection_string(
         connection_string: &str,
-        uploader: BackgroundUploadHandle,
+        uploader: TelemetryUploadHandle,
         installation_id: Arc<RwLock<Option<String>>>,
         servicing_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
@@ -240,7 +241,7 @@ impl AppInsightsSender {
 
     fn from_parts(
         parts: ConnParts,
-        uploader: BackgroundUploadHandle,
+        uploader: TelemetryUploadHandle,
         installation_id: Arc<RwLock<Option<String>>>,
         servicing_id: Arc<RwLock<Option<String>>>,
     ) -> Option<Self> {
@@ -331,7 +332,7 @@ impl AppInsightsSender {
 }
 
 /// Response validator for the Application Insights `/v2/track` endpoint
-/// (see [`BackgroundUploadHandle::upload_with_validator`]). A 2xx status
+/// (see [`TelemetryUploadHandle::upload_with_validator`]). A 2xx status
 /// alone is not sufficient here: the endpoint returns 206 Partial Success
 /// when only some of the submitted items were accepted, with an
 /// `itemsReceived`/`itemsAccepted` body. Since every request from this
@@ -595,7 +596,7 @@ mod tests {
     fn test_from_connection_string_empty_is_none() {
         assert!(AppInsightsSender::from_connection_string(
             "",
-            BackgroundUploadHandle::new_mock(),
+            TelemetryUploadHandle::new_mock(),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
@@ -606,7 +607,7 @@ mod tests {
     fn test_from_connection_string_builds_sender() {
         let sender = AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=https://region.example/",
-            BackgroundUploadHandle::new_mock(),
+            TelemetryUploadHandle::new_mock(),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
@@ -625,7 +626,7 @@ mod tests {
     fn test_from_connection_string_rejects_non_https_endpoint() {
         assert!(AppInsightsSender::from_connection_string(
             "InstrumentationKey=k;IngestionEndpoint=http://region.example/",
-            BackgroundUploadHandle::new_mock(),
+            TelemetryUploadHandle::new_mock(),
             Arc::new(RwLock::new(None)),
             Arc::new(RwLock::new(None)),
         )
