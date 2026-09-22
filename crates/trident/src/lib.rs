@@ -334,7 +334,7 @@ impl Trident {
         // `PLATFORM_INFO` (see
         // `logging::tracestream::populate_platform_info`) instead of
         // being scoped to just this one metric.
-        tracing::info!(metric_name = "trident_start", uptime_secs = uptime_secs,);
+        tracing::info!(metric_name = "trident_start", value = uptime_secs,);
 
         Ok(Self {
             host_config,
