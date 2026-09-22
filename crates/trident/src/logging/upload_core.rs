@@ -1,14 +1,7 @@
-//! Low-level upload primitives shared by [`super::background_uploader`] (an
-//! unbounded queue used for real log forwarding, where losing queued data is
-//! not acceptable) and [`super::telemetry_uploader`] (a bounded ring used for
-//! best-effort Application Insights telemetry, where producers must never
-//! block or fail on enqueue). Everything here is queue-strategy-agnostic: it
-//! knows how to POST one [`UploadData`] and track per-origin backoff, and how
-//! to spin up the dedicated OS thread + Tokio runtime that drives an
-//! uploader's loop to completion -- but nothing about *how* items are
-//! queued, which is the part that actually differs between the two
-//! uploaders and is why each keeps its own queue type instead of sharing one
-//! here.
+//! Shared upload primitives for [`super::background_uploader`] and
+//! [`super::telemetry_uploader`]. This module handles one POST at a time,
+//! per-origin backoff, and the dedicated uploader thread/runtime; queueing
+//! stays with each uploader because their delivery policies differ.
 
 use std::{
     collections::HashMap,
@@ -51,23 +44,16 @@ pub(super) static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(|| {
 pub(super) const BACKGROUND_LOG_MODULE: &str = module_path!();
 
 /// Cooldown applied after an origin's first consecutive failure, doubled
-/// for each further consecutive failure (see [`OriginCooldown`]) up to
-/// [`MAX_ORIGIN_COOLDOWN`]. Bounding the backoff instead of disabling the
-/// origin outright means a healthy endpoint recovers on its own after a
-/// transient blip (a momentary network hiccup, a brief server restart),
-/// while a genuinely dead one is still backed off hard enough not to waste
-/// effort retrying it constantly.
+/// on each further failure up to [`MAX_ORIGIN_COOLDOWN`]. This keeps dead
+/// endpoints from being retried constantly while still allowing recovery.
 const BASE_ORIGIN_COOLDOWN: Duration = Duration::from_secs(30);
 
 /// Upper bound on the exponential backoff described above.
 const MAX_ORIGIN_COOLDOWN: Duration = Duration::from_secs(600);
 
-/// Validates an upload response beyond a bare 2xx status, for callers whose
-/// ingestion protocol can reject part of a request while still returning a
-/// 2xx status (e.g. Application Insights' 206 Partial Success). Given the
-/// response status and body, returns `Ok(())` if the upload should be
-/// treated as a success, or `Err` (triggering the same retry/backoff path
-/// as a network-level failure) otherwise.
+/// Validates a 2xx response for protocols that can still reject all or part
+/// of a request (for example Application Insights' 206 Partial Success).
+/// Return `Ok(())` to accept the upload, or `Err` to trigger normal retry/backoff.
 pub(super) type ResponseValidator = fn(reqwest::StatusCode, &[u8]) -> Result<(), Error>;
 
 /// Data to be uploaded.
@@ -112,20 +98,16 @@ pub(super) fn backoff_for_failures(consecutive_failures: u32) -> Duration {
         .min(MAX_ORIGIN_COOLDOWN)
 }
 
-/// Outcome of processing a single queued upload through [`attempt_upload`],
-/// distinguishing "skipped, origin is cooling down" from "actually
-/// attempted" (successfully or not). Used by the ring-backed loop (see
-/// `telemetry_uploader::ring_upload_loop`) to decide whether to keep
-/// draining during shutdown.
+/// Result of processing one queued upload through [`attempt_upload`].
+/// Used by the telemetry ring loop to tell "skipped due to cooldown" from
+/// an upload that was actually attempted.
 pub(super) enum AttemptOutcome {
     Attempted { succeeded: bool },
     SkippedCooldown,
 }
 
-/// Attempts a single queued upload, checking/updating `origin_cooldowns`.
-/// Shared by both the unbounded and ring-backed loops so this cooldown/
-/// backoff/response-validation logic has exactly one copy instead of it
-/// drifting between two.
+/// Attempts one queued upload and updates `origin_cooldowns`.
+/// Shared by both uploader loops so cooldown/backoff behavior stays identical.
 pub(super) async fn attempt_upload(
     origin_cooldowns: &mut OriginCooldowns,
     upload: UploadData,
@@ -145,18 +127,10 @@ pub(super) async fn attempt_upload(
     if let Some(content_type) = upload.content_type {
         request = request.header(reqwest::header::CONTENT_TYPE, content_type);
     }
-    // Treat non-2xx responses the same as a network-level failure: a
-    // consumer (e.g. AppInsightsSender) may document that rejected
-    // requests count as failures, so surface them here rather than
-    // silently treating any response as success. `error_for_status()`
-    // alone is not enough: it only rejects 4xx/5xx, so a 3xx (e.g. an
-    // unexpected redirect the client never followed) would still be
-    // reported as success. Explicitly require 2xx instead. A 2xx
-    // status alone is still not sufficient for every caller: some
-    // ingestion protocols (e.g. Application Insights) can return a
-    // 2xx (206 Partial Success) while rejecting part or all of the
-    // request body, so a caller-supplied `response_validator` gets
-    // the final say when present.
+    // Treat anything other than a validated 2xx as a failure. `error_for_status()`
+    // is not enough here because it would still accept 3xx responses, and some
+    // ingestion protocols can reject data while returning 2xx. When present,
+    // `response_validator` makes that final success/failure decision.
     let response_validator = upload.response_validator;
     let result: Result<(), Error> = match request.send().await {
         Ok(response) if response.status().is_success() => {
@@ -253,12 +227,9 @@ pub(super) fn spawn_uploader_thread(
     }
 }
 
-/// Waits up to `deadline` for `handle` to finish, returning its result if it
-/// does. `JoinHandle::join` has no built-in timeout, so this moves the
-/// actual join onto a throwaway thread and applies the timeout via a
-/// channel receive instead; if `deadline` elapses first, that throwaway
-/// thread (and by extension whatever `handle` was waiting on) is
-/// abandoned rather than awaited further.
+/// Waits up to `deadline` for `handle` to finish.
+/// Since `JoinHandle::join` has no timeout, the join runs on a helper thread
+/// and this call times out on the channel receive instead.
 pub(super) fn join_with_deadline<T: Send + 'static>(
     handle: JoinHandle<T>,
     deadline: Duration,
@@ -407,10 +378,8 @@ mod tests {
     }
 
     #[test]
-    /// The HTTP client must refuse to follow a redirect whose target is not
-    /// `https`, even though the redirect response itself succeeds -- an
-    /// HTTPS-only telemetry endpoint must never be silently downgraded to
-    /// plaintext by a 307/308 redirect to an `http://` URL.
+    /// The client must refuse redirects whose target is not `https`, even
+    /// if the redirect response itself succeeds.
     fn test_attempt_upload_rejects_redirect_to_non_https_url() {
         init_test_logging();
 
@@ -444,19 +413,13 @@ mod tests {
     }
 
     #[test]
-    /// Deliberately not exercised via a real uploader + network mock: a
-    /// genuinely abandoned background thread would keep running past this
-    /// test's own scope, in a process shared with every other test in the
-    /// suite, risking exactly the kind of cross-test port/resource
-    /// collisions a slow real HTTP mock invites under `cargo test`'s
-    /// default parallelism. `join_with_deadline` is pure std-only plumbing
-    /// (a thread + a timed channel receive), so testing it directly with a
-    /// plain `thread::spawn` gives the same coverage without that risk.
+    /// Test this directly with `thread::spawn` rather than a real uploader:
+    /// abandoning a live uploader thread would risk cross-test interference
+    /// under `cargo test`'s default parallelism.
     fn test_join_with_deadline_abandons_a_slow_thread() {
         let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
         let handle = std::thread::spawn(move || {
-            // Blocks until the test explicitly releases it below, standing
-            // in for a still-busy background uploader thread.
+            // Stand in for a still-busy background uploader thread.
             let _ = release_rx.recv();
         });
 
@@ -474,9 +437,8 @@ mod tests {
              the still-running thread; took {elapsed:?}"
         );
 
-        // Unlike the real "abandon" scenario this stands in for, we can
-        // cleanly unblock the spawned thread here, so it exits rather than
-        // lingering for the rest of the test binary's process lifetime.
+        // Cleanly release the stand-in thread so it does not linger for the
+        // rest of the test process.
         let _ = release_tx.send(());
     }
 }

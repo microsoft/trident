@@ -18,35 +18,20 @@ use super::upload_core::{
     UploadData,
 };
 
-/// A bounded, non-blocking FIFO queue of pending uploads: pushing past
-/// `capacity` evicts the oldest not-yet-attempted entry instead of
-/// blocking the producer or growing without bound. Used for telemetry --
-/// see [`TelemetryUploader::new`] -- where producers (a
-/// `tracing_subscriber::Layer` callback) must never block or fail on
-/// enqueue, ruling out a backpressured bounded channel (whose `send()`
-/// either awaits or rejects when full, neither of which is acceptable
-/// here), and where a genuinely *failing* endpoint is already
-/// self-limiting via `attempt_upload`'s per-origin cooldown, but a merely
-/// *slow* one is not: nothing would otherwise cap how large the backlog
-/// (or its memory) could grow while such an endpoint kept the loop busy.
+/// A bounded, non-blocking FIFO queue for telemetry uploads.
+/// Pushing past `capacity` evicts the oldest not-yet-attempted item instead
+/// of blocking producers or growing without bound.
 ///
-/// The `Mutex<VecDeque<_>>` critical section here is a brief, O(1),
-/// always-progressing push/pop -- categorically different from the
-/// backpressure this exists to avoid, which can block a producer for as
-/// long as the *consumer's* slow I/O takes (up to `attempt_upload`'s own
-/// request timeout).
+/// This is for best-effort telemetry: producers must never block on enqueue,
+/// but a merely slow endpoint still needs a backlog cap.
 struct TelemetryRing {
     queue: Mutex<VecDeque<UploadData>>,
     capacity: usize,
-    /// Woken on every push, and once more by `signal_stop`, so `pop`'s
-    /// wait can't outlive both a) new data arriving and b) shutdown being
-    /// requested with nothing left to push.
+    /// Woken on each push, and once more by `signal_stop`, so `pop` can
+    /// wake for either new data or shutdown.
     notify: Notify,
-    /// Set by `shutdown_with_deadline`/`Drop` before the join wait begins.
-    /// `ring_upload_loop` only consults this to decide whether to keep
-    /// draining *after* a failed upload -- during normal operation
-    /// (before this is set), a failure is handled exactly like the
-    /// unbounded uploader's (logged, backed off, keep going).
+    /// Set during shutdown. `ring_upload_loop` only uses this to decide
+    /// whether to keep draining after a failed upload.
     stop_requested: AtomicBool,
 }
 
@@ -61,14 +46,9 @@ impl TelemetryRing {
     }
 
     /// Enqueues `item`, or refuses it once shutdown has been signaled.
-    ///
-    /// The stop check and the enqueue happen under the same `queue` lock
-    /// that `signal_stop` and `pop` also take, so a handle can never
-    /// observe `stop_requested` as unset, then have its item land in the
-    /// queue *after* `pop` has already decided (under that same lock)
-    /// that the queue is empty and shutdown is complete -- which would
-    /// otherwise let `push` return `Ok(())` for an item that is silently
-    /// dropped instead of ever being processed.
+    /// The stop check and enqueue share the `queue` lock used by
+    /// `signal_stop`/`pop`, so `push` cannot report success for an item that
+    /// shutdown has already made unreachable.
     fn push(&self, item: UploadData) -> Result<(), Error> {
         let mut queue = self.queue.lock().unwrap();
         if self.stop_requested.load(Ordering::Acquire) {
@@ -100,9 +80,8 @@ impl TelemetryRing {
         }
     }
 
-    /// Signals shutdown under the same `queue` lock `push`/`pop` use, so
-    /// no concurrent `push` can slip an item past this point without
-    /// observing `stop_requested` -- see `push`'s doc comment.
+    /// Signals shutdown under the same `queue` lock used by `push`/`pop`; see
+    /// `push` for the race this prevents.
     fn signal_stop(&self) {
         let _queue = self.queue.lock().unwrap();
         self.stop_requested.store(true, Ordering::Release);
@@ -111,28 +90,18 @@ impl TelemetryRing {
     }
 }
 
-/// A background uploader for best-effort Application Insights telemetry,
-/// backed by a bounded [`TelemetryRing`] instead of the unbounded queue
-/// [`super::background_uploader::BackgroundUploader`] uses for real log
-/// forwarding -- see `TelemetryRing`'s doc comment for why telemetry needs a
-/// different queueing strategy. Shares its actual POST/backoff logic with
-/// that uploader via [`super::upload_core`].
-///
-/// When dropped it will finish any pending uploads and shut down the
-/// background thread; use [`Self::shutdown_with_deadline`] instead if that
-/// must be bounded (see its doc comment).
+/// Background uploader for best-effort Application Insights telemetry.
+/// Unlike [`super::background_uploader::BackgroundUploader`], this uses a
+/// bounded [`TelemetryRing`] so telemetry cannot build an unbounded backlog.
+/// POST/backoff logic is shared through [`super::upload_core`].
 pub struct TelemetryUploader {
     inner: Option<(Arc<TelemetryRing>, JoinHandle<()>)>,
 }
 
 impl TelemetryUploader {
-    /// Creates a new telemetry uploader with a pending-upload queue bounded
-    /// to at most `capacity` entries. Producers must never block or fail on
-    /// enqueue, and low telemetry volume plus the daemon's short-lived-
-    /// between-sparse-requests lifecycle make actual unbounded growth
-    /// unlikely in practice, but capping it is cheap insurance against a
-    /// slow-but-succeeding endpoint on a busier or longer-lived process
-    /// than typically expected.
+    /// Creates a new telemetry uploader with a queue capped at `capacity`.
+    /// Telemetry producers must never block on enqueue, but a slow endpoint
+    /// still should not be allowed to grow backlog without bound.
     pub fn new(capacity: usize) -> Result<Self, Error> {
         let ring = TelemetryRing::new(capacity);
         let handle = upload_core::spawn_uploader_thread(Self::ring_upload_loop(ring.clone()))?;
@@ -149,23 +118,10 @@ impl TelemetryUploader {
         })
     }
 
-    /// The main upload loop that processes incoming upload requests from
-    /// the ring. Behaves identically to
-    /// [`super::background_uploader::BackgroundUploader::upload_loop`]
-    /// during normal operation (a failed upload is logged, backed off via
-    /// `origin_cooldowns`, and the loop keeps going) -- it diverges only
-    /// once shutdown has been requested (`ring.pop()` returning items
-    /// after `signal_stop` was called): from that point, the *first*
-    /// failed upload stops the loop outright, abandoning whatever is left
-    /// queued, rather than continuing to drain it.
-    ///
-    /// This is a deliberate choice over draining the entire backlog
-    /// unconditionally: `shutdown_with_deadline`'s external deadline
-    /// already hard-caps how long anything waits on this loop, so a large
-    /// ring full of slow-but-succeeding uploads is not a correctness risk
-    /// either way -- but stopping on first failure avoids spending that
-    /// bounded shutdown window on retries to an endpoint that's *also* now
-    /// failing, in favor of exiting promptly.
+    /// Main upload loop for the telemetry ring.
+    /// During normal operation it behaves like the log uploader loop. After
+    /// shutdown is requested, the first failed upload stops draining so the
+    /// bounded shutdown window is not spent retrying an already failing endpoint.
     async fn ring_upload_loop(ring: Arc<TelemetryRing>) {
         let mut origin_cooldowns = OriginCooldowns::new();
 
@@ -183,20 +139,11 @@ impl TelemetryUploader {
         debug!("Telemetry uploader loop has exited");
     }
 
-    /// Signals the uploader to shut down, waiting up to `deadline` for its
-    /// background thread to drain whatever is already queued and exit.
+    /// Signals shutdown and waits up to `deadline` for the uploader thread
+    /// to drain queued work and exit.
     ///
-    /// `Drop`'s own shutdown (used when this isn't called explicitly) waits
-    /// unboundedly. Telemetry callers should call this explicitly instead,
-    /// since a slow-but-successful endpoint could otherwise stall process
-    /// exit for as long as it takes to drain every queued event -- telemetry
-    /// must never meaningfully delay Trident's actual work, including at
-    /// shutdown.
-    ///
-    /// If `deadline` elapses first, the background thread is abandoned
-    /// (its remaining queued requests may still complete before the
-    /// process actually exits, but this call returns without waiting
-    /// further for them).
+    /// Call this for telemetry when shutdown must be bounded. If the deadline
+    /// expires first, the thread is abandoned and this call returns immediately.
     pub fn shutdown_with_deadline(mut self, deadline: Duration) {
         let Some((ring, handle)) = self.inner.take() else {
             return;
@@ -248,9 +195,8 @@ impl TelemetryUploadHandle {
         self.upload_with_validator(url, body, timeout, content_type, None)
     }
 
-    /// Same as [`Self::upload`], but with an optional response validator
-    /// -- see `upload_core::UploadData`'s `response_validator` field doc
-    /// comment for its contract.
+    /// Same as [`Self::upload`], but with an optional response validator.
+    /// See `upload_core::UploadData::response_validator` for the contract.
     pub fn upload_with_validator(
         &self,
         url: &Url,
