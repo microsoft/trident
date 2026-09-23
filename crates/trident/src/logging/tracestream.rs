@@ -414,10 +414,7 @@ impl TraceStream {
     /// metrics-writing pipeline against a throwaway temp file instead of a
     /// real, shared host path, so they can be plain `#[test]`s instead of
     /// needing a VM.
-    fn make_trace_sender_with_metrics_path(
-        &self,
-        metrics_file_path: &str,
-    ) -> Box<TraceSender> {
+    fn make_trace_sender_with_metrics_path(&self, metrics_file_path: &str) -> Box<TraceSender> {
         Box::new(TraceSender::new(
             self.target.clone(),
             self.installation_id.clone(),

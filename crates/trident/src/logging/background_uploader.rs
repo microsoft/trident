@@ -1,7 +1,4 @@
-use std::{
-    thread::JoinHandle,
-    time::Duration,
-};
+use std::{thread::JoinHandle, time::Duration};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, error};

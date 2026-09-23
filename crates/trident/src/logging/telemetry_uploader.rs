@@ -132,9 +132,7 @@ impl TelemetryUploader {
             let draining = ring.stop_requested.load(Ordering::Acquire);
             let outcome = attempt_upload(&mut origin_cooldowns, upload).await;
             if draining && matches!(outcome, AttemptOutcome::Attempted { succeeded: false }) {
-                debug!(
-                    "Telemetry uploader stopping drain after a failed upload during shutdown"
-                );
+                debug!("Telemetry uploader stopping drain after a failed upload during shutdown");
                 break;
             }
         }
