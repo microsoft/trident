@@ -60,8 +60,11 @@ pub(super) static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(|| {
                 .previous()
                 .first()
                 .is_some_and(|u| u.scheme() == "https");
-            match redirect_decision(started_https, attempt.url().scheme(), attempt.previous().len())
-            {
+            match redirect_decision(
+                started_https,
+                attempt.url().scheme(),
+                attempt.previous().len(),
+            ) {
                 Ok(()) => attempt.follow(),
                 Err(reason) => attempt.error(reason),
             }
@@ -353,7 +356,11 @@ mod tests {
         init_test_logging();
 
         let mut server = Server::new();
-        let failing = server.mock("POST", "/fail").with_status(500).expect(1).create();
+        let failing = server
+            .mock("POST", "/fail")
+            .with_status(500)
+            .expect(1)
+            .create();
         let should_not_hit = server
             .mock("POST", "/upload")
             .with_status(200)

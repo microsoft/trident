@@ -709,17 +709,13 @@ fn main() -> ExitCode {
     // telemetry simply becomes a no-op, mirroring failure handling on the
     // handle itself.
     let telemetry_uploader = telemetry_enabled
-        .then(
-            || match TelemetryUploader::new(TELEMETRY_QUEUE_CAPACITY) {
-                Ok(uploader) => Some(uploader),
-                Err(e) => {
-                    eprintln!(
-                        "Failed to initialize telemetry uploader, disabling telemetry: {e:?}"
-                    );
-                    None
-                }
-            },
-        )
+        .then(|| match TelemetryUploader::new(TELEMETRY_QUEUE_CAPACITY) {
+            Ok(uploader) => Some(uploader),
+            Err(e) => {
+                eprintln!("Failed to initialize telemetry uploader, disabling telemetry: {e:?}");
+                None
+            }
+        })
         .flatten();
     // Wrapped immediately so every return path in main() below shuts it
     // down with a bounded deadline, not TelemetryUploader's own unbounded
