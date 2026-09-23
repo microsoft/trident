@@ -299,11 +299,6 @@ impl Trident {
         // attaching here even in that case.
         tracestream.attach_ids_if_present(datastore_path, !attach_installation_id);
 
-        // Trace features enabled in the Host Configuration.
-        if let Some(hc) = &host_config {
-            hc.feature_tracing();
-        }
-
         if let Ok(selinux_context) = fs::read_to_string("/proc/self/attr/current") {
             debug!(
                 "Trident is running in SELinux domain '{}'",
