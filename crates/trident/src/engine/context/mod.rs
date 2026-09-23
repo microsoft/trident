@@ -1047,11 +1047,10 @@ mod tests {
                 });
             }
 
-            let result = events
+            events
                 .lock()
                 .expect("metric events mutex should not be poisoned")
-                .clone();
-            result
+                .clone()
         }
 
         #[test]
