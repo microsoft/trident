@@ -5,6 +5,7 @@ use trident_api::{constants::IMAGE_CHECKSUM_IGNORED, error::TridentResultExt};
 use trident_proto::v1::{streaming_service_server::StreamingService, StreamDiskRequest};
 
 use crate::{
+    command_kind::CommandKind,
     server::{tridentserver::ServicingResponseStream, TridentServer},
     DataStore, Trident,
 };
@@ -23,7 +24,7 @@ impl StreamingService for TridentServer {
             Ok(url) => url,
             Err(e) => {
                 return Err(self.reject_invalid_field(
-                    "stream_disk",
+                    &CommandKind::stream_disk(),
                     "image_url",
                     e.to_string(),
                     format!("Invalid image URL '{}': {}", req.image_url, e),
@@ -42,7 +43,7 @@ impl StreamingService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "stream_disk",
+            CommandKind::stream_disk(),
             super::reboot_allowed(&req.reboot),
             move || {
                 let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
@@ -58,3 +59,4 @@ impl StreamingService for TridentServer {
         )
     }
 }
+

@@ -9,6 +9,7 @@ use trident_proto::v1::{
 };
 
 use crate::{
+    command_kind::CommandKind,
     server::{
         tridentserver::{RebootDecision, ServicingResponseStream},
         TridentServer,
@@ -26,7 +27,7 @@ impl UpdateService for TridentServer {
         let req = request.into_inner();
         let Some(staging) = req.stage else {
             return Err(self.reject_invalid_argument(
-                "update",
+                &CommandKind::update(),
                 "stage",
                 "Missing staging configuration",
             ));
@@ -34,7 +35,7 @@ impl UpdateService for TridentServer {
 
         let Some(host_config) = staging.config else {
             return Err(self.reject_invalid_argument(
-                "update",
+                &CommandKind::update(),
                 "stage.config",
                 "Missing host configuration in staging configuration",
             ));
@@ -42,7 +43,7 @@ impl UpdateService for TridentServer {
 
         let Some(finalize) = req.finalize else {
             return Err(self.reject_invalid_argument(
-                "update",
+                &CommandKind::update(),
                 "finalize",
                 "Missing finalize configuration",
             ));
@@ -53,7 +54,7 @@ impl UpdateService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "update",
+            CommandKind::update(),
             super::reboot_allowed(&finalize.reboot),
             move || {
                 let mut trident = Trident::new(
@@ -83,7 +84,7 @@ impl UpdateService for TridentServer {
 
         let Some(host_config) = req.config else {
             return Err(self.reject_invalid_argument(
-                "update_stage",
+                &CommandKind::update_stage(),
                 "config",
                 "Missing host configuration in staging configuration",
             ));
@@ -93,7 +94,7 @@ impl UpdateService for TridentServer {
         let logstream = self.logstream.clone();
         let tracestream = self.tracestream.clone();
 
-        self.servicing_request("update_stage", RebootDecision::Error, move || {
+        self.servicing_request(CommandKind::update_stage(), RebootDecision::Error, move || {
             let mut trident = Trident::new(
                 Some(HostConfigurationSource::RawString(host_config.config)),
                 &data_store_path,
@@ -123,7 +124,7 @@ impl UpdateService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "update_finalize",
+            CommandKind::update_finalize(),
             super::reboot_allowed(&finalize.reboot),
             move || {
                 let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
@@ -139,3 +140,4 @@ impl UpdateService for TridentServer {
         )
     }
 }
+

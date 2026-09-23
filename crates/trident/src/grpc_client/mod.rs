@@ -10,7 +10,6 @@ use trident_api::error::{InternalError, TridentError};
 
 use crate::{
     cli::{self, ClientArgs, ClientCommands, TridentExitCodes},
-    command_name,
     logging::operation_context,
     run_command_if, ExitKind, OperationSource, TRIDENT_VERSION,
 };
@@ -38,44 +37,17 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
     // `run_command_if`'s `Result<_, TridentError>` shape -- the original
     // anyhow context chain is preserved as the error's source and still
     // printed in full below.
-    // Install/Update/non-check-Rollback get the same stage/finalize-granular
-    // naming (`install_stage`, `update_finalize`, `rollback_stage`, etc.)
-    // the CLI and daemon use for servicing telemetry -- otherwise every
+    // `CommandKind` gives the same stage/finalize-granular naming
+    // (`install_stage`, `update_finalize`, `rollback_stage`, etc.) the CLI
+    // and daemon use for servicing telemetry -- otherwise every
     // grpc-client update/install/rollback would collapse to the generic
     // `client_update`/`client_install`/`client_rollback` regardless of
     // which operations were actually requested. `Rollback { check: true,
-    // .. }` is deliberately excluded here (falls to the generic branch
-    // below), mirroring `is_servicing_client_command`'s own read-only
-    // `rollback --check` exclusion and `main.rs`'s `Commands::Rollback {
-    // check: true, .. }` special-casing -- a dry-run check never stages
-    // or finalizes anything, so it has no stage/finalize distinction to
-    // report.
-    let command = match &args.command {
-        ClientCommands::Install {
-            allowed_operations, ..
-        }
-        | ClientCommands::Update {
-            allowed_operations, ..
-        }
-        | ClientCommands::Rollback {
-            check: false,
-            allowed_operations,
-            ..
-        } => command_name(
-            args.command.name().trim_start_matches("client-"),
-            &cli::to_operations(allowed_operations),
-        ),
-        // Every other variant's name() is also "client-"-prefixed (see
-        // `ClientCommands::name()`) -- strip it here too so e.g. `commit`/
-        // `stream_disk` match the CLI/daemon's own naming for the same
-        // logical command instead of reporting as `client_commit`/
-        // `client_stream_disk`.
-        _ => args
-            .command
-            .name()
-            .trim_start_matches("client-")
-            .replace('-', "_"),
-    };
+    // .. }` is deliberately excluded from stage/finalize naming (mirrors
+    // `main.rs`'s own `Commands::Rollback { check: true, .. }`
+    // special-casing) and from `is_servicing` below -- a dry-run check
+    // never stages or finalizes anything.
+    let kind = args.command.kind();
 
     // `run_client` (the actual RPC) runs *inside* this closure, not before
     // it, so `command_start` (fired by `run_command_if` the moment this
@@ -89,7 +61,7 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
     // wrapped `TridentError` and has no way to inspect that chain itself.
     let transport_failure = Cell::new(false);
     let result = run_command_if(
-        &command,
+        &kind,
         OperationSource::GrpcClient,
         || {
             let client_result = runtime.block_on(run_client(args));
@@ -98,7 +70,7 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
                 TridentError::with_source(InternalError::Internal("grpc-client command failed"), e)
             })
         },
-        |_error| transport_failure.get() && is_servicing_client_command(&args.command),
+        |_error| transport_failure.get() && kind.is_servicing(),
     );
 
     match result {
@@ -152,32 +124,6 @@ fn is_transport_failure(client_result: &Result<ExitKind, Error>) -> bool {
                 _ => false,
             })
     })
-}
-
-/// Whether `command` is a servicing operation for the purposes of the
-/// `command_error` contract documented in `docs/Reference/Telemetry.md`'s
-/// "Command Errors" section: only a servicing command's own failure gets a
-/// `command_error` event -- `command_start` still fires for every command
-/// (see the comment in `client_main` above). A read-only command like
-/// `client-version` can still hit a transport-level failure (the daemon it
-/// talked to was unreachable), but that failure isn't a "servicing command
-/// failed" in the sense the docs describe, so it's deliberately excluded
-/// here, mirroring the CLI's own read-only exclusions in `main.rs`.
-///
-/// `Rollback { check: true, .. }` is `rollback --check`, a read-only dry
-/// run (mirrors `main.rs`'s own `Commands::Rollback { check: true, .. }`
-/// special-casing) -- only a real (non-check) rollback is a servicing
-/// command here.
-fn is_servicing_client_command(command: &ClientCommands) -> bool {
-    matches!(
-        command,
-        ClientCommands::Install { .. }
-            | ClientCommands::Update { .. }
-            | ClientCommands::Commit
-            | ClientCommands::RebuildRaid { .. }
-            | ClientCommands::Rollback { check: false, .. }
-            | ClientCommands::StreamDisk { .. }
-    )
 }
 
 async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
@@ -277,3 +223,4 @@ async fn run_client(args: &ClientArgs) -> Result<ExitKind, Error> {
 
     Ok(ExitKind::Done)
 }
+

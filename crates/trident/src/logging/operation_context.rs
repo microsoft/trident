@@ -51,6 +51,8 @@ use uuid::Uuid;
 
 use trident_api::{config::Operations, error::TridentError};
 
+use crate::command_kind::CommandKind;
+
 /// Message used by `server::tridentserver::TridentServer::try_acquire_read_lock`/
 /// `try_acquire_write_lock` for the `Status::unavailable` returned when
 /// connection-lock contention blocks a request. `grpc_client::is_transport_failure`
@@ -133,7 +135,7 @@ pub fn should_generate_persistent_ids(source: OperationSource) -> bool {
 }
 
 thread_local! {
-    static CURRENT_OPERATION: RefCell<Option<(String, String, OperationSource)>> =
+    static CURRENT_OPERATION: RefCell<Option<(String, CommandKind, OperationSource)>> =
         const { RefCell::new(None) };
 
     /// Set once [`report_command_error`] has already fired for the
@@ -167,11 +169,15 @@ thread_local! {
 /// them in that event's own `value`/properties body -- a different schema
 /// from every other event, and invisible to consumers that only look at
 /// `additional_fields` for operation metadata.
-pub fn run_with_operation<R>(command: &str, source: OperationSource, f: impl FnOnce() -> R) -> R {
+pub fn run_with_operation<R>(
+    command: &CommandKind,
+    source: OperationSource,
+    f: impl FnOnce() -> R,
+) -> R {
     let operation_id = Uuid::new_v4().to_string();
 
     CURRENT_OPERATION.with(|cell| {
-        *cell.borrow_mut() = Some((operation_id, command.to_string(), source));
+        *cell.borrow_mut() = Some((operation_id, command.clone(), source));
     });
 
     struct ClearOnDrop;
@@ -190,7 +196,7 @@ pub fn run_with_operation<R>(command: &str, source: OperationSource, f: impl FnO
 
 /// Returns the `(operation_id, command, source)` triple set by
 /// [`run_with_operation`] for the calling thread, if any.
-pub(crate) fn current() -> Option<(String, String, OperationSource)> {
+pub(crate) fn current() -> Option<(String, CommandKind, OperationSource)> {
     CURRENT_OPERATION.with(|cell| cell.borrow().clone())
 }
 
@@ -202,7 +208,8 @@ pub(crate) fn current() -> Option<(String, String, OperationSource)> {
 /// which otherwise start with no thread-local context of their own and
 /// would silently drop these fields from their own metrics.
 #[derive(Clone)]
-pub struct CapturedOperation(String, String, OperationSource);
+pub struct CapturedOperation(String, CommandKind, OperationSource);
+
 
 /// Captures the calling thread's current operation context, if any, for
 /// later re-installation on another thread via
@@ -338,7 +345,7 @@ pub fn run_reboot_command<T>(
 /// existing panic handling (exit codes, gRPC error responses) is
 /// unaffected -- this only adds the metric emission that was missing.
 pub fn run_command<T>(
-    command: &str,
+    command: &CommandKind,
     source: OperationSource,
     f: impl FnOnce() -> Result<T, TridentError>,
 ) -> Result<T, TridentError> {
@@ -368,7 +375,7 @@ pub fn run_command<T>(
 /// `should_report`: unlike an error from elsewhere, a panic has no other
 /// reporter.
 pub fn run_command_if<T>(
-    command: &str,
+    command: &CommandKind,
     source: OperationSource,
     f: impl FnOnce() -> Result<T, TridentError>,
     should_report: impl FnOnce(&TridentError) -> bool,
@@ -422,13 +429,13 @@ pub(crate) fn report_command_error(error: &TridentError) {
 /// `String` panic message) is logged separately at `error` level, not
 /// included in the metric's own fields, since it's unstructured and of
 /// unbounded size.
-fn report_command_panic(command: &str, payload: &Box<dyn std::any::Any + Send>) {
+fn report_command_panic(command: &CommandKind, payload: &Box<dyn std::any::Any + Send>) {
     let message = payload
         .downcast_ref::<&str>()
         .map(|s| s.to_string())
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "<non-string panic payload>".to_string());
-    log::error!("Command '{command}' panicked: {message}");
+    log::error!("Command '{}' panicked: {message}", command.as_str());
     tracing::info!(
         metric_name = "command_error",
         kind = "panic",
@@ -450,9 +457,9 @@ mod tests {
     fn test_run_with_operation_sets_and_clears_context() {
         assert!(current().is_none());
 
-        let observed = run_with_operation("test_command", OperationSource::Cli, current);
+        let observed = run_with_operation(&CommandKind::for_test("test_command"), OperationSource::Cli, current);
         let (operation_id, command, source) = observed.expect("context should be set inside f");
-        assert_eq!(command, "test_command");
+        assert_eq!(command.as_str(), "test_command");
         assert_eq!(operation_id.len(), 36, "operation_id should be a UUID");
         assert_eq!(source, OperationSource::Cli);
 
@@ -477,7 +484,7 @@ mod tests {
         assert!(current().is_none());
 
         let result = std::panic::catch_unwind(|| {
-            run_with_operation("panicking_command", OperationSource::Cli, || {
+            run_with_operation(&CommandKind::for_test("panicking_command"), OperationSource::Cli, || {
                 panic!("boom");
             })
         });
@@ -491,8 +498,8 @@ mod tests {
 
     #[test]
     fn test_each_invocation_gets_a_fresh_operation_id() {
-        let first = run_with_operation("cmd", OperationSource::Cli, || current().unwrap().0);
-        let second = run_with_operation("cmd", OperationSource::Cli, || current().unwrap().0);
+        let first = run_with_operation(&CommandKind::for_test("cmd"), OperationSource::Cli, || current().unwrap().0);
+        let second = run_with_operation(&CommandKind::for_test("cmd"), OperationSource::Cli, || current().unwrap().0);
         assert_ne!(
             first, second,
             "each command invocation gets a fresh operation_id"
@@ -511,7 +518,7 @@ mod tests {
         // it on a different OS thread, mirroring MonitorMetrics's use.
         let (expected_operation_id, expected_command, expected_source, observed) =
             run_with_operation(
-                "cmd_from_parent_thread",
+                &CommandKind::for_test("cmd_from_parent_thread"),
                 OperationSource::GrpcClient,
                 || {
                     let captured = snapshot().expect("should capture a context");
@@ -552,7 +559,7 @@ mod tests {
         // share one flat thread-local slot, so nesting on one thread isn't
         // a supported combination. Verify the fresh-thread case clears
         // itself after returning.
-        let captured = run_with_operation("cmd", OperationSource::Daemon, snapshot);
+        let captured = run_with_operation(&CommandKind::for_test("cmd"), OperationSource::Daemon, snapshot);
         let still_set_inside = std::thread::spawn(move || {
             run_with_captured_operation(captured, || current().is_some())
         })
@@ -581,7 +588,7 @@ mod tests {
             "start with a clean slate"
         );
 
-        let expected = run_with_operation("install", OperationSource::Cli, || {
+        let expected = run_with_operation(&CommandKind::install(), OperationSource::Cli, || {
             save_reboot_operation();
             current().unwrap()
         });
@@ -623,12 +630,12 @@ mod tests {
             "start with a clean slate"
         );
 
-        let expected = run_with_operation("install", OperationSource::Cli, || {
+        let expected = run_with_operation(&CommandKind::install(), OperationSource::Cli, || {
             save_reboot_operation();
             current().unwrap()
         });
 
-        let observed: Result<(String, String, OperationSource), TridentError> =
+        let observed: Result<(String, CommandKind, OperationSource), TridentError> =
             run_reboot_command(|| Ok(current().unwrap()));
         assert_eq!(
             observed.unwrap(),
@@ -665,13 +672,13 @@ mod tests {
 
     #[test]
     fn test_run_command_passes_through_ok() {
-        let result: Result<i32, TridentError> = run_command("cmd", OperationSource::Cli, || Ok(42));
+        let result: Result<i32, TridentError> = run_command(&CommandKind::for_test("cmd"), OperationSource::Cli, || Ok(42));
         assert_eq!(result.unwrap(), 42);
     }
 
     #[test]
     fn test_run_command_passes_through_err_unchanged() {
-        let result: Result<(), TridentError> = run_command("cmd", OperationSource::Cli, || {
+        let result: Result<(), TridentError> = run_command(&CommandKind::for_test("cmd"), OperationSource::Cli, || {
             Err(TridentError::internal("boom"))
         });
         assert!(result.is_err());
@@ -679,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_run_command_clears_context_after_error() {
-        let _: Result<(), TridentError> = run_command("cmd", OperationSource::Cli, || {
+        let _: Result<(), TridentError> = run_command(&CommandKind::for_test("cmd"), OperationSource::Cli, || {
             Err(TridentError::internal("boom"))
         });
         assert!(
@@ -698,7 +705,7 @@ mod tests {
             tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
 
         let result: Result<(), TridentError> = run_command_if(
-            "cmd",
+            &CommandKind::for_test("cmd"),
             OperationSource::GrpcClient,
             || Err(TridentError::internal("boom")),
             |_error| false,
@@ -724,7 +731,7 @@ mod tests {
             tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
 
         let result: Result<(), TridentError> = run_command_if(
-            "cmd",
+            &CommandKind::for_test("cmd"),
             OperationSource::GrpcClient,
             || Err(TridentError::internal("boom")),
             |_error| true,
@@ -786,7 +793,7 @@ mod tests {
         let _guard =
             tracing::subscriber::set_default(tracing_subscriber::Registry::default().with(layer));
 
-        let _: Result<(), TridentError> = run_command("test_command", OperationSource::Cli, || {
+        let _: Result<(), TridentError> = run_command(&CommandKind::for_test("test_command"), OperationSource::Cli, || {
             Err(TridentError::internal("boom"))
         });
 
@@ -817,3 +824,4 @@ mod tests {
             .any(|e| e.get("metric_name").map(String::as_str) == Some("command_start")));
     }
 }
+

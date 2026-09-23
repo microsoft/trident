@@ -12,6 +12,7 @@ use trident_proto::v1preview::{
 };
 
 use crate::{
+    command_kind::CommandKind,
     server::{
         tridentserver::{datastore, ServicingResponseStream},
         TridentServer,
@@ -35,7 +36,7 @@ impl CommitService for TridentServer {
         let logstream = self.logstream.clone();
         let tracestream = self.tracestream.clone();
 
-        self.servicing_request("commit", super::reboot_allowed(&req.reboot), move || {
+        self.servicing_request(CommandKind::commit(), super::reboot_allowed(&req.reboot), move || {
             let mut trident: Trident = Trident::new(None, &data_store_path, logstream, tracestream)
                 .message("Failed to initialize Trident")?;
 
@@ -61,7 +62,7 @@ impl CommitServicePreview for TridentServer {
         &self,
         _request: Request<CheckRootRequest>,
     ) -> Result<Response<Self::CheckRootStream>, Status> {
-        self.servicing_request("check_root", RebootDecision::Error, || {
+        self.servicing_request(CommandKind::check_root(), RebootDecision::Error, || {
             Err(TridentError::new(InternalError::Internal(
                 "Not implemented: check_root",
             )))

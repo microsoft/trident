@@ -24,6 +24,7 @@ use crate::engine::manual_rollback::utils::{
     ManualRollbackRequestKind,
 };
 use crate::{
+    command_kind::CommandKind,
     server::{
         tridentserver::{RebootDecision, ServicingResponseStream},
         TridentServer,
@@ -61,14 +62,14 @@ impl RollbackService for TridentServer {
         let req = request.into_inner();
         let Some(stage) = req.stage else {
             return Err(self.reject_invalid_argument(
-                "rollback",
+                &CommandKind::rollback(),
                 "stage",
                 "Missing stage configuration",
             ));
         };
         let Some(finalize) = req.finalize else {
             return Err(self.reject_invalid_argument(
-                "rollback",
+                &CommandKind::rollback(),
                 "finalize",
                 "Missing finalize configuration",
             ));
@@ -79,7 +80,7 @@ impl RollbackService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "rollback",
+            CommandKind::rollback(),
             super::reboot_allowed(&finalize.reboot),
             move || {
                 let mut trident: Trident =
@@ -117,7 +118,7 @@ impl RollbackService for TridentServer {
         let logstream = self.logstream.clone();
         let tracestream = self.tracestream.clone();
 
-        self.servicing_request("rollback_stage", RebootDecision::Error, move || {
+        self.servicing_request(CommandKind::rollback_stage(), RebootDecision::Error, move || {
             let mut trident: Trident = Trident::new(None, &data_store_path, logstream, tracestream)
                 .message("Failed to initialize Trident")?;
 
@@ -150,7 +151,7 @@ impl RollbackService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "rollback_finalize",
+            CommandKind::rollback_finalize(),
             super::reboot_allowed(&finalize.reboot),
             move || {
                 let mut trident: Trident =
@@ -249,3 +250,4 @@ impl RollbackServicePreview for TridentServer {
         .await
     }
 }
+

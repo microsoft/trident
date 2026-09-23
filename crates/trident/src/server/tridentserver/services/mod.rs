@@ -3,6 +3,7 @@ use trident_api::error::{InvalidInputError, TridentError};
 use trident_proto::v1::{RebootHandling, RebootManagement};
 
 use crate::{
+    command_kind::CommandKind,
     logging::operation_context,
     server::tridentserver::{RebootDecision, TridentServer},
 };
@@ -49,7 +50,7 @@ impl TridentServer {
     #[track_caller]
     fn reject_invalid_argument(
         &self,
-        command: &str,
+        command: &CommandKind,
         field: &str,
         message: impl Into<String>,
     ) -> Status {
@@ -90,7 +91,7 @@ impl TridentServer {
     #[track_caller]
     fn reject_invalid_field(
         &self,
-        command: &str,
+        command: &CommandKind,
         field: &str,
         reason: impl Into<String>,
         message: impl Into<String>,
@@ -135,3 +136,4 @@ fn reboot_allowed(reboot_opt: &Option<RebootManagement>) -> RebootDecision {
         RebootDecision::Handle
     }
 }
+

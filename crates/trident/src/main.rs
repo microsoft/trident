@@ -8,7 +8,6 @@ use osutils::logging::{filter::LogFilter, multilog::MultiLogger};
 use trident::{
     agentconfig::AgentConfig,
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
-    command_name,
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
     run_command, run_reboot_command, save_reboot_operation, validation, AppInsightsSender,
@@ -136,33 +135,12 @@ fn run_trident(
     // Only servicing commands reach here: Install, Update, Commit,
     // RebuildRaid, and a non-check Rollback. These get command_start/
     // command_error telemetry via run_command below; the fast-exit
-    // commands above already returned without any.
-    let command = match &args.command {
-        Commands::Install {
-            allowed_operations, ..
-        } => command_name(args.command.name(), &cli::to_operations(allowed_operations)),
-        Commands::Update {
-            allowed_operations, ..
-        } => command_name(args.command.name(), &cli::to_operations(allowed_operations)),
-        Commands::Rollback {
-            allowed_operations, ..
-        } => command_name(args.command.name(), &cli::to_operations(allowed_operations)),
-        Commands::Commit { .. } | Commands::RebuildRaid { .. } => {
-            args.command.name().replace('-', "_")
-        }
-        Commands::StartNetwork { .. }
-        | Commands::Get { .. }
-        | Commands::Diagnose { .. }
-        | Commands::Validate { .. }
-        | Commands::OfflineInitialize { .. } => {
-            unreachable!("fast-exit commands already returned above")
-        }
-        #[cfg(feature = "pytest-generator")]
-        Commands::Pytest => unreachable!("fast-exit commands already returned above"),
-        Commands::Daemon { .. } | Commands::GrpcClient(_) => {
-            unreachable!("Daemon/GrpcClient are dispatched in main(), never reach run_trident")
-        }
-    };
+    // commands above already returned without any. `Commands::kind()` is
+    // total over every variant (including the fast-exit ones and
+    // Daemon/GrpcClient, none of which can actually reach here), so it
+    // renders the same wire name the old per-variant match did without
+    // needing `unreachable!()` arms to prove exhaustiveness.
+    let kind = args.command.kind();
 
     // Determine this up front, before the pre-warm attach below: a
     // multiboot install may swap to a brand-new temporary datastore
@@ -218,7 +196,7 @@ fn run_trident(
     };
     if let Some(path) = &config_path {
         if !path.exists() {
-            return run_command(&command, OperationSource::Cli, || {
+            return run_command(&kind, OperationSource::Cli, || {
                 Err(TridentError::new(InvalidInputError::ReadInputFile {
                     path: path.to_string_lossy().to_string(),
                 }))
@@ -235,7 +213,7 @@ fn run_trident(
     // own setup) and to keep converting an unwound panic into a non-zero
     // exit code below.
     let res = panic::catch_unwind(move || {
-        run_command(&command, OperationSource::Cli, || {
+        run_command(&kind, OperationSource::Cli, || {
             match &args.command {
                 Commands::Install { status, error, .. }
                 | Commands::Update { status, error, .. }
@@ -258,12 +236,11 @@ fn run_trident(
                     let agent_config = agent_config_result?;
                     // For commands that cannot themselves stage a new
                     // install/update (see
-                    // `DataStore::may_initialize_datastore_for_command`),
-                    // we expect the datastore to already exist. Update has
-                    // its own special handling for the CIH bootstrap
-                    // scenario further down.
-                    if !DataStore::may_initialize_datastore_for_command(&command)
-                        && !agent_config.datastore_path().exists()
+                    // `CommandKind::may_initialize_datastore`), we expect
+                    // the datastore to already exist. Update has its own
+                    // special handling for the CIH bootstrap scenario
+                    // further down.
+                    if !kind.may_initialize_datastore() && !agent_config.datastore_path().exists()
                     {
                         return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                             .message("Datastore file does not exist");
@@ -545,51 +522,19 @@ fn setup_tracing(
         | Commands::Diagnose { .. }
         | Commands::OfflineInitialize { .. }
         | Commands::StartNetwork { .. } => {
-            // Truncating the local metrics file is only appropriate for a
-            // process that actually owns the file's lifecycle for a fresh
-            // servicing run -- Install/Update/Commit/RebuildRaid/Rollback
-            // (finalize)/Daemon -- since those are the operations whose
-            // metrics history is meaningful to reset per invocation. Every
-            // other command reads or inspects existing state without
-            // mutating it, so it must append instead of truncating -- not
-            // because any of them emit command_start/command_error or any
-            // other metric_name event of their own (they don't; see
-            // run_trident), but because simply *opening* the file with
-            // truncation is itself destructive:
-            // * `validate`, `get`, `diagnose`, `offline-initialize`,
-            //   `start-network`, and a manual rollback `--check` are all
-            //   read-only/fast commands that never start a servicing run --
-            //   truncating here would erase the preceding servicing
-            //   metrics history just because one of these ran afterward.
-            // * `Commands::GrpcClient` -- *every* subcommand of it, not
-            //   just its own read-only ones (`get`, `validate`,
-            //   `rollback --check`) -- never owns this file either way: by
-            //   definition it only ever talks to an *already-running*
-            //   daemon, which is the file's sole owner for as long as it's
-            //   up. That makes truncation from a grpc-client process
-            //   incorrect unconditionally, including for
-            //   install/update/rollback (finalize) subcommands: those
-            //   still start a *servicing* run, but that run is owned and
-            //   recorded by the daemon, not by the short-lived grpc-client
-            //   process asking for it. Previously only the read-only
-            //   grpc-client subcommands were special-cased here, so a
-            //   `grpc-client install`/`update`/`rollback` truncated the
-            //   shared local metrics file out from under the daemon's own
-            //   concurrent appends -- the exact race this append-mode
-            //   split was meant to prevent.
-            let local_sender = if matches!(
-                args.command,
-                Commands::GrpcClient(_)
-                    | Commands::Diagnose { .. }
-                    | Commands::Validate { .. }
-                    | Commands::Get { .. }
-                    | Commands::OfflineInitialize { .. }
-                    | Commands::StartNetwork { .. }
-                    | Commands::Rollback { check: true, .. }
-            ) {
-                tracestream.make_trace_sender_appending()
-            } else {
+            // Truncating the local metrics file is only correct for a
+            // process that actually owns the file's lifecycle for this
+            // run; every other command must append instead, since simply
+            // *opening* the file with truncation is destructive on its
+            // own regardless of whether that command emits any
+            // command_start/command_error/metric_name event of its own
+            // (most don't; see run_trident). See
+            // `Commands::owns_local_metrics_file` for the exact rule and
+            // why it can't be derived from `is_servicing()`/`Family`.
+            let local_sender = if args.command.owns_local_metrics_file() {
                 tracestream.make_trace_sender()
+            } else {
+                tracestream.make_trace_sender_appending()
             };
             let mut layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> = vec![Box::new(
                 local_sender.with_filter(filter::LevelFilter::INFO),
@@ -820,3 +765,4 @@ fn main() -> ExitCode {
         TridentExitCodes::Success.into()
     }
 }
+

@@ -10,6 +10,7 @@ use trident_proto::v1preview::{
 };
 
 use crate::{
+    command_kind::CommandKind,
     server::{
         tridentserver::{RebootDecision, ServicingResponseStream},
         TridentServer,
@@ -27,7 +28,7 @@ impl InstallService for TridentServer {
         let req = request.into_inner();
         let Some(staging) = req.stage else {
             return Err(self.reject_invalid_argument(
-                "install",
+                &CommandKind::install(),
                 "stage",
                 "Missing staging configuration",
             ));
@@ -35,7 +36,7 @@ impl InstallService for TridentServer {
 
         let Some(host_config) = staging.config else {
             return Err(self.reject_invalid_argument(
-                "install",
+                &CommandKind::install(),
                 "stage.config",
                 "Missing host configuration in staging configuration",
             ));
@@ -43,7 +44,7 @@ impl InstallService for TridentServer {
 
         let Some(finalize) = req.finalize else {
             return Err(self.reject_invalid_argument(
-                "install",
+                &CommandKind::install(),
                 "finalize",
                 "Missing finalize configuration",
             ));
@@ -54,7 +55,7 @@ impl InstallService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "install",
+            CommandKind::install(),
             super::reboot_allowed(&finalize.reboot),
             move || {
                 let mut trident = Trident::new(
@@ -84,7 +85,7 @@ impl InstallService for TridentServer {
 
         let Some(host_config) = req.config else {
             return Err(self.reject_invalid_argument(
-                "install_stage",
+                &CommandKind::install_stage(),
                 "config",
                 "Missing host configuration in staging configuration",
             ));
@@ -94,7 +95,7 @@ impl InstallService for TridentServer {
         let logstream = self.logstream.clone();
         let tracestream = self.tracestream.clone();
 
-        self.servicing_request("install_stage", RebootDecision::Error, move || {
+        self.servicing_request(CommandKind::install_stage(), RebootDecision::Error, move || {
             let mut trident = Trident::new(
                 Some(HostConfigurationSource::RawString(host_config.config)),
                 &data_store_path,
@@ -124,7 +125,7 @@ impl InstallService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "install_finalize",
+            CommandKind::install_finalize(),
             super::reboot_allowed(&finalize.reboot),
             move || {
                 let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
@@ -140,3 +141,4 @@ impl InstallService for TridentServer {
         )
     }
 }
+
