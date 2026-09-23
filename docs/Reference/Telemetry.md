@@ -5,9 +5,9 @@ sidebar_position: 4
 # Telemetry
 
 Trident records the same metrics/spans locally in two places regardless of
-whether remote telemetry is enabled: `/var/log/trident-metrics.jsonl`, and
-journald under the `trident-tracing` syslog identifier. Retrieve the
-journald copy with:
+whether remote telemetry is enabled: appended to
+`/var/log/trident-metrics.jsonl`, and logged to journald under the
+`trident-tracing` syslog identifier. Retrieve the journald copy with:
 
 ``` bash
 journalctl -t trident-tracing
@@ -39,7 +39,6 @@ Every event sent also includes as much of the following host metadata as
 is available at the time, so operators should be aware this leaves the
 host along with the metrics/spans themselves:
 
-- `asset_id`: the host's DMI product UUID (a stable hardware identifier).
 - `os_release`: the `VERSION` field from `/etc/os-release`.
 - `kernel_version`: the running kernel release (`uname -r`).
 - `total_cpu`: the number of CPUs.
@@ -59,15 +58,7 @@ host along with the metrics/spans themselves:
   `"false"`.
 - `trident_version`: the running Trident version.
 - `installation_id`: an ID that lets separate events be correlated back to
-  the same host installation over time. A `grpc-client` invocation never
-  has one attached, however: unlike `cli`/`daemon`, it is never given a
-  `TraceStream` to persist or read back an `installation_id`, so every
-  `grpc-client` event reports a fresh, non-persisted `operation_id` in
-  this field instead -- not correlatable across separate `grpc-client`
-  invocations from the same host. Not considered worth closing today, for
-  the same reason noted under `source` below: `grpc-client` is currently
-  only exercised by tests as a way to drive the daemon, not a real
-  telemetry-producing entry point.
+  the same host installation over time.
 - `servicing_id`: an ID that lets events emitted across a whole servicing
   operation (an install, update, or manual rollback) be correlated with
   each other.
@@ -75,19 +66,14 @@ host along with the metrics/spans themselves:
   invocation be correlated with each other.
 - `command`: which command produced the event (e.g. `install`, `update`,
   `update_stage`, `update_finalize`, `commit`, `rollback`, `rebuild_raid`).
-- `source`: which of Trident's entry points produced the event -- `cli` (a
-  command run directly, without a daemon), `daemon` (a command the daemon
-  executed for a gRPC request), or `grpc-client` (the CLI acting as a
-  client, relaying a command to a running daemon). All three are wired up
-  to produce `operation_id`/`command`/`source` itself; `grpc-client` is
-  the one that never gets a real, persisted `installation_id`/
-  `servicing_id` (see those fields above) -- see
-  `logging::operation_context`'s module doc for why that's not
-  considered a gap worth closing today.
+- `source`: which of Trident's three entry points produced the event --
+  `cli` (a command run directly, without a daemon), `daemon` (a command
+  the daemon executed for a gRPC request), or `grpc-client` (the CLI
+  acting as a client, relaying a command to a running daemon).
 
 ## Correlation ID Lifecycle
 
-The four correlation-style fields above have deliberately different
+The three correlation-style fields above have deliberately different
 lifetimes -- some outlive many servicing operations, some are recreated on
 every reinstall, and some exist only for a single command invocation. The
 diagram below shows how each behaves across a representative sequence of
@@ -137,18 +123,10 @@ gantt
     section installation_id
     installation_id #1 (since install #1) :done, inst1, 2024-01-01, 9d
     installation_id #2 (since install #2) :done, inst2, 2024-01-10, 2d
-
-    section asset_id
-    asset_id (never recreated)            :active, asset1, 2024-01-01, 11d
 ```
 
 Reading the diagram by row, from most to least stable:
 
-- **`asset_id`**: identifies the physical machine itself, via its DMI
-  product UUID. The most stable of the four -- read directly from
-  hardware rather than the datastore, so it survives every reinstall,
-  including the second `install` (day 10) that recreates
-  `installation_id`.
 - **`installation_id`**: normally created once at the first `install`
   against a given datastore and never overwritten after that -- but
   recreated whenever a new datastore is created (the second `install`,
@@ -161,7 +139,7 @@ Reading the diagram by row, from most to least stable:
   invocation that stages something new (`install`, `update`,
   `update-stage`, `rollback`) -- note `update-finalize` does *not*
   regenerate it, since finalize-only invocations only read the value back.
-- **`operation_id`**: the shortest-lived of the four, minted fresh for
+- **`operation_id`**: the shortest-lived of the three, minted fresh for
   every single command invocation and never reused.
 
 ## Command Errors

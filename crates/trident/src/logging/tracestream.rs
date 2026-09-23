@@ -59,8 +59,6 @@ use crate::{
     TRIDENT_VERSION,
 };
 
-/// The product uuid is used to identify the hardware that Trident is running on.
-const PRODUCT_UUID_FILE: &str = "/sys/class/dmi/id/product_uuid";
 lazy_static::lazy_static! {
     static ref ADDITIONAL_FIELDS: BTreeMap<String, Value> = populate_additional_fields();
     pub static ref PLATFORM_INFO: BTreeMap<String, Value> = populate_platform_info();
@@ -850,17 +848,6 @@ pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
     }
 }
 
-/// Obtain product uuid of the hardware Trident is running on
-fn read_product_uuid(filepath: String) -> String {
-    match fs::read_to_string(filepath.clone()) {
-        Ok(uuid) => uuid.trim().to_string(),
-        Err(_) => {
-            debug!("Failed to read product uuid from {}", filepath);
-            "unknown".into()
-        }
-    }
-}
-
 fn populate_additional_fields() -> BTreeMap<String, Value> {
     // TODO: Add more additional fields here as needed
     let mut additional_fields = BTreeMap::new();
@@ -892,10 +879,6 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
     let mut platform_info = BTreeMap::new();
     let mut sys = System::new();
     sys.refresh_all();
-    platform_info.insert(
-        "asset_id".to_string(),
-        json!(read_product_uuid(PRODUCT_UUID_FILE.into())),
-    );
     platform_info.insert("os_release".to_string(), json!(get_os_release()));
     platform_info.insert("total_cpu".to_string(), json!(sys.cpus().len()));
     platform_info.insert(
@@ -944,7 +927,7 @@ mod tests {
 
     use std::{
         fs::File,
-        io::{BufRead, BufReader, Write},
+        io::{BufRead, BufReader},
     };
 
     use tracing_subscriber::{filter, layer::SubscriberExt};
@@ -1072,22 +1055,6 @@ mod tests {
             metric_found,
             "Expected test metric not found in the local metrics file"
         );
-    }
-
-    #[test]
-    fn test_read_product_uuid_unknown() {
-        let uuid = read_product_uuid("unknown".to_string());
-        assert_eq!(uuid, "unknown");
-    }
-
-    #[test]
-    fn test_read_product_uuid_exists() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let filepath = temp_dir.path().join("product_uuid");
-        let mut file = File::create(&filepath).unwrap();
-        file.write_all("test_uuid".as_bytes()).unwrap();
-        let uuid = read_product_uuid(filepath.to_str().unwrap().to_string());
-        assert_eq!(uuid, "test_uuid");
     }
 
     #[test]
@@ -1516,10 +1483,6 @@ mod functional_test {
             json!(uname::kernel_release().unwrap().trim()),
         );
         expected_platform_info.insert("vm".to_string(), json!(virt::is_virtual()));
-        expected_platform_info.insert(
-            "asset_id".to_string(),
-            json!(read_product_uuid(PRODUCT_UUID_FILE.into())),
-        );
 
         // Call the function to get the actual result.
         let platform_info = populate_platform_info();
