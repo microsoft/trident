@@ -111,15 +111,20 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
                     FileSystemResize::NoResize,
                 ),
             );
-            combined_images.insert(
-                image_file_verity.hash_image_file.path.clone(),
-                (
-                    verity_device.hash_device_id.clone(),
-                    metric_label,
-                    &image_file_verity.hash_image_file,
-                    FileSystemResize::NoResize,
-                ),
-            );
+            // For inline verity the hash tree is already part of the data image
+            // we just queued, so writing that image lands both at once and
+            // there is no separate hash image to deploy.
+            if !verity_device.is_inline() {
+                combined_images.insert(
+                    image_file_verity.hash_image_file.path.clone(),
+                    (
+                        verity_device.hash_device_id.clone(),
+                        metric_label,
+                        &image_file_verity.hash_image_file,
+                        FileSystemResize::NoResize,
+                    ),
+                );
+            }
         } else {
             // For non-verity devices, we can deploy the image directly.
 

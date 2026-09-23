@@ -532,6 +532,7 @@ fn cosi_image_to_os_image_filesystem(image: &metadata::Image) -> OsImageFileSyst
                 path: verity.file.path,
             },
             roothash: verity.roothash,
+            hash_offset: verity.hash_offset,
         }),
     }
 }
@@ -1157,6 +1158,7 @@ mod tests {
         let root_hash = "some-root-hash-1234";
         let verity_data = "some data";
         cosi_img.verity = Some(VerityMetadata {
+            hash_offset: None,
             file: ImageFile {
                 path: PathBuf::from("some/verity/path"),
                 compressed_size: verity_data.len() as u64,
