@@ -100,17 +100,28 @@ pub(crate) fn finalize_update(
         // see the comment on that function) now that the auto-rollback's
         // own outcome is known, so the archived metrics file actually
         // includes it either way -- including a *failed* auto-rollback.
-        // Explicitly fire `command_error` for that final outcome *before*
+        //
+        // Explicitly fire `command_error` for the final outcome *before*
         // persisting (rather than leaving it to `run_command`/
         // `run_command_if`, further up the call stack, which would only
-        // see it well after this archive is already written): this is a
-        // no-op if that outer wrapper has (unusually) already reported an
-        // error for this operation, and it's the same call that wrapper
-        // would otherwise make on its own once `rollback_result`
-        // eventually reaches it as an `Err`, so this doesn't introduce a
-        // second, duplicate `command_error` event.
-        if let Err(ref outcome_error) = rollback_result {
-            operation_context::report_command_error(outcome_error);
+        // see it well after this archive is already written).
+        //
+        // Unlike A/B update and clean install, runtime update recovers
+        // synchronously, in this same call: when auto-rollback succeeds,
+        // this function returns `Ok`, so the generic `run_command` safety
+        // net (which only reports `command_error` on `Err`) never sees
+        // anything go wrong. Without reporting here, a finalize failure
+        // that was successfully rolled back would vanish from telemetry
+        // entirely -- no `command_error`, no `runtime_update_success`.
+        // Report the *original* finalize failure `e` in that case; if
+        // rollback itself also failed, report that outcome instead (this
+        // is a no-op if the outer wrapper has already reported an error
+        // for this operation, and it's the same call that wrapper would
+        // otherwise make on its own once `rollback_result` reaches it as
+        // an `Err`, so this doesn't introduce a duplicate `command_error`).
+        match rollback_result {
+            Ok(_) => operation_context::report_command_error(&e),
+            Err(ref outcome_error) => operation_context::report_command_error(outcome_error),
         }
         engine::persist_background_log_and_metrics(
             &state.host_status().spec.trident.datastore_path,
