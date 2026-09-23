@@ -630,6 +630,7 @@ mod tests {
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+    use crate::command_kind::CommandKind;
     // Only used by this feature-gated module (a plain `cargo check`/`cargo
     // test` without `--features functional-test` never compiles this mod,
     // which would otherwise make the top-level import unused).
@@ -735,7 +736,7 @@ mod functional_test {
         // Wrapping in run_with_operation confirms operation_id/command/source
         // also reach the outgoing properties, alongside installation_id above.
         operation_context::run_with_operation(
-            "test_command",
+            &CommandKind::for_test("test_command"),
             operation_context::OperationSource::Cli,
             || {
                 tracing::info!(metric_name = "test_metric", value = true);

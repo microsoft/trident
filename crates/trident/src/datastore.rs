@@ -688,32 +688,6 @@ impl DataStore {
         }
     }
 
-    /// Single source of truth for "may this command/request proceed
-    /// without an existing datastore, because it can legitimately stage a
-    /// brand-new install/update itself?", shared by the CLI's dispatch
-    /// (`main.rs`) and the daemon's request handling
-    /// (`server/tridentserver/mod.rs`), so both surfaces answer this
-    /// question identically instead of each re-deriving it independently.
-    ///
-    /// `name` is the same stage/finalize-aware command/request name used
-    /// for `command`/`operation_id` telemetry (see `command_name` in
-    /// `main.rs`, and the literal names gRPC services pass to
-    /// `servicing_request`). Only names that can actually *stage* a new
-    /// install/update (`install`, `install_stage`, `update`,
-    /// `update_stage`), plus `stream_disk` (a direct-streaming install
-    /// path that also legitimately creates a datastore from nothing), may
-    /// proceed without one. Finalize-only names (`install_finalize`,
-    /// `update_finalize`) cannot stage anything themselves -- they require
-    /// an existing staged state, so letting them proceed without a
-    /// datastore would accept a request that has no staged operation to
-    /// finalize.
-    pub fn may_initialize_datastore_for_command(name: &str) -> bool {
-        matches!(
-            name,
-            "install" | "install_stage" | "update" | "update_stage" | "stream_disk"
-        )
-    }
-
     /// Returns the currently persisted servicing ID, if any. `None` if no
     /// servicing operation has ever staged (via `ensure_servicing_id`) on
     /// this datastore.
@@ -790,55 +764,6 @@ impl DataStore {
 #[cfg(test)]
 mod tests {
     use trident_api::error::{DatastoreError, ErrorKind, ServicingError};
-
-    #[test]
-    /// `may_initialize_datastore_for_command` is the single shared
-    /// classifier answering "may this command/request proceed without an
-    /// existing datastore, because it can legitimately stage a brand-new
-    /// install/update itself?" for both the CLI (`main.rs`) and the daemon
-    /// (`server/tridentserver/mod.rs`). Stage names (and `stream_disk`)
-    /// may; finalize-only names must not, since a finalize-only request
-    /// cannot itself stage anything -- it requires an existing staged
-    /// state. Also covers the `_noop` command-name variants
-    /// (`command_name` in `main.rs` emits these when neither stage nor
-    /// finalize is requested): they must stay denied even though they
-    /// aren't explicitly excluded by name, so a future refactor that
-    /// widens the allow-list can't silently start accepting requests with
-    /// no datastore for no-op invocations without this test catching it.
-    fn test_may_initialize_datastore_for_command() {
-        for name in [
-            "install",
-            "install_stage",
-            "update",
-            "update_stage",
-            "stream_disk",
-        ] {
-            assert!(
-                super::DataStore::may_initialize_datastore_for_command(name),
-                "{name} should be allowed to initialize a datastore"
-            );
-        }
-        for name in [
-            "install_finalize",
-            "update_finalize",
-            "rollback",
-            "rollback_stage",
-            "rollback_finalize",
-            "commit",
-            "check_root",
-            "rebuild_raid",
-            "install_noop",
-            "update_noop",
-            "",
-            "installer",
-            "updated",
-        ] {
-            assert!(
-                !super::DataStore::may_initialize_datastore_for_command(name),
-                "{name} should NOT be allowed to initialize a datastore"
-            );
-        }
-    }
 
     #[test]
     fn test_make_datastore() {

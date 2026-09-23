@@ -35,6 +35,29 @@ use std::{cell::RefCell, sync::Mutex};
 
 use uuid::Uuid;
 
+use trident_api::config::Operations;
+
+use crate::command_kind::CommandKind;
+
+/// Maps a base command name plus its requested `Operations` to the same
+/// naming convention gRPC's `servicing_request` already uses for
+/// stage/finalize granularity (e.g. `"install"` vs `"install_stage"` vs
+/// `"install_finalize"`), so `command`/`operation_id` telemetry is
+/// consistent regardless of whether the command came from the CLI or from
+/// gRPC/daemon.
+pub fn command_name(base: &str, ops: &Operations) -> String {
+    match (ops.has_stage(), ops.has_finalize()) {
+        (true, true) => base.to_string(),
+        (true, false) => format!("{base}_stage"),
+        (false, true) => format!("{base}_finalize"),
+        // Neither stage nor finalize was requested (an empty
+        // `--allowed-operations` list); nothing can actually be staged or
+        // finalized, so name this like the existing no-op naming convention
+        // rather than a full install/update.
+        (false, false) => format!("{base}_noop"),
+    }
+}
+
 /// Identifies which of Trident's three entry points actually executed a
 /// command, so telemetry consumers can distinguish (for example) a
 /// `grpc-client` invocation that never reached a daemon from the daemon
@@ -85,7 +108,7 @@ pub fn should_generate_persistent_ids(source: OperationSource) -> bool {
 }
 
 thread_local! {
-    static CURRENT_OPERATION: RefCell<Option<(String, String, OperationSource)>> =
+    static CURRENT_OPERATION: RefCell<Option<(String, CommandKind, OperationSource)>> =
         const { RefCell::new(None) };
 }
 
@@ -108,11 +131,15 @@ thread_local! {
 /// them in that event's own `value`/properties body -- a different schema
 /// from every other event, and invisible to consumers that only look at
 /// `additional_fields` for operation metadata.
-pub fn run_with_operation<R>(command: &str, source: OperationSource, f: impl FnOnce() -> R) -> R {
+pub fn run_with_operation<R>(
+    command: &CommandKind,
+    source: OperationSource,
+    f: impl FnOnce() -> R,
+) -> R {
     let operation_id = Uuid::new_v4().to_string();
 
     CURRENT_OPERATION.with(|cell| {
-        *cell.borrow_mut() = Some((operation_id, command.to_string(), source));
+        *cell.borrow_mut() = Some((operation_id, command.clone(), source));
     });
 
     struct ClearOnDrop;
@@ -130,7 +157,7 @@ pub fn run_with_operation<R>(command: &str, source: OperationSource, f: impl FnO
 
 /// Returns the `(operation_id, command, source)` triple set by
 /// [`run_with_operation`] for the calling thread, if any.
-pub(crate) fn current() -> Option<(String, String, OperationSource)> {
+pub(crate) fn current() -> Option<(String, CommandKind, OperationSource)> {
     CURRENT_OPERATION.with(|cell| cell.borrow().clone())
 }
 
@@ -142,7 +169,7 @@ pub(crate) fn current() -> Option<(String, String, OperationSource)> {
 /// which otherwise start with no thread-local context of their own and
 /// would silently drop these fields from their own metrics.
 #[derive(Clone)]
-pub struct CapturedOperation(String, String, OperationSource);
+pub struct CapturedOperation(String, CommandKind, OperationSource);
 
 /// Captures the calling thread's current operation context, if any, for
 /// later re-installation on another thread via
@@ -241,9 +268,13 @@ mod tests {
     fn test_run_with_operation_sets_and_clears_context() {
         assert!(current().is_none());
 
-        let observed = run_with_operation("test_command", OperationSource::Cli, current);
+        let observed = run_with_operation(
+            &CommandKind::for_test("test_command"),
+            OperationSource::Cli,
+            current,
+        );
         let (operation_id, command, source) = observed.expect("context should be set inside f");
-        assert_eq!(command, "test_command");
+        assert_eq!(command.as_str(), "test_command");
         assert_eq!(operation_id.len(), 36, "operation_id should be a UUID");
         assert_eq!(source, OperationSource::Cli);
 
@@ -268,9 +299,13 @@ mod tests {
         assert!(current().is_none());
 
         let result = std::panic::catch_unwind(|| {
-            run_with_operation("panicking_command", OperationSource::Cli, || {
-                panic!("boom");
-            })
+            run_with_operation(
+                &CommandKind::for_test("panicking_command"),
+                OperationSource::Cli,
+                || {
+                    panic!("boom");
+                },
+            )
         });
         assert!(result.is_err());
 
@@ -282,8 +317,13 @@ mod tests {
 
     #[test]
     fn test_each_invocation_gets_a_fresh_operation_id() {
-        let first = run_with_operation("cmd", OperationSource::Cli, || current().unwrap().0);
-        let second = run_with_operation("cmd", OperationSource::Cli, || current().unwrap().0);
+        let first = run_with_operation(&CommandKind::for_test("cmd"), OperationSource::Cli, || {
+            current().unwrap().0
+        });
+        let second =
+            run_with_operation(&CommandKind::for_test("cmd"), OperationSource::Cli, || {
+                current().unwrap().0
+            });
         assert_ne!(
             first, second,
             "each command invocation gets a fresh operation_id"
@@ -302,7 +342,7 @@ mod tests {
         // it on a different OS thread, mirroring MonitorMetrics's use.
         let (expected_operation_id, expected_command, expected_source, observed) =
             run_with_operation(
-                "cmd_from_parent_thread",
+                &CommandKind::for_test("cmd_from_parent_thread"),
                 OperationSource::GrpcClient,
                 || {
                     let captured = snapshot().expect("should capture a context");
@@ -343,7 +383,11 @@ mod tests {
         // share one flat thread-local slot, so nesting on one thread isn't
         // a supported combination. Verify the fresh-thread case clears
         // itself after returning.
-        let captured = run_with_operation("cmd", OperationSource::Daemon, snapshot);
+        let captured = run_with_operation(
+            &CommandKind::for_test("cmd"),
+            OperationSource::Daemon,
+            snapshot,
+        );
         let still_set_inside = std::thread::spawn(move || {
             run_with_captured_operation(captured, || current().is_some())
         })
@@ -372,7 +416,7 @@ mod tests {
             "start with a clean slate"
         );
 
-        let expected = run_with_operation("install", OperationSource::Cli, || {
+        let expected = run_with_operation(&CommandKind::install(), OperationSource::Cli, || {
             save_reboot_operation();
             current().unwrap()
         });

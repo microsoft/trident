@@ -19,6 +19,8 @@ use tracing::{
 };
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 
+#[cfg(test)]
+use crate::command_kind::CommandKind;
 use trident_api::error::TridentError;
 
 use osutils::{
@@ -712,38 +714,6 @@ where
 /// prior version of this function existed independently in each sink,
 /// which risked the two silently diverging if the rule ever changed in
 /// only one place.
-/// Command names for which `DataStore::ensure_servicing_id` always sets
-/// the servicing ID to this exact invocation's own `operation_id` (see
-/// that function's doc comment), rather than reading one back from a
-/// previous operation. This is the fixed set of `command`/
-/// `servicing_request` names that pass `has_stage = true` into
-/// [`TraceStream::refresh_servicing_id`] (see `Trident::install`/`update`/
-/// `rollback`, `TridentServer::stream_disk`, and their other daemon
-/// service handlers) -- mirrors
-/// `DataStore::may_initialize_datastore_for_command`'s similar,
-/// exhaustive name-based enumeration, but answers a different question:
-/// not "may this command run without a datastore" but "will this
-/// command's own servicing_id equal its operation_id". The two sets are
-/// related but not identical: this one includes `rollback`/
-/// `rollback_stage` (a manual rollback stages/finalizes its own
-/// servicing episode, but can never *initialize* a fresh datastore, so it
-/// is absent from the other enumeration), and, like the other
-/// enumeration, includes `stream_disk` (which internally calls
-/// `Trident::install` and so must generate its own servicing_id just
-/// like a direct `install` would).
-fn command_generates_servicing_id(command: &str) -> bool {
-    matches!(
-        command,
-        "install"
-            | "install_stage"
-            | "update"
-            | "update_stage"
-            | "rollback"
-            | "rollback_stage"
-            | "stream_disk"
-    )
-}
-
 pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
     if let Some((operation_id, command, source)) = operation_context::current() {
         fields
@@ -751,7 +721,7 @@ pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
             .or_insert_with(|| json!(operation_id));
         fields
             .entry("command".to_string())
-            .or_insert_with(|| json!(command));
+            .or_insert_with(|| json!(command.as_str()));
         fields
             .entry("source".to_string())
             .or_insert_with(|| json!(source.as_str()));
@@ -776,7 +746,7 @@ pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
         // gap like installation_id above) rather than leaving any earlier
         // event (e.g. command_start/trident_start) showing a stale,
         // unrelated operation's ID.
-        if command_generates_servicing_id(&command) {
+        if command.generates_servicing_id() {
             fields.insert("servicing_id".to_string(), json!(operation_id));
         }
     }
@@ -1004,54 +974,13 @@ mod tests {
     }
 
     #[test]
-    /// Locks in the exact set of commands that `command_generates_servicing_id`
-    /// classifies as staging (i.e. generating their own servicing_id from
-    /// their own operation_id), so future edits to the match arms are
-    /// caught by CI rather than only being noticed in a running system.
-    /// `stream_disk` must be included: it internally calls `Trident::install`
-    /// and so must generate its own servicing_id just like a direct
-    /// `install` would.
-    fn test_command_generates_servicing_id_classifies_known_commands() {
-        for command in [
-            "install",
-            "install_stage",
-            "update",
-            "update_stage",
-            "rollback",
-            "rollback_stage",
-            "stream_disk",
-        ] {
-            assert!(
-                command_generates_servicing_id(command),
-                "expected '{command}' to generate its own servicing_id"
-            );
-        }
-
-        for command in [
-            "install_finalize",
-            "update_finalize",
-            "rollback_finalize",
-            "commit",
-            "get",
-            "validate",
-            "diagnose",
-            "rebuild_raid",
-        ] {
-            assert!(
-                !command_generates_servicing_id(command),
-                "expected '{command}' to NOT generate its own servicing_id"
-            );
-        }
-    }
-
-    #[test]
     /// Regression test for the daemon stale-servicing_id bug: a
     /// long-lived process's cached `servicing_id` (left over from a prior
     /// operation) must NOT leak onto a later staging command's own
     /// events (e.g. `command_start`/`trident_start`, fired before that
     /// command's own `refresh_servicing_id` runs). `merge_operation_context`
     /// must force `servicing_id` to this invocation's own `operation_id`
-    /// for any command in `command_generates_servicing_id`, overriding
+    /// for any command where `CommandKind::generates_servicing_id` is true, overriding
     /// whatever is currently cached rather than merely filling a gap.
     fn test_tracestream_servicing_id_forced_to_operation_id_for_staging_commands() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -1069,7 +998,7 @@ mod tests {
         );
 
         let operation_id = operation_context::run_with_operation(
-            "install_stage",
+            &CommandKind::install_stage(),
             operation_context::OperationSource::Cli,
             || {
                 let operation_id = operation_context::current()
@@ -1119,7 +1048,7 @@ mod tests {
         );
 
         operation_context::run_with_operation(
-            "commit",
+            &CommandKind::commit(),
             operation_context::OperationSource::Cli,
             || {
                 tracing::info!(metric_name = "test_metric_during_commit");
@@ -1205,7 +1134,7 @@ mod tests {
         let mut staging_datastore = DataStore::open_or_create(&db_path).unwrap();
         let staging_tracestream = TraceStream::default();
         operation_context::run_with_operation(
-            "install",
+            &CommandKind::install(),
             operation_context::OperationSource::Cli,
             || {
                 staging_tracestream.refresh_servicing_id(&mut staging_datastore, true);
@@ -1277,7 +1206,7 @@ mod tests {
         let mut staging_datastore = DataStore::open_or_create(&db_path).unwrap();
         let staging_tracestream = TraceStream::default();
         operation_context::run_with_operation(
-            "install",
+            &CommandKind::install(),
             operation_context::OperationSource::Cli,
             || {
                 staging_tracestream

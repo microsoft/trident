@@ -16,28 +16,9 @@ use trident::{
     TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
-    config::{HostConfigurationSource, Operations},
+    config::HostConfigurationSource,
     error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
 };
-
-/// Maps a base command name plus its requested `Operations` to the same
-/// naming convention gRPC's `servicing_request` already uses for
-/// stage/finalize granularity (e.g. `"install"` vs `"install_stage"` vs
-/// `"install_finalize"`), so `command`/`operation_id` telemetry is
-/// consistent regardless of whether the command came from the CLI or from
-/// gRPC/daemon.
-fn command_name(base: &str, ops: &Operations) -> String {
-    match (ops.has_stage(), ops.has_finalize()) {
-        (true, true) => base.to_string(),
-        (true, false) => format!("{base}_stage"),
-        (false, true) => format!("{base}_finalize"),
-        // Neither stage nor finalize was requested (an empty
-        // `--allowed-operations` list); nothing can actually be staged or
-        // finalized, so name this like the existing no-op naming convention
-        // rather than a full install/update.
-        (false, false) => format!("{base}_noop"),
-    }
-}
 
 fn run_trident(
     mut logstream: Logstream,
@@ -159,20 +140,12 @@ fn run_trident(
                 // outside any operation context: every event from CLI
                 // startup through to just before the actual command ran
                 // had no operation_id/command.
-                let command = match &args.command {
-                    Commands::Install {
-                        allowed_operations, ..
-                    } => command_name(args.command.name(), &cli::to_operations(allowed_operations)),
-                    Commands::Update {
-                        allowed_operations, ..
-                    } => command_name(args.command.name(), &cli::to_operations(allowed_operations)),
-                    Commands::Commit { .. } => "commit".to_string(),
-                    Commands::Rollback {
-                        allowed_operations, ..
-                    } => command_name(args.command.name(), &cli::to_operations(allowed_operations)),
-                    Commands::RebuildRaid { .. } => "rebuild_raid".to_string(),
-                    _ => unreachable!(),
-                };
+                // `Commands::kind()` is total over every variant
+                // (including ones that can never actually reach this
+                // arm), so it renders the same wire name the old
+                // per-variant match did without needing an
+                // `unreachable!()` fallback to prove exhaustiveness.
+                let kind = args.command.kind();
 
                 // Determined up front, before any preflight checks below,
                 // so a missing/nonexistent --config is rejected immediately.
@@ -185,7 +158,7 @@ fn run_trident(
                 };
                 if let Some(path) = &config_path {
                     if !path.exists() {
-                        return run_with_operation(&command, OperationSource::Cli, || {
+                        return run_with_operation(&kind, OperationSource::Cli, || {
                             Err(TridentError::new(InvalidInputError::ReadInputFile {
                                 path: path.to_string_lossy().to_string(),
                             }))
@@ -249,7 +222,7 @@ fn run_trident(
                     );
                 }
 
-                run_with_operation(&command, OperationSource::Cli, || {
+                run_with_operation(&kind, OperationSource::Cli, || {
                     // config_path was already validated (existence-checked)
                     // above. Reuse the same `AgentConfig` snapshot loaded
                     // just above rather than reloading -- see the comment
@@ -257,13 +230,11 @@ fn run_trident(
                     let agent_config = agent_config_result?;
                     // For commands that cannot themselves stage a new
                     // install/update (see
-                    // `DataStore::may_initialize_datastore_for_command`),
-                    // we expect the datastore to already exist. Update has
-                    // its own special handling for the CIH bootstrap
-                    // scenario further down.
-                    if !DataStore::may_initialize_datastore_for_command(&command)
-                        && !agent_config.datastore_path().exists()
-                    {
+                    // `CommandKind::may_initialize_datastore`), we expect
+                    // the datastore to already exist. Update has its own
+                    // special handling for the CIH bootstrap scenario
+                    // further down.
+                    if !kind.may_initialize_datastore() && !agent_config.datastore_path().exists() {
                         return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                             .message("Datastore file does not exist");
                     }

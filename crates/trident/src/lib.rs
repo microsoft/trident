@@ -31,6 +31,7 @@ use trident_api::{
 
 pub mod agentconfig;
 pub mod cli;
+mod command_kind;
 mod datastore;
 mod diagnostics;
 mod engine;

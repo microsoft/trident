@@ -25,7 +25,7 @@ use trident_proto::v1::{
 
 use crate::{
     agentconfig::AgentConfig,
-    datastore::DataStore,
+    command_kind::CommandKind,
     logging::{logfwd::LogForwarder, operation_context},
     server::{activitytracker::ActivityTracker, support::stream::StreamWithLock},
     ExitKind, Logstream, TraceStream,
@@ -216,7 +216,7 @@ impl TridentServer {
     /// of responses is produced.
     fn servicing_request<F>(
         &self,
-        name: &'static str,
+        kind: CommandKind,
         reboot_decision: RebootDecision,
         f: F,
     ) -> Result<Response<ServicingResponseStream>, Status>
@@ -226,21 +226,21 @@ impl TridentServer {
             + panic::UnwindSafe
             + 'static,
     {
-        info!("Received servicing request '{}'", name);
+        info!("Received servicing request '{}'", kind.as_str());
 
         // Try to acquire the connection lock in write mode
         let guard = self.try_acquire_write_lock()?;
 
         // Reject requests that cannot themselves stage a new install/update
-        // (see `DataStore::may_initialize_datastore_for_command`) when no
-        // datastore exists yet -- mirrors the CLI's `HostNotProvisioned`
-        // check in `main.rs`. Without this, e.g. a `commit`/`rollback` RPC
-        // arriving against an unprovisioned host falls through to
+        // (see `CommandKind::may_initialize_datastore`) when no datastore
+        // exists yet -- mirrors the CLI's `HostNotProvisioned` check in
+        // `main.rs`. Without this, e.g. a `commit`/`rollback` RPC arriving
+        // against an unprovisioned host falls through to
         // `DataStore::open_or_create` in the service handler and silently
         // creates an empty datastore instead of failing outright.
         // Untelemetered, same as the lock-busy rejections above: this is
         // admission control, not a distinct servicing outcome.
-        if !DataStore::may_initialize_datastore_for_command(name)
+        if !kind.may_initialize_datastore()
             && !self
                 .agent_config
                 .datastore_path()
@@ -250,7 +250,10 @@ impl TridentServer {
                     Status::internal("failed to check datastore state")
                 })?
         {
-            warn!("Rejected request '{}': datastore does not exist", name);
+            warn!(
+                "Rejected request '{}': datastore does not exist",
+                kind.as_str()
+            );
             return Err(Status::failed_precondition("Host is not provisioned"));
         }
 
@@ -291,10 +294,11 @@ impl TridentServer {
         // request and even the daemon's main event loop have returned --
         // can tag `trident_system_reboot` with this same servicing
         // operation's identity instead of leaving it untagged.
+        let kind_for_closure = kind.clone();
         let f = move || {
             Self::refresh_ids(&tracestream_for_ids, &datastore_path_for_ids);
             operation_context::run_with_operation(
-                name,
+                &kind_for_closure,
                 operation_context::OperationSource::Daemon,
                 || {
                     let result = f();
@@ -311,7 +315,10 @@ impl TridentServer {
 
         // Try to acquire the servicing lock
         let Some(servicing_guard) = self.servicing_manager.try_lock_servicing() else {
-            warn!("Request '{}' blocked because servicing is active", name);
+            warn!(
+                "Request '{}' blocked because servicing is active",
+                kind.as_str()
+            );
             return Err(Status::unavailable("Servicing is active"));
         };
 
@@ -333,6 +340,7 @@ impl TridentServer {
         let logstream = self.logstream.clone();
         let tracestream = self.tracestream.clone();
         let manager = self.servicing_manager.clone();
+        let name_for_async = kind.as_str().to_string();
 
         // Spawn the servicing task
         tokio::spawn(async move {
@@ -350,9 +358,15 @@ impl TridentServer {
             }
 
             if let Some(ref err) = completed_message.error {
-                error!("Servicing request '{}' failed: {}", name, err.message);
+                error!(
+                    "Servicing request '{}' failed: {}",
+                    name_for_async, err.message
+                );
             } else {
-                info!("Servicing request '{}' completed successfully", name);
+                info!(
+                    "Servicing request '{}' completed successfully",
+                    name_for_async
+                );
             }
 
             // Stop log forwarding
@@ -377,7 +391,7 @@ impl TridentServer {
             // already been stopped.
             drop(tx);
 
-            info!("Request '{}' completed", name);
+            info!("Request '{}' completed", name_for_async);
         });
 
         // Return the streaming response with the lock guard
