@@ -547,16 +547,13 @@ mod stat_tests {
     }
 }
 
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
+#[cfg(test)]
+mod tests {
     use super::*;
 
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
 
     use tracing_subscriber::{layer::SubscriberExt, Registry};
-
-    use pytest_gen::functional_test;
 
     #[derive(Debug, Clone, Default)]
     struct TestTraceWriter {
@@ -590,7 +587,7 @@ mod functional_test {
         logs
     }
 
-    #[functional_test]
+    #[test]
     fn test_monitor_metrics() {
         let trace_logs = init_monitor_metrics_tracing_validation_global();
 
