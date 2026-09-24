@@ -2295,6 +2295,7 @@ dependencies = [
  "trident_api",
  "uuid",
  "which",
+ "xattr",
 ]
 
 [[package]]
