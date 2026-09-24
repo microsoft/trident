@@ -246,16 +246,9 @@ fn atomic_write_file_inner(
     tmp.flush()
         .with_context(|| format!("Failed to flush temp file for '{}'", path.display()))?;
 
-    // fsync the temp file before rename to ensure data is on disk. Without
-    // this, a power loss between rename and dirty-page flush could leave the
-    // file zero-length.
-    tmp.as_file()
-        .sync_all()
-        .with_context(|| format!("Failed to fsync temp file for '{}'", path.display()))?;
-
-    // Preserve ownership and permissions from the original file, or apply
+    // Preserve ownership and metadata from the original file, or apply
     // 0666 & !umask for new files to match fs::write / open(O_CREAT) behavior.
-    match fs::metadata(path) {
+    let final_permissions = match fs::metadata(path) {
         Ok(metadata) => {
             unistd::fchown(
                 tmp.as_file().as_fd(),
@@ -265,19 +258,6 @@ fn atomic_write_file_inner(
             .with_context(|| {
                 format!(
                     "Failed to set ownership on temp file for '{}'",
-                    path.display()
-                )
-            })?;
-
-            fs::set_permissions(
-                tmp.path(),
-                permissions
-                    .clone()
-                    .unwrap_or_else(|| metadata.permissions()),
-            )
-            .with_context(|| {
-                format!(
-                    "Failed to set permissions on temp file for '{}'",
                     path.display()
                 )
             })?;
@@ -304,25 +284,34 @@ fn atomic_write_file_inner(
                     })?;
                 }
             }
+
+            permissions.unwrap_or_else(|| metadata.permissions())
         }
         Err(e) if e.kind() == ErrorKind::NotFound => {
             // New file: apply 0666 masked by the process umask, matching
             // fs::write / open(O_CREAT, 0666) behavior. Read umask from
             // /proc/self/status to avoid the thread-unsafe umask(2) dance.
-            let permissions = permissions.unwrap_or(Permissions::from_mode(0o666 & !read_umask()?));
-            fs::set_permissions(tmp.path(), permissions).with_context(|| {
-                format!(
-                    "Failed to set default permissions on temp file for '{}'",
-                    path.display()
-                )
-            })?;
+            permissions.unwrap_or(Permissions::from_mode(0o666 & !read_umask()?))
         }
         Err(e) => {
             return Err(
                 Error::new(e).context(format!("Failed to read metadata for '{}'", path.display()))
             );
         }
-    }
+    };
+
+    // Restoring a POSIX ACL can change group-class mode bits to its mask.
+    fs::set_permissions(tmp.path(), final_permissions).with_context(|| {
+        format!(
+            "Failed to set permissions on temp file for '{}'",
+            path.display()
+        )
+    })?;
+
+    // Persist the final content and metadata state before the rename.
+    tmp.as_file()
+        .sync_all()
+        .with_context(|| format!("Failed to fsync temp file for '{}'", path.display()))?;
 
     tmp.persist(path)
         .map_err(|e| anyhow!("Atomic rename failed for '{}': {}", path.display(), e.error))?;
@@ -571,6 +560,39 @@ mod tests {
             xattr::get(&path, "user.trident-test").unwrap().unwrap(),
             b"preserved"
         );
+    }
+
+    #[test]
+    fn test_atomic_write_explicit_permissions_override_acl_mask() {
+        fn acl_entry(tag: u16, permissions: u16, id: u32) -> [u8; 8] {
+            let mut entry = [0; 8];
+            entry[0..2].copy_from_slice(&tag.to_le_bytes());
+            entry[2..4].copy_from_slice(&permissions.to_le_bytes());
+            entry[4..8].copy_from_slice(&id.to_le_bytes());
+            entry
+        }
+
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("acl.conf");
+        fs::write(&path, "original\n").unwrap();
+        fs::set_permissions(&path, Permissions::from_mode(0o640)).unwrap();
+
+        let mut acl = 2u32.to_le_bytes().to_vec();
+        acl.extend(acl_entry(0x01, 0o6, u32::MAX));
+        acl.extend(acl_entry(0x02, 0o4, 12345));
+        acl.extend(acl_entry(0x04, 0o4, u32::MAX));
+        acl.extend(acl_entry(0x10, 0o7, u32::MAX));
+        acl.extend(acl_entry(0x20, 0o0, u32::MAX));
+        xattr::set(&path, "system.posix_acl_access", &acl).unwrap();
+
+        atomic_write_file_with_permissions(&path, "updated\n", Permissions::from_mode(0o640))
+            .unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o640, "Expected mode 0640, got {mode:04o}");
+        assert!(xattr::get(&path, "system.posix_acl_access")
+            .unwrap()
+            .is_some());
     }
 
     #[test]
