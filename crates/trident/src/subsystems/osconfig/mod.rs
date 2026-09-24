@@ -95,6 +95,7 @@ fn should_carry_over_machine_id(ctx: &EngineContext) -> bool {
         && ctx.servicing_type == ServicingType::AbUpdate
 }
 
+/// Read before writing so aliased source and destination paths cannot truncate the machine ID.
 fn copy_machine_id(source: &Path, destination: &Path) -> Result<(), TridentError> {
     let contents = fs::read(source).structured(ServicingError::CopyMachineId)?;
     let permissions = fs::metadata(source)
