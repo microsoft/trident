@@ -749,6 +749,7 @@ mod tests {
         copy_machine_id(&source, &destination).unwrap();
 
         assert_eq!(fs::read(&source).unwrap(), contents);
+        assert_eq!(fs::read(&destination).unwrap(), contents);
     }
 
     #[test]
