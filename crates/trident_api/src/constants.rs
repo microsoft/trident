@@ -205,6 +205,9 @@ pub mod internal_params {
     /// Do not carry over existing machine hostname into the chroot during A/B update.
     pub const DISABLE_HOSTNAME_CARRY_OVER: &str = "disableHostnameCarryOver";
 
+    /// Do not carry over the existing machine ID during A/B update.
+    pub const DISABLE_MACHINE_ID_CARRY_OVER: &str = "disableMachineIdCarryOver";
+
     /// Disable automatic ejection of installation media after clean install.
     pub const DISABLE_MEDIA_EJECTION: &str = "disableMediaEjection";
 
