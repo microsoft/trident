@@ -17,6 +17,7 @@ import (
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/e2e/validate"
+	"tridenttools/storm/utils/acr"
 	"tridenttools/storm/utils/retry"
 	"tridenttools/storm/utils/ssh/sftp"
 	"tridenttools/storm/utils/sshutils"
@@ -292,6 +293,10 @@ func (s *TridentE2EScenario) updateHostConfigToVersion(tc storm.TestCase, bump b
 	s.config.Set(false, "internalParams", "selfUpgradeTrident")
 	// Remove storage section which is not needed for AB update.
 	s.config.Delete("storage")
+
+	if err := s.updateExtensionsToNextVersion(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -596,5 +601,68 @@ func checkUrlIsAccessible(url string) error {
 		return fmt.Errorf("new image URL is not accessible: %s, got HTTP code: %d", url, resp.StatusCode)
 	}
 
+	return nil
+}
+
+// updateExtensionsToNextVersion moves every configured extension from the
+// first image the pipeline staged to the second, so an A/B update exercises
+// updating an extension rather than carrying the same one across.
+//
+// The move happens once: an entry already on ".2" is left alone, which is what
+// makes this safe to call for every update in a scenario.
+//
+// The sha384 must be recomputed, because it is the hash of the image contents
+// and the second image is genuinely different. It is pulled anonymously rather
+// than read from disk: the configuration references the registry copy, and
+// hashing a local file would assert against something the host never fetched.
+//
+// Note this is NEW coverage rather than restored parity. The legacy suite had
+// the same intent but never executed it: its updateExtensions required a
+// "path" ending in "-1.raw", while the pipeline injected only {url, sha384},
+// so it hit the skip before reaching the assignment.
+// The pipeline stages two versions of each extension image, tagged ".1" and
+// ".2"; an A/B update moves the configuration from the first to the second.
+const (
+	extensionVersion1Suffix     = ".1"
+	extensionVersion2Suffix     = ".2"
+	extensionPathVersion1Suffix = "-1.raw"
+	extensionPathVersion2Suffix = "-2.raw"
+)
+
+func (s *TridentE2EScenario) updateExtensionsToNextVersion() error {
+	for _, extType := range []string{"sysexts", "confexts"} {
+		for i, ext := range s.config.S("os", extType).Children() {
+			oldUrl, ok := ext.S("url").Data().(string)
+			if !ok || !strings.HasSuffix(oldUrl, extensionVersion1Suffix) {
+				// Not staged by this pipeline, or already moved on.
+				continue
+			}
+			newUrl := strings.TrimSuffix(oldUrl, extensionVersion1Suffix) + extensionVersion2Suffix
+
+			newHash, err := acr.PullSha384(context.Background(), newUrl)
+			if err != nil {
+				return fmt.Errorf("failed to hash %s %d at %s: %w", extType, i+1, newUrl, err)
+			}
+
+			if _, err := ext.Set(newUrl, "url"); err != nil {
+				return fmt.Errorf("failed to update %s %d url: %w", extType, i+1, err)
+			}
+			if _, err := ext.Set(newHash, "sha384"); err != nil {
+				return fmt.Errorf("failed to update %s %d sha384: %w", extType, i+1, err)
+			}
+			// path is optional and usually absent, since Trident resolves the
+			// default directory itself. Move it only when the configuration
+			// actually pins one.
+			if oldPath, ok := ext.S("path").Data().(string); ok {
+				if newPath, changed := strings.CutSuffix(oldPath, extensionPathVersion1Suffix); changed {
+					if _, err := ext.Set(newPath+extensionPathVersion2Suffix, "path"); err != nil {
+						return fmt.Errorf("failed to update %s %d path: %w", extType, i+1, err)
+					}
+				}
+			}
+
+			logrus.Infof("Moved %s %d to %s", extType, i+1, newUrl)
+		}
+	}
 	return nil
 }
