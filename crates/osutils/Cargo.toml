@@ -33,6 +33,7 @@ tempfile = {workspace = true}
 thiserror = {workspace = true}
 uuid = {workspace = true}
 which = {workspace = true}
+xattr = {workspace = true}
 regex = {workspace = true}
 
 rand = {workspace = true, optional = true}

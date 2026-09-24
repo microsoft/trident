@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{fs, io::ErrorKind, path::Path};
 
 use anyhow::Context;
 use log::{debug, error, info, warn};
@@ -101,8 +101,16 @@ fn copy_machine_id(source: &Path, destination: &Path) -> Result<(), TridentError
     let permissions = fs::metadata(source)
         .structured(ServicingError::CopyMachineId)?
         .permissions();
+    let destination = match fs::symlink_metadata(destination) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            fs::canonicalize(destination).structured(ServicingError::CopyMachineId)?
+        }
+        Ok(_) => destination.to_path_buf(),
+        Err(e) if e.kind() == ErrorKind::NotFound => destination.to_path_buf(),
+        Err(e) => return Err(e).structured(ServicingError::CopyMachineId),
+    };
 
-    files::atomic_write_file_with_permissions(destination, &contents, permissions)
+    files::atomic_write_file_with_permissions(&destination, &contents, permissions)
         .structured(ServicingError::CopyMachineId)
 }
 
@@ -775,6 +783,31 @@ mod tests {
             fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
             0o444
         );
+    }
+
+    #[test]
+    fn test_copy_machine_id_follows_destination_symlink() {
+        use std::os::unix::fs::symlink;
+
+        use super::copy_machine_id;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let source = temp_dir.path().join("machine-id");
+        let target = temp_dir.path().join("target-machine-id");
+        let destination = temp_dir.path().join("machine-id-link");
+        let contents = "fed81b0b333b4c1787eb90db84b79e44\n";
+
+        fs::write(&source, contents).unwrap();
+        fs::write(&target, "old\n").unwrap();
+        symlink(&target, &destination).unwrap();
+
+        copy_machine_id(&source, &destination).unwrap();
+
+        assert!(fs::symlink_metadata(&destination)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_to_string(&target).unwrap(), contents);
     }
 
     #[test]

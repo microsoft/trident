@@ -213,14 +213,10 @@ fn read_umask() -> Result<u32, Error> {
 
 /// Atomically replace `path` with `content`.
 ///
-/// Writes to a temp file in the same directory, fsyncs, preserves ownership
-/// and permissions from the original file (if it exists), then renames. This
-/// guarantees that readers never see a partial write.
-///
-/// **Note:** Extended attributes (including SELinux labels) are *not*
-/// preserved because the rename replaces the original inode. Callers that
-/// need the original SELinux context should run `restorecon` after this
-/// function returns.
+/// Writes to a temp file in the same directory, fsyncs, preserves ownership,
+/// permissions, and extended attributes from the original file (if it
+/// exists), then renames. This guarantees that readers never see a partial
+/// write.
 pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
     atomic_write_file_inner(path, content, None)
 }
@@ -285,6 +281,29 @@ fn atomic_write_file_inner(
                     path.display()
                 )
             })?;
+
+            for name in xattr::list(path).with_context(|| {
+                format!(
+                    "Failed to list extended attributes for '{}'",
+                    path.display()
+                )
+            })? {
+                if let Some(value) = xattr::get(path, &name).with_context(|| {
+                    format!(
+                        "Failed to read extended attribute '{}' for '{}'",
+                        name.to_string_lossy(),
+                        path.display()
+                    )
+                })? {
+                    xattr::set(tmp.path(), &name, &value).with_context(|| {
+                        format!(
+                            "Failed to set extended attribute '{}' on temp file for '{}'",
+                            name.to_string_lossy(),
+                            path.display()
+                        )
+                    })?;
+                }
+            }
         }
         Err(e) if e.kind() == ErrorKind::NotFound => {
             // New file: apply 0666 masked by the process umask, matching
@@ -537,6 +556,21 @@ mod tests {
 
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o444, "Expected mode 0444, got {mode:04o}");
+    }
+
+    #[test]
+    fn test_atomic_write_preserves_extended_attributes() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("xattrs.conf");
+        fs::write(&path, "original\n").unwrap();
+        xattr::set(&path, "user.trident-test", b"preserved").unwrap();
+
+        atomic_write_file(&path, "updated\n").unwrap();
+
+        assert_eq!(
+            xattr::get(&path, "user.trident-test").unwrap().unwrap(),
+            b"preserved"
+        );
     }
 
     #[test]
