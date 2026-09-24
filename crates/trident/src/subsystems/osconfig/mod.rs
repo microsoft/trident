@@ -4,7 +4,7 @@ use anyhow::Context;
 use log::{debug, error, info, warn};
 
 use osmodifier::{OSModifierConfig, OsModifierContext};
-use osutils::path;
+use osutils::{files, path};
 use trident_api::{
     config::{ManagementOs, Services, SshMode},
     constants::internal_params::{DISABLE_HOSTNAME_CARRY_OVER, DISABLE_MACHINE_ID_CARRY_OVER},
@@ -95,15 +95,15 @@ fn should_carry_over_machine_id(ctx: &EngineContext) -> bool {
         && ctx.servicing_type == ServicingType::AbUpdate
 }
 
-/// Read before writing so aliased source and destination paths cannot truncate the machine ID.
+/// Read before atomic replacement so aliases and interrupted writes cannot truncate the machine ID.
 fn copy_machine_id(source: &Path, destination: &Path) -> Result<(), TridentError> {
-    let contents = fs::read(source).structured(ServicingError::CopyMachineId)?;
+    let contents = fs::read_to_string(source).structured(ServicingError::CopyMachineId)?;
     let permissions = fs::metadata(source)
         .structured(ServicingError::CopyMachineId)?
         .permissions();
 
-    fs::write(destination, contents).structured(ServicingError::CopyMachineId)?;
-    fs::set_permissions(destination, permissions).structured(ServicingError::CopyMachineId)
+    files::atomic_write_file_with_permissions(destination, &contents, permissions)
+        .structured(ServicingError::CopyMachineId)
 }
 
 /// Returns whether a Runtime Update is sufficient or if an A/B Update is required.

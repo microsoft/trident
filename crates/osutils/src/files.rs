@@ -222,6 +222,23 @@ fn read_umask() -> Result<u32, Error> {
 /// need the original SELinux context should run `restorecon` after this
 /// function returns.
 pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
+    atomic_write_file_inner(path, content, None)
+}
+
+/// Like [`atomic_write_file`], but applies `permissions` to the replacement.
+pub fn atomic_write_file_with_permissions(
+    path: &Path,
+    content: &str,
+    permissions: Permissions,
+) -> Result<(), Error> {
+    atomic_write_file_inner(path, content, Some(permissions))
+}
+
+fn atomic_write_file_inner(
+    path: &Path,
+    content: &str,
+    permissions: Option<Permissions>,
+) -> Result<(), Error> {
     let parent = path.parent().context("Cannot determine parent directory")?;
 
     let mut tmp = NamedTempFile::new_in(parent)
@@ -256,7 +273,13 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
                 )
             })?;
 
-            fs::set_permissions(tmp.path(), metadata.permissions()).with_context(|| {
+            fs::set_permissions(
+                tmp.path(),
+                permissions
+                    .clone()
+                    .unwrap_or_else(|| metadata.permissions()),
+            )
+            .with_context(|| {
                 format!(
                     "Failed to set permissions on temp file for '{}'",
                     path.display()
@@ -267,8 +290,8 @@ pub fn atomic_write_file(path: &Path, content: &str) -> Result<(), Error> {
             // New file: apply 0666 masked by the process umask, matching
             // fs::write / open(O_CREAT, 0666) behavior. Read umask from
             // /proc/self/status to avoid the thread-unsafe umask(2) dance.
-            let mode = 0o666 & !read_umask()?;
-            fs::set_permissions(tmp.path(), Permissions::from_mode(mode)).with_context(|| {
+            let permissions = permissions.unwrap_or(Permissions::from_mode(0o666 & !read_umask()?));
+            fs::set_permissions(tmp.path(), permissions).with_context(|| {
                 format!(
                     "Failed to set default permissions on temp file for '{}'",
                     path.display()
@@ -500,6 +523,20 @@ mod tests {
 
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o640, "Expected mode 0640, got {mode:04o}");
+    }
+
+    #[test]
+    fn test_atomic_write_applies_explicit_permissions() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("explicit-perms.conf");
+        fs::write(&path, "original\n").unwrap();
+        fs::set_permissions(&path, Permissions::from_mode(0o600)).unwrap();
+
+        atomic_write_file_with_permissions(&path, "updated\n", Permissions::from_mode(0o444))
+            .unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o444, "Expected mode 0444, got {mode:04o}");
     }
 
     #[test]
