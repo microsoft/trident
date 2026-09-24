@@ -1,0 +1,19 @@
+name: Copilot Code Review Setup Steps
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+
+jobs:
+  # Keep code review on a supported GitHub-hosted runner. Coding agents use
+  # the 1ES environment configured in copilot-setup-steps.yml.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Complete setup
+        run: echo "No additional setup required for Copilot code review."
