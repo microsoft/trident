@@ -44,15 +44,10 @@ parameters:
     default: false
     displayName: Servicing VM testing
 
-  - name: runStormE2EVMHost
+  - name: runStormE2E
     type: boolean
     default: false
-    displayName: Storm E2E tests Virtual Machines Host
-
-  - name: runStormE2EVMContainer
-    type: boolean
-    default: false
-    displayName: Storm E2E tests Virtual Machines Container
+    displayName: Storm E2E tests (VM host and container)
 
   - name: stormTestRing
     type: string
@@ -73,20 +68,20 @@ stages:
   #
   # Every stage below consumes the go-tools artifact this publishes, including
   # FunctionalTesting, which already declared a dependency on BuildingTools.
-  - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runFunctionalTests, parameters.runStormE2EVMHost, parameters.runStormE2EVMContainer) }}:
+  - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runFunctionalTests, parameters.runStormE2E) }}:
       - template: stages/building_tools/building-tools.yml
         parameters:
           architecture: amd64
 
   # The image downloads are only needed by the stages that consume test images;
   # a functional-only run would otherwise produce a stage with no jobs.
-  - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runStormE2EVMHost, parameters.runStormE2EVMContainer) }}:
+  - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runStormE2E) }}:
       - template: stages/download_artifacts/get-artifacts.yml
         parameters:
           definition: ${{ parameters.definition }}
           servicingImages: ${{ parameters.runServicingTests }}
-          hostImages: ${{ or(parameters.runDeploymentVMHost, parameters.runDeploymentBMHost, parameters.runStormE2EVMHost) }}
-          containerImages: ${{ or(parameters.runDeploymentVMContainer, parameters.runDeploymentBMContainer, parameters.runStormE2EVMContainer) }}
+          hostImages: ${{ or(parameters.runDeploymentVMHost, parameters.runDeploymentBMHost, parameters.runStormE2E) }}
+          containerImages: ${{ or(parameters.runDeploymentVMContainer, parameters.runDeploymentBMContainer, parameters.runStormE2E) }}
           ${{ if eq(parameters.tridentPipelineRunId, 'latestFromBranch') }}:
             runVersion: latestFromBranch
             branch: ${{ parameters.branch }}
@@ -96,15 +91,13 @@ stages:
             tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
             allowFailedBuilds: true
 
-  - ${{ if or(parameters.runStormE2EVMHost, parameters.runStormE2EVMContainer) }}:
+  - ${{ if parameters.runStormE2E }}:
       - template: stages/testing_e2e/storm_e2e.yml
         parameters:
           stageType: ${{ parameters.stormTestRing }}
           # Still a testingRun: the images come from DownloadTestingElements.
           # Only the Go tools moved to being built in-pipeline.
           testingRun: true
-          runVMHost: ${{ parameters.runStormE2EVMHost }}
-          runVMContainer: ${{ parameters.runStormE2EVMContainer }}
 
   - ${{ if parameters.runFunctionalTests }}:
       - template: stages/testing_functional/functional-testing.yml

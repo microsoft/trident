@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -27,6 +28,8 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/retry"
+
+	"tridenttools/storm/utils/sha384"
 )
 
 // artifactMediaType is the media type for the files this suite hosts in ACR.
@@ -159,4 +162,47 @@ func (c *Client) Reference(repository, tag string) string {
 // auth error as "already gone" would silently skip cleanup and leak images.
 func isNotFound(err error) bool {
 	return errors.Is(err, errdef.ErrNotFound) || strings.Contains(err.Error(), "MANIFEST_UNKNOWN")
+}
+
+// PullSha384 pulls the single artifact at reference and returns the SHA384 of
+// its file, which is what a Host Configuration extension entry must carry.
+//
+// The pull is anonymous: these repositories allow it, and an A/B update must
+// be able to re-hash an image without the push credentials.
+func PullSha384(ctx context.Context, ociURL string) (string, error) {
+	ref := strings.TrimPrefix(ociURL, "oci://")
+	repoRef, tag, ok := strings.Cut(ref, ":")
+	if !ok {
+		return "", fmt.Errorf("invalid image URL %q: expected <repository>:<tag>", ociURL)
+	}
+
+	repo, err := remote.NewRepository(repoRef)
+	if err != nil {
+		return "", fmt.Errorf("failed to address %q: %w", repoRef, err)
+	}
+
+	tempDir, err := os.MkdirTemp("", "acr_pull_*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create a temporary directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	store, err := file.New(tempDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to create a file store: %w", err)
+	}
+	defer store.Close()
+
+	if _, err := oras.Copy(ctx, repo, tag, store, tag, oras.DefaultCopyOptions); err != nil {
+		return "", fmt.Errorf("failed to pull %s: %w", ociURL, err)
+	}
+
+	entries, err := os.ReadDir(tempDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to read the pulled artifact: %w", err)
+	}
+	if len(entries) != 1 {
+		return "", fmt.Errorf("expected exactly one file in %s, found %d", ociURL, len(entries))
+	}
+	return sha384.CalculateSha384(filepath.Join(tempDir, entries[0].Name()))
 }

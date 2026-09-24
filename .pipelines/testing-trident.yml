@@ -60,15 +60,10 @@ parameters:
     default: false
     displayName: Servicing VM testing
 
-  - name: runStormE2EVMHost
+  - name: runStormE2E
     type: boolean
     default: false
-    displayName: Storm E2E tests Virtual Machines Host
-
-  - name: runStormE2EVMContainer
-    type: boolean
-    default: false
-    displayName: Storm E2E tests Virtual Machines Container
+    displayName: Storm E2E tests (VM host and container)
 
   - name: stormTestRing
     type: string
@@ -129,6 +124,5 @@ extends:
           runDeploymentBMContainer: ${{ parameters.runDeploymentBMContainer }}
           runFunctionalTests: ${{ parameters.runFunctionalTests }}
           runServicingTests: ${{ parameters.runServicingTests }}
-          runStormE2EVMHost: ${{ parameters.runStormE2EVMHost }}
-          runStormE2EVMContainer: ${{ parameters.runStormE2EVMContainer }}
+          runStormE2E: ${{ parameters.runStormE2E }}
           stormTestRing: ${{ parameters.stormTestRing }}

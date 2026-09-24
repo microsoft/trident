@@ -15,16 +15,6 @@ parameters:
     type: boolean
     default: false
 
-  # Which VM runtimes to run. Both default to true so the full pipeline is
-  # unchanged; the shortcut pipeline toggles them individually.
-  - name: runVMHost
-    type: boolean
-    default: true
-
-  - name: runVMContainer
-    type: boolean
-    default: true
-
 stages:
   - stage: DefineTests_E2E
     displayName: Define all E2E test matrices
@@ -61,21 +51,19 @@ stages:
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: Matrix of Trident configurations for E2E Tests
 
-  - ${{ if parameters.runVMHost }}:
-      - template: test_execution_template.yml
-        parameters:
-          hardwareType: "VM"
-          runtimeType: "HOST"
-          testingRun: ${{ parameters.testingRun }}
-          acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
+  - template: test_execution_template.yml
+    parameters:
+      hardwareType: "VM"
+      runtimeType: "HOST"
+      testingRun: ${{ parameters.testingRun }}
+      acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
-  - ${{ if parameters.runVMContainer }}:
-      - template: test_execution_template.yml
-        parameters:
-          hardwareType: "VM"
-          runtimeType: "CONTAINER"
-          testingRun: ${{ parameters.testingRun }}
-          acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
+  - template: test_execution_template.yml
+    parameters:
+      hardwareType: "VM"
+      runtimeType: "CONTAINER"
+      testingRun: ${{ parameters.testingRun }}
+      acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   # TODO: enable once bare-metal host setup is supported in storm
   # - template: test_execution_template.yml
