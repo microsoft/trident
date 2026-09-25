@@ -38,6 +38,20 @@ pub(crate) fn parse_host_config(
     parsed
 }
 
+/// Read and parse (but do not semantically validate) a Host Configuration
+/// file at the given path -- the same parse step `Trident::new` performs
+/// internally before it does anything else with the file, exposed so
+/// callers can perform it as a side-effect-free preflight check (e.g.
+/// before creating a datastore on the strength of the path merely
+/// existing) without duplicating the read+parse logic themselves.
+pub fn parse_host_config_file(path: impl AsRef<Path>) -> Result<HostConfiguration, TridentError> {
+    let contents =
+        fs::read_to_string(path.as_ref()).structured(InvalidInputError::ReadInputFile {
+            path: path.as_ref().display().to_string(),
+        })?;
+    parse_host_config(&contents, Some(path.as_ref()))
+}
+
 /// Validate a Host Configuration file at the given path.
 pub fn validate_host_config_file(path: impl AsRef<Path>) -> Result<(), TridentError> {
     info!(

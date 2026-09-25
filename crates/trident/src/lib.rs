@@ -63,8 +63,9 @@ pub use crate::{
         logfwd::LogForwarder,
         logstream::Logstream,
         operation_context::{
-            run_with_captured_operation, run_with_operation, save_reboot_operation,
-            take_reboot_operation, OperationSource,
+            command_name, run_command, run_command_if, run_reboot_command,
+            run_with_captured_operation, save_reboot_operation, take_reboot_operation,
+            OperationSource,
         },
         telemetry_uploader::TelemetryUploader,
         tracestream::TraceStream,
@@ -299,11 +300,6 @@ impl Trident {
         // attaching here even in that case.
         tracestream.attach_ids_if_present(datastore_path, !attach_installation_id);
 
-        // Trace features enabled in the Host Configuration.
-        if let Some(hc) = &host_config {
-            hc.feature_tracing();
-        }
-
         if let Ok(selinux_context) = fs::read_to_string("/proc/self/attr/current") {
             debug!(
                 "Trident is running in SELinux domain '{}'",
@@ -319,7 +315,17 @@ impl Trident {
             ));
         }
 
-        tracing::info!(metric_name = "trident_start");
+        // See `logging::tracestream::clock_boottime_uptime_secs` for the
+        // NaN-fallback rationale and its regression test.
+        let uptime_secs = logging::tracestream::clock_boottime_uptime_secs(
+            nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME),
+        );
+        // `acl` and `arch` are process-lifetime, host-level facts (like
+        // `vm`), so they're stamped onto every telemetry event via
+        // `PLATFORM_INFO` (see
+        // `logging::tracestream::populate_platform_info`) instead of
+        // being scoped to just this one metric.
+        tracing::info!(metric_name = "trident_start", value = uptime_secs,);
 
         Ok(Self {
             host_config,
@@ -879,7 +885,17 @@ impl Trident {
         self.host_config = Some(config);
         self.is_stream_image = true;
 
-        self.install(datastore, Operations::all(), false, Some(image))
+        // `stream_image_start` above marks the beginning of a streamed
+        // install; mirror it with a completion signal here so streaming
+        // failures/successes are distinguishable in telemetry without
+        // relying on the downstream `clean_install_*` metrics (which are
+        // specific to the clean-install engine step, not the streaming
+        // entry point as a whole).
+        let result = self.install(datastore, Operations::all(), false, Some(image));
+        if result.is_ok() {
+            tracing::info!(metric_name = "stream_image_success", value = true);
+        }
+        result
     }
 
     pub fn commit(
