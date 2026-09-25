@@ -16,6 +16,11 @@ pub mod uki;
 
 pub(crate) const ESP_EXTRACTION_DIRECTORY: &str = VAR_TMP_PATH;
 
+/// Mode to create [`ESP_EXTRACTION_DIRECTORY`] with when the OS image does not
+/// ship it. `/var/tmp` is world-writable with the sticky bit set on a
+/// conventional system, and systemd-tmpfiles expects to find it that way.
+pub(crate) const ESP_EXTRACTION_DIRECTORY_MODE: u32 = 0o1777;
+
 #[derive(Default, Debug)]
 pub(super) struct BootSubsystem;
 impl Subsystem for BootSubsystem {

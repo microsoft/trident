@@ -12,7 +12,7 @@ use procfs::sys::kernel::Version;
 use osutils::path::join_relative;
 use osutils::{
     efivar,
-    uki::{self, UKI_ADDON_DIR_SUFFIX, UKI_ADDON_FILE_SUFFIX},
+    uki::{self, UKI_ADDON_DIR_SUFFIX, UKI_ADDON_FILE_SUFFIX, UKI_CRED_FILE_SUFFIX},
 };
 use trident_api::{
     constants::{
@@ -143,7 +143,9 @@ pub fn stage_uki_on_esp(
     fs::create_dir_all(&dest_addon_dir).context("Failed to create destination addon directory")?;
 
     // Copy all files from the source addon directory to the destination addon
-    // directory. We expect these to be files with names ending in `.addon.efi`.
+    // directory. We expect these to be files with names ending in `.addon.efi`
+    // (UKI addons) or `.cred` (systemd encrypted credentials); both are
+    // consumed by systemd-stub at boot.
     for entry in fs::read_dir(&addon_dir).context("Failed to read addon directory")? {
         let entry = entry.context("Failed to read entry in addon directory")?;
         let path = entry.path();
@@ -155,13 +157,12 @@ pub fn stage_uki_on_esp(
             continue;
         }
 
-        if !path
-            .as_os_str()
-            .as_encoded_bytes()
-            .ends_with(UKI_ADDON_FILE_SUFFIX.as_bytes())
+        let file_name_bytes = path.as_os_str().as_encoded_bytes();
+        if !file_name_bytes.ends_with(UKI_ADDON_FILE_SUFFIX.as_bytes())
+            && !file_name_bytes.ends_with(UKI_CRED_FILE_SUFFIX.as_bytes())
         {
             trace!(
-                "Ignoring file '{}' in addon directory that does not end with expected suffix '{UKI_ADDON_FILE_SUFFIX}'",
+                "Ignoring file '{}' in addon directory that does not end with expected suffix '{UKI_ADDON_FILE_SUFFIX}' or '{UKI_CRED_FILE_SUFFIX}'",
                 path.display(),
             );
             continue;
@@ -820,8 +821,8 @@ mod tests {
     }
 
     /// Validates that `stage_uki_on_esp` copies both the UKI file and its
-    /// associated addon directory. Only files ending in `.addon.efi` are
-    /// copied; other files in the addon directory are ignored.
+    /// associated addon directory. Only files ending in `.addon.efi` or
+    /// `.cred` are copied; other files in the addon directory are ignored.
     #[test]
     fn test_copy_uki_to_esp_with_addon() {
         // Create source EFI/Linux directory and a dummy UKI file
@@ -831,12 +832,13 @@ mod tests {
         let mock_uki_file = src_uki_dir.join("dummy-uki.efi");
         fs::write(&mock_uki_file, b"uki-content").unwrap();
 
-        // Create an addon directory with addon files
+        // Create an addon directory with addon and credential files
         let addon_dir = uki::uki_addon_dir(&mock_uki_file);
         fs::create_dir_all(&addon_dir).unwrap();
         fs::write(addon_dir.join("addon1.addon.efi"), b"addon1").unwrap();
         fs::write(addon_dir.join("addon2.addon.efi"), b"addon2").unwrap();
-        // Files without the .addon.efi suffix should be ignored
+        fs::write(addon_dir.join("mycred.cred"), b"cred-content").unwrap();
+        // Files without the .addon.efi or .cred suffix should be ignored
         fs::write(addon_dir.join("not-an-addon.txt"), b"ignored").unwrap();
         fs::write(addon_dir.join("sneaky.efi"), b"ignored").unwrap();
         fs::write(addon_dir.join("README"), b"ignored").unwrap();
@@ -858,7 +860,7 @@ mod tests {
             .join(TMP_UKI_NAME);
         assert_eq!(fs::read(&dest_uki_file).unwrap(), b"uki-content");
 
-        // Check that the addon files were copied to the correct destination
+        // Check that the addon and credential files were copied to the correct destination
         let dest_addon_dir = join_relative(mount_point.path(), DEFAULT_ESP_MOUNT_POINT_PATH)
             .join(UKI_DIRECTORY)
             .join(TMP_UKI_ADDON_DIR_NAME);
@@ -870,8 +872,12 @@ mod tests {
             fs::read(dest_addon_dir.join("addon2.addon.efi")).unwrap(),
             b"addon2"
         );
+        assert_eq!(
+            fs::read(dest_addon_dir.join("mycred.cred")).unwrap(),
+            b"cred-content"
+        );
 
-        // Verify files without the .addon.efi suffix were NOT copied
+        // Verify files without the .addon.efi or .cred suffix were NOT copied
         assert!(!dest_addon_dir.join("not-an-addon.txt").exists());
         assert!(!dest_addon_dir.join("sneaky.efi").exists());
         assert!(!dest_addon_dir.join("README").exists());

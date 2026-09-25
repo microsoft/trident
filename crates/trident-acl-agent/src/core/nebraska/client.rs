@@ -2,6 +2,7 @@
 
 use std::{thread, time::Duration};
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use log::{debug, trace, warn};
 use semver::Version;
 use url::Url;
@@ -13,6 +14,18 @@ use super::{
     transport::{ReqwestTransport, Transport},
     wire::{self, App},
 };
+
+/// Schemes a resolved package URL is allowed to carry before it is ever
+/// forwarded to Trident. Nebraska's job is to point at a *remote* artifact
+/// (typically on a different host than Nebraska itself - a blob store or
+/// CDN); `http`/`file` are excluded even though Trident's own downloader
+/// would otherwise accept them: `http` because the artifact must be
+/// integrity/authenticity-protected in transit the same way the Nebraska
+/// channel itself is, and `file` because it crosses from "fetch a remote
+/// artifact" into "read a path off the local disk of whichever machine
+/// opens this URL" (root-privileged `tridentd`), a capability no legitimate
+/// Nebraska response has any reason to invoke.
+const ALLOWED_PACKAGE_URL_SCHEMES: &[&str] = &["https", "oci"];
 
 /// The outcome of an update check.
 ///
@@ -83,16 +96,73 @@ pub struct PackageFile {
 
 /// The hash(es) of a file, as reported by Nebraska.
 ///
-/// Both values are base64-encoded and hash the *file* (not its contents).
-/// Nebraska reports a SHA-1; `sha256` is present only when the file was
+/// Both values are base64-encoded content hashes of the file: upstream
+/// Nebraska reports a SHA-1, and `sha256` is present only when the file was
 /// registered with one.
+///
+/// **Our Nebraska deployment does not follow that naming.** By internal
+/// convention, our server puts a base64-encoded **SHA-384** of the COSI
+/// image's metadata section into the `sha1` field instead of a real SHA-1 -
+/// the same value Trident itself computes and validates as `image.sha384`
+/// (see `crates/trident/src/osimage/cosi/mod.rs`). So despite the field's
+/// Omaha-inherited name, treat [`sha1`](PackageHash::sha1) as "the value our
+/// Nebraska calls `hash`", not as an actual SHA-1 digest - use
+/// [`to_cosi_sha384`](PackageHash::to_cosi_sha384) to get the value in the
+/// form Trident's gRPC API expects, rather than forwarding this field as-is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageHash {
-    /// Base64-encoded SHA-1 of the file.
+    /// Base64-encoded SHA-1 of the file, per the Omaha wire format - but see
+    /// this struct's docs: our Nebraska deployment actually puts a
+    /// base64-encoded SHA-384 here, not a SHA-1.
     pub sha1: String,
 
-    /// Base64-encoded SHA-256 of the file, when Nebraska provides it.
+    /// Base64-encoded SHA-256 of the file, when Nebraska provides it. Not
+    /// used by [`to_cosi_sha384`](PackageHash::to_cosi_sha384); our
+    /// deployment does not repurpose this field, so it carries a real SHA-256
+    /// (or is absent) same as upstream Omaha/Nebraska.
     pub sha256: Option<String>,
+}
+
+impl PackageHash {
+    /// Converts this hash into the hex-encoded SHA-384 checksum string that
+    /// Trident's gRPC `image.sha384` Host Configuration field expects.
+    ///
+    /// This is a straight re-encode (base64 -> raw bytes -> hex), not a real
+    /// hash-family conversion: per this struct's docs, our Nebraska
+    /// deployment already stores a SHA-384 digest in
+    /// [`sha1`](PackageHash::sha1), just base64-encoded instead of hex, so
+    /// there is no cryptographic conversion between algorithms happening
+    /// here - only a change of text encoding.
+    ///
+    /// Returns an error if the field does not decode to valid base64, or
+    /// decodes to something other than 48 bytes (the fixed size of a SHA-384
+    /// digest) - either means our "this field holds a SHA-384" assumption
+    /// does not hold for this response, and forwarding a wrong-sized/garbage
+    /// value on to Trident as an integrity check would be worse than failing
+    /// loudly here.
+    pub fn to_cosi_sha384(&self) -> Result<String, NebraskaError> {
+        const SHA384_LEN_BYTES: usize = 48;
+
+        // Decode straight into a fixed-size stack buffer instead of
+        // `Engine::decode`'s allocating `Vec<u8>` output: a malicious or
+        // buggy Nebraska response could otherwise send an arbitrarily large
+        // base64 string, forcing a large allocation before we ever get to
+        // checking the decoded length below. `decode_slice` rejects any
+        // input that would decode to more than `SHA384_LEN_BYTES` without
+        // allocating proportionally to the (untrusted) input size.
+        let mut raw = [0u8; SHA384_LEN_BYTES];
+        let decoded_len = STANDARD.decode_slice(&self.sha1, &mut raw).map_err(|err| {
+            NebraskaError::UnexpectedResponse(format!(
+                "Nebraska-reported hash is not valid base64, or does not fit in {SHA384_LEN_BYTES} bytes (SHA-384): {err}"
+            ))
+        })?;
+        if decoded_len != SHA384_LEN_BYTES {
+            return Err(NebraskaError::UnexpectedResponse(format!(
+                "Nebraska-reported hash decodes to {decoded_len} bytes, expected {SHA384_LEN_BYTES} (SHA-384)"
+            )));
+        }
+        Ok(hex::encode(raw))
+    }
 }
 
 /// The bounded exponential-backoff policy used by
@@ -347,6 +417,43 @@ impl<T: Transport> Client<T> {
         let app = self.app(current_version).with_update_check();
         let response = self.send(app)?;
         self.interpret_check(response)
+    }
+
+    /// Proves the server is reachable, speaks Omaha, and resolves this
+    /// client's app/track, **without** any Nebraska-side registration or
+    /// update side effect.
+    ///
+    /// Despite the name, this deliberately does **not** send an Omaha
+    /// `<ping/>`: Nebraska's Omaha handler calls `RegisterInstance`
+    /// (upserting the instance's row, including the version this request
+    /// reports) whenever `<ping>` is present, entirely independent of
+    /// `<updatecheck>` -- a real Omaha `<ping/>` is *not* a no-op against
+    /// Nebraska. This sends a **bare** `<app>` with neither `<updatecheck/>`
+    /// nor `<ping/>`. Omitting both still exercises appid/group/track
+    /// resolution (Nebraska looks those up before considering either child
+    /// element) without writing anything, which is what a pure connectivity
+    /// probe needs.
+    ///
+    /// `check_for_update` is unsuitable for a connectivity probe for the
+    /// same reason plus more: it also grants -- and therefore marks
+    /// in-progress -- an update for the caller's machine id, which can then
+    /// collide with a real stage/finalize request for the same machine id
+    /// (see `error-updateInProgressOnInstance` on
+    /// [`AppStatus`](super::status::AppStatus)).
+    ///
+    /// `error-updateInProgressOnInstance` is treated as success here, same as
+    /// [`interpret_check`](Client::interpret_check): it only means some other
+    /// update is genuinely in flight for this instance, which still proves
+    /// the server is reachable and resolved the app/track.
+    pub fn probe(&self, current_version: &Version) -> Result<(), NebraskaError> {
+        let app = self.app(current_version);
+        let response = self.send(app)?;
+        let app_response = self.app_response(&response)?;
+        if app_response.status.is_ok() || app_response.status.is_update_in_progress() {
+            Ok(())
+        } else {
+            Err(NebraskaError::ServerError(app_response.status.to_string()))
+        }
     }
 
     /// Reports a [`ProgressEvent`] for an in-flight update.
@@ -706,6 +813,15 @@ impl<T: Transport> Client<T> {
             ))
         })?;
 
+        if !ALLOWED_PACKAGE_URL_SCHEMES.contains(&url.scheme()) {
+            return Err(NebraskaError::UnexpectedResponse(format!(
+                "package '{}' resolved to disallowed URL scheme '{}' (only {} permitted)",
+                package.name,
+                url.scheme(),
+                ALLOWED_PACKAGE_URL_SCHEMES.join("/"),
+            )));
+        }
+
         let hash = package.hash.as_ref().map(|sha1| PackageHash {
             sha1: sha1.clone(),
             sha256: package.hash_sha256.clone(),
@@ -849,6 +965,44 @@ mod tests {
     }
 
     #[test]
+    fn check_rejects_offer_with_http_codebase() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="http://updates.example.com/"/></urls><manifest version="2.0.0"><packages><package name="os.cosi" required="true"/></packages></manifest></updatecheck></app></response>"#,
+        );
+        let err = client
+            .check_for_update(&Version::new(1, 0, 0))
+            .expect_err("a plain-http package URL must be rejected");
+        assert!(
+            matches!(err, NebraskaError::UnexpectedResponse(_)),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn check_rejects_offer_with_file_codebase() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="file:///etc/"/></urls><manifest version="2.0.0"><packages><package name="passwd" required="true"/></packages></manifest></updatecheck></app></response>"#,
+        );
+        let err = client
+            .check_for_update(&Version::new(1, 0, 0))
+            .expect_err("a file:// package URL must be rejected");
+        assert!(
+            matches!(err, NebraskaError::UnexpectedResponse(_)),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn check_accepts_offer_with_oci_codebase() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="oci://registry.example.com/os/"/></urls><manifest version="2.0.0"><packages><package name="os.cosi" required="true"/></packages></manifest></updatecheck></app></response>"#,
+        );
+        client
+            .check_for_update(&Version::new(1, 0, 0))
+            .expect("an oci:// package URL is a legitimate remote artifact reference");
+    }
+
+    #[test]
     fn check_offer_without_hash_is_none() {
         let client = client_with(
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages><package name="x.cosi" required="true"/></packages></manifest></updatecheck></app></response>"#,
@@ -963,6 +1117,54 @@ mod tests {
             matches!(err, NebraskaError::UnexpectedResponse(_)),
             "got {err:?}"
         );
+    }
+
+    #[test]
+    fn probe_sends_neither_ping_nor_update_check_element() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"/></response>"#,
+        );
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+        let body = client.transport.last_body.borrow().clone().unwrap();
+        assert!(
+            !body.contains("<ping"),
+            "probe() must not send an Omaha <ping/>: Nebraska calls RegisterInstance \
+             (upserting the instance's row) whenever it sees one, independent of \
+             <updatecheck/>: {body}"
+        );
+        assert!(
+            !body.contains("<updatecheck"),
+            "probe() must not request an update check: {body}"
+        );
+    }
+
+    #[test]
+    fn probe_succeeds_on_ok_status() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"/></response>"#,
+        );
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+    }
+
+    #[test]
+    fn probe_succeeds_on_update_in_progress_status() {
+        // Some other update already in flight for this instance still proves
+        // the server is reachable and resolved the app/track -- probe() must
+        // not treat this as a failure, mirroring check_for_update's own
+        // handling of this status via interpret_check.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"/></response>"#,
+        );
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+    }
+
+    #[test]
+    fn probe_fails_on_other_error_status() {
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-unknownApplication"/></response>"#,
+        );
+        let err = client.probe(&Version::new(1, 0, 0)).unwrap_err();
+        assert!(matches!(err, NebraskaError::ServerError(_)), "{err:?}");
     }
 
     #[test]
@@ -1326,5 +1528,74 @@ mod tests {
             .unwrap_err();
         assert!(err.is_retryable());
         assert_eq!(client.transport.calls.get(), 1);
+    }
+
+    #[test]
+    fn to_cosi_sha384_converts_base64_to_hex() {
+        // 48 zero bytes, base64-encoded - a well-formed (if not realistic)
+        // SHA-384 digest.
+        let hash = PackageHash {
+            sha1: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
+            sha256: None,
+        };
+        assert_eq!(hash.to_cosi_sha384().unwrap(), "0".repeat(96));
+    }
+
+    #[test]
+    fn to_cosi_sha384_round_trips_real_digest() {
+        // Generated with:
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384
+        // i.e. a real SHA-384 digest of a known input (not synthetic bytes),
+        // confirming the base64 -> hex re-encode matches an independently
+        // computed value.
+        let hash = PackageHash {
+            sha1: "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx".to_string(),
+            sha256: None,
+        };
+        assert_eq!(
+            hash.to_cosi_sha384().unwrap(),
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471"
+        );
+    }
+
+    #[test]
+    fn to_cosi_sha384_rejects_invalid_base64() {
+        let hash = PackageHash {
+            sha1: "not-valid-base64!!".to_string(),
+            sha256: None,
+        };
+        let err = hash.to_cosi_sha384().unwrap_err();
+        assert!(matches!(err, NebraskaError::UnexpectedResponse(_)));
+    }
+
+    #[test]
+    fn to_cosi_sha384_rejects_wrong_length() {
+        // Valid base64, but decodes to far fewer than the 48 bytes a SHA-384
+        // digest requires - e.g. a real SHA-1 (20 bytes), confirming this
+        // check would catch a Nebraska deployment that (unlike ours) puts an
+        // actual SHA-1 in this field.
+        let hash = PackageHash {
+            sha1: "AAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string(),
+            sha256: None,
+        };
+        let err = hash.to_cosi_sha384().unwrap_err();
+        assert!(matches!(err, NebraskaError::UnexpectedResponse(_)));
+    }
+
+    #[test]
+    fn to_cosi_sha384_rejects_oversized_input() {
+        // Valid base64 that decodes to more than the 48 bytes a SHA-384
+        // digest requires. This must be rejected via the fixed-size decode
+        // buffer rather than by first allocating a `Vec` sized to the
+        // (potentially attacker-controlled) input.
+        // 68 base64 chars (no padding needed, 68 % 4 == 0) decode to 51
+        // bytes - more than the 48 a SHA-384 digest requires.
+        let hash = PackageHash {
+            sha1: "A".repeat(68),
+            sha256: None,
+        };
+        let err = hash.to_cosi_sha384().unwrap_err();
+        assert!(matches!(err, NebraskaError::UnexpectedResponse(_)));
     }
 }

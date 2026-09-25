@@ -219,13 +219,9 @@ impl UpdateRequest {
                         "server is required for stage/finalize".to_string(),
                     ));
                 }
-                if self
-                    .server
-                    .as_ref()
-                    .is_some_and(|u| !matches!(u.scheme(), "http" | "https"))
-                {
+                if self.server.as_ref().is_some_and(|u| u.scheme() != "https") {
                     return Err(AgentError::InvalidRequest(
-                        "server must be an http(s) URL".to_string(),
+                        "server must be an https URL".to_string(),
                     ));
                 }
                 if self.app_id.as_deref().unwrap_or("").is_empty() {
@@ -1235,26 +1231,30 @@ mod tests {
     }
 
     #[test]
-    fn validate_accepts_plain_http_server() {
-        // Deliberately not https-only: test/dev harnesses (e.g. the storm
-        // E2E suite) point `server` at a local, unencrypted Nebraska stub.
+    fn validate_rejects_plain_http_server() {
+        // https-only: the Nebraska control channel must be transport-secured
+        // in production, and the storm E2E suite now serves its Nebraska
+        // stub over https (installing its ephemeral CA into the VM's own
+        // system trust store) rather than being given an unencrypted-http
+        // carve-out here.
         for operation in [RequestedOperation::Stage, RequestedOperation::Finalize] {
             let mut request = valid_nebraska_request(operation);
             request.server = Some(Url::parse("http://127.0.0.1:8080/v1/update").unwrap());
-            request
+            let err = request
                 .validate()
-                .unwrap_or_else(|err| panic!("{operation:?} with http:// server: {err}"));
+                .expect_err("a plain-http server must be rejected");
+            assert!(err.to_string().contains("server"), "{err}");
         }
     }
 
     #[test]
-    fn validate_rejects_stage_and_finalize_non_http_scheme_server() {
+    fn validate_rejects_stage_and_finalize_non_https_scheme_server() {
         for operation in [RequestedOperation::Stage, RequestedOperation::Finalize] {
             let mut request = valid_nebraska_request(operation);
             request.server = Some(Url::parse("ftp://nebraska.example/v1/update").unwrap());
             let err = request
                 .validate()
-                .expect_err("a non-http(s) server scheme must be rejected");
+                .expect_err("a non-https server scheme must be rejected");
             assert!(err.to_string().contains("server"), "{err}");
         }
     }
