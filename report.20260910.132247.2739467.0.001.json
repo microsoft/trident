@@ -1,0 +1,1305 @@
+
+{
+  "header": {
+    "reportVersion": 5,
+    "event": "Allocation failed - JavaScript heap out of memory",
+    "trigger": "OOMError",
+    "filename": "report.20260910.132247.2739467.0.001.json",
+    "dumpEventTime": "2026-09-10T13:22:47Z",
+    "dumpEventTimeStamp": "1789071767662",
+    "processId": 2739467,
+    "threadId": 0,
+    "cwd": "/home/frhuelsz/repos/trident-storm-port",
+    "commandLine": [
+      "/home/frhuelsz/.local/bin/copilot",
+      "--no-warnings",
+      "--report-on-fatalerror",
+      "--optimize-for-size",
+      "--expose-gc",
+      "/home/frhuelsz/.local/bin/copilot",
+      "--session-id",
+      "ed3d45b9-332b-411c-976b-3544ad2d99f6",
+      "-C",
+      "/home/frhuelsz/repos/trident-storm-port",
+      "--ui-server",
+      "--port",
+      "43655",
+      "--host",
+      "127.0.0.1",
+      "--allow-all",
+      "--additional-mcp-config",
+      "@/home/frhuelsz/.local/cmgr/mcp/trident-storm.json"
+    ],
+    "nodejsVersion": "v24.20.0",
+    "glibcVersionRuntime": "2.43",
+    "glibcVersionCompiler": "2.28",
+    "wordSize": 64,
+    "arch": "x64",
+    "platform": "linux",
+    "componentVersions": {
+      "acorn": "8.18.0",
+      "ada": "4.0.0",
+      "amaro": "1.1.11",
+      "ares": "1.34.8",
+      "brotli": "1.2.0",
+      "cldr": "48.0",
+      "icu": "78.3",
+      "llhttp": "9.4.3",
+      "merve": "1.2.2",
+      "modules": "137",
+      "napi": "10",
+      "nbytes": "0.1.4",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.70.0",
+      "nghttp3": "",
+      "ngtcp2": "",
+      "node": "24.20.0",
+      "openssl": "3.5.7",
+      "simdjson": "4.6.6",
+      "simdutf": "6.4.0",
+      "sqlite": "3.53.4",
+      "tz": "2026c",
+      "undici": "7.29.0",
+      "unicode": "17.0",
+      "uv": "1.52.1",
+      "uvwasi": "0.0.23",
+      "v8": "13.6.233.17-node.53",
+      "zlib": "1.3.2.1-motley-42c2f19",
+      "zstd": "1.5.7"
+    },
+    "release": {
+      "name": "node",
+      "lts": "Krypton",
+      "headersUrl": "https://nodejs.org/download/release/v24.20.0/node-v24.20.0-headers.tar.gz",
+      "sourceUrl": "https://nodejs.org/download/release/v24.20.0/node-v24.20.0.tar.gz"
+    },
+    "osName": "Linux",
+    "osRelease": "7.0.0-30-generic",
+    "osVersion": "#30-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 31 18:22:54 UTC 2026",
+    "osMachine": "x86_64",
+    "cpus": [
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 102439520,
+        "nice": 16360,
+        "sys": 19345540,
+        "idle": 670308240,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 109816030,
+        "nice": 13610,
+        "sys": 20736550,
+        "idle": 855233240,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 117633930,
+        "nice": 21190,
+        "sys": 20946610,
+        "idle": 528247580,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 117810190,
+        "nice": 13960,
+        "sys": 21051380,
+        "idle": 933598900,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 117817980,
+        "nice": 17530,
+        "sys": 21095470,
+        "idle": 888313290,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 117051320,
+        "nice": 14280,
+        "sys": 20941240,
+        "idle": 877201470,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 114803420,
+        "nice": 16280,
+        "sys": 20755400,
+        "idle": 875524660,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 114059320,
+        "nice": 15380,
+        "sys": 20761720,
+        "idle": 947321220,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 113239870,
+        "nice": 15340,
+        "sys": 20956600,
+        "idle": 956497260,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 114385910,
+        "nice": 15900,
+        "sys": 20922340,
+        "idle": 834690580,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 113171650,
+        "nice": 60870,
+        "sys": 18998550,
+        "idle": 968836100,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2410,
+        "user": 105060210,
+        "nice": 64330,
+        "sys": 18404220,
+        "idle": 922822220,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 1530,
+        "user": 102883570,
+        "nice": 53120,
+        "sys": 18160060,
+        "idle": 1044844800,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 102532140,
+        "nice": 67450,
+        "sys": 18121910,
+        "idle": 1043163240,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 101572700,
+        "nice": 39210,
+        "sys": 18023900,
+        "idle": 944846900,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 101107880,
+        "nice": 37340,
+        "sys": 17952840,
+        "idle": 1039704350,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2200,
+        "user": 99304530,
+        "nice": 31740,
+        "sys": 17674340,
+        "idle": 1038191240,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2537,
+        "user": 99509650,
+        "nice": 50440,
+        "sys": 17747060,
+        "idle": 1000228660,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 98836610,
+        "nice": 73680,
+        "sys": 17699950,
+        "idle": 1045903030,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 99394580,
+        "nice": 42590,
+        "sys": 17824760,
+        "idle": 988542790,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 134631530,
+        "nice": 18010,
+        "sys": 20855840,
+        "idle": 920591820,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 116777570,
+        "nice": 15830,
+        "sys": 20784480,
+        "idle": 898316630,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 109671470,
+        "nice": 10770,
+        "sys": 20634950,
+        "idle": 478464570,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 105689530,
+        "nice": 19760,
+        "sys": 20433580,
+        "idle": 974704050,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 103301880,
+        "nice": 10660,
+        "sys": 20444720,
+        "idle": 963936650,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2497,
+        "user": 101240900,
+        "nice": 13380,
+        "sys": 20457680,
+        "idle": 614527710,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 103391530,
+        "nice": 12700,
+        "sys": 20410080,
+        "idle": 910665470,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2261,
+        "user": 102515020,
+        "nice": 14200,
+        "sys": 20338200,
+        "idle": 958440720,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 102231250,
+        "nice": 8560,
+        "sys": 20289700,
+        "idle": 927736010,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 102065600,
+        "nice": 12950,
+        "sys": 20600910,
+        "idle": 736930710,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 94786490,
+        "nice": 30880,
+        "sys": 16918140,
+        "idle": 565800290,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 92585410,
+        "nice": 40500,
+        "sys": 17074030,
+        "idle": 1048778430,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 1514,
+        "user": 92782970,
+        "nice": 40860,
+        "sys": 17052710,
+        "idle": 1048062360,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 92946880,
+        "nice": 35780,
+        "sys": 17088230,
+        "idle": 828120120,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 92360440,
+        "nice": 24750,
+        "sys": 17071570,
+        "idle": 1046393140,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2532,
+        "user": 92438120,
+        "nice": 34410,
+        "sys": 17037610,
+        "idle": 1045566490,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 1199,
+        "user": 93927510,
+        "nice": 24390,
+        "sys": 17182600,
+        "idle": 1043637320,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 94013860,
+        "nice": 33150,
+        "sys": 17221290,
+        "idle": 981864860,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 94172320,
+        "nice": 45410,
+        "sys": 17207450,
+        "idle": 1042544600,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 94187480,
+        "nice": 30940,
+        "sys": 17211390,
+        "idle": 827061650,
+        "irq": 0
+      }
+    ],
+    "networkInterfaces": [
+      {
+        "name": "lo",
+        "internal": true,
+        "mac": "00:00:00:00:00:00",
+        "address": "127.0.0.1",
+        "netmask": "255.0.0.0",
+        "family": "IPv4"
+      },
+      {
+        "name": "enp0s31f6",
+        "internal": false,
+        "mac": "6c:2b:59:ce:cf:9b",
+        "address": "10.91.162.60",
+        "netmask": "255.255.252.0",
+        "family": "IPv4"
+      },
+      {
+        "name": "wg0",
+        "internal": false,
+        "mac": "00:00:00:00:00:00",
+        "address": "10.128.1.2",
+        "netmask": "255.255.255.255",
+        "family": "IPv4"
+      },
+      {
+        "name": "virbr1",
+        "internal": false,
+        "mac": "52:54:00:af:3e:9c",
+        "address": "192.168.242.1",
+        "netmask": "255.255.255.0",
+        "family": "IPv4"
+      },
+      {
+        "name": "lo",
+        "internal": true,
+        "mac": "00:00:00:00:00:00",
+        "address": "::1",
+        "netmask": "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+        "family": "IPv6",
+        "scopeid": 0
+      },
+      {
+        "name": "enp0s31f6",
+        "internal": false,
+        "mac": "6c:2b:59:ce:cf:9b",
+        "address": "2001:4898:d8:1100:6e2b:59ff:fece:cf9b",
+        "netmask": "ffff:ffff:ffff:ffff::",
+        "family": "IPv6",
+        "scopeid": 0
+      },
+      {
+        "name": "enp0s31f6",
+        "internal": false,
+        "mac": "6c:2b:59:ce:cf:9b",
+        "address": "2001:4898:b601:3f:6e2b:59ff:fece:cf9b",
+        "netmask": "ffff:ffff:ffff:ffff::",
+        "family": "IPv6",
+        "scopeid": 0
+      },
+      {
+        "name": "enp0s31f6",
+        "internal": false,
+        "mac": "6c:2b:59:ce:cf:9b",
+        "address": "fe80::6e2b:59ff:fece:cf9b",
+        "netmask": "ffff:ffff:ffff:ffff::",
+        "family": "IPv6",
+        "scopeid": 3
+      },
+      {
+        "name": "vnet13",
+        "internal": false,
+        "mac": "fe:54:00:f6:3f:55",
+        "address": "fe80::fc54:ff:fef6:3f55",
+        "netmask": "ffff:ffff:ffff:ffff::",
+        "family": "IPv6",
+        "scopeid": 345
+      }
+    ],
+    "host": "frhuelsz-dell"
+  },
+  "javascriptStack": {
+    "message": "No stack.",
+    "stack": [
+      "Unavailable."
+    ],
+    "errorProperties": {
+    }
+  },
+  "javascriptHeap": {
+    "totalMemory": 4296335360,
+    "executableMemory": 10760192,
+    "totalCommittedMemory": 3196940288,
+    "availableMemory": 25136048,
+    "totalGlobalHandlesMemory": 237568,
+    "usedGlobalHandlesMemory": 90656,
+    "usedMemory": 3062502976,
+    "memoryLimit": 4298113024,
+    "mallocedMemory": 1073224,
+    "externalMemory": 36690424,
+    "peakMallocedMemory": 82060384,
+    "nativeContextCount": 1,
+    "detachedContextCount": 0,
+    "doesZapGarbage": 0,
+    "heapSpaces": {
+      "read_only_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 0,
+        "used": 0,
+        "available": 0
+      },
+      "new_space": {
+        "memorySize": 1048576,
+        "committedMemory": 1048576,
+        "capacity": 1048512,
+        "used": 0,
+        "available": 1048512
+      },
+      "old_space": {
+        "memorySize": 4272324608,
+        "committedMemory": 3173212160,
+        "capacity": 3062749912,
+        "used": 3041488616,
+        "available": 21261296
+      },
+      "code_space": {
+        "memorySize": 9437184,
+        "committedMemory": 9379840,
+        "capacity": 8679680,
+        "used": 8679680,
+        "available": 0
+      },
+      "shared_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 0,
+        "used": 0,
+        "available": 0
+      },
+      "trusted_space": {
+        "memorySize": 8253440,
+        "committedMemory": 8028160,
+        "capacity": 7092872,
+        "used": 7092872,
+        "available": 0
+      },
+      "shared_trusted_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 0,
+        "used": 0,
+        "available": 0
+      },
+      "new_large_object_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 1048576,
+        "used": 0,
+        "available": 1048576
+      },
+      "large_object_space": {
+        "memorySize": 3547136,
+        "committedMemory": 3547136,
+        "capacity": 3523840,
+        "used": 3523840,
+        "available": 0
+      },
+      "code_large_object_space": {
+        "memorySize": 1323008,
+        "committedMemory": 1323008,
+        "capacity": 1319744,
+        "used": 1319744,
+        "available": 0
+      },
+      "shared_large_object_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 0,
+        "used": 0,
+        "available": 0
+      },
+      "shared_trusted_large_object_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 0,
+        "used": 0,
+        "available": 0
+      },
+      "trusted_large_object_space": {
+        "memorySize": 401408,
+        "committedMemory": 401408,
+        "capacity": 398224,
+        "used": 398224,
+        "available": 0
+      }
+    }
+  },
+  "nativeStack": [
+    {
+      "pc": "0x00000000009fd934",
+      "symbol": "node::TriggerNodeReport(v8::Isolate*, node::Environment*, char const*, char const*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, v8::Local<v8::Value>) [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x00000000009fded7",
+      "symbol": "node::TriggerNodeReport(v8::Isolate*, char const*, char const*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, v8::Local<v8::Value>) [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x000000000075760c",
+      "symbol": "node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000c60e30",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000c60f1f",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000f047f5",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000f1615c",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000eeb613",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000ec0764",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000eab738",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000ebfc03",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000ece27b",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000c7c28d",
+      "symbol": "v8::String::NewFromUtf8(v8::Isolate*, char const*, v8::NewStringType, int) [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x00000000008a6f42",
+      "symbol": "napi_create_string_utf8 [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000778eb9f9474a",
+      "symbol": " [/home/frhuelsz/.cache/copilot/pkg/linux-x64/1.0.83/prebuilds/linux-x64/runtime.node]"
+    },
+    {
+      "pc": "0x0000778eb7ee3fa9",
+      "symbol": " [/home/frhuelsz/.cache/copilot/pkg/linux-x64/1.0.83/prebuilds/linux-x64/runtime.node]"
+    },
+    {
+      "pc": "0x00000000008cc673",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x00000000019fba53",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000001a1285a",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x00000000019fcc87",
+      "symbol": "uv_run [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000803735",
+      "symbol": "node::SpinEventLoopInternal(node::Environment*) [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000989fca",
+      "symbol": "node::NodeMainInstance::Run() [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x00000000008c71a5",
+      "symbol": "node::Start(int, char**) [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000778f1c02a601",
+      "symbol": " [/usr/lib/x86_64-linux-gnu/libc.so.6]"
+    },
+    {
+      "pc": "0x0000778f1c02a718",
+      "symbol": "__libc_start_main [/usr/lib/x86_64-linux-gnu/libc.so.6]"
+    },
+    {
+      "pc": "0x00000000007ed0ae",
+      "symbol": "_start [/home/frhuelsz/.local/bin/copilot]"
+    }
+  ],
+  "resourceUsage": {
+    "free_memory": 78217617408,
+    "total_memory": 131314245632,
+    "rss": 3911471104,
+    "constrained_memory": 18446744073709551615,
+    "available_memory": 78217617408,
+    "userCpuSeconds": 1295.49,
+    "kernelCpuSeconds": 281.834,
+    "cpuConsumptionPercent": 157.575,
+    "userCpuConsumptionPercent": 129.42,
+    "kernelCpuConsumptionPercent": 28.1552,
+    "maxRss": 3911471104,
+    "pageFaults": {
+      "IORequired": 1,
+      "IONotRequired": 32846994
+    },
+    "fsActivity": {
+      "reads": 4040,
+      "writes": 2400
+    }
+  },
+  "uvthreadResourceUsage": {
+    "userCpuSeconds": 659.192,
+    "kernelCpuSeconds": 94.6853,
+    "cpuConsumptionPercent": 75.3124,
+    "userCpuConsumptionPercent": 65.8533,
+    "kernelCpuConsumptionPercent": 9.45908,
+    "fsActivity": {
+      "reads": 24,
+      "writes": 40
+    }
+  },
+  "libuv": [
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x00000000266ba060"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000006b64b60"
+    },
+    {
+      "type": "timer",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x000000002673eb88",
+      "repeat": 0,
+      "firesInMsFromNow": 2,
+      "expired": false
+    },
+    {
+      "type": "check",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x000000002673ec20"
+    },
+    {
+      "type": "idle",
+      "is_active": false,
+      "is_referenced": true,
+      "address": "0x000000002673ec98"
+    },
+    {
+      "type": "prepare",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x000000002673ed10"
+    },
+    {
+      "type": "check",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x000000002673ed88"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x000000002673ee00"
+    },
+    {
+      "type": "tty",
+      "is_active": false,
+      "is_referenced": true,
+      "address": "0x000000002679fba0",
+      "width": 252,
+      "height": 66,
+      "fd": 20,
+      "writeQueueSize": 0,
+      "readable": true,
+      "writable": true
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026737ca8",
+      "signum": 28,
+      "signal": "SIGWINCH"
+    },
+    {
+      "type": "tty",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x000000002689c8d0",
+      "width": 252,
+      "height": 66,
+      "fd": 22,
+      "writeQueueSize": 0,
+      "readable": true,
+      "writable": true
+    },
+    {
+      "type": "tty",
+      "is_active": false,
+      "is_referenced": true,
+      "address": "0x0000000026b94c00",
+      "width": 252,
+      "height": 66,
+      "fd": 23,
+      "writeQueueSize": 0,
+      "readable": true,
+      "writable": true
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x000000002676e9c8"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000026afca98"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026ab9e98",
+      "signum": 15,
+      "signal": "SIGTERM"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x00000000268dde68",
+      "signum": 2,
+      "signal": "SIGINT"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026b2cf78",
+      "signum": 1,
+      "signal": "SIGHUP"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026b2daf8",
+      "signum": 3,
+      "signal": "SIGQUIT"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000026b25e98"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026eafee8",
+      "signum": 18,
+      "signal": "SIGCONT"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x00000000270f1368",
+      "signum": 14,
+      "signal": "SIGALRM"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026ecd0c8",
+      "signum": 6,
+      "signal": "SIGABRT"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026ecd1d8",
+      "signum": 26,
+      "signal": "SIGVTALRM"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026ebd6e8",
+      "signum": 24,
+      "signal": "SIGXCPU"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026ebd7f8",
+      "signum": 25,
+      "signal": "SIGXFSZ"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026f15bc8",
+      "signum": 12,
+      "signal": "SIGUSR2"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026f15cd8",
+      "signum": 5,
+      "signal": "SIGTRAP"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x000000002709c378",
+      "signum": 31,
+      "signal": "SIGSYS"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x000000002709c488",
+      "signum": 6,
+      "signal": "SIGABRT"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026ecaca8",
+      "signum": 29,
+      "signal": "SIGIO"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026ecadb8",
+      "signum": 29,
+      "signal": "SIGIO"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026e7a3f8",
+      "signum": 30,
+      "signal": "SIGPWR"
+    },
+    {
+      "type": "signal",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000026e7a508",
+      "signum": 16,
+      "signal": "SIGSTKFLT"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000027095848"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000026eb1738"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x00000000267128b8"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000026e73eb8"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000778c280a4a98"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000027114e48"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000026edb668"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000000027119848"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x00000000270d1a58"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x00000000271132f8"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x00000000270d3bb8"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x00000000279a6eb8"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x00000000271e6f38"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000027be19b8"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000026f29b38"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000028781db8"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000029c3c2d8"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000026f55e48"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000029d73a98"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000027247748"
+    },
+    {
+      "type": "timer",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000778ecc4a47f0",
+      "repeat": 0,
+      "firesInMsFromNow": 7055,
+      "expired": false
+    },
+    {
+      "type": "timer",
+      "is_active": true,
+      "is_referenced": false,
+      "address": "0x0000778ed8188ef0",
+      "repeat": 0,
+      "firesInMsFromNow": 12,
+      "expired": false
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x000000002a274748"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000026fb1aa8"
+    },
+    {
+      "type": "async",
+      "is_active": false,
+      "is_referenced": true,
+      "address": "0x0000000029bba1c8"
+    },
+    {
+      "type": "async",
+      "is_active": false,
+      "is_referenced": true,
+      "address": "0x0000000029348ea8"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000029bf2e98"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x00000000273ef418"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x00000000295b8608"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x0000000028048148"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x000000002abafa28"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x000000002a622548"
+    },
+    {
+      "type": "async",
+      "is_active": true,
+      "is_referenced": true,
+      "address": "0x000000002abd95b8"
+    },
+    {
+      "type": "loop",
+      "is_active": true,
+      "address": "0x0000000006b77aa0",
+      "loopIdleTimeSeconds": 225.947
+    }
+  ],
+  "workers": [
+  ],
+  "userLimits": {
+    "core_file_size_blocks": {
+      "soft": 0,
+      "hard": "unlimited"
+    },
+    "data_seg_size_bytes": {
+      "soft": "unlimited",
+      "hard": "unlimited"
+    },
+    "file_size_blocks": {
+      "soft": "unlimited",
+      "hard": "unlimited"
+    },
+    "max_locked_memory_bytes": {
+      "soft": 8388608,
+      "hard": 8388608
+    },
+    "max_memory_size_bytes": {
+      "soft": "unlimited",
+      "hard": "unlimited"
+    },
+    "open_files": {
+      "soft": 524288,
+      "hard": 524288
+    },
+    "stack_size_bytes": {
+      "soft": 8388608,
+      "hard": "unlimited"
+    },
+    "cpu_time_seconds": {
+      "soft": "unlimited",
+      "hard": "unlimited"
+    },
+    "max_user_processes": {
+      "soft": 500696,
+      "hard": 500696
+    },
+    "virtual_memory_bytes": {
+      "soft": "unlimited",
+      "hard": "unlimited"
+    }
+  },
+  "sharedObjects": [
+    "linux-vdso.so.1",
+    "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+    "/usr/lib/x86_64-linux-gnu/libstdc++.so.6",
+    "/usr/lib/x86_64-linux-gnu/libm.so.6",
+    "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+    "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+    "/usr/lib/x86_64-linux-gnu/libc.so.6",
+    "/lib64/ld-linux-x86-64.so.2",
+    "/home/frhuelsz/.cache/copilot/pkg/linux-x64/1.0.83/prebuilds/linux-x64/runtime.node",
+    "/usr/lib/x86_64-linux-gnu/libnss_mdns4_minimal.so.2",
+    "/usr/lib/x86_64-linux-gnu/libnss_mymachines.so.2",
+    "/home/frhuelsz/.cache/copilot/pkg/linux-x64/1.0.83/prebuilds/linux-x64/cli-native.node"
+  ]
+}

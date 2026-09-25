@@ -122,3 +122,7 @@ steps:
       done < "$(Agent.TempDirectory)/storm-metrics-files.txt"
     displayName: "📈 Upload storm E2E metrics to Kusto"
     condition: and(succeededOrFailed(), eq(variables['UploadMetrics'], 'True'))
+    # upload_metrics.sh builds a venv from the internal package feed, which
+    # intermittently times out. Without this, a transient feed blip marks a job
+    # whose tests all passed as failed. Matches the retry on the sibling steps.
+    retryCountOnTaskFailure: 3
