@@ -371,7 +371,7 @@ allow trident_t dmesg_exec_t:file { execute getattr map open read relabelto seta
 allow trident_t dosfs_t:filesystem { getattr mount unmount };
 allow trident_t efivarfs_t:filesystem getattr;
 allow trident_t efivarfs_t:dir search;
-allow trident_t etc_runtime_t:file { getattr open read relabelto relabelfrom setattr unlink };
+allow trident_t etc_runtime_t:file { getattr open read relabelto relabelfrom rename setattr unlink };
 allow trident_t etc_t:file { create execute execute_no_trans link relabelfrom relabelto rename setattr unlink write append };
 allow trident_t etc_t:dir { mounton relabelfrom };
 allow trident_t faillog_t:file relabelto;

@@ -13,6 +13,11 @@ OVERRIDE_RUST_FEED ?= true
 
 SERVER_PORT ?= 8133
 
+PROTOC_VERSION := 33.2
+PROTOC_ARCH ?= x86_64
+PROTOC_SHA256_x86_64 := b24b53f87c151bfd48b112fe4c3a6e6574e5198874f38036aff41df3456b8caf
+PROTOC_SHA256_aarch_64 := 706662a332683aa2fffe1c4ea61588279d31679cd42d91c7d60a69651768edb8
+
 .PHONY: all
 all: format check test build-api-docs bin/trident-rpms.tar.gz docker-build build-functional-test coverage validate-configs
 
@@ -54,6 +59,22 @@ check-sh:
 		echo "Validating $$shfile"; \
 		bash -n $$shfile || exit 1; \
 	done
+
+.PHONY: install-protoc
+install-protoc:
+	@set -eu; \
+	checksum="$(PROTOC_SHA256_$(PROTOC_ARCH))"; \
+	if [ -z "$$checksum" ]; then \
+		echo "Unsupported protoc architecture: $(PROTOC_ARCH)" >&2; \
+		exit 1; \
+	fi; \
+	archive="protoc-$(PROTOC_VERSION)-linux-$(PROTOC_ARCH).zip"; \
+	archive_path="$${TMPDIR:-/tmp}/$$archive"; \
+	curl --fail --location --retry 3 --output "$$archive_path" \
+		"https://github.com/protocolbuffers/protobuf/releases/download/v$(PROTOC_VERSION)/$$archive"; \
+	echo "$$checksum  $$archive_path" | sha256sum --check; \
+	sudo unzip -o "$$archive_path" -d /usr/local; \
+	rm -f "$$archive_path"
 
 # Local override of the cargo config to avoid having to go through the registry
 .cargo/config: .cargo/config.toml
@@ -1219,6 +1240,28 @@ artifacts/trident-vm-usr-verity-testimage.qcow2: \
 			--output-image-file /repo/$@ \
 			--output-image-format qcow2 \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-usr-verity.yaml
+
+artifacts/trident-vm-acl-agent-testimage.qcow2: \
+	$(QEMU_GUEST_IMAGE) \
+	$(TRIDENT_VM_DEPENDENCIES) \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
+	$(VM_IMAGE_PATH_PREFIX)/files/trident-acl-agent-override.conf \
+	artifacts/rpm-overrides
+	@echo "Building $@ from $<"
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level debug \
+			--rpm-source /repo/bin/RPMS \
+			--rpm-source /repo/artifacts/rpm-overrides \
+			--build-dir /build \
+			--image-file /repo/$< \
+			--output-image-file /repo/$@ \
+			--output-image-format qcow2 \
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml
 
 artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
 	$(CORE_SELINUX_IMAGE) \

@@ -1,0 +1,2 @@
+scripts/cloud-agent/*.sh text eol=lf
+.github/workflows/copilot-setup-steps.yml text eol=lf
