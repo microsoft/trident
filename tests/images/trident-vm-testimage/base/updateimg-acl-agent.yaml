@@ -191,6 +191,11 @@ os:
     - source: files/trident-acl-agent-cert-install.service
       destination: /etc/systemd/system/trident-acl-agent-cert-install.service
 
+    # Enable telemetry (Application Insights tracing) by default for test/dev images
+    - content: |
+        Telemetry=OptIn
+      destination: /etc/trident/trident.conf
+
   services:
     enable:
       - kdump
