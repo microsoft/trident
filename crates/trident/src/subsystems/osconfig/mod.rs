@@ -1,13 +1,13 @@
-use std::{fs, path::Path};
+use std::{fs, io::ErrorKind, path::Path};
 
 use anyhow::Context;
 use log::{debug, error, info, warn};
 
 use osmodifier::{OSModifierConfig, OsModifierContext};
-use osutils::path;
+use osutils::{files, path};
 use trident_api::{
     config::{ManagementOs, Services, SshMode},
-    constants::internal_params::DISABLE_HOSTNAME_CARRY_OVER,
+    constants::internal_params::{DISABLE_HOSTNAME_CARRY_OVER, DISABLE_MACHINE_ID_CARRY_OVER},
     error::{ReportError, ServicingError, TridentError},
     is_default,
     status::ServicingType,
@@ -83,6 +83,37 @@ fn should_carry_over_hostname(ctx: &EngineContext) -> bool {
         && ctx.servicing_type == ServicingType::AbUpdate
 }
 
+fn should_carry_over_machine_id(ctx: &EngineContext) -> bool {
+    if ctx.host_os_release.get_distro().is_acl() {
+        // ACL A/B updates share ROOT, so source and staged destination can alias.
+        return false;
+    }
+
+    !ctx.spec
+        .internal_params
+        .get_flag(DISABLE_MACHINE_ID_CARRY_OVER)
+        && ctx.servicing_type == ServicingType::AbUpdate
+}
+
+/// Read before atomic replacement so aliases and interrupted writes cannot truncate the machine ID.
+fn copy_machine_id(source: &Path, destination: &Path) -> Result<(), TridentError> {
+    let contents = fs::read_to_string(source).structured(ServicingError::CopyMachineId)?;
+    let permissions = fs::metadata(source)
+        .structured(ServicingError::CopyMachineId)?
+        .permissions();
+    let destination = match fs::symlink_metadata(destination) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            fs::canonicalize(destination).structured(ServicingError::CopyMachineId)?
+        }
+        Ok(_) => destination.to_path_buf(),
+        Err(e) if e.kind() == ErrorKind::NotFound => destination.to_path_buf(),
+        Err(e) => return Err(e).structured(ServicingError::CopyMachineId),
+    };
+
+    files::atomic_write_file_with_permissions(&destination, &contents, permissions)
+        .structured(ServicingError::CopyMachineId)
+}
+
 /// Returns whether a Runtime Update is sufficient or if an A/B Update is required.
 fn runtime_update_sufficient(ctx: &EngineContext) -> bool {
     let old_os = &ctx.spec_old.os;
@@ -135,13 +166,12 @@ impl Subsystem for OsConfigSubsystem {
             return Ok(());
         }
 
-        if ctx.servicing_type == ServicingType::AbUpdate {
-            // Copy the current machine-id to the target root mount point to
-            // preserve machine identity across servicing.
+        if should_carry_over_machine_id(ctx) {
             let dest_machine_id_path = path::join_relative(mount_path, MACHINE_ID_PATH);
-            fs::copy(MACHINE_ID_PATH, dest_machine_id_path)
-                .structured(ServicingError::CopyMachineId)?;
+            copy_machine_id(Path::new(MACHINE_ID_PATH), &dest_machine_id_path)?;
+        }
 
+        if ctx.servicing_type == ServicingType::AbUpdate {
             // Save the current hostname to carry forward into the updated volume.
             if should_carry_over_hostname(ctx) {
                 self.prev_hostname = Some(
@@ -371,7 +401,11 @@ impl Subsystem for MosConfigSubsystem {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt,
+        path::{Path, PathBuf},
+    };
 
     use osutils::osrelease::OsRelease;
     use trident_api::{
@@ -379,7 +413,7 @@ mod tests {
             Extension, HostConfiguration, KernelCommandLine, ManagementOs, Module, Os, Password,
             Selinux, Services, UefiFallbackMode, User,
         },
-        constants::internal_params::DISABLE_HOSTNAME_CARRY_OVER,
+        constants::internal_params::{DISABLE_HOSTNAME_CARRY_OVER, DISABLE_MACHINE_ID_CARRY_OVER},
         primitives::hash::Sha384Hash,
         status::ServicingType,
     };
@@ -685,6 +719,116 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_should_carry_over_machine_id() {
+        use super::should_carry_over_machine_id;
+
+        let mut ctx = EngineContext::default();
+        assert!(!should_carry_over_machine_id(&ctx));
+
+        ctx.servicing_type = ServicingType::AbUpdate;
+        assert!(should_carry_over_machine_id(&ctx));
+
+        let mut acl_os_release = OsRelease::EMPTY;
+        acl_os_release.id = Some("azurelinux".to_string());
+        acl_os_release.variant_id = Some("azurecontainerlinux".to_string());
+        ctx.host_os_release = acl_os_release;
+        assert!(!should_carry_over_machine_id(&ctx));
+
+        ctx.host_os_release = OsRelease::EMPTY;
+        ctx.spec
+            .internal_params
+            .set_flag(DISABLE_MACHINE_ID_CARRY_OVER);
+        assert!(!should_carry_over_machine_id(&ctx));
+    }
+
+    #[test]
+    fn test_copy_machine_id_same_file() {
+        use super::copy_machine_id;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let source = temp_dir.path().join("machine-id");
+        let destination = temp_dir.path().join("machine-id-alias");
+        let contents = b"fed81b0b333b4c1787eb90db84b79e44\n";
+
+        fs::write(&source, contents).unwrap();
+        fs::hard_link(&source, &destination).unwrap();
+
+        copy_machine_id(&source, &destination).unwrap();
+
+        assert_eq!(fs::read(&source).unwrap(), contents);
+        assert_eq!(fs::read(&destination).unwrap(), contents);
+    }
+
+    #[test]
+    fn test_copy_machine_id_preserves_permissions() {
+        use super::copy_machine_id;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let source = temp_dir.path().join("machine-id");
+        let destination = temp_dir.path().join("target-machine-id");
+
+        fs::write(&source, b"fed81b0b333b4c1787eb90db84b79e44\n").unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o444)).unwrap();
+        fs::write(&destination, b"old\n").unwrap();
+        fs::set_permissions(&destination, fs::Permissions::from_mode(0o600)).unwrap();
+
+        copy_machine_id(&source, &destination).unwrap();
+
+        assert_eq!(
+            fs::read(&destination).unwrap(),
+            b"fed81b0b333b4c1787eb90db84b79e44\n"
+        );
+        assert_eq!(
+            fs::metadata(&destination).unwrap().permissions().mode() & 0o777,
+            0o444
+        );
+    }
+
+    #[test]
+    fn test_copy_machine_id_follows_destination_symlink() {
+        use std::os::unix::fs::symlink;
+
+        use super::copy_machine_id;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let source = temp_dir.path().join("machine-id");
+        let target = temp_dir.path().join("target-machine-id");
+        let destination = temp_dir.path().join("machine-id-link");
+        let contents = "fed81b0b333b4c1787eb90db84b79e44\n";
+
+        fs::write(&source, contents).unwrap();
+        fs::write(&target, "old\n").unwrap();
+        symlink(&target, &destination).unwrap();
+
+        copy_machine_id(&source, &destination).unwrap();
+
+        assert!(fs::symlink_metadata(&destination)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_to_string(&target).unwrap(), contents);
+    }
+
+    #[test]
+    fn test_osconfig_provision_skips_machine_id_for_acl() {
+        use super::{OsConfigSubsystem, Subsystem};
+
+        let mut acl_os_release = OsRelease::EMPTY;
+        acl_os_release.id = Some("azurelinux".to_string());
+        acl_os_release.variant_id = Some("azurecontainerlinux".to_string());
+        let ctx = EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            host_os_release: acl_os_release,
+            ..Default::default()
+        };
+
+        let mut subsystem = OsConfigSubsystem::default();
+        subsystem
+            .provision(&ctx, Path::new("/nonexistent/mount"))
+            .unwrap();
+    }
+
     /// Verify that OsConfigSubsystem::provision returns Ok immediately when
     /// is_stream_image is true, even when the servicing type would
     /// normally trigger filesystem operations (machine-id copy, hostname
@@ -692,7 +836,6 @@ mod tests {
     #[test]
     fn test_osconfig_provision_skipped_during_stream_image() {
         use super::{OsConfigSubsystem, Subsystem};
-        use std::path::Path;
 
         let ctx = EngineContext {
             is_stream_image: true,
