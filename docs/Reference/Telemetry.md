@@ -14,9 +14,9 @@ journalctl -t trident-tracing
 ```
 
 The local metrics file can be found here: `/var/log/trident-metrics.jsonl`.
-Servicing commands cache the existing file to
-`/var/lib/trident/trident-metrics-<SERVICING_STATE>-<TIMESTAMP>.jsonl` and
-recreate the file before starting.
+Servicing paths later copy the current file beside the configured
+datastore as `trident-metrics-<SERVICING_STATE>-<TIMESTAMP>.jsonl`
+(under `/var/lib/trident` when using the default datastore path).
 
 On top of these local copies, Trident can optionally send this same
 best-effort stream of tracing data to Azure Monitor / Application
