@@ -186,6 +186,11 @@ os:
     - source: files/trident-acl-agent-override.conf
       destination: /etc/systemd/system/trident-acl-agent.service.d/override.conf
 
+    # Enable telemetry (Application Insights tracing) by default for test/dev images
+    - content: |
+        Telemetry=OptIn
+      destination: /etc/trident/trident.conf
+
   services:
     enable:
       - kdump
