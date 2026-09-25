@@ -163,3 +163,38 @@ func TestConcurrentTraceWritesProduceWholeRecords(t *testing.T) {
 		}
 	}
 }
+
+// With tracing disabled SetupTraceStream returns before registering a handler,
+// so the nil file it returns is never reachable from one. This pins that: the
+// route is absent rather than present-and-nil-guarded, which is why the write
+// path needs no nil check.
+func TestTraceStreamDisabledRegistersNoHandler(t *testing.T) {
+	mux := http.NewServeMux()
+
+	traceFile, err := SetupTraceStream(mux, "")
+	if err != nil {
+		t.Fatalf("expected no error with tracing disabled, got %v", err)
+	}
+	if traceFile != nil {
+		t.Fatalf("expected a nil trace file with tracing disabled, got %v", traceFile)
+	}
+
+	if _, pattern := mux.Handler(httptest.NewRequest(http.MethodPost, "/tracestream", nil)); pattern != "" {
+		t.Fatalf("expected no /tracestream handler with tracing disabled, got pattern %q", pattern)
+	}
+
+	// A caller that posts anyway gets a 404 from the mux; it never reaches a
+	// write against the nil file.
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	resp, err := http.Post(server.URL+"/tracestream", "application/json", strings.NewReader(`{"metric_name":"m","value":1}`))
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 with tracing disabled, got %d", resp.StatusCode)
+	}
+}
