@@ -7,7 +7,7 @@ use std::{
 
 use log::info;
 
-use osutils::path;
+use osutils::{files::atomic_write_file, path};
 use trident_api::{
     config::HostConfigurationDynamicValidationError,
     constants::{
@@ -152,7 +152,10 @@ fn configure_agent_config(
             updated_contents.push('\n');
         }
         updated_contents.push_str(&format!("DatastorePath={}\n", datastore_path.display()));
-        fs::write(agent_config_path, updated_contents).structured(
+        // Use an atomic write so a crash mid-write can never leave a
+        // corrupted trident.conf, and so ownership/permissions/xattrs
+        // (e.g. an SELinux label) on the existing file are preserved.
+        atomic_write_file(Path::new(agent_config_path), &updated_contents).structured(
             ServicingError::CreateConfigurationFile {
                 path: agent_config_path.into(),
             },

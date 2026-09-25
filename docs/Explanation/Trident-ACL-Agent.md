@@ -88,7 +88,15 @@ A request annotation looks like:
   `stage`/`finalize` requests, with **no static fallback** — a request
   missing them is rejected with `InvalidRequest` rather than falling back to
   a built-in endpoint, so a node can never update from a source the
-  orchestrator did not explicitly choose.
+  orchestrator did not explicitly choose. `server` must be an `https` URL —
+  a plain-`http` (or any other scheme) value is rejected outright, since
+  Nebraska's response drives a root-privileged `tridentd` fetch and must not
+  be readable/tamperable by a network-position attacker. Likewise, the
+  package/image URL Nebraska's response resolves to is only accepted if it
+  is `https` or `oci`; `http` and `file` are rejected, closing off an SSRF
+  vector where a compromised/spoofed Nebraska response could otherwise
+  direct `tridentd` to fetch or open an arbitrary local file or unencrypted
+  network resource.
 
 `operation` maps to Trident invocations as follows:
 
@@ -198,7 +206,7 @@ A status annotation (`<prefix>/update-status` or
   version for that install.
 - `startedUtc`/`lastUpdatedUtc`/`finishedUtc` bound the operation:
   `lastUpdatedUtc` refreshes on a heartbeat cadence while `code` is
-  `InProgress` (see [below](#pre-post-reboot-state-and-the-watchdog));
+  `InProgress` (see [below](#prepost-reboot-state-and-the-watchdog));
   `finishedUtc` is absent until `code` reaches a terminal value.
 
 `code` is one of:
@@ -344,9 +352,11 @@ on-node troubleshooting without running the full orchestrator loop.
 
 `--validate-connection nebraska` is the one place
 `TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT`, `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID`,
-and `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` are used: it issues a real
-update-check query against the configured endpoint/app id/track and reports
-whether the Omaha server is reachable. They default to deliberately invalid
+and `TRIDENT_ACL_AGENT_NEBRASKA_TRACK` are used: it sends a non-mutating
+Omaha probe (a bare `<app>` with no `<updatecheck/>` or `<ping/>`) against
+the configured endpoint/app id/track and reports whether the Omaha server
+is reachable, without registering the instance or granting/consuming an
+update. They default to deliberately invalid
 values (`https://nebraska.example.invalid/v1/update`, an all-zero UUID, and
 `unspecified`, respectively) so this check fails loudly unless a deployment
 sets them. Since these variables otherwise play no role in the
