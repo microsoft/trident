@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 
 	uuid "github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -36,6 +37,18 @@ func SetupTraceStream(mux *http.ServeMux, filepath string) (*os.File, error) {
 	// Generate a UUID to group events coming in from the same Trident run
 	traceID := uuid.New().String()
 
+	// The HTTP server runs handlers concurrently. Record integrity does not
+	// actually depend on this lock -- os.File serialises writes internally
+	// (internal/poll.FD.Write takes a write lock), so a WriteString of a whole
+	// line cannot interleave with another, and a 200-writer test passes under
+	// -race without it.
+	//
+	// It is held anyway so the write and the Sync that follows behave as one
+	// unit, and so the invariant this file depends on -- one whole JSON record
+	// per line -- is stated in the code rather than inherited from a detail of
+	// the standard library.
+	var writeMu sync.Mutex
+
 	mux.HandleFunc("/tracestream", func(w http.ResponseWriter, r *http.Request) {
 		var traceEntry TraceEntry
 		err := json.NewDecoder(r.Body).Decode(&traceEntry)
@@ -57,6 +70,10 @@ func SetupTraceStream(mux *http.ServeMux, filepath string) (*os.File, error) {
 			http.Error(w, "failed to marshal trace entry", http.StatusInternalServerError)
 			return
 		}
+
+		// Held across the write and the sync so the pair is atomic.
+		writeMu.Lock()
+		defer writeMu.Unlock()
 
 		// write to file as a single line json entry
 		_, err = traceFile.WriteString(string(traceData) + "\n")

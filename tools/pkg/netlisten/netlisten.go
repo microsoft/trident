@@ -2,6 +2,7 @@ package netlisten
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -68,7 +69,19 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetListenConfig) error 
 	// Serve owns the listener from here on; Shutdown/Close will close it.
 	served := listen
 	listen = nil
-	go server.Serve(served)
+	// Keep Serve's error: if it returns immediately -- a bad TLS config, or the
+	// listener dying under it -- the run would otherwise sit waiting for a
+	// phone home that can never arrive, and time out blaming the host.
+	// ErrServerClosed is the expected result of the Shutdown below.
+	serveErr := make(chan error, 1)
+	go func() {
+		if err := server.Serve(served); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logrus.WithError(err).Error("phone-home server stopped serving")
+			serveErr <- err
+			return
+		}
+		serveErr <- nil
+	}()
 	logrus.WithField("address", served.Addr().String()).Info("Listening...")
 
 	logrus.Info("Waiting for phone home...")
@@ -88,6 +101,16 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetListenConfig) error 
 	if phonehomeErr != nil {
 		logrus.WithError(phonehomeErr).Errorln("phonehome returned an error")
 		return phonehomeErr
+	}
+
+	// A serving failure is only worth reporting when nothing else went wrong;
+	// the phone-home outcome is the more specific answer when both are set.
+	select {
+	case err := <-serveErr:
+		if err != nil {
+			return fmt.Errorf("phone-home server failed: %w", err)
+		}
+	default:
 	}
 
 	return nil

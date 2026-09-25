@@ -1,6 +1,8 @@
 package phonehome
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -102,5 +105,61 @@ func assertPostStatus(t *testing.T, url string, body string, want int) {
 
 	if resp.StatusCode != want {
 		t.Fatalf("post %s status = %d, want %d", url, resp.StatusCode, want)
+	}
+}
+
+// The HTTP server runs handlers concurrently and the trace file is one JSON
+// record per line, so simultaneous posts must not interleave mid-line. Run
+// under -race this also catches unsynchronised access to the shared file.
+func TestConcurrentTraceWritesProduceWholeRecords(t *testing.T) {
+	dir := t.TempDir()
+	tracePath := filepath.Join(dir, "trace.jsonl")
+
+	mux := http.NewServeMux()
+	traceFile, err := SetupTraceStream(mux, tracePath)
+	if err != nil {
+		t.Fatalf("setup tracestream: %v", err)
+	}
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	const writers, perWriter = 8, 25
+	var wg sync.WaitGroup
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := 0; i < perWriter; i++ {
+				body := fmt.Sprintf(`{"timestamp":"t","metric_name":"m%d_%d","value":1,"additional_fields":{},"platform_info":{}}`, id, i)
+				resp, err := http.Post(server.URL+"/tracestream", "application/json", strings.NewReader(body))
+				if err != nil {
+					t.Errorf("post: %v", err)
+					return
+				}
+				resp.Body.Close()
+			}
+		}(w)
+	}
+	wg.Wait()
+
+	if err := traceFile.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// Every line must be a complete JSON object, and none may be lost.
+	data, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != writers*perWriter {
+		t.Errorf("got %d records, want %d", len(lines), writers*perWriter)
+	}
+	for i, line := range lines {
+		var rec map[string]any
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("record %d is not whole (interleaved write): %v\n%q", i+1, err, line)
+		}
 	}
 }
