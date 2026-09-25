@@ -91,7 +91,11 @@ func (tr TestRing) GetTargetList() (TestRingSet, error) {
 		if ring == tr {
 			found = true
 		}
-		if found {
+		// 'none' and 'empty' are terminators of the ring order, not rings a
+		// scenario can run in. Including them here would put them in every
+		// scenario's target list, so asking for ring 'none' would select every
+		// scenario instead of none of them.
+		if found && !ring.IsNone() {
 			targets = append(targets, ring)
 		}
 	}
@@ -122,4 +126,48 @@ func (trs TestRingSet) Lowest() (TestRing, error) {
 	})
 
 	return lowest, nil
+}
+
+// DefaultTestRing is the ring used for a pipeline stage type that names no
+// known ring. Falling back to CI-level validation keeps an unrecognised stage
+// running a meaningful set of scenarios instead of silently producing an empty
+// matrix and reporting success without testing anything.
+const DefaultTestRing = TestRingCi
+
+// pipelineStageAliases maps Azure DevOps stage types onto the ring they should
+// run. A pipeline's stageType and a test ring are separate vocabularies that
+// only happen to overlap on pr-e2e, ci and pre, and the pipeline templates pass
+// the former straight through as the latter.
+var pipelineStageAliases = map[TestRing]TestRing{
+	"azl-validation": TestRingCi,
+	// A PR-gate pipeline, so it runs the PR ring: falling through to the
+	// default would give it the post-merge CI set instead.
+	"pr-e2e-azure": TestRingPrE2e,
+}
+
+// Resolution describes how a stage type was resolved to a test ring.
+type Resolution int
+
+const (
+	// ResolvedDirect means the value already named a test ring.
+	ResolvedDirect Resolution = iota
+	// ResolvedAlias means the value is a known stage type mapped to a ring.
+	ResolvedAlias
+	// ResolvedFallback means the value was not recognised and DefaultTestRing
+	// was substituted.
+	ResolvedFallback
+)
+
+// Resolve maps a pipeline stage type onto the test ring that should run. The
+// returned Resolution lets callers report an alias or a fallback; 'none' and
+// the empty ring resolve directly, so intentionally running nothing is
+// preserved rather than being treated as unrecognised.
+func Resolve(tr TestRing) (TestRing, Resolution) {
+	if pipelineRingsOrder.Contains(tr) {
+		return tr, ResolvedDirect
+	}
+	if mapped, ok := pipelineStageAliases[tr]; ok {
+		return mapped, ResolvedAlias
+	}
+	return DefaultTestRing, ResolvedFallback
 }

@@ -1,0 +1,72 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: root
+          type: root
+          size: 8G
+        - id: swap-e
+          type: swap
+          size: 1G
+        - id: esp
+          type: esp
+          size: 1G
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions: []
+  encryption:
+    volumes:
+      - id: swap
+        deviceName: swap
+        deviceId: swap-e
+    pcrs:
+      - secure-boot-policy # 7
+  filesystems:
+    - deviceId: esp
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: root
+      mountPoint: /
+  swap:
+    - swap
+scripts:
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+      content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
+    - name: add-selinux-module
+      runOn:
+        - clean-install
+      content: |
+        #!/bin/sh
+        # Create SELinux policy file
+        cat <<EOF > custom-lvm.cil
+        ; Allow lvm_t access to semaphores of the initrc_t type
+        (allow lvm_t initrc_t (sem (associate unix_read read unix_write write)))
+        EOF
+
+        # Apply the SELinux policy
+        semodule -i custom-lvm.cil
+        echo "Added"
+os:
+  selinux:
+    mode: enforcing
+  netplan:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only

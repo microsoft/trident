@@ -70,7 +70,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	// If we have a specified port, we assume that the intent is that Trident will reach back.
 	enable_phonehome_listening := config.ListenPort != 0
 
-	result := make(chan phonehome.PhoneHomeResult)
+	result := make(chan phonehome.PhoneHomeResult, 1)
 	mux := http.NewServeMux()
 	server := &http.Server{Handler: mux}
 
@@ -227,7 +227,9 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		if err != nil {
 			return fmt.Errorf("failed to setup tracestream: %w", err)
 		}
-		defer traceFile.Close()
+		if traceFile != nil {
+			defer traceFile.Close()
+		}
 
 	}
 

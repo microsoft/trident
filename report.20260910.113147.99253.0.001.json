@@ -1,0 +1,816 @@
+
+{
+  "header": {
+    "reportVersion": 5,
+    "event": "Allocation failed - JavaScript heap out of memory",
+    "trigger": "OOMError",
+    "filename": "report.20260910.113147.99253.0.001.json",
+    "dumpEventTime": "2026-09-10T11:31:47Z",
+    "dumpEventTimeStamp": "1789065107741",
+    "processId": 99253,
+    "threadId": null,
+    "cwd": "/home/frhuelsz/repos/trident-storm-port",
+    "commandLine": [
+      "/home/frhuelsz/.local/bin/copilot",
+      "--no-warnings",
+      "--report-on-fatalerror",
+      "--optimize-for-size",
+      "--expose-gc",
+      "/home/frhuelsz/.local/bin/copilot",
+      "--session-id",
+      "ed3d45b9-332b-411c-976b-3544ad2d99f6",
+      "-C",
+      "/home/frhuelsz/repos/trident-storm-port",
+      "--ui-server",
+      "--port",
+      "38711",
+      "--host",
+      "127.0.0.1",
+      "--additional-mcp-config",
+      "@/home/frhuelsz/.local/cmgr/mcp/trident-storm.json"
+    ],
+    "nodejsVersion": "v24.18.1",
+    "glibcVersionRuntime": "2.43",
+    "glibcVersionCompiler": "2.28",
+    "wordSize": 64,
+    "arch": "x64",
+    "platform": "linux",
+    "componentVersions": {
+      "acorn": "8.16.0",
+      "ada": "3.4.4",
+      "amaro": "1.1.9",
+      "ares": "1.34.6",
+      "brotli": "1.2.0",
+      "cldr": "48.0",
+      "icu": "78.3",
+      "llhttp": "9.4.3",
+      "merve": "1.2.2",
+      "modules": "137",
+      "napi": "10",
+      "nbytes": "0.1.4",
+      "ncrypto": "0.0.1",
+      "nghttp2": "1.69.0",
+      "nghttp3": "",
+      "ngtcp2": "",
+      "node": "24.18.1",
+      "openssl": "3.5.7",
+      "simdjson": "4.6.4",
+      "simdutf": "6.4.0",
+      "sqlite": "3.53.1",
+      "tz": "2026b",
+      "undici": "7.29.0",
+      "unicode": "17.0",
+      "uv": "1.52.1",
+      "uvwasi": "0.0.23",
+      "v8": "13.6.233.17-node.50",
+      "zlib": "1.3.1-e00f703",
+      "zstd": "1.5.7"
+    },
+    "release": {
+      "name": "node",
+      "lts": "Krypton",
+      "headersUrl": "https://nodejs.org/download/release/v24.18.1/node-v24.18.1-headers.tar.gz",
+      "sourceUrl": "https://nodejs.org/download/release/v24.18.1/node-v24.18.1.tar.gz"
+    },
+    "osName": "Linux",
+    "osRelease": "7.0.0-30-generic",
+    "osVersion": "#30-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 31 18:22:54 UTC 2026",
+    "osMachine": "x86_64",
+    "cpus": [
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 101488270,
+        "nice": 16360,
+        "sys": 19161280,
+        "idle": 665560230,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 108772120,
+        "nice": 13560,
+        "sys": 20546020,
+        "idle": 850942050,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 116518040,
+        "nice": 21150,
+        "sys": 20751690,
+        "idle": 523713100,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2501,
+        "user": 116710270,
+        "nice": 13930,
+        "sys": 20856850,
+        "idle": 929010130,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 116698840,
+        "nice": 17430,
+        "sys": 20897080,
+        "idle": 883379270,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 115984720,
+        "nice": 14180,
+        "sys": 20748290,
+        "idle": 872546190,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 113720910,
+        "nice": 16270,
+        "sys": 20561070,
+        "idle": 870681310,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2690,
+        "user": 113017830,
+        "nice": 15380,
+        "sys": 20566400,
+        "idle": 942296050,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 112185840,
+        "nice": 15300,
+        "sys": 20759900,
+        "idle": 951608930,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 800,
+        "user": 113326870,
+        "nice": 15890,
+        "sys": 20725830,
+        "idle": 834690580,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 1800,
+        "user": 111690940,
+        "nice": 60870,
+        "sys": 18819800,
+        "idle": 968836100,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 103600080,
+        "nice": 63910,
+        "sys": 18227410,
+        "idle": 918291370,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 101408130,
+        "nice": 52280,
+        "sys": 17983600,
+        "idle": 1040297230,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 101080640,
+        "nice": 67420,
+        "sys": 17943700,
+        "idle": 1038611170,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 100099730,
+        "nice": 39080,
+        "sys": 17844150,
+        "idle": 940438570,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 99628520,
+        "nice": 37280,
+        "sys": 17775570,
+        "idle": 1035314690,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 97856670,
+        "nice": 31620,
+        "sys": 17497690,
+        "idle": 1033945940,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 98070980,
+        "nice": 50420,
+        "sys": 17573590,
+        "idle": 995699030,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 97396210,
+        "nice": 73660,
+        "sys": 17526660,
+        "idle": 1041393110,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 97953460,
+        "nice": 42280,
+        "sys": 17647120,
+        "idle": 983981530,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 133377010,
+        "nice": 18010,
+        "sys": 20662500,
+        "idle": 915902830,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 115659920,
+        "nice": 15800,
+        "sys": 20590220,
+        "idle": 898316630,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 108582660,
+        "nice": 10770,
+        "sys": 20435940,
+        "idle": 474005090,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 104649160,
+        "nice": 19760,
+        "sys": 20238490,
+        "idle": 969874820,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 102267480,
+        "nice": 10630,
+        "sys": 20248200,
+        "idle": 959059420,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2498,
+        "user": 100175670,
+        "nice": 13340,
+        "sys": 20260490,
+        "idle": 614527710,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 102362180,
+        "nice": 12640,
+        "sys": 20212220,
+        "idle": 905883280,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 101451530,
+        "nice": 14180,
+        "sys": 20136160,
+        "idle": 953484690,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2070,
+        "user": 101187120,
+        "nice": 8510,
+        "sys": 20094010,
+        "idle": 923141570,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2099,
+        "user": 101029450,
+        "nice": 12110,
+        "sys": 20401860,
+        "idle": 736930710,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 1812,
+        "user": 93391240,
+        "nice": 30880,
+        "sys": 16743280,
+        "idle": 561477760,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2494,
+        "user": 91195480,
+        "nice": 40500,
+        "sys": 16902850,
+        "idle": 1044130600,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 91450180,
+        "nice": 40770,
+        "sys": 16885560,
+        "idle": 1043490740,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 91573560,
+        "nice": 35620,
+        "sys": 16917610,
+        "idle": 823597100,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 91032800,
+        "nice": 24740,
+        "sys": 16902460,
+        "idle": 1041982620,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 91064460,
+        "nice": 34400,
+        "sys": 16865280,
+        "idle": 1041209610,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 92508370,
+        "nice": 24390,
+        "sys": 17010140,
+        "idle": 1039539680,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 92638830,
+        "nice": 33150,
+        "sys": 17053380,
+        "idle": 977452790,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2499,
+        "user": 92732600,
+        "nice": 45380,
+        "sys": 17033670,
+        "idle": 1038371910,
+        "irq": 0
+      },
+      {
+        "model": "Intel(R) Xeon(R) Silver 4114 CPU @ 2.20GHz",
+        "speed": 2500,
+        "user": 92830280,
+        "nice": 30930,
+        "sys": 17042050,
+        "idle": 822334010,
+        "irq": 0
+      }
+    ],
+    "networkInterfaces": [
+      {
+        "name": "lo",
+        "internal": true,
+        "mac": "00:00:00:00:00:00",
+        "address": "127.0.0.1",
+        "netmask": "255.0.0.0",
+        "family": "IPv4"
+      },
+      {
+        "name": "enp0s31f6",
+        "internal": false,
+        "mac": "6c:2b:59:ce:cf:9b",
+        "address": "10.91.162.60",
+        "netmask": "255.255.252.0",
+        "family": "IPv4"
+      },
+      {
+        "name": "wg0",
+        "internal": false,
+        "mac": "00:00:00:00:00:00",
+        "address": "10.128.1.2",
+        "netmask": "255.255.255.255",
+        "family": "IPv4"
+      },
+      {
+        "name": "virbr1",
+        "internal": false,
+        "mac": "52:54:00:af:3e:9c",
+        "address": "192.168.242.1",
+        "netmask": "255.255.255.0",
+        "family": "IPv4"
+      },
+      {
+        "name": "lo",
+        "internal": true,
+        "mac": "00:00:00:00:00:00",
+        "address": "::1",
+        "netmask": "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff",
+        "family": "IPv6",
+        "scopeid": 0
+      },
+      {
+        "name": "enp0s31f6",
+        "internal": false,
+        "mac": "6c:2b:59:ce:cf:9b",
+        "address": "2001:4898:d8:1100:6e2b:59ff:fece:cf9b",
+        "netmask": "ffff:ffff:ffff:ffff::",
+        "family": "IPv6",
+        "scopeid": 0
+      },
+      {
+        "name": "enp0s31f6",
+        "internal": false,
+        "mac": "6c:2b:59:ce:cf:9b",
+        "address": "2001:4898:b601:3f:6e2b:59ff:fece:cf9b",
+        "netmask": "ffff:ffff:ffff:ffff::",
+        "family": "IPv6",
+        "scopeid": 0
+      },
+      {
+        "name": "enp0s31f6",
+        "internal": false,
+        "mac": "6c:2b:59:ce:cf:9b",
+        "address": "fe80::6e2b:59ff:fece:cf9b",
+        "netmask": "ffff:ffff:ffff:ffff::",
+        "family": "IPv6",
+        "scopeid": 3
+      },
+      {
+        "name": "vnet13",
+        "internal": false,
+        "mac": "fe:54:00:f6:3f:55",
+        "address": "fe80::fc54:ff:fef6:3f55",
+        "netmask": "ffff:ffff:ffff:ffff::",
+        "family": "IPv6",
+        "scopeid": 345
+      }
+    ],
+    "host": "frhuelsz-dell"
+  },
+  "javascriptStack": {
+    "message": "No stack.",
+    "stack": [
+      "Unavailable."
+    ],
+    "errorProperties": {
+    }
+  },
+  "javascriptHeap": {
+    "totalMemory": 4295483392,
+    "executableMemory": 11268096,
+    "totalCommittedMemory": 4260937728,
+    "availableMemory": 19438136,
+    "totalGlobalHandlesMemory": 2375680,
+    "usedGlobalHandlesMemory": 2374880,
+    "usedMemory": 4199468944,
+    "memoryLimit": 4298113024,
+    "mallocedMemory": 1073224,
+    "externalMemory": 36129819,
+    "peakMallocedMemory": 62378304,
+    "nativeContextCount": 1,
+    "detachedContextCount": 0,
+    "doesZapGarbage": 0,
+    "heapSpaces": {
+      "read_only_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 0,
+        "used": 0,
+        "available": 0
+      },
+      "new_space": {
+        "memorySize": 2097152,
+        "committedMemory": 1323008,
+        "capacity": 1048512,
+        "used": 0,
+        "available": 1048512
+      },
+      "old_space": {
+        "memorySize": 4270456832,
+        "committedMemory": 4236705792,
+        "capacity": 4193187136,
+        "used": 4178475720,
+        "available": 14711416
+      },
+      "code_space": {
+        "memorySize": 9961472,
+        "committedMemory": 9940992,
+        "capacity": 8984064,
+        "used": 8984064,
+        "available": 0
+      },
+      "shared_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 0,
+        "used": 0,
+        "available": 0
+      },
+      "trusted_space": {
+        "memorySize": 7970816,
+        "committedMemory": 7970816,
+        "capacity": 7048456,
+        "used": 7048456,
+        "available": 0
+      },
+      "shared_trusted_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 0,
+        "used": 0,
+        "available": 0
+      },
+      "new_large_object_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 1048576,
+        "used": 0,
+        "available": 1048576
+      },
+      "large_object_space": {
+        "memorySize": 3297280,
+        "committedMemory": 3297280,
+        "capacity": 3269136,
+        "used": 3269136,
+        "available": 0
+      },
+      "code_large_object_space": {
+        "memorySize": 1306624,
+        "committedMemory": 1306624,
+        "capacity": 1303616,
+        "used": 1303616,
+        "available": 0
+      },
+      "shared_large_object_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 0,
+        "used": 0,
+        "available": 0
+      },
+      "shared_trusted_large_object_space": {
+        "memorySize": 0,
+        "committedMemory": 0,
+        "capacity": 0,
+        "used": 0,
+        "available": 0
+      },
+      "trusted_large_object_space": {
+        "memorySize": 393216,
+        "committedMemory": 393216,
+        "capacity": 387952,
+        "used": 387952,
+        "available": 0
+      }
+    }
+  },
+  "nativeStack": [
+    {
+      "pc": "0x00000000009ed504",
+      "symbol": "node::TriggerNodeReport(v8::Isolate*, node::Environment*, char const*, char const*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, v8::Local<v8::Value>) [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x00000000009edaa7",
+      "symbol": "node::TriggerNodeReport(v8::Isolate*, char const*, char const*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, v8::Local<v8::Value>) [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x000000000074ea9c",
+      "symbol": "node::OOMErrorHandler(char const*, v8::OOMDetails const&) [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000c43660",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000c4374f",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000ee6fa5",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000ee6fd2",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000ee72ca",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000ef7fca",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x0000000000efc370",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    },
+    {
+      "pc": "0x000000000198e911",
+      "symbol": " [/home/frhuelsz/.local/bin/copilot]"
+    }
+  ],
+  "resourceUsage": {
+    "free_memory": 74124210176,
+    "total_memory": 131314245632,
+    "rss": 5265702912,
+    "constrained_memory": 18446744073709551615,
+    "available_memory": 74124210176,
+    "userCpuSeconds": 56873.1,
+    "kernelCpuSeconds": 25991.9,
+    "cpuConsumptionPercent": 6.97482,
+    "userCpuConsumptionPercent": 4.78706,
+    "kernelCpuConsumptionPercent": 2.18776,
+    "maxRss": 5265702912,
+    "pageFaults": {
+      "IORequired": 8902,
+      "IONotRequired": 12944086
+    },
+    "fsActivity": {
+      "reads": 153680,
+      "writes": 39424
+    }
+  },
+  "uvthreadResourceUsage": {
+    "userCpuSeconds": 33608.4,
+    "kernelCpuSeconds": 4753.71,
+    "cpuConsumptionPercent": 3.22897,
+    "userCpuConsumptionPercent": 2.82885,
+    "kernelCpuConsumptionPercent": 0.400124,
+    "fsActivity": {
+      "reads": 33048,
+      "writes": 40
+    }
+  },
+  "libuv": [
+  ],
+  "workers": [
+  ],
+  "environmentVariables": {
+    "COLORTERM": "truecolor",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+    "DISPLAY": ":0",
+    "GPG_AGENT_INFO": "/run/user/1000/gnupg/S.gpg-agent:0:1",
+    "GTK_MODULES": "gail:atk-bridge",
+    "HOME": "/home/frhuelsz",
+    "INVOCATION_ID": "12f2ffd7d30f43209d939bfa65ea89ec",
+    "JOURNAL_STREAM": "10:49494",
+    "LANG": "en_US.UTF-8",
+    "LOGNAME": "frhuelsz",
+    "MANAGERPID": "4316",
+    "MANAGERPIDFDID": "94322",
+    "MEMORY_PRESSURE_WATCH": "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cmgrd.service/memory.pressure",
+    "MEMORY_PRESSURE_WRITE": "c29tZSAyMDAwMDAgMjAwMDAwMAA=",
+    "NOTIFY_SOCKET": "/run/user/1000/systemd/notify",
+    "PATH": "/home/frhuelsz/.local/bin:/home/frhuelsz/.cargo/bin:/home/frhuelsz/.config/agency/CurrentVersion:/usr/local/bin:/usr/bin:/bin",
+    "PWD": "/home/frhuelsz/repos/trident-storm-port",
+    "QT_ACCESSIBILITY": "1",
+    "SHELL": "/usr/bin/zsh",
+    "SSH_AUTH_SOCK": "/run/user/1000/gcr/ssh",
+    "SYSTEMD_EXEC_PID": "5500",
+    "TERM": "tmux-256color",
+    "TERM_PROGRAM": "tmux",
+    "TERM_PROGRAM_VERSION": "3.6",
+    "TMUX": "/tmp/tmux-1000/cmgr,18370,29",
+    "TMUX_PANE": "%29",
+    "USER": "frhuelsz",
+    "WAYLAND_DISPLAY": "wayland-0",
+    "XAUTHORITY": "/run/user/1000/.mutter-Xwaylandauth.01MSU3",
+    "XDG_CURRENT_DESKTOP": "ubuntu:GNOME",
+    "XDG_DATA_DIRS": "/usr/local/share/:/usr/share/:/var/lib/snapd/desktop",
+    "XDG_RUNTIME_DIR": "/run/user/1000",
+    "XDG_SESSION_TYPE": "wayland",
+    "COPILOT_CLI_BINARY_VERSION": "1.0.81",
+    "COPILOT_LOADER_PID": "99253",
+    "NODE_ENV": "production"
+  },
+  "userLimits": {
+    "core_file_size_blocks": {
+      "soft": 0,
+      "hard": "unlimited"
+    },
+    "data_seg_size_bytes": {
+      "soft": "unlimited",
+      "hard": "unlimited"
+    },
+    "file_size_blocks": {
+      "soft": "unlimited",
+      "hard": "unlimited"
+    },
+    "max_locked_memory_bytes": {
+      "soft": 8388608,
+      "hard": 8388608
+    },
+    "max_memory_size_bytes": {
+      "soft": "unlimited",
+      "hard": "unlimited"
+    },
+    "open_files": {
+      "soft": 524288,
+      "hard": 524288
+    },
+    "stack_size_bytes": {
+      "soft": 8388608,
+      "hard": "unlimited"
+    },
+    "cpu_time_seconds": {
+      "soft": "unlimited",
+      "hard": "unlimited"
+    },
+    "max_user_processes": {
+      "soft": 500696,
+      "hard": 500696
+    },
+    "virtual_memory_bytes": {
+      "soft": "unlimited",
+      "hard": "unlimited"
+    }
+  },
+  "sharedObjects": [
+    "linux-vdso.so.1",
+    "/usr/lib/x86_64-linux-gnu/libdl.so.2",
+    "/usr/lib/x86_64-linux-gnu/libstdc++.so.6",
+    "/usr/lib/x86_64-linux-gnu/libm.so.6",
+    "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1",
+    "/usr/lib/x86_64-linux-gnu/libpthread.so.0",
+    "/usr/lib/x86_64-linux-gnu/libc.so.6",
+    "/lib64/ld-linux-x86-64.so.2",
+    "/home/frhuelsz/.cache/copilot/pkg/linux-x64/1.0.81/prebuilds/linux-x64/runtime.node",
+    "/usr/lib/x86_64-linux-gnu/librt.so.1",
+    "/usr/lib/x86_64-linux-gnu/libnss_mdns4_minimal.so.2",
+    "/usr/lib/x86_64-linux-gnu/libnss_mymachines.so.2",
+    "/home/frhuelsz/.cache/copilot/pkg/linux-x64/1.0.81/prebuilds/linux-x64/cli-native.node"
+  ]
+}
