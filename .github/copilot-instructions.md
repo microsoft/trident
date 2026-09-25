@@ -426,3 +426,25 @@ Specifically:
   `osutils` function that takes a `HostConfiguration` and decides what to
   do; a new `trident_api` item that performs I/O). They are not blocking
   when they only continue an existing local pattern.
+
+## Pull request descriptions
+
+These rules apply to agents writing code:
+
+- Treat the pull request description as the canonical record of the change and
+  its validation. Update it after implementation and testing, rather than
+  posting a separate test-summary comment.
+- Complete every applicable section of the pull request template. Remove all
+  instructional comments, placeholders, and optional sections that do not
+  contain useful information.
+- In **Validation**, list every command actually run, its exact result, and its
+  relevant scope or limitations. Use `Passed`, `Failed`, `Not run`, or
+  `Pending`; explain every `Not run` or `Pending` entry.
+- Distinguish tests run by the agent from independent CI checks. Do not report
+  CI as passed unless its result was observed for the current commit.
+- Never summarize validation only as "tests passed." Include the exact command
+  or check name. If a command failed, record the failure and whether it remains
+  unresolved.
+- Delete **Follow-ups** and **Notes** when they would otherwise be empty. Link
+  tracked issues for real follow-up work; never leave `TODO`, `None`, or
+  placeholder issue numbers in the pull request description.
