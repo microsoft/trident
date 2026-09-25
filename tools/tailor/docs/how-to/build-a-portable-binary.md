@@ -1,6 +1,6 @@
 # Build a portable static binary
 
-The CI and release workflows build musl targets natively for `x86_64` and `aarch64`.
+The CI workflow builds musl targets natively for `x86_64` and `aarch64`.
 
 Install musl tools and build:
 
@@ -21,4 +21,4 @@ install -Dm755 target/x86_64-unknown-linux-musl/release/tailor \
 file dist/tailor-x86_64-unknown-linux-musl
 ```
 
-The workflow accepts `static-pie linked` or `statically linked`. tailor uses Rustls-based dependencies, so the release binary is not dynamically linked to glibc or OpenSSL. Users still need Docker daemon access at runtime.
+The workflow accepts `static-pie linked` or `statically linked`. tailor uses Rustls-based dependencies, so the resulting binary is not dynamically linked to glibc or OpenSSL. Users still need Docker daemon access at runtime.

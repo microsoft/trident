@@ -106,56 +106,6 @@ The result is `artifacts/hello_amd64_cosi.cosi`. You wrote no `outputs:` (so it 
 
 ## Installation
 
-### Prebuilt release binary
-
-Releases publish static Linux musl binaries for `x86_64` and `aarch64`, plus `.sha256` files.
-
-```bash
-set -euo pipefail
-target="x86_64-unknown-linux-musl" # or aarch64-unknown-linux-musl
-base="https://github.com/<owner>/<repo>/releases/latest/download"
-
-curl -L -O "${base}/tailor-${target}"
-curl -L -O "${base}/tailor-${target}.sha256"
-sha256sum -c "tailor-${target}.sha256"
-chmod +x "tailor-${target}"
-sudo install -m 0755 "tailor-${target}" /usr/local/bin/tailor
-tailor --version
-```
-
-### Verifying releases
-
-Each release binary is published with a checksum, a cosign keyless signature,
-and a GitHub build-provenance attestation.
-
-The signing identity is bound to the repository and workflow that produced the
-release, so set `repo` to the repository you downloaded from. Releases are
-tagged `tailor-v<version>` (a component-scoped tag, so tailor can live inside a
-larger monorepo); the identity regexp matches that ref.
-
-```bash
-set -euo pipefail
-repo="<owner>/<repo>" # the repository you downloaded the release from
-target="x86_64-unknown-linux-musl" # or aarch64-unknown-linux-musl
-binary="tailor-${target}"
-issuer="https://token.actions.githubusercontent.com"
-identity="https://github.com/${repo}/.github/workflows/release.yml@refs/tags/tailor-v.*"
-
-sha256sum -c "${binary}.sha256"
-cosign verify-blob \
-  --certificate "${binary}.pem" \
-  --signature "${binary}.sig" \
-  --certificate-identity-regexp "${identity}" \
-  --certificate-oidc-issuer "${issuer}" \
-  "${binary}"
-gh attestation verify "${binary}" \
-  --repo "${repo}" \
-  --cert-identity-regexp "${identity}" \
-  --cert-oidc-issuer "${issuer}"
-```
-
-### From source
-
 The crate is not published to crates.io yet. Install it straight from the monorepo:
 
 ```bash
@@ -201,7 +151,7 @@ The `advanced` scaffold creates a workspace `tailor.yaml`, a `myimage/image.yaml
 - Dry runs, validation, rendered config snapshots, selectors, exact cell slugs, and portable static
   builds.
 
-Run `tailor --version` to see the version of your build; the current release line is `1.x` (see the
+Run `tailor --version` to see the version of your build; the current version line is `1.x` (see the
 [compatibility policy](COMPATIBILITY.md)).
 
 ## Documentation

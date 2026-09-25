@@ -4,8 +4,6 @@ All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-Release tags are component-scoped as `tailor-v<version>`; tags `v1.0.0` and
-earlier use the bare `v<version>` scheme.
 
 ## [Unreleased]
 
@@ -84,9 +82,6 @@ First stable release. The `tailor` CLI is now covered by the
 - Crash-safe atomic writes for build stamps, the hash cache, and published
   artifacts.
 - Single-build-per-output-directory advisory lock.
-- Release provenance: version/tag gate, test gate, cosign keyless signing,
-  CycloneDX SBOM, and build provenance attestation; pinned toolchain and action
-  digests.
 
 ### Changed
 
@@ -144,10 +139,6 @@ First stable release. The `tailor` CLI is now covered by the
 - `--build-dir-base` support for builds.
 
 ## [0.3.0] - 2026-07-14
-
-### Added
-
-- Versioned documentation site and release download documentation.
 
 ### Fixed
 

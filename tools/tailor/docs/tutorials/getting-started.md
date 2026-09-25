@@ -4,7 +4,7 @@ In this tutorial you will create one standalone image definition and render the 
 
 ## 1. Install tailor
 
-Use a release binary or install from a local checkout:
+Install from source (see [Installation](../installation.md) for the from-monorepo option):
 
 ```bash
 cargo install --path crates/tailor

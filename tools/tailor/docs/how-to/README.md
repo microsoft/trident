@@ -49,5 +49,4 @@ guide notes anything extra it needs.
 ## Distribute and comply
 
 - [Build a portable binary](build-a-portable-binary.md)
-- [Embed tailor in a monorepo](embed-in-a-monorepo.md)
 - [Print third-party license notices](print-license-notices.md)

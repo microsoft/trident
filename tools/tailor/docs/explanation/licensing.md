@@ -39,7 +39,7 @@ Because the notice is generated from the resolved `Cargo.lock` on every build, i
 from the dependency set — there is no checked-in copy to keep in sync. The license-collection tool
 (`cargo_metadata`) is a **build-only** dependency, so it is not linked into the shipped binary.
 
-To archive the third-party attributions alongside a release:
+To archive the third-party attributions alongside a distribution:
 
 ```bash
 tailor notice > THIRD-PARTY-NOTICES.txt

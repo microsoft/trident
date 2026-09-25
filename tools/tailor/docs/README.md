@@ -51,5 +51,5 @@ flowchart TD
 ## Project
 
 - [Compatibility policy](../COMPATIBILITY.md) — what is
-  stable across releases.
-- [Changelog](../CHANGELOG.md) — release history.
+  stable across versions.
+- [Changelog](../CHANGELOG.md) — version history.
