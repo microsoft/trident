@@ -1,6 +1,7 @@
 # Build a portable static binary
 
-The CI workflow builds musl targets natively for `x86_64` and `aarch64`.
+The CI workflow builds the `x86_64-unknown-linux-musl` target natively; the same steps build
+`aarch64-unknown-linux-musl` on an arm64 host (swap the target triple below).
 
 Install musl tools and build:
 
