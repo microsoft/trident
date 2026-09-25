@@ -69,28 +69,48 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetListenConfig) error 
 	// Serve owns the listener from here on; Shutdown/Close will close it.
 	served := listen
 	listen = nil
+
+	return serveAndWait(ctx, server, served, result, config.MaxPhonehomeFailures)
+}
+
+// serveAndWait runs the HTTP server and waits for the phone-home outcome,
+// returning whichever of the two failures actually explains the run. It takes
+// the listener so a test can kill it and drive the serve-failure path.
+func serveAndWait(
+	ctx context.Context,
+	server *http.Server,
+	listener net.Listener,
+	result <-chan phonehome.PhoneHomeResult,
+	maxPhonehomeFailures uint,
+) error {
 	// Keep Serve's error: if it returns immediately -- a bad TLS config, or the
 	// listener dying under it -- the run would otherwise sit waiting for a
 	// phone home that can never arrive, and time out blaming the host.
 	// ErrServerClosed is the expected result of the Shutdown below.
 	serveErr := make(chan error, 1)
+	// A dead server can never deliver a phone home, so its failure has to cut
+	// the wait short rather than just be reported once the wait times out.
+	serveCtx, cancelServe := context.WithCancel(ctx)
+	defer cancelServe()
 	go func() {
-		if err := server.Serve(served); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logrus.WithError(err).Error("phone-home server stopped serving")
+			// Buffered, so this send completes before the cancel below and the
+			// wait always finds the cause already recorded.
 			serveErr <- err
+			cancelServe()
 			return
 		}
 		serveErr <- nil
 	}()
-	logrus.WithField("address", served.Addr().String()).Info("Listening...")
+	logrus.WithField("address", listener.Addr().String()).Info("Listening...")
 
 	logrus.Info("Waiting for phone home...")
 
 	// Wait for done signal.
-	phonehomeErr := phonehome.ListenLoop(ctx, result, false, config.MaxPhonehomeFailures)
+	phonehomeErr := phonehome.ListenLoop(serveCtx, result, false, maxPhonehomeFailures)
 
-	err = server.Shutdown(ctx)
-	if err != nil {
+	if err := server.Shutdown(ctx); err != nil {
 		if ctx.Err() != nil {
 			logrus.Infoln("server shutdown due to context cancellation")
 		} else {
@@ -98,19 +118,19 @@ func RunNetlisten(ctx context.Context, config *netlaunch.NetListenConfig) error 
 		}
 	}
 
-	if phonehomeErr != nil {
-		logrus.WithError(phonehomeErr).Errorln("phonehome returned an error")
-		return phonehomeErr
-	}
-
-	// A serving failure is only worth reporting when nothing else went wrong;
-	// the phone-home outcome is the more specific answer when both are set.
+	// Checked before the phone-home error: a serve failure cancels the wait, so
+	// whatever ListenLoop reports in that case is a downstream symptom of it.
 	select {
 	case err := <-serveErr:
 		if err != nil {
 			return fmt.Errorf("phone-home server failed: %w", err)
 		}
 	default:
+	}
+
+	if phonehomeErr != nil {
+		logrus.WithError(phonehomeErr).Errorln("phonehome returned an error")
+		return phonehomeErr
 	}
 
 	return nil
