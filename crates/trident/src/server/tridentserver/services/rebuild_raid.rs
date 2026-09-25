@@ -6,6 +6,7 @@ use trident_proto::v1preview::{
 };
 
 use crate::{
+    command_kind::CommandKind,
     server::{
         tridentserver::{datastore, RebootDecision, ServicingResponseStream},
         TridentServer,
@@ -24,20 +25,24 @@ impl RebuildRaidService for TridentServer {
         let logstream = self.logstream.clone();
         let tracestream = self.tracestream.clone();
 
-        self.servicing_request("rebuild_raid", RebootDecision::Error, move || {
-            let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
-                .message("Failed to initialize Trident")?;
+        self.servicing_request(
+            CommandKind::rebuild_raid(),
+            RebootDecision::Error,
+            move || {
+                let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
+                    .message("Failed to initialize Trident")?;
 
-            let mut datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+                let mut datastore = DataStore::open_or_create(&data_store_path)
+                    .message("Failed to open datastore")?;
 
-            let image_hash = datastore::stored_image_hash(&datastore);
+                let image_hash = datastore::stored_image_hash(&datastore);
 
-            trident
-                .rebuild_raid(&mut datastore)
-                .message("Failed to rebuild RAID arrays")?;
+                trident
+                    .rebuild_raid(&mut datastore)
+                    .message("Failed to rebuild RAID arrays")?;
 
-            Ok((ExitKind::Done, image_hash, None))
-        })
+                Ok((ExitKind::Done, image_hash, None))
+            },
+        )
     }
 }
