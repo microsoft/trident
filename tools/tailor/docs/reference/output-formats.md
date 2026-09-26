@@ -27,7 +27,6 @@ Optional output fields:
 | --- | --- |
 | `cosiCompressionLevel` | COSI compression level. tailor passes IC `--cosi-compression-level` when set. |
 | `compression` | Post-build compression tailor applies to the artifact (`zstd` ⇒ `<slug>.<ext>.zst`). Not an IC feature; see below. |
-| `name` | Optional `${...}` template for the output basename. |
 
 ### Compression
 

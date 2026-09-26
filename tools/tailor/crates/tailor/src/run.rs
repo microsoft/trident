@@ -1396,7 +1396,6 @@ fn convert_cell(input: &Path, dir: &Path, arch: Arch, format: OutputFormat, slug
         format,
         cosi_compression_level: None,
         compression: None,
-        name: None,
     };
     Cell {
         target: Arc::new(target),
@@ -2187,7 +2186,6 @@ fn default_cosi() -> Vec<OutputSpec> {
         format: OutputFormat::Cosi,
         cosi_compression_level: None,
         compression: None,
-        name: None,
     }]
 }
 

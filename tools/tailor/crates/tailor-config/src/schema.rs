@@ -810,8 +810,6 @@ pub struct OutputSpec {
     /// for `cosi` (already compressed), `iso` (breaks bootability), and the `pxe-*` formats.
     #[serde(default)]
     pub compression: Option<Compression>,
-    #[serde(default)]
-    pub name: Option<String>,
 }
 
 /// A selector value: an axis pinned to a single value or to a list of values.

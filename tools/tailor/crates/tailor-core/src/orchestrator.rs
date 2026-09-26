@@ -120,6 +120,27 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     .resolver
                     .resolve(&cell.base, cell.arch, &cell.target.dir)
                     .await?;
+                // Honor a locked base digest: `tailor lock` records the digest of each registry
+                // (`oci`/`azureLinux`) base, but resolution above re-derives it from the (possibly
+                // moving) tag. Pin to the locked digest when present so a build after `tailor lock`
+                // uses the frozen base, not a drifted one (mirrors the freeze in `build_lock`).
+                let resolved = if let ResolvedBase::Oci {
+                    reference,
+                    platform,
+                    digest,
+                } = resolved
+                {
+                    let digest = lock
+                        .base_digest(&reference, &platform)
+                        .map_or(digest, ToOwned::to_owned);
+                    ResolvedBase::Oci {
+                        reference,
+                        platform,
+                        digest,
+                    }
+                } else {
+                    resolved
+                };
                 let resolved_tools_dir = resolved_tools_dir(tools_dir_sources, &cell)?;
                 // Hash the cell's declared local dependencies so an edit to an IC-config-referenced
                 // asset (an `additionalFiles` script, a local RPM) invalidates the incremental
@@ -1328,7 +1349,6 @@ mod tests {
                 format: OutputFormat::Cosi,
                 cosi_compression_level: None,
                 compression: None,
-                name: None,
             }],
             output_artifacts: OutputArtifactsPolicy::default(),
             root: tmp.path().to_path_buf(),
@@ -1471,7 +1491,6 @@ mod tests {
                 format: OutputFormat::Cosi,
                 cosi_compression_level: None,
                 compression: None,
-                name: None,
             }],
             output_artifacts: OutputArtifactsPolicy::default(),
             root: tmp.path().to_path_buf(),
@@ -1681,5 +1700,54 @@ mod tests {
             size: 0,
         };
         assert_eq!(base_image_ref(&local), None);
+    }
+
+    #[tokio::test]
+    async fn plan_honors_a_locked_base_digest_over_a_redrifted_tag() {
+        // Regression: `tailor lock` pins a registry base's digest, but planning re-resolves the
+        // (moving) tag. The locked digest must win, so a build after `lock` uses the frozen base —
+        // not whatever the tag points at now.
+        let (_tmp, target) = target_with(indoc! {"
+                name: solo
+                base:
+                  oci:
+                    uri: registry.example/base:edge
+                    platform: linux/amd64
+                config:
+                  os:
+                    hostname: solo
+            "});
+        let tool = tool_config();
+        let toolchains = resolved_toolchains(&tool);
+        // FakeResolver resolves this base to `sha256:fakeoci`; the lock pins a different digest.
+        let mut lock = Lockfile::default();
+        lock.upsert_base(crate::LockedBase {
+            reference: "registry.example/base:edge".to_owned(),
+            platform: "linux/amd64".to_owned(),
+            digest: "sha256:lockedbase".to_owned(),
+        });
+        let out = TempDir::new().unwrap();
+
+        let plan = Orchestrator::new(FakeExecutor::default(), FakeResolver)
+            .plan(
+                &[target],
+                &[],
+                &tool,
+                &lock,
+                &toolchains,
+                &BTreeMap::new(),
+                &BuildSelection::from_selector(&Selector::default()),
+                out.path(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(plan.cells.len(), 1);
+        assert_eq!(
+            plan.cells[0].base_ref.as_deref(),
+            Some("oci:registry.example/base@sha256:lockedbase"),
+            "the locked base digest must win over the re-resolved tag"
+        );
     }
 }

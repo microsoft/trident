@@ -790,7 +790,6 @@ mod tests {
                 format: OutputFormat::Cosi,
                 cosi_compression_level: None,
                 compression: None,
-                name: None,
             },
             slug: CellSlug("sample_cosi".to_owned()),
             ic_config: Value::Mapping(Mapping::default()),

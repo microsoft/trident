@@ -591,7 +591,6 @@ mod tests {
                 format: OutputFormat::Cosi,
                 cosi_compression_level: None,
                 compression: None,
-                name: None,
             }],
             output_artifacts: OutputArtifactsPolicy::default(),
             root: root.to_path_buf(),
