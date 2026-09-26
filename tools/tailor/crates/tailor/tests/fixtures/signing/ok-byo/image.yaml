@@ -1,0 +1,9 @@
+name: ok-byo
+signing: byo
+base:
+  path: ./base.img
+outputs:
+  - format: cosi
+config:
+  os:
+    hostname: ok-byo

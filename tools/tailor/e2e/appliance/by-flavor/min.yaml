@@ -1,0 +1,9 @@
+# The `min` flavor: a plain hostname, and a raw output post-compressed with zstd — this exercises
+# tailor's `outputs[].compression` end to end (IC writes `…_raw.raw`, tailor streams it into
+# `…_raw.raw.zst` and drops the original). `net` keeps the default cosi output, so one E2E run
+# covers both the plain and the compressed artifact paths without adding a cell.
+params:
+  hostname: appliance-min
+outputs:
+  - format: raw
+    compression: zstd

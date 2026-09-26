@@ -1,0 +1,56 @@
+# cargo-deny policy — dependency license, advisory, and source gating.
+# Run locally with `cargo deny check`; enforced in CI (see .github/workflows/ci.yml).
+#
+# tailor ships as a statically linked binary, so every dependency's license travels with it. This
+# policy limits dependencies to permissive, attribution-style licenses (no copyleft), matching the
+# distribution model. New dependencies outside the allow-list fail the check until reviewed.
+
+[graph]
+# Evaluate the dependency graph for the targets we actually ship (Linux musl/gnu, both arches).
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+all-features = true
+
+[licenses]
+# Permissive, attribution-only licenses. Copyleft (GPL/AGPL/LGPL/MPL/…) is intentionally absent, so
+# any dependency introducing it fails the gate.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "BSL-1.0",
+    "Unlicense",
+    "CDLA-Permissive-2.0",
+]
+# Require a strong textual match before accepting a detected license.
+confidence-threshold = 0.9
+# Defensive allow-list entries that no current dependency uses are fine — don't warn on them.
+unused-allowed-license = "allow"
+
+[bans]
+# Multiple versions of a crate are a hygiene smell, not a licensing failure — warn, don't block.
+multiple-versions = "warn"
+# Our manifests pin versions via [workspace.dependencies]; a `*` requirement on a registry crate is a
+# mistake. Internal path crates carry no version requirement, so allow those.
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[advisories]
+# Fail on a dependency pinned to a yanked release; RustSec vulnerability/unmaintained findings use
+# cargo-deny's defaults.
+yanked = "deny"
+
+[sources]
+# Only crates.io; reject unknown registries or git sources so nothing sneaks in off-registry.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -1,0 +1,316 @@
+name: tailor
+
+# Isolated CI for the vendored tailor workspace under `tools/tailor/`.
+#
+# Isolation contract:
+#   * The `paths:` filters below mean this workflow triggers ONLY when tailor's
+#     own files (or this workflow) change — it never runs for any other part of
+#     the monorepo.
+#   * Every job runs inside `tools/tailor` against tailor's own pinned toolchain
+#     (`tools/tailor/rust-toolchain.toml`). tailor is excluded from the root
+#     Cargo workspace, so nothing here builds or touches the trident crates.
+#   * This is a GitHub Actions workflow; trident's own build/test gating lives in
+#     Azure DevOps pipelines (`.pipelines/`). The two do not share jobs, caches,
+#     runners, or actions.
+#
+# Because these paths only match `tools/tailor/**`, a PR that changes anything
+# else will show this workflow as "skipped" and it produces no checks.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/tailor/**"
+      - ".github/workflows/tailor.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "tools/tailor/**"
+      - ".github/workflows/tailor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref. The `tailor-` prefix keeps this group
+# distinct from any trident workflow.
+concurrency:
+  group: tailor-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: fmt, clippy, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - name: Force public crates.io for tailor
+        run: |
+          # The monorepo root .cargo/config.toml replaces crates-io with the
+          # authenticated BMP_PublicPackages Azure DevOps feed. Cargo discovers it
+          # by walking up from tools/tailor, so it would leak into tailor builds
+          # and fail without credentials tailor does not use. tailor depends only
+          # on public crates, so strip that inherited replacement from THIS job's
+          # throwaway checkout — cargo then falls back to the default crates.io.
+          # This edits only the runner's checkout and never touches trident's own
+          # (Azure DevOps) pipelines.
+          set -eux
+          cfg=.cargo/config.toml
+          [ -f "$cfg" ] || cfg=.cargo/config
+          if [ -f "$cfg" ]; then
+            awk '
+              /^\[source\.crates-io\]/ { skip=1; next }
+              /^\[/                    { skip=0 }
+              !skip                    { print }
+            ' "$cfg" > "$cfg.tailor.tmp"
+            mv "$cfg.tailor.tmp" "$cfg"
+            echo "----- neutralized crates-io replacement in $cfg -----"
+            cat "$cfg"
+          else
+            echo "no root cargo config found; nothing to neutralize"
+          fi
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          # Mirrors tools/tailor/rust-toolchain.toml — that file lives in a
+          # subdirectory, so it is not auto-detected from the repo root.
+          toolchain: "1.98.1"
+          components: rustfmt, clippy
+          cache-workspaces: tools/tailor
+      - name: rustfmt
+        working-directory: tools/tailor
+        run: cargo fmt --all --check
+      - name: clippy
+        working-directory: tools/tailor
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: unit and integration tests
+        working-directory: tools/tailor
+        run: cargo test --workspace --locked
+
+  deny:
+    name: cargo-deny (licenses, advisories, sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - name: Force public crates.io for tailor
+        run: |
+          # See the `check` job — strip the monorepo's inherited crates-io ->
+          # BMP_PublicPackages replacement so cargo-deny resolves against public
+          # crates.io (matching the sources recorded in tools/tailor/Cargo.lock).
+          set -eux
+          cfg=.cargo/config.toml
+          [ -f "$cfg" ] || cfg=.cargo/config
+          if [ -f "$cfg" ]; then
+            awk '
+              /^\[source\.crates-io\]/ { skip=1; next }
+              /^\[/                    { skip=0 }
+              !skip                    { print }
+            ' "$cfg" > "$cfg.tailor.tmp"
+            mv "$cfg.tailor.tmp" "$cfg"
+            echo "----- neutralized crates-io replacement in $cfg -----"
+            cat "$cfg"
+          else
+            echo "no root cargo config found; nothing to neutralize"
+          fi
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          manifest-path: tools/tailor/Cargo.toml
+          command: check
+
+  build:
+    name: build static binary (x86_64-musl)
+    runs-on: ubuntu-latest
+    env:
+      CC_x86_64_unknown_linux_musl: musl-gcc
+    steps:
+      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - name: Force public crates.io for tailor
+        run: |
+          # See the `check` job — strip the monorepo's inherited crates-io ->
+          # BMP_PublicPackages replacement so tailor builds from public crates.io.
+          set -eux
+          cfg=.cargo/config.toml
+          [ -f "$cfg" ] || cfg=.cargo/config
+          if [ -f "$cfg" ]; then
+            awk '
+              /^\[source\.crates-io\]/ { skip=1; next }
+              /^\[/                    { skip=0 }
+              !skip                    { print }
+            ' "$cfg" > "$cfg.tailor.tmp"
+            mv "$cfg.tailor.tmp" "$cfg"
+            echo "----- neutralized crates-io replacement in $cfg -----"
+            cat "$cfg"
+          else
+            echo "no root cargo config found; nothing to neutralize"
+          fi
+      - name: Install musl toolchain
+        run: |
+          # Hosted runners ship third-party apt repos whose indexes intermittently
+          # fail; tolerate a partial update and install musl-tools from Ubuntu's repo.
+          sudo apt-get update || true
+          sudo apt-get install -y musl-tools
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          toolchain: "1.98.1"
+          target: x86_64-unknown-linux-musl
+          cache-workspaces: tools/tailor
+      - name: Build the static binary
+        working-directory: tools/tailor
+        run: cargo build --release --locked --target x86_64-unknown-linux-musl -p tailor
+      - name: Stage and verify the binary is fully static
+        working-directory: tools/tailor
+        run: |
+          set -euxo pipefail
+          mkdir -p dist
+          install -Dm755 "target/x86_64-unknown-linux-musl/release/tailor" "dist/tailor-x86_64-unknown-linux-musl"
+          ( cd dist && sha256sum "tailor-x86_64-unknown-linux-musl" > "tailor-x86_64-unknown-linux-musl.sha256" )
+          file "dist/tailor-x86_64-unknown-linux-musl"
+          file "dist/tailor-x86_64-unknown-linux-musl" | grep -qE 'static-pie linked|statically linked'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tailor-x86_64-unknown-linux-musl
+          path: tools/tailor/dist/*
+          if-no-files-found: error
+
+  e2e:
+    name: e2e (sample image builds)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Absolute path to the binary built below; the e2e steps run from the e2e
+      # workspace, so a repo-relative path would not resolve.
+      TAILOR_BIN: ${{ github.workspace }}/tools/tailor/target/release/tailor
+    steps:
+      - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+      - name: Force public crates.io for tailor
+        run: |
+          # See the `check` job — strip the monorepo's inherited crates-io ->
+          # BMP_PublicPackages replacement so tailor builds from public crates.io.
+          set -eux
+          cfg=.cargo/config.toml
+          [ -f "$cfg" ] || cfg=.cargo/config
+          if [ -f "$cfg" ]; then
+            awk '
+              /^\[source\.crates-io\]/ { skip=1; next }
+              /^\[/                    { skip=0 }
+              !skip                    { print }
+            ' "$cfg" > "$cfg.tailor.tmp"
+            mv "$cfg.tailor.tmp" "$cfg"
+            echo "----- neutralized crates-io replacement in $cfg -----"
+            cat "$cfg"
+          else
+            echo "no root cargo config found; nothing to neutralize"
+          fi
+      - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        with:
+          toolchain: "1.98.1"
+          cache-workspaces: tools/tailor
+      - name: Confirm Docker is available
+        run: docker version
+      - name: Build the tailor binary
+        working-directory: tools/tailor
+        run: cargo build --release --locked -p tailor
+
+      - name: Pure verbs (no engine needed)
+        working-directory: tools/tailor/e2e
+        run: |
+          set -euxo pipefail
+          "$TAILOR_BIN" list
+          "$TAILOR_BIN" matrix --format slugs
+          "$TAILOR_BIN" validate
+          "$TAILOR_BIN" validate derived          # offline check of the base: { image } chain
+          "$TAILOR_BIN" explain appliance -s flavor=net
+          "$TAILOR_BIN" render
+
+      - name: Verify the inputs embed resolves offline (image base + input + pin)
+        working-directory: tools/tailor/e2e
+        run: |
+          set -euxo pipefail
+          # `iso` bases on `base-os` and embeds `appliance`'s COSI (pinned flavor: net) via
+          # ${inputs.payload}. Validate resolves both references; render must substitute the concrete
+          # producer artifact path into the additionalFiles source — no ${inputs.*} token remains.
+          "$TAILOR_BIN" validate iso
+          "$TAILOR_BIN" render iso
+          rendered="iso/.rendered/iso_amd64_cosi.yaml"
+          grep -q "artifacts/appliance_net_amd64_cosi.cosi" "$rendered" \
+            || { echo "input not substituted to the producer artifact path" >&2; cat "$rendered"; exit 1; }
+          if grep -q '\${inputs\.' "$rendered"; then
+            echo "an unresolved \${inputs.*} token remains in $rendered" >&2; exit 1
+          fi
+          echo "ok: iso embeds appliance_net_amd64_cosi.cosi (resolved offline)"
+
+      - name: Resolve the lockfile (pin base + toolchain digests)
+        working-directory: tools/tailor/e2e
+        run: '"$TAILOR_BIN" lock'
+
+      - name: Build the images (real Image Customizer run)
+        working-directory: tools/tailor/e2e
+        run: '"$TAILOR_BIN" build'
+
+      - name: Assert the artifacts were produced and owned by the runner (janitor worked)
+        working-directory: tools/tailor/e2e
+        run: |
+          set -euxo pipefail
+          # `net` keeps the default cosi output; `min` produces a zstd-compressed raw.
+          cosi="artifacts/appliance_net_amd64_cosi.cosi"
+          test -s "$cosi" || { echo "missing or empty artifact: $cosi" >&2; exit 1; }
+          owner=$(stat -c '%U' "$cosi")
+          if [ "$owner" = "root" ]; then
+            echo "artifact $cosi is still root-owned (janitor did not run)" >&2
+            exit 1
+          fi
+          echo "ok: $cosi ($(stat -c '%s' "$cosi") bytes, owner $owner)"
+
+          # The compressed artifact: tailor must publish `<slug>.raw.zst` and remove the raw original.
+          zst="artifacts/appliance_min_amd64_raw.raw.zst"
+          raw="artifacts/appliance_min_amd64_raw.raw"
+          test -s "$zst" || { echo "missing or empty compressed artifact: $zst" >&2; exit 1; }
+          if [ -e "$raw" ]; then
+            echo "uncompressed original $raw was not removed after compression" >&2
+            exit 1
+          fi
+          owner=$(stat -c '%U' "$zst")
+          if [ "$owner" = "root" ]; then
+            echo "compressed artifact $zst is still root-owned (janitor did not run)" >&2
+            exit 1
+          fi
+          # It must be a real zstd stream: check the magic number, then verify frame integrity.
+          magic=$(head -c 4 "$zst" | od -An -tx1 | tr -d ' \n')
+          if [ "$magic" != "28b52ffd" ]; then
+            echo "compressed artifact $zst is not a zstd stream (magic=$magic)" >&2
+            exit 1
+          fi
+          zstd -t "$zst"
+          echo "ok: $zst ($(stat -c '%s' "$zst") bytes, owner $owner, zstd frame verified)"
+
+      - name: Build the inter-image base-of chain (base-os → derived)
+        working-directory: tools/tailor/e2e
+        run: |
+          set -euxo pipefail
+          # `derived` bases on `base-os` (`base: { image: base-os }`). Both are `skip: true`, so the
+          # bulk build above ignored them; naming `derived` builds `base-os` first (topological
+          # order), then customizes its raw into a COSI.
+          "$TAILOR_BIN" build derived
+
+      - name: Assert the base-of chain produced both artifacts (producer built before consumer)
+        working-directory: tools/tailor/e2e
+        run: |
+          set -euxo pipefail
+          producer="artifacts/base-os_amd64_raw.raw"
+          consumer="artifacts/derived_amd64_cosi.cosi"
+          for a in "$producer" "$consumer"; do
+            test -s "$a" || { echo "missing or empty artifact: $a" >&2; exit 1; }
+            owner=$(stat -c '%U' "$a")
+            if [ "$owner" = "root" ]; then
+              echo "artifact $a is still root-owned (janitor did not run)" >&2
+              exit 1
+            fi
+            echo "ok: $a ($(stat -c '%s' "$a") bytes, owner $owner)"
+          done
+          # The consumer must be newer than the producer it was built on.
+          if [ "$consumer" -ot "$producer" ]; then
+            echo "consumer $consumer is older than producer $producer — wrong build order" >&2
+            exit 1
+          fi
