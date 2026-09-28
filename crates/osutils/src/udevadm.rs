@@ -39,13 +39,18 @@ mod functional_test {
     use pytest_gen::functional_test;
 
     #[functional_test(feature = "helpers")]
-    fn test_settle() {
-        settle().unwrap();
-    }
-
-    #[functional_test(feature = "helpers")]
     fn test_trigger() {
         trigger().unwrap();
         wait(Path::new("/dev/sda")).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_settle() {
+        settle().unwrap();
     }
 }

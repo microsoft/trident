@@ -476,6 +476,15 @@ mod tests {
         let uuid = read_product_uuid(filepath.to_str().unwrap().to_string());
         assert_eq!(uuid, "test_uuid");
     }
+
+    #[test]
+    fn test_populate_additional_fields() {
+        let additional_fields = populate_additional_fields();
+        assert_eq!(
+            additional_fields.get("trident_version").unwrap(),
+            &json!(TRIDENT_VERSION)
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -519,15 +528,6 @@ mod functional_test {
         assert!(
             metric_found,
             "Expected test metric not found in the local metrics file"
-        );
-    }
-
-    #[functional_test]
-    fn test_populate_additional_fields() {
-        let additional_fields = populate_additional_fields();
-        assert_eq!(
-            additional_fields.get("trident_version").unwrap(),
-            &json!(TRIDENT_VERSION)
         );
     }
 

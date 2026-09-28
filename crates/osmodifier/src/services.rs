@@ -69,16 +69,13 @@ fn disable_service(ctx: &OsModifierContext, service: &str) -> Result<(), Error> 
     Ok(())
 }
 
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
+#[cfg(test)]
+mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
 
-    use pytest_gen::functional_test;
     use trident_api::config::Services;
-
-    use crate::OsModifierContext;
 
     /// Create a minimal systemd tree with a synthetic service unit.
     fn setup_systemd_root(tmp: &std::path::Path) {
@@ -95,7 +92,7 @@ mod functional_test {
         .unwrap();
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_enable_service() {
         let tmp = tempdir().unwrap();
         setup_systemd_root(tmp.path());
@@ -123,7 +120,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_disable_service() {
         let tmp = tempdir().unwrap();
         setup_systemd_root(tmp.path());
@@ -156,7 +153,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_disable_already_disabled_service() {
         let tmp = tempdir().unwrap();
         setup_systemd_root(tmp.path());

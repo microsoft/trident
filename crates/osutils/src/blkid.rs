@@ -60,40 +60,11 @@ mod functional_test {
         // e.g. 8AA2-EE49
     }
 
-    #[functional_test(feature = "helpers", negative = true)]
-    fn test_run_fail_on_non_block_file() {
-        assert!(super::run(Path::new("/dev/null"), "PARTLABEL")
-            .unwrap_err()
-            .root_cause()
-            .to_string()
-            .contains("Dependency 'blkid' finished unsuccessfully"));
-    }
-
-    #[functional_test(feature = "helpers", negative = true)]
-    fn test_run_fail_on_missing_file() {
-        assert!(super::run(Path::new("/dev/does-not-exist"), "PARTLABEL")
-            .unwrap_err()
-            .root_cause()
-            .to_string()
-            .contains("Dependency 'blkid' finished unsuccessfully"));
-    }
-
     #[functional_test(feature = "helpers")]
     fn test_get_filesystem_uuid_raw_success() {
         let uuid = super::get_filesystem_uuid_raw(Path::new("/dev/sda2")).unwrap();
         Uuid::parse_str(&uuid).unwrap();
         assert_eq!(super::run(Path::new("/dev/sda2"), "UUID").unwrap(), uuid);
-    }
-
-    #[functional_test(feature = "helpers", negative = true)]
-    fn test_get_filesystem_uuid_raw_fail_on_missing_file() {
-        assert!(
-            super::get_filesystem_uuid_raw(Path::new("/dev/does-not-exist"))
-                .unwrap_err()
-                .root_cause()
-                .to_string()
-                .contains("Dependency 'blkid' finished unsuccessfully")
-        );
     }
 
     #[functional_test(feature = "helpers")]
@@ -103,15 +74,6 @@ mod functional_test {
             super::run(Path::new("/dev/sda2"), "UUID").unwrap(),
             uuid.to_string()
         );
-    }
-
-    #[functional_test(feature = "helpers", negative = true)]
-    fn test_get_filesystem_uuid_fail_on_missing_file() {
-        assert!(super::get_filesystem_uuid(Path::new("/dev/does-not-exist"))
-            .unwrap_err()
-            .root_cause()
-            .to_string()
-            .contains("Dependency 'blkid' finished unsuccessfully"));
     }
 
     #[functional_test(feature = "helpers", negative = true)]
@@ -130,8 +92,51 @@ mod functional_test {
         let partlabel = super::get_partition_label(Path::new("/dev/sda1")).unwrap();
         assert_eq!(partlabel, "esp");
     }
+}
 
-    #[functional_test(feature = "helpers", negative = true)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_run_fail_on_non_block_file() {
+        assert!(super::run(Path::new("/dev/null"), "PARTLABEL")
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains("Dependency 'blkid' finished unsuccessfully"));
+    }
+
+    #[test]
+    fn test_run_fail_on_missing_file() {
+        assert!(super::run(Path::new("/dev/does-not-exist"), "PARTLABEL")
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains("Dependency 'blkid' finished unsuccessfully"));
+    }
+
+    #[test]
+    fn test_get_filesystem_uuid_raw_fail_on_missing_file() {
+        assert!(
+            super::get_filesystem_uuid_raw(Path::new("/dev/does-not-exist"))
+                .unwrap_err()
+                .root_cause()
+                .to_string()
+                .contains("Dependency 'blkid' finished unsuccessfully")
+        );
+    }
+
+    #[test]
+    fn test_get_filesystem_uuid_fail_on_missing_file() {
+        assert!(super::get_filesystem_uuid(Path::new("/dev/does-not-exist"))
+            .unwrap_err()
+            .root_cause()
+            .to_string()
+            .contains("Dependency 'blkid' finished unsuccessfully"));
+    }
+
+    #[test]
     fn test_get_partition_label_fail_on_missing_file() {
         assert!(super::get_partition_label(Path::new("/dev/does-not-exist"))
             .unwrap_err()
