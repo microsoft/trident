@@ -178,6 +178,13 @@ pub enum CoreError {
     },
 
     #[error(
+        "image `{image}` bases on `{dependency}`, whose matched output is compressed \
+         (`compression:`); Image Customizer cannot consume a compressed base. Drop `compression:` on \
+         the producer's output, or select an uncompressed output for the base"
+    )]
+    CompressedImageBase { image: String, dependency: String },
+
+    #[error(
         "image `{image}` cell `{slug}` depends on `{producer}`, but `{producer}` has axis `{axis}` \
          that `{image}` does not — the producer cell is ambiguous ({axis} ∈ {{{values}}}); pin it \
          with `cell: {{ {axis}: <value> }}`"

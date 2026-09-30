@@ -30,7 +30,7 @@ pub(crate) fn ensure_safe_rw_target(path: &Path) -> Result<(), ExecError> {
 /// The one catastrophe is binding the filesystem root (re-exposing the whole host to a `rm -rf`), so
 /// that is the only rejection.
 pub(crate) fn ensure_safe_removal_parent(path: &Path) -> Result<(), ExecError> {
-    let normalized = normalize_absolute_lexical(path)?;
+    let normalized = resolve_path(path)?;
     if normalized == Path::new(ROOT_PATH) {
         return Err(unsafe_dir(
             normalized,
@@ -46,7 +46,7 @@ pub(crate) fn ensure_safe_removal_parent(path: &Path) -> Result<(), ExecError> {
 /// require a separate filesystem: IC keeps its overlays and mounts within `--build-dir`/`--tools-dir`
 /// (see `docs/explanation/threat-model.md`), so a build dir on the same device as `/` is safe.
 fn ensure_safe_dir(path: &Path) -> Result<(), ExecError> {
-    let normalized = normalize_absolute_lexical(path)?;
+    let normalized = resolve_path(path)?;
     if normalized == Path::new(ROOT_PATH) {
         return Err(unsafe_dir(
             normalized,
@@ -60,7 +60,7 @@ fn ensure_safe_dir(path: &Path) -> Result<(), ExecError> {
         ));
     }
 
-    let cwd = normalize_absolute_lexical(&env::current_dir().map_err(|source| ExecError::Io {
+    let cwd = resolve_path(&env::current_dir().map_err(|source| ExecError::Io {
         context: "failed to determine current directory".to_owned(),
         source,
     })?)?;
@@ -86,13 +86,42 @@ fn is_protected_dir(normalized: &Path) -> bool {
         return true;
     }
     env::var_os("HOME").is_some_and(|home| {
-        !home.is_empty()
-            && normalize_absolute_lexical(Path::new(&home)).is_ok_and(|home| normalized == home)
+        !home.is_empty() && resolve_path(Path::new(&home)).is_ok_and(|home| normalized == home)
     })
 }
 
 fn unsafe_dir(path: PathBuf, reason: String) -> ExecError {
     ExecError::UnsafeDir { path, reason }
+}
+
+/// Absolutize and lexically collapse `.`/`..`, then **resolve symlinks** on the deepest existing
+/// ancestor, re-attaching any not-yet-created leaf lexically. A purely lexical check treats a
+/// symlinked build/scratch dir like `/tmp/tailor-build -> /` as safe; resolving the existing
+/// components first makes the guard test the symlink's real target, so a symlink cannot smuggle the
+/// build dir onto `/` or a system directory before `create_dir_all` and the read-write bind follow it.
+fn resolve_path(path: &Path) -> Result<PathBuf, ExecError> {
+    let lexical = normalize_absolute_lexical(path)?;
+    // Walk up to the deepest existing ancestor (`exists()` follows symlinks; `/` always exists, so
+    // this terminates), collecting the not-yet-created leaf components.
+    let mut existing = lexical.as_path();
+    let mut leaf: Vec<std::ffi::OsString> = Vec::new();
+    while !existing.exists() {
+        match (existing.file_name(), existing.parent()) {
+            (Some(name), Some(parent)) => {
+                leaf.push(name.to_os_string());
+                existing = parent;
+            }
+            _ => break,
+        }
+    }
+    let mut resolved = existing.canonicalize().map_err(|source| ExecError::Io {
+        context: format!("failed to resolve `{}`", existing.display()),
+        source,
+    })?;
+    for name in leaf.iter().rev() {
+        resolved.push(name);
+    }
+    Ok(resolved)
 }
 
 fn normalize_absolute_lexical(path: &Path) -> Result<PathBuf, ExecError> {
@@ -189,5 +218,35 @@ mod tests {
         let base = std::env::current_dir().unwrap().join("does-not-exist");
         let candidate = base.join("..").join("does-not-exist").join("scratch");
         ensure_safe_build_dir(&candidate).unwrap();
+    }
+
+    #[test]
+    fn rejects_a_symlink_to_the_filesystem_root() {
+        // A lexical-only guard would accept `<tmp>/link` (it isn't literally `/`); resolving the
+        // symlink reveals it points at `/`, which must be rejected — this is the exact bypass that
+        // could re-expose the whole host to IC's recursive delete.
+        let temp = tempfile::Builder::new()
+            .prefix("tailor-guard-")
+            .tempdir_in(std::env::current_dir().unwrap())
+            .unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(Path::new(ROOT_PATH), &link).unwrap();
+        let err = ensure_safe_build_dir(&link).unwrap_err();
+        assert!(matches!(err, ExecError::UnsafeDir { .. }), "got {err:?}");
+        // The removal-parent guard (root-only) must also see through the symlink.
+        let err = ensure_safe_removal_parent(&link).unwrap_err();
+        assert!(matches!(err, ExecError::UnsafeDir { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn rejects_a_symlink_to_a_system_directory() {
+        let temp = tempfile::Builder::new()
+            .prefix("tailor-guard-")
+            .tempdir_in(std::env::current_dir().unwrap())
+            .unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(Path::new("/etc"), &link).unwrap();
+        let err = ensure_safe_build_dir(&link).unwrap_err();
+        assert!(matches!(err, ExecError::UnsafeDir { .. }), "got {err:?}");
     }
 }

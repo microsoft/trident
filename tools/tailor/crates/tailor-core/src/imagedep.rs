@@ -242,7 +242,22 @@ fn resolve_image_base(
     members: &[Arc<Target>],
     output_dir: &Path,
 ) -> Result<BaseSource, CoreError> {
-    let path = resolve_image_ref(consumer, image, output, pins, members, output_dir)?;
+    // Unlike `${inputs.*}` (which embeds the artifact as a plain file), a `base: { image }` hands the
+    // producer's artifact to IC as the base image. IC cannot consume a compressed (`.zst`) base, so a
+    // producer whose matched output sets `compression:` is rejected here rather than failing deep in
+    // the IC run with an unreadable base.
+    let (_producer, matched) = resolve_producer(consumer, image, output, pins, members)?;
+    if matched.output.compression.is_some() {
+        return Err(CoreError::CompressedImageBase {
+            image: consumer.target.name().to_owned(),
+            dependency: image.to_owned(),
+        });
+    }
+    let path = output_dir.join(published_artifact_name(
+        matched.slug.as_ref(),
+        matched.output.format,
+        matched.output.compression,
+    ));
     Ok(BaseSource::Path {
         path,
         arch: Some(consumer.arch),
@@ -763,6 +778,32 @@ mod tests {
             };
             assert_eq!(path, &output_dir.join(format!("base_{arch}_cosi.cosi")));
         }
+    }
+
+    #[test]
+    fn a_compressed_producer_cannot_be_used_as_an_image_base() {
+        // A producer whose matched output is `compression: zstd` publishes a `.zst` artifact IC can't
+        // consume as a base. `base: { image }` must reject it (unlike `${inputs.*}`, which just
+        // embeds the file).
+        let tmp = TempDir::new().unwrap();
+        let base = target(
+            tmp.path(),
+            "base",
+            "name: base\nbase:\n  path: ./b.img\noutputs:\n  - format: raw\n    compression: zstd\nconfig:\n  os: { hostname: base }\n",
+        );
+        let derived = target(
+            tmp.path(),
+            "derived",
+            "name: derived\nbase:\n  image: base\nconfig:\n  os: { hostname: derived }\n",
+        );
+        let members = vec![Arc::clone(&base), Arc::clone(&derived)];
+
+        let mut cells = cells(&derived).unwrap();
+        let err = lower_image_bases(&mut cells, &members, tmp.path()).unwrap_err();
+        assert!(
+            matches!(err, CoreError::CompressedImageBase { ref dependency, .. } if dependency == "base"),
+            "got {err:?}"
+        );
     }
 
     #[test]
