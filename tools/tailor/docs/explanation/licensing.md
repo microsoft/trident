@@ -7,9 +7,9 @@ travel with it. This page describes how tailor stays compliant.
 ## Policy: what dependencies are allowed
 
 tailor restricts its dependency tree to **permissive, attribution-style licenses** — no copyleft.
-The policy lives in [`deny.toml`](../../deny.toml) and is enforced in CI by
-[`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny): a pull request that introduces a
-dependency under a license outside the allow-list fails the `cargo-deny` check until reviewed.
+The policy lives in [`deny.toml`](../../deny.toml) and is enforced in CI by a dedicated
+[`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny) job that runs on every pull request: a PR
+that introduces a dependency under a license outside the allow-list fails the `cargo-deny` check until reviewed.
 
 The allow-list is:
 
@@ -17,11 +17,11 @@ The allow-list is:
 `Unicode-3.0`, `BSL-1.0`, `Unlicense`, `CDLA-Permissive-2.0`.
 
 `cargo-deny` also checks for known security advisories, yanked releases, and off-registry sources.
-Run it locally with:
+Run the same check locally with:
 
 ```bash
 cargo install cargo-deny --locked
-cargo deny check
+just deny   # or: cargo deny check
 ```
 
 ## Attribution: the `tailor notice` command
