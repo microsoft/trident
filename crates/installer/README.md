@@ -79,6 +79,9 @@ and failures show scrollable error details. Continue opens recovery: Shell,
 Stream COSI URL, remote HC URL, or Shutdown. Shell `exit` returns to the
 originating screen. Installation continues while a shell is open; automatic
 reboot waits. The success screen offers Reboot and Shell.
+Before each recovery attempt the baked configuration is reloaded, so shell
+edits take effect. Invalid or missing configuration never supplies implicit
+defaults for an installation.
 
 Display filtering never removes daemon log records. All received responses are
 also appended to the private `/var/log/trident-installer.log`. `V` toggles

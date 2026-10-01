@@ -80,7 +80,7 @@ fn default_reboot() -> bool {
 }
 
 impl Config {
-    pub fn read(path: impl AsRef<Path>) -> Result<Self, Error> {
+    pub(super) fn read(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref();
         let text = fs::read_to_string(path).with_context(|| {
             format!(
@@ -91,7 +91,7 @@ impl Config {
         Self::parse(&text)
     }
 
-    pub fn parse(text: &str) -> Result<Self, Error> {
+    pub(super) fn parse(text: &str) -> Result<Self, Error> {
         let config: Self = toml::from_str(text).context("Invalid installer TOML configuration")?;
         config.validate()?;
         Ok(config)
@@ -127,7 +127,7 @@ impl Config {
         Ok(())
     }
 
-    pub fn require_autorun(&self) -> Result<(), Error> {
+    pub(super) fn require_autorun(&self) -> Result<(), Error> {
         ensure!(
             self.mode == Mode::Autorun,
             "Interactive installation is not implemented yet; choose mode = \"autorun\""
@@ -135,7 +135,7 @@ impl Config {
         Ok(())
     }
 
-    pub fn overlay(&self, root: impl AsRef<Path>) -> Result<Self, Error> {
+    pub(super) fn overlay(&self, root: impl AsRef<Path>) -> Result<Self, Error> {
         let path = root.as_ref().join(MEDIA_CONFIG);
         let text = match fs::read_to_string(&path) {
             Ok(text) => text,

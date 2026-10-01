@@ -2,6 +2,7 @@ use std::{
     collections::VecDeque,
     fs::{File, OpenOptions},
     io::{self, IsTerminal, Write},
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
@@ -458,25 +459,39 @@ impl Drop for Display {
 }
 
 fn spawn_operation(
-    settings: &Config,
+    config_path: Option<PathBuf>,
     request: Request,
     force: bool,
     uncertain: bool,
     scenario: Option<Scenario>,
     tx: mpsc::Sender<Event>,
 ) -> JoinHandle<Result<(), Error>> {
-    let settings = settings.clone();
     task::spawn(async move {
         match scenario {
             Some(scenario) => demo::run(if force { Scenario::Success } else { scenario }, tx).await,
-            None => client::execute(settings, request, force, uncertain, tx).await,
+            None => {
+                let path = config_path
+                    .context("Live installation requires an explicit configuration path")?;
+                match Config::read(path) {
+                    Ok(settings) => client::execute(settings, request, force, uncertain, tx).await,
+                    Err(error) => {
+                        client::send(
+                            &tx,
+                            Event::Error {
+                                details: format!("{error:#}"),
+                                uncertain,
+                            },
+                        )
+                        .await
+                    }
+                }
+            }
         }
     })
 }
 
 pub(super) async fn run(
-    settings: Config,
-    initial_error: Option<String>,
+    config_path: Option<PathBuf>,
     scenario: Option<Scenario>,
     plain: bool,
     mut output: Output,
@@ -485,19 +500,14 @@ pub(super) async fn run(
     let mut interrupts = unix::signal(SignalKind::interrupt())?;
     let mut termination = unix::signal(SignalKind::terminate())?;
     let mut model = Model::new();
-    let mut worker = if let Some(details) = initial_error {
-        model.fail(details, false);
-        None
-    } else {
-        Some(spawn_operation(
-            &settings,
-            Request::Autorun,
-            false,
-            false,
-            scenario,
-            tx.clone(),
-        ))
-    };
+    let mut worker = Some(spawn_operation(
+        config_path.clone(),
+        Request::Autorun,
+        false,
+        false,
+        scenario,
+        tx.clone(),
+    ));
     let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
     let mut display = if interactive && !plain {
         Some(Display::new()?)
@@ -618,7 +628,7 @@ pub(super) async fn run(
                                     model.selected = 0;
                                     let recovery_demo = scenario.map(|_| Scenario::Success);
                                     worker = Some(spawn_operation(
-                                        &settings,
+                                        config_path.clone(),
                                         request,
                                         force,
                                         model.uncertain,
@@ -766,12 +776,16 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
             )
         })
         .unwrap_or_else(|| format!("Elapsed {}s", model.started.elapsed().as_secs()));
-    frame.render_widget(
-        Paragraph::new(format!(
-            "Up/Down + Enter: select   S: shell   V: details   Esc: menu{}\n{countdown}",
+    let controls = if matches!(model.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
+        "Enter: start   Esc: return to recovery".to_owned()
+    } else {
+        format!(
+            "Up/Down + Enter: select   S: shell   V: details   Esc: menu{}",
             if demo { "   Q: quit" } else { "" }
-        ))
-        .style(Style::default().fg(Color::Cyan)),
+        )
+    };
+    frame.render_widget(
+        Paragraph::new(format!("{controls}\n{countdown}")).style(Style::default().fg(Color::Cyan)),
         areas[4],
     );
 }
@@ -780,10 +794,32 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
 mod tests {
     use super::*;
 
+    use std::fs;
+
     use ratatui::backend::TestBackend;
+    use tempfile::TempDir;
 
     fn enter() -> KeyEvent {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
+    }
+
+    #[tokio::test]
+    async fn recovery_reloads_configuration_without_using_defaults_on_error() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("installer.toml");
+        for (text, diagnostic) in [("", "mode"), ("mode = 'not-a-mode'", "not-a-mode")] {
+            fs::write(&path, text).unwrap();
+            let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
+            let worker =
+                spawn_operation(Some(path.clone()), Request::Autorun, false, false, None, tx);
+            let Event::Error { details, uncertain } = rx.recv().await.unwrap() else {
+                panic!("Invalid settings must fail before preparing a source");
+            };
+            assert!(!uncertain);
+            assert!(details.contains(diagnostic), "{details}");
+            worker.await.unwrap().unwrap();
+            rx.try_recv().unwrap_err();
+        }
     }
 
     #[test]

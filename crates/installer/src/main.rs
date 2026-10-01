@@ -12,7 +12,7 @@ use tokio::runtime::Builder;
 
 use osutils::{systemd, terminal};
 
-use crate::{config::Config, demo::Scenario, ui::Output};
+use crate::{config::DEFAULT_CONFIG, demo::Scenario, ui::Output};
 
 mod client;
 mod config;
@@ -31,7 +31,7 @@ const WORKER_THREADS: usize = 2;
     about = "Autorun OS installer for Trident installer media"
 )]
 struct Args {
-    #[arg(long, default_value = config::DEFAULT_CONFIG)]
+    #[arg(long, default_value = DEFAULT_CONFIG)]
     config: PathBuf,
     #[arg(long, num_args = 0..=1, default_missing_value = "success", value_enum)]
     demo: Option<Scenario>,
@@ -102,13 +102,6 @@ async fn run(args: Args) -> Result<(), Error> {
             }
         }
     }
-    let (settings, initial_error) = if args.demo.is_some() {
-        (Config::default(), None)
-    } else {
-        match Config::read(&args.config) {
-            Ok(settings) => (settings, None),
-            Err(error) => (Config::default(), Some(format!("{error:#}"))),
-        }
-    };
-    ui::run(settings, initial_error, args.demo, args.plain, output).await
+    let config_path = args.demo.is_none().then_some(args.config);
+    ui::run(config_path, args.demo, args.plain, output).await
 }
