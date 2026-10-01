@@ -46,7 +46,7 @@ name the image and pass `--cell` — `tailor build <slug>` is shorthand for
 | --- | --- |
 | `-s`, `--select AXIS=VALUE` | Constrain matrix axes. Repeatable. Comma-separated axis pairs are accepted, for example `-s variant=full,arch=amd64`. |
 | `--cell SLUG` | Select exact cells by slug. Repeatable. |
-| `--locked` | Require a complete `tailor.lock`; fail on missing entries or registry drift. |
+| `--locked` | *(preview, `lock-preview` feature)* Require a complete `tailor.lock`; fail on missing entries or registry drift. Absent from default builds — see [`tailor lock`](#tailor-lock-preview). |
 | `--force` | Ignore incremental up-to-date checks. |
 | `--arch ARCH` | Restrict build to architecture(s). Repeatable. |
 | `--output-dir PATH` | Output directory. Default: `<workspace>/artifacts`. |
@@ -151,16 +151,22 @@ selected cell produces. Only static cells are exportable — the config YAML its
 tools-dir, base, rpm-source, or signing details (those are Image Customizer invocation arguments the
 consuming pipeline supplies).
 
-## `tailor lock`
+## `tailor lock` *(preview)*
+
+> **Preview feature.** `lock`, `update`, and `build --locked` are gated behind the `lock-preview`
+> Cargo feature and are **absent from default builds** (lockfile *enforcement* is not yet
+> implemented). Build with `cargo install --features lock-preview` (or `cargo build --features
+> lock-preview`) to enable them.
 
 Resolve registry inputs and write `tailor.lock` without building. Inputs already pinned in the
 current lock **keep their digests** — only new or unpinned inputs are resolved, so re-running `lock`
 is idempotent and never silently moves an existing pin. Use it to freeze a reproducible set.
 
-## `tailor update`
+## `tailor update` *(preview)*
 
 Re-resolve **every** input to its latest digest and rewrite `tailor.lock`, ignoring the existing
-pins. Use it to deliberately refresh to newer base images / toolchains.
+pins. Use it to deliberately refresh to newer base images / toolchains. Preview feature — see
+[`tailor lock`](#tailor-lock-preview).
 
 ## `tailor resolve [images...]`
 

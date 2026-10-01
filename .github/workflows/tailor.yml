@@ -241,10 +241,6 @@ jobs:
           fi
           echo "ok: iso embeds appliance_net_amd64_cosi.cosi (resolved offline)"
 
-      - name: Resolve the lockfile (pin base + toolchain digests)
-        working-directory: tools/tailor/e2e
-        run: '"$TAILOR_BIN" lock'
-
       - name: Build the images (real Image Customizer run)
         working-directory: tools/tailor/e2e
         run: '"$TAILOR_BIN" build'

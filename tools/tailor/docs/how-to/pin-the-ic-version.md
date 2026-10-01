@@ -32,7 +32,11 @@ name: db
 toolchain: ic-1.3
 ```
 
-## Freeze and refresh the lockfile
+## Freeze and refresh the lockfile *(preview)*
+
+> **Preview feature.** `tailor lock`, `tailor update`, and `tailor build --locked` are gated behind
+> the `lock-preview` Cargo feature and are **absent from default builds** (lockfile enforcement is not
+> yet implemented). Install with `cargo install --features lock-preview` to use the commands below.
 
 `tailor.lock` records the exact digest each toolchain (and base image) resolves to, so every machine
 builds the same inputs.

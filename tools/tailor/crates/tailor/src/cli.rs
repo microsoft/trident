@@ -149,8 +149,10 @@ pub(crate) enum Command {
     /// Resolve digests/hashes without building.
     Resolve(ImagesArgs),
     /// Freeze `tailor.lock`: pin any new inputs, keeping already-locked digests unchanged.
+    #[cfg(feature = "lock-preview")]
     Lock,
     /// Re-resolve every input to its latest digest and rewrite `tailor.lock`.
+    #[cfg(feature = "lock-preview")]
     Update,
     /// Validate image definitions (renders every cell) without building.
     Validate(ImagesArgs),
@@ -333,6 +335,7 @@ pub(crate) struct BuildArgs {
     pub(crate) select: SelectArgs,
 
     /// Require a complete `tailor.lock`; fail on a missing entry or drift.
+    #[cfg(feature = "lock-preview")]
     #[arg(long)]
     pub(crate) locked: bool,
 

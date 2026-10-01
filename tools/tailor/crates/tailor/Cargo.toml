@@ -12,6 +12,12 @@ publish.workspace = true
 name = "tailor"
 path = "src/main.rs"
 
+[features]
+# Preview: the `tailor lock` / `tailor update` commands and the `build --locked`
+# flag. Off by default — lockfile *enforcement* is not yet implemented, so the
+# surface is gated out of release builds. Enable with `--features lock-preview`.
+lock-preview = []
+
 [dependencies]
 tailor-core = { workspace = true }
 tailor-config = { workspace = true }

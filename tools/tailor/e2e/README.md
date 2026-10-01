@@ -24,7 +24,7 @@ One image, `appliance`, built into two cells, touching a broad slice of tailor i
   sets neither), and the **sudo-free janitor** (the workflow asserts the outputs are runner-owned,
   not root-owned).
 
-The workflow also runs the pure verbs (`list`, `matrix`, `validate`, `explain`, `render`, `lock`),
+The workflow also runs the pure verbs (`list`, `matrix`, `validate`, `explain`, `render`),
 which exercise the config/render layer without an engine.
 
 ## Run it locally

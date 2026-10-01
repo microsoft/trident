@@ -168,7 +168,9 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<(), AppError> {
             None,
         ),
         Command::Resolve(args) => resolve_verb(&workspace, &args.images, &engine).await,
+        #[cfg(feature = "lock-preview")]
         Command::Lock => lock(&workspace, &engine, false).await,
+        #[cfg(feature = "lock-preview")]
         Command::Update => lock(&workspace, &engine, true).await,
         Command::Build(args) => build(&workspace, args, &engine, &logging).await,
         Command::Clean(args) => {
@@ -773,6 +775,7 @@ async fn resolve_verb(
 /// Resolve and write `tailor.lock`. When `refresh` is false (`tailor lock`), inputs already pinned in
 /// the current lock keep their digests — only new inputs are resolved, so the freeze is idempotent.
 /// When `refresh` is true (`tailor update`), every input is re-resolved to the latest digest.
+#[cfg(feature = "lock-preview")]
 async fn lock(
     workspace: &Workspace,
     engine: &EngineOverride,

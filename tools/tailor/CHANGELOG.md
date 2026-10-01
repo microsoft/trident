@@ -7,6 +7,15 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Changed
+
+- `tailor lock`, `tailor update`, and `tailor build --locked` are now gated behind
+  a new `lock-preview` Cargo feature and are **absent from default builds**.
+  Lockfile *enforcement* (`--locked` failing on missing entries or drift) is not
+  yet implemented, so the surface is held as a compile-time preview; build with
+  `--features lock-preview` to opt in. (A build still reads an existing
+  `tailor.lock` and honors its pinned digests.)
+
 ### Security
 
 - Bump `rustls` 0.23.40 → 0.23.45 to clear
