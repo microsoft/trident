@@ -41,6 +41,11 @@ fmt-check:
 # Run the full local gate: format check, lint, tests.
 check: fmt-check lint test
 
+# Check dependency licenses, advisories, and sources with cargo-deny (as the CI
+# `cargo-deny` job does). Needs cargo-deny: `cargo install cargo-deny --locked`.
+deny:
+    cargo deny check
+
 # Install the `tailor` binary with cargo (into ~/.cargo/bin).
 install:
     cargo install --path {{ pkg }} --locked
