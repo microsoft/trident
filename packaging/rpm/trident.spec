@@ -249,6 +249,30 @@ The Trident ACL components required to orchestrate servicing of ACL images.
 
 # ------------------------------------------------------------------------------
 
+%package installer
+Summary:        Trident installer console for installer media
+Requires:       %{name} = %{version}-%{release}
+Requires:       bash
+Conflicts:      %{name}-install-service
+
+%description installer
+Autorun installer, recovery console, and local demonstration UI.
+Enable trident-installer.service explicitly in the installer ISO recipe.
+
+%files installer
+%license LICENSE NOTICE
+%{_bindir}/%{name}-installer
+%{_unitdir}/%{name}-installer.service
+%config(noreplace) /etc/%{name}/installer.toml
+
+%preun installer
+%systemd_preun %{name}-installer.service
+
+%postun installer
+%systemd_postun %{name}-installer.service
+
+# ------------------------------------------------------------------------------
+
 %if %{undefined rpm_ver}
 # Use cargo with source and vendor tarballs for distro build
 %prep
@@ -277,7 +301,7 @@ export TRIDENT_VERSION="%{version}-%{release}"
 # Use %{trident_version} for Trident repo build
 export TRIDENT_VERSION="%{trident_version}"
 %endif
-cargo build --release -p trident -p trident-acl-agent
+cargo build --release --features trident/grpc-preview -p trident -p trident-acl-agent -p installer
 
 mkdir selinux
 cp -p packaging/selinux-policy-trident/trident.fc selinux/
@@ -308,7 +332,10 @@ cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_pre
 %install
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 install -D -m 755 target/release/%{name}-acl-agent %{buildroot}/%{_bindir}/%{name}-acl-agent
+install -D -m 755 target/release/%{name}-installer %{buildroot}/%{_bindir}/%{name}-installer
 install -D -m 644 packaging/systemd/%{name}-acl-agent.service %{buildroot}%{_unitdir}/%{name}-acl-agent.service
+install -D -m 644 packaging/systemd/%{name}-installer.service %{buildroot}%{_unitdir}/%{name}-installer.service
+install -D -m 644 packaging/installer.toml %{buildroot}/etc/%{name}/installer.toml
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages
 install -D -m 0644 %{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2

@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Error};
+use anyhow::{ensure, Context, Error};
 use uuid::Uuid;
 
 use crate::dependencies::Dependency;
@@ -34,6 +34,35 @@ pub fn get_filesystem_uuid(device_path: impl AsRef<Path>) -> Result<Uuid, Error>
 
 pub fn get_partition_label(device_path: impl AsRef<Path>) -> Result<String, Error> {
     run(device_path, "PARTLABEL")
+}
+
+pub fn devices_by_label(label: impl AsRef<str>) -> Result<Vec<PathBuf>, Error> {
+    let label = label.as_ref();
+    ensure!(!label.is_empty(), "Filesystem label must not be empty");
+    let output = Dependency::Blkid
+        .cmd()
+        .args([
+            "-c",
+            "/dev/null",
+            "-t",
+            &format!("LABEL={label}"),
+            "-o",
+            "device",
+        ])
+        .output()?;
+    // blkid uses status 2 when its search has no matches.
+    if output.code() == Some(2) {
+        return Ok(Vec::new());
+    }
+    output.check()?;
+    let mut devices = output
+        .output()
+        .lines()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    devices.sort();
+    devices.dedup();
+    Ok(devices)
 }
 
 #[cfg(feature = "functional-test")]

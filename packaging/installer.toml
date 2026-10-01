@@ -1,0 +1,8 @@
+mode = "autorun"
+
+[media]
+cdromLabel = "TRIDENT_INSTALL"
+cosiDirectory = "cosi/"
+
+[autorun]
+reboot = true

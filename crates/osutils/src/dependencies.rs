@@ -1,13 +1,18 @@
 use std::{
     borrow::Cow,
     ffi::{OsStr, OsString},
+    fs::File,
     io::{self, Write},
-    os::unix::process::ExitStatusExt,
+    os::unix::process::{CommandExt, ExitStatusExt},
     path::PathBuf,
     process::{Command as StdCommand, Output, Stdio},
 };
 
 use log::trace;
+use nix::{
+    sys::signal::{self, SigSet, SigmaskHow, Signal},
+    unistd::{self, Pid},
+};
 use strum_macros::IntoStaticStr;
 
 use trident_api::error::{
@@ -88,6 +93,7 @@ impl<T> DependencyResultExt<T> for Result<T, Box<DependencyError>> {
 #[derive(Debug, Clone, Copy, IntoStaticStr)]
 #[strum(serialize_all = "lowercase")]
 pub enum Dependency {
+    Bash,
     Blkid,
     Chown,
     Chpasswd,
@@ -222,9 +228,68 @@ pub struct Command {
 }
 
 impl Command {
+    pub fn run_interactive(&self, terminal: &File) -> Result<(), Box<DependencyError>> {
+        let binary = self.dependency.path()?;
+        let execute = || -> Result<Output, io::Error> {
+            if self.stdin_data.is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Interactive commands cannot pipe stdin",
+                ));
+            }
+            let parent_group = unistd::tcgetpgrp(terminal)?;
+            let mut command = StdCommand::new(&binary);
+            command
+                .args(&self.args)
+                .envs(self.envs.clone())
+                .stdin(terminal.try_clone()?)
+                .stdout(terminal.try_clone()?)
+                .stderr(terminal.try_clone()?)
+                .process_group(0);
+            let mut child = command.spawn()?;
+            let child_group = Pid::from_raw(i32::try_from(child.id()).map_err(io::Error::other)?);
+            let foreground = Self::set_foreground_group(terminal, child_group);
+            if let Err(error) = foreground {
+                child.kill()?;
+                child.wait()?;
+                return Err(error);
+            }
+            let continued = signal::killpg(child_group, Signal::SIGCONT);
+            let status = child.wait();
+            let restored = Self::set_foreground_group(terminal, parent_group);
+            restored?;
+            continued?;
+            Ok(Output {
+                status: status?,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            })
+        };
+        CommandOutput {
+            rendered_command: self.render_command(),
+            dependency: self.dependency,
+            inner: execute().map_err(|inner| DependencyError::CouldNotExecute {
+                dependency: self.dependency,
+                inner,
+            })?,
+        }
+        .check()
+    }
+
     pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
         self.args.push(arg.as_ref().to_os_string());
         self
+    }
+
+    fn set_foreground_group(terminal: &File, group: Pid) -> io::Result<()> {
+        let mut blocked = SigSet::empty();
+        blocked.add(Signal::SIGTTOU);
+        let mut previous = SigSet::empty();
+        signal::pthread_sigmask(SigmaskHow::SIG_BLOCK, Some(&blocked), Some(&mut previous))?;
+        let result = unistd::tcsetpgrp(terminal, group);
+        signal::pthread_sigmask(SigmaskHow::SIG_SETMASK, Some(&previous), None)?;
+        result?;
+        Ok(())
     }
 
     pub fn with_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
