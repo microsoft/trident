@@ -14,7 +14,8 @@ cargo run -p installer -- --demo disconnect
 ```
 
 The demo never mounts media, inspects disks, contacts Trident, or changes machine
-power state. Press `Q` to quit. Shell opens as the invoking user. Use `--plain`
+power state. Reboot, Shutdown and Shell are all simulated; no real shell or
+command is launched. Press `Q` to quit. Use `--plain`
 for line-oriented output; without a terminal the demo prints its events and
 exits when complete.
 
