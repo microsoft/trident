@@ -1,0 +1,605 @@
+package validate
+
+import (
+	"fmt"
+	"path"
+	"strings"
+
+	"golang.org/x/crypto/ssh"
+
+	"github.com/Jeffail/gabs/v2"
+
+	"tridenttools/pkg/hostconfig"
+	"tridenttools/storm/utils/sshutils"
+	"tridenttools/storm/utils/sysinspect"
+	tridentutil "tridenttools/storm/utils/trident"
+)
+
+// ValidateBase runs the full `base` marker validation (partitions, users, UEFI
+// fallback) against the installed host, accumulating all sub-check failures in
+// sa. It ports tests/e2e_tests/base_test.py.
+//
+// expectedState is the servicing state the host is expected to report (normally
+// "provisioned"). abActive is the expected active A/B volume; it is only used
+// when the host configuration declares an A/B update.
+func ValidateBase(
+	sa *SoftAsserter,
+	client *ssh.Client,
+	hs tridentutil.HostStatus,
+	expectedState tridentutil.ServicingState,
+	abActive tridentutil.AbVolumeSelection,
+) {
+	spec := hs.Spec()
+
+	ValidatePartitions(sa, client, hs, expectedState, abActive)
+	ValidateUsers(sa, client, spec)
+	ValidateUefiFallback(sa, client, spec)
+}
+
+// ValidatePartitions ports base_test.py::test_partitions. It confirms the
+// servicing state, that every configured partition is present both in the Host
+// Status and on the running system, and (for A/B configs on non-verity roots)
+// that the active volume's device path matches the mounted root device.
+func ValidatePartitions(
+	sa *SoftAsserter,
+	client *ssh.Client,
+	hs tridentutil.HostStatus,
+	expectedState tridentutil.ServicingState,
+	abActive tridentutil.AbVolumeSelection,
+) {
+	spec := hs.Spec()
+
+	// Gather system state.
+	blkid, err := sysinspect.Blkid(client)
+	if err != nil {
+		sa.Fail("partitions/blkid", err)
+		return
+	}
+	lsblk, err := sysinspect.Lsblk(client)
+	if err != nil {
+		sa.Fail("partitions/lsblk", err)
+		return
+	}
+
+	// Set of PARTLABELs present on the system (partitions_system_info keys in
+	// base_test.py).
+	presentPartlabels := make(map[string]struct{})
+	// PARTLABEL carries the configured partition ID, and the blkid entry knows
+	// the kernel device name, which is how lsblk reports sizes. Host Status
+	// partition paths cannot be used for that join: they are
+	// /dev/disk/by-partuuid/<uuid> symlinks, not kernel names.
+	partlabelToDevice := make(map[string]string)
+	for _, entry := range blkid {
+		if label, ok := entry.Get("PARTLABEL"); ok {
+			presentPartlabels[label] = struct{}{}
+			partlabelToDevice[label] = entry.Device
+		}
+	}
+
+	// Servicing state.
+	sa.Assert("partitions/servicing-state",
+		hs.ServicingState() == expectedState,
+		"expected servicingState %q, got %q", expectedState, hs.ServicingState())
+
+	// Every configured partition must appear in the Host Status partitionPaths
+	// and on the system (as a PARTLABEL).
+	partitionPaths := hs.PartitionPaths()
+	for _, part := range ExpectedPartitions(spec) {
+		if _, ok := partitionPaths[part.ID]; !ok {
+			sa.Failf("partitions/status-path",
+				"partition %q missing from Host Status partitionPaths", part.ID)
+		}
+		if _, ok := presentPartlabels[part.ID]; !ok {
+			sa.Failf("partitions/system-present",
+				"partition %q (PARTLABEL) not found on system", part.ID)
+		}
+		validatePartitionSize(sa, lsblk, partlabelToDevice, part)
+	}
+
+	// A/B active-volume device-path cross-check (non-verity root only; verity
+	// A/B is covered by verity validation).
+	if spec.HasABUpdate() {
+		validateActiveVolumePath(sa, client, hs, spec, blkid, abActive)
+	}
+}
+
+// validatePartitionSize compares a configured partition size against the size
+// the kernel reports for the device the Host Status points at.
+//
+// base_test.py computed these expected sizes and then never compared them --
+// its "check partitions size and type" loop only asserted presence -- so a
+// wrongly sized partition passed. Partitions declared "grow" have no expected
+// size and are skipped.
+func validatePartitionSize(
+	sa *SoftAsserter,
+	lsblk sysinspect.LsblkOutput,
+	partlabelToDevice map[string]string,
+	part PartitionExpectation,
+) {
+	if !part.HasSize {
+		return
+	}
+	name, ok := partlabelToDevice[part.ID]
+	if !ok {
+		// A missing PARTLABEL is already reported by the caller.
+		return
+	}
+
+	device, found := lsblk.FindDevice(name)
+	if !found {
+		sa.Failf("partitions/size", "partition %q (%s) not found in lsblk output", part.ID, name)
+		return
+	}
+
+	actual, err := device.Size.Int64()
+	if err != nil {
+		sa.Failf("partitions/size", "partition %q (%s) has unparsable size %q: %v",
+			part.ID, name, device.Size.String(), err)
+		return
+	}
+
+	sa.Assert("partitions/size", actual == part.SizeBytes,
+		"partition %q (%s) is %d bytes, expected %d", part.ID, name, actual, part.SizeBytes)
+}
+
+// validateActiveVolumePath ports the A/B branch of base_test.py::test_partitions
+// for non-verity roots.
+func validateActiveVolumePath(
+	sa *SoftAsserter,
+	client *ssh.Client,
+	hs tridentutil.HostStatus,
+	spec hostconfig.HostConfig,
+	blkid map[string]sysinspect.BlkidEntry,
+	abActive tridentutil.AbVolumeSelection,
+) {
+	rootDeviceID, ok := RootFilesystemDeviceID(spec)
+	if !ok {
+		sa.Failf("partitions/ab-root", "root mount point not found in Host Status spec")
+		return
+	}
+
+	pairID, rootIsVerity := AbVolumePairID(spec, rootDeviceID)
+	if rootIsVerity {
+		// Verity root A/B validation lives in the verity validation, not base.
+		return
+	}
+
+	activeVolumeID, ok := ActiveVolumeID(spec, pairID, abActive)
+	if !ok {
+		sa.Failf("partitions/ab-active", "no volume pair with id %q for %s", pairID, abActive)
+		return
+	}
+
+	isPart := IsPartition(spec, activeVolumeID)
+	isRaid := IsRaid(spec, activeVolumeID)
+	if isPart == isRaid {
+		sa.Failf("partitions/ab-kind",
+			"active volume %q must be exactly one of partition/raid (partition=%v raid=%v)",
+			activeVolumeID, isPart, isRaid)
+		return
+	}
+
+	// Resolve the mounted root device before checking whether it matches the
+	// expected active A/B volume.
+	rootMountDevice, ok := getRootMountDevice(client)
+	if !ok {
+		sa.Failf("partitions/ab-mount", "could not determine device mounted at /")
+		return
+	}
+
+	validateActiveVolumePathFromMount(sa, hs, spec, blkid, abActive, rootMountDevice, func(device string) (string, bool, error) {
+		return sysinspect.RaidNameForDevice(client, device)
+	})
+}
+
+func validateActiveVolumePathFromMount(
+	sa *SoftAsserter,
+	hs tridentutil.HostStatus,
+	spec hostconfig.HostConfig,
+	blkid map[string]sysinspect.BlkidEntry,
+	abActive tridentutil.AbVolumeSelection,
+	rootMountDevice string,
+	raidNameForDevice func(string) (string, bool, error),
+) {
+	rootDeviceID, ok := RootFilesystemDeviceID(spec)
+	if !ok {
+		sa.Failf("partitions/ab-root", "root mount point not found in Host Status spec")
+		return
+	}
+
+	pairID, rootIsVerity := AbVolumePairID(spec, rootDeviceID)
+	if rootIsVerity {
+		// Verity root A/B validation lives in the verity validation, not base.
+		return
+	}
+
+	activeVolumeID, ok := ActiveVolumeID(spec, pairID, abActive)
+	if !ok {
+		sa.Failf("partitions/ab-active", "no volume pair with id %q for %s", pairID, abActive)
+		return
+	}
+
+	isPart := IsPartition(spec, activeVolumeID)
+	isRaid := IsRaid(spec, activeVolumeID)
+	if isPart == isRaid {
+		sa.Failf("partitions/ab-kind",
+			"active volume %q must be exactly one of partition/raid (partition=%v raid=%v)",
+			activeVolumeID, isPart, isRaid)
+		return
+	}
+
+	switch {
+	case isPart:
+		entry, ok := blkid[basename(rootMountDevice)]
+		if !ok {
+			sa.Failf("partitions/ab-blkid", "no blkid entry for root device %q", basename(rootMountDevice))
+			return
+		}
+		partuuid, ok := entry.Get("PARTUUID")
+		if !ok {
+			sa.Failf("partitions/ab-partuuid", "root device %q has no PARTUUID", basename(rootMountDevice))
+			return
+		}
+		expectedPath := "/dev/disk/by-partuuid/" + partuuid
+		if actual, ok := hs.PartitionPaths()[activeVolumeID]; ok {
+			sa.Assert("partitions/ab-path-match",
+				actual == expectedPath,
+				"active volume %q path mismatch: Host Status has %q, expected %q",
+				activeVolumeID, actual, expectedPath)
+		} else {
+			sa.Failf("partitions/ab-path-match",
+				"active partition volume %q missing from Host Status partitionPaths", activeVolumeID)
+		}
+	case isRaid:
+		name, found, err := raidNameForDevice(rootMountDevice)
+		if err != nil {
+			sa.Fail("partitions/ab-raid", err)
+			return
+		}
+		if !found {
+			sa.Failf("partitions/ab-raid", "could not resolve RAID name for %q", rootMountDevice)
+			return
+		}
+		expectedPath, ok := raidExpectedPath(spec, activeVolumeID)
+		if !ok {
+			sa.Failf("partitions/ab-raid", "active RAID volume %q has no configured name", activeVolumeID)
+			return
+		}
+		sa.Assert("partitions/ab-raid-path-match",
+			name == expectedPath,
+			"active RAID volume %q path mismatch: mounted root resolves to %q, expected %q",
+			activeVolumeID, name, expectedPath)
+	}
+
+	// Active volume selection must match expectation.
+	actualVol, present := hs.AbActiveVolume()
+	sa.Assert("partitions/ab-active-volume",
+		present && actualVol == abActive,
+		"expected abActiveVolume %q, got %q (present=%v)", abActive, actualVol, present)
+}
+
+func raidExpectedPath(spec hostconfig.HostConfig, activeVolumeID string) (string, bool) {
+	name, ok := raidSoftwareArrayName(spec, activeVolumeID)
+	if !ok {
+		return "", false
+	}
+	return path.Join("/dev/md", name), true
+}
+
+// getRootMountDevice returns the device mounted at "/" from `mount` output.
+func getRootMountDevice(client *ssh.Client) (string, bool) {
+	entries, err := sysinspect.Mount(client)
+	if err != nil {
+		return "", false
+	}
+	return sysinspect.RootDevice(entries)
+}
+
+// ValidateUsers ports base_test.py::test_users. It confirms that every user and
+// group declared in the Host Configuration exists on the system.
+// secondaryGroupsField is the Host Configuration schema name for a user's
+// secondary groups (trident_api::config::host::os::users::secondary_groups).
+//
+// It is spelled out here because it was previously read as `groups`, which is
+// not a schema field: the lookup silently returned nothing, so group membership
+// was never actually validated. The legacy pytest has the same defect
+// (base_test.py:427 reads `user_info["groups"]`), so neither suite has ever
+// exercised this check.
+const secondaryGroupsField = "secondaryGroups"
+
+// SecondaryGroups returns the secondary groups a configured user should belong
+// to, skipping any entry that is not a string.
+func SecondaryGroups(user *gabs.Container) []string {
+	var groups []string
+	for _, group := range user.S(secondaryGroupsField).Children() {
+		if name, ok := group.Data().(string); ok {
+			groups = append(groups, name)
+		}
+	}
+	return groups
+}
+
+func ValidateUsers(sa *SoftAsserter, client *ssh.Client, spec hostconfig.HostConfig) {
+	systemUsers, err := sysinspect.Users(client)
+	if err != nil {
+		sa.Fail("users/passwd", err)
+		return
+	}
+	systemGroups, err := sysinspect.Groups(client)
+	if err != nil {
+		sa.Fail("users/group", err)
+		return
+	}
+
+	for _, user := range spec.S("os", "users").Children() {
+		name, ok := user.S("name").Data().(string)
+		if !ok {
+			continue
+		}
+		if _, present := systemUsers[name]; !present {
+			sa.Failf("users/present", "configured user %q not found in /etc/passwd", name)
+		}
+
+		for _, groupName := range SecondaryGroups(user) {
+			members, present := systemGroups[groupName]
+			if !present {
+				sa.Failf("users/group-present", "configured group %q not found in /etc/group", groupName)
+				continue
+			}
+			if _, ok := members[name]; !ok {
+				sa.Failf("users/group-member", "user %q not a member of group %q", name, groupName)
+			}
+		}
+	}
+}
+
+// espPartitionType is the partition type the Host Configuration schema uses for
+// the EFI System Partition.
+const espPartitionType = "esp"
+
+// defaultEspMountPoint mirrors trident_api's DEFAULT_ESP_MOUNT_POINT_PATH: a
+// filesystem mounted here is the ESP unless overrideEspMount says otherwise.
+const defaultEspMountPoint = "/boot/efi"
+
+// uefiFallbackDisabled is the mode under which Trident installs no fallback
+// boot files at all.
+const uefiFallbackDisabled = "disabled"
+
+// espFindmntFsType is the filesystem type findmnt reports for the ESP.
+const espFindmntFsType = "vfat"
+
+// EspMountPoint returns the path the EFI System Partition is mounted at,
+// according to the Host Configuration.
+//
+// The ESP is located by partition TYPE rather than by device ID: the id is just
+// a label chosen per configuration, and the RAID configurations call theirs
+// "esp1" rather than "esp". A mirrored configuration mounts a software RAID
+// array built from those partitions, so arrays over esp members count too. The
+// mount point itself is spelled two ways in the schema - a bare path, or an
+// object with a `path` - so both are accepted.
+//
+// `overrideEspMount` takes precedence over all of that, because it is what
+// Trident itself uses to decide whether a filesystem is the ESP: `override`
+// marks one regardless of its partition type, and `block` disclaims one that
+// would otherwise qualify. No checked-in configuration sets either today, so
+// this only matters for configurations the suite does not yet carry.
+func EspMountPoint(spec hostconfig.HostConfig) (string, bool) {
+	espIds := espDeviceIds(spec)
+
+	var byDefaultMount, byPartitionType string
+	for _, fs := range spec.S("storage", "filesystems").Children() {
+		mountPoint, hasMountPoint := filesystemMountPoint(fs)
+		override, _ := fs.S("overrideEspMount").Data().(string)
+
+		switch override {
+		case "block":
+			// Explicitly not the ESP, whatever else would qualify it.
+			continue
+		case "override":
+			// Explicitly the ESP. The schema requires a mount point here.
+			if hasMountPoint {
+				return mountPoint, true
+			}
+			continue
+		}
+
+		// Trident's default rule: a filesystem mounted at the default ESP path
+		// is the ESP, whatever its partition type.
+		if hasMountPoint && mountPoint == defaultEspMountPoint && byDefaultMount == "" {
+			byDefaultMount = mountPoint
+		}
+
+		// Fallback for an esp-typed partition mounted somewhere else. Trident
+		// would not treat that as the ESP, but resolving it keeps the probe
+		// pointed at a real ESP rather than failing outright.
+		id, _ := fs.S("deviceId").Data().(string)
+		if _, isEsp := espIds[id]; isEsp && hasMountPoint && byPartitionType == "" {
+			byPartitionType = mountPoint
+		}
+	}
+
+	if byDefaultMount != "" {
+		return byDefaultMount, true
+	}
+	return byPartitionType, byPartitionType != ""
+}
+
+// filesystemMountPoint accepts both spellings the schema allows: a bare path
+// string, or an object carrying a `path`.
+func filesystemMountPoint(fs *gabs.Container) (string, bool) {
+	mountPoint := fs.S("mountPoint")
+	if p, ok := mountPoint.Data().(string); ok {
+		return p, p != ""
+	}
+	if p, ok := mountPoint.S("path").Data().(string); ok {
+		return p, p != ""
+	}
+	return "", false
+}
+
+// espDeviceIds returns every device ID that denotes the EFI System Partition:
+// the esp-typed partitions themselves, plus any software RAID array built from
+// them, since a mirrored configuration mounts the array rather than a partition.
+func espDeviceIds(spec hostconfig.HostConfig) map[string]struct{} {
+	ids := make(map[string]struct{})
+
+	for _, disk := range spec.S("storage", "disks").Children() {
+		for _, partition := range disk.S("partitions").Children() {
+			if t, _ := partition.S("type").Data().(string); t != espPartitionType {
+				continue
+			}
+			if id, ok := partition.S("id").Data().(string); ok {
+				ids[id] = struct{}{}
+			}
+		}
+	}
+
+	for _, array := range spec.S("storage", "raid", "software").Children() {
+		for _, device := range array.S("devices").Children() {
+			member, _ := device.Data().(string)
+			if _, isEsp := ids[member]; !isEsp {
+				continue
+			}
+			if id, ok := array.S("id").Data().(string); ok {
+				ids[id] = struct{}{}
+			}
+			break
+		}
+	}
+
+	return ids
+}
+
+// ValidateUefiFallback checks the UEFI fallback boot files against the
+// configured mode.
+//
+// Only `disabled` is checked here, and deliberately so. The other modes are
+// phase-dependent - under `conservative` the fallback points at the servicing
+// OS until commit validates the target, so what is correct after a clean
+// install differs from what is correct after an A/B update - and this validator
+// is handed the Host Configuration and an SSH connection, not the servicing
+// operation that just ran. Those modes are covered by the health check the
+// scenario injects (uefi-fallback-validation-install / -update), which Trident
+// runs per phase on the host and which fails the update itself when the
+// fallback is wrong.
+//
+// `disabled` carries no such ambiguity: "no UEFI fallback boot files are
+// installed" holds after an install, an update or a rollback alike.
+//
+// Ported from base_test.py::test_uefi_fallback, which compared against the
+// *current* boot entry unconditionally and read a hard-coded /efi/... path that
+// does not exist on these hosts - so the command failed, `&& exit 1 || exit 0`
+// turned that into success, and the check passed without testing anything.
+func ValidateUefiFallback(sa *SoftAsserter, client *ssh.Client, spec hostconfig.HostConfig) {
+	mode := "conservative"
+	if m, ok := spec.S("os", "uefiFallback").Data().(string); ok {
+		mode = m
+	}
+	if mode != uefiFallbackDisabled {
+		return
+	}
+
+	esp, ok := EspMountPoint(spec)
+	if !ok {
+		// Failing rather than skipping is the point: an unresolvable ESP means
+		// the check cannot run, and that must not look like a pass.
+		sa.Failf("uefi/disabled", "could not resolve the ESP mount point from the Host Configuration")
+		return
+	}
+
+	validateUefiFallbackDisabled(sa, client, esp, sysinspect.Findmnt, sshutils.RunCommand)
+}
+
+func validateUefiFallbackDisabled(
+	sa *SoftAsserter,
+	client *ssh.Client,
+	esp string,
+	findmnt func(*ssh.Client, string) ([]sysinspect.FindmntRow, error),
+	runCommand func(*ssh.Client, string) (*sshutils.SshCmdOutput, error),
+) {
+	rows, err := findmnt(client, esp)
+	if err != nil {
+		sa.Failf("uefi/esp-mounted", "ESP mount point %q is not mounted or could not be inspected: %v\n%s",
+			esp, err, describeMounts(client, esp))
+		return
+	}
+	if len(rows) != 1 {
+		sa.Failf("uefi/esp-mounted", "expected one findmnt row for ESP %q, got %d\n%s",
+			esp, len(rows), describeMounts(client, esp))
+		return
+	}
+	row := rows[0]
+	if row.Target != esp || row.FsType != espFindmntFsType {
+		sa.Failf("uefi/esp-mounted", "findmnt for ESP %q returned TARGET=%q FSTYPE=%q, want TARGET=%q FSTYPE=%q\n%s",
+			esp, row.Target, row.FsType, esp, espFindmntFsType, describeMounts(client, esp))
+		return
+	}
+	sa.Pass("uefi/esp-mounted")
+
+	// The findmnt check above proves the ESP is mounted before this command
+	// interprets an absent fallback directory as success.
+	// sudo is required throughout: /boot is mode 0700 on these hosts, so the
+	// test user cannot even traverse it. Without sudo `test -d` fails with
+	// permission denied (reported as a missing ESP) and, worse, `ls` on the
+	// fallback directory would fail silently and report zero entries - passing
+	// the check no matter what is actually there.
+	// Distinguish "no fallback directory" from "could not read it": piping ls
+	// into `wc -l` would take the pipeline's status from wc, which always
+	// succeeds, so a failed ls prints nothing and counts as zero entries --
+	// passing the check no matter what is actually on the ESP.
+	fallbackDir := path.Join(esp, "EFI", "BOOT")
+	cmd := fmt.Sprintf(
+		"if ! sudo test -d %[1]s; then echo NO_FALLBACK_DIR; "+
+			"elif entries=$(sudo ls -A %[1]s); then printf 'COUNT:%%s\\n' \"$(printf '%%s' \"$entries\" | grep -c .)\"; "+
+			"else echo LS_FAILED; fi",
+		sshutils.ShellQuote(fallbackDir))
+	out, err := runCommand(client, cmd)
+	if err != nil {
+		sa.Fail("uefi/disabled", err)
+		return
+	}
+	if out.Status != 0 {
+		sa.Failf("uefi/disabled", "fallback probe failed with status %d: stdout=%q stderr=%q",
+			out.Status, strings.TrimSpace(out.Stdout), strings.TrimSpace(out.Stderr))
+		return
+	}
+
+	result := strings.TrimSpace(out.Stdout)
+	switch {
+	case result == "LS_FAILED":
+		sa.Failf("uefi/disabled", "could not list %s: %s", fallbackDir, strings.TrimSpace(out.Stderr))
+	case result == "NO_FALLBACK_DIR":
+		// No EFI/BOOT at all is the strongest form of "no fallback files".
+		sa.Pass("uefi/disabled")
+	case strings.HasPrefix(result, "COUNT:"):
+		count := strings.TrimPrefix(result, "COUNT:")
+		sa.Assert("uefi/disabled", count == "0",
+			"%s contains %s entries, but uefiFallback is disabled", fallbackDir, count)
+	default:
+		sa.Failf("uefi/disabled", "unexpected probe output %q", result)
+	}
+}
+
+// describeMounts collects a short picture of the host's mount table and the
+// directory the ESP was expected under, for inclusion in a failure message.
+func describeMounts(client *ssh.Client, esp string) string {
+	var b strings.Builder
+	for _, probe := range []struct{ label, cmd string }{
+		{"findmnt", "findmnt -n -o TARGET,SOURCE,FSTYPE | grep -iE 'vfat|efi' || echo '(no vfat/efi mounts)'"},
+		{"parent", fmt.Sprintf("sudo ls -la %s 2>&1 | head -20", sshutils.ShellQuote(path.Dir(esp)))},
+		{"esp", fmt.Sprintf("sudo ls -la %s 2>&1 | head -20", sshutils.ShellQuote(esp))},
+	} {
+		out, err := sshutils.RunCommand(client, probe.cmd)
+		if err != nil {
+			fmt.Fprintf(&b, "  %s: <%v>\n", probe.label, err)
+			continue
+		}
+		if out.Status != 0 {
+			fmt.Fprintf(&b, "  %s: <status %d>\n%s%s\n",
+				probe.label, out.Status, strings.TrimRight(out.Stdout, "\n"), strings.TrimRight(out.Stderr, "\n"))
+			continue
+		}
+		fmt.Fprintf(&b, "  %s:\n%s\n", probe.label, strings.TrimRight(out.Stdout, "\n"))
+	}
+	return b.String()
+}

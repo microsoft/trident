@@ -19,13 +19,21 @@ parameters:
     type: string
     default: null
 
+  - name: acrServiceConnectionName
+    displayName: "Service connection used to push extension/COSI images to ACR"
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+
 stages:
   - stage: E2ETesting_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}
     displayName: E2E ${{ parameters.hardwareType }} ${{ parameters.runtimeType }} Testing
     dependsOn:
       - DefineTests_E2E
       - ${{ if eq(parameters.testingRun, true) }}:
+          # The shortcut downloads the images but still builds the Go tools
+          # from the branch under test, same as real CI.
           - DownloadTestingElements
+          - BuildingTools
       - ${{ else }}:
           - BuildingTools
           - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
@@ -59,13 +67,23 @@ stages:
 
         condition: ne(variables['matrixJson'], '{}')
         variables:
+          # Provides: ACR_NAME (used to push/pull extension images).
+          - group: trident_e2e_params
+          # Set at runtime by the ACR push step, for the extensions
+          # configuration only. Declared empty here because an undefined
+          # variable expands to its own literal name, which would look like a
+          # real repository to the run command below.
+          - name: SYSEXT_REPO
+            value: ""
+          - name: TAG_BASE
+            value: ""
+          - name: OCI_IMAGE_URL
+            value: ""
           - name: ob_outputDirectory
             value: /tmp/output
           - name: ob_artifactBaseName
             value: $(SCENARIO)_$(System.JobAttempt)
           - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
-              - name: installerISOName
-                value: trident-container-installer
               - name: testImageName
                 value: trident-container-testimage
               - name: verityTestImageName
@@ -75,8 +93,6 @@ stages:
               - name: downloadTridentContainer
                 value: true
           - ${{ else }}:
-              - name: installerISOName
-                value: trident-installer
               - name: testImageName
                 value: trident-testimage
               - name: verityTestImageName
@@ -90,15 +106,6 @@ stages:
           - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
 
-          - bash: |
-              if [ ${{ variables['tridentConfigurationName'] }} == 'split' ]; then
-                splitInstallerIsoName="trident-split-installer"
-                echo "setting variable.installerISOName to $splitInstallerIsoName"
-                echo "##vso[task.setvariable variable=installerISOName]$splitInstallerIsoName"
-              fi
-            displayName: Special handle for split test
-
-          # Download all test images
           - template: ../testing_common/download-test-images.yml
             parameters:
               installerISO: $(installerISOName)
@@ -107,15 +114,131 @@ stages:
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
               tridentTestImageUsrVerity: ${{ variables.usrVerityTestImageName }}
               tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+
+          # For the extensions config, build sample sysext images and push them
+          # to ACR so Trident can pull them from an OCI registry during install.
+          # The config name is only known at runtime (matrix SCENARIO), so these
+          # steps branch on it at runtime and no-op for other configs.
           - bash: |
               set -eux
+              if [ "$(tridentConfigurationName)" != 'extensions' ]; then
+                echo "Configuration is '$(tridentConfigurationName)'; skipping extension image build."
+                exit 0
+              fi
 
+              ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 2
+
+            displayName: "Build extension images (extensions only)"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            retryCountOnTaskFailure: 3
+
+          - task: AzureCLI@2
+            displayName: "Push configuration images to ACR"
+            inputs:
+              azureSubscription: ${{ parameters.acrServiceConnectionName }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -eux
+                cd $(TRIDENT_SOURCE_DIR)
+                # Sets the SYSEXT_REPO and TAG_BASE pipeline variables.
+                # Namespaced away from the legacy suite's "sysext-<runtime>"
+                # repo. Both suites build their own sysext (mksquashfs embeds
+                # timestamps, so the bytes differ) and derive the same tag from
+                # the shared build id, so sharing a repo means the last pusher
+                # wins and the other job fails its sha384 check. It would also
+                # let this job's ACR cleanup delete images legacy is still
+                # using. The cleanup step below follows via SYSEXT_REPO.
+                # az only mints the token: the service connection is an
+                # Azure DevOps construct, so acquiring credentials is the one
+                # part that cannot live in the binary. The transfer itself is
+                # done in-process with oras-go.
+                # xtrace off around the token so it is not echoed into the log.
+                set +x
+                export ACR_REFRESH_TOKEN=$(az acr login -n $(ACR_NAME) --expose-token --output tsv --query accessToken)
+                set -x
+                ./bin/storm-trident script storm-acr-push \
+                    --config $(tridentConfigurationName) \
+                    --deployment-environment $(tridentDeploymentEnv) \
+                    --runtime-env $(tridentRuntimeEnv) \
+                    --acr-name $(ACR_NAME) \
+                    --build-id $(Build.BuildId) \
+                    --source-dir $(TRIDENT_SOURCE_DIR) \
+                    --tag-var-name TAG_BASE \
+                    --repo-var-name SYSEXT_REPO \
+                    --url-var-name OCI_IMAGE_URL
+            retryCountOnTaskFailure: 3
+
+          # Every argument is a fact the pipeline knows; the scenario decides
+          # what to do with them. A missing signing certificate and empty sysext
+          # coordinates both mean "not applicable", so no configuration needs a
+          # special case here.
+          - bash: |
+              set -eux
               mkdir -p $(ob_outputDirectory)
-
               ./bin/storm-trident run "$(SCENARIO)" \
                   -o $(ob_outputDirectory) \
+                  -j "$(ob_outputDirectory)/storm-e2e.junit.xml" \
                   -- \
                   --pipeline-run \
-                  --iso "./artifacts/iso/$(installerISOName).iso"
+                  --iso "./artifacts/iso/$(installerISOName).iso" \
+                  --signing-cert "$(System.ArtifactsDirectory)/usrverity-testimage/ca_cert.pem" \
+                  --sysext-acr "$(ACR_NAME)" \
+                  --oci-image-url "$(OCI_IMAGE_URL)" \
+                  --sysext-repo "$(SYSEXT_REPO)" \
+                  --sysext-tag "$(TAG_BASE).1" \
+                  --sysext-file "$(TRIDENT_SOURCE_DIR)/test-sysext-1.raw"
             displayName: "🧪 Run E2E Test"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
+
+          # Enrich and upload the trace-stream metrics the run produced. Placed
+          # immediately after the run, before the JUnit handling, so the metrics
+          # files are still untouched in the working directory.
+          - template: storm-metrics.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+              artifactDirectory: $(ob_outputDirectory)
+              deploymentEnvironment: $(tridentDeploymentEnv)
+              runtimeEnvironment: $(tridentRuntimeEnv)
+              tridentConfigurationName: $(tridentConfigurationName)
+              stormBinary: ./bin/storm-trident
+
+          # Publish the JUnit XML produced by the storm run (-j above) to the
+          # build's Tests tab and as a build artifact. Uses succeededOrFailed()
+          # internally so results upload even when the scenario fails (the XML
+          # then carries the failures).
+          - template: ../junit/handle-junit-test-results.yml
+            parameters:
+              testRunName: "storm-e2e $(SCENARIO)"
+              junitTestFile: "$(ob_outputDirectory)/storm-e2e.junit.xml"
+              displayNameSpecifier: "storm E2E $(SCENARIO)"
+              artifactName: "junit_storm_e2e_$(SCENARIO)"
+
+          # Delete the images pushed to ACR above so runs don't leak images
+          # (mirrors the legacy remove-from-acr.yml cleanup). Runs even when the
+          # test fails. acr-delete resolves what was pushed from the same plan
+          # acr-push used, so cleanup cannot drift from the push and leak - and
+          # it derives the repo itself rather than reading SYSEXT_REPO, which is
+          # unset if the push failed partway, exactly when cleanup matters most.
+          - task: AzureCLI@2
+            displayName: "Delete configuration images from ACR"
+            condition: always()
+            retryCountOnTaskFailure: 3
+            inputs:
+              azureSubscription: ${{ parameters.acrServiceConnectionName }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -eux
+                cd $(TRIDENT_SOURCE_DIR)
+                # xtrace off around the token so it is not echoed into the log.
+                set +x
+                export ACR_REFRESH_TOKEN=$(az acr login -n $(ACR_NAME) --expose-token --output tsv --query accessToken)
+                set -x
+                ./bin/storm-trident script storm-acr-delete \
+                    --config $(tridentConfigurationName) \
+                    --deployment-environment $(tridentDeploymentEnv) \
+                    --runtime-env $(tridentRuntimeEnv) \
+                    --acr-name $(ACR_NAME) \
+                    --build-id $(Build.BuildId) \
+                    --source-dir $(TRIDENT_SOURCE_DIR)
