@@ -1,0 +1,8 @@
+name: solo
+
+base:
+  path: ./b.img
+
+config:
+  os:
+    hostname: solo

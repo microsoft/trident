@@ -1,0 +1,23 @@
+# by-edition/pro.yaml — applies to cells where edition=pro.
+#
+# `outputs:` is a TAILOR field, so it sits at the top level (not under `config:`). Lists append by
+# default, so to emit raw INSTEAD of the inherited cosi we $replace the whole list.
+outputs:
+  $replace:
+    - format: raw
+
+config:
+  os:
+    hostname: gizmo-pro
+    kernelCommandLine:
+      extraCommandLine:
+        - audit=1                # appended after the shared console=ttyS0, quiet
+    packages:
+      install:
+        $remove:                 # drop a baseline package from the inherited install list
+          - base-extra
+    # previewFeatures is opaque IC config — tailor never models it, just passes it through.
+    previewFeatures:
+      - uki
+  storage:
+    $include: layouts/storage/pro.yaml

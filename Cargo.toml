@@ -15,6 +15,12 @@ members = [
     "crates/trident",
 ]
 
+# `tools/tailor` is a self-contained Cargo workspace vendored into the monorepo; keep it out of the
+# trident workspace so the two build independently.
+exclude = [
+    "tools/tailor",
+]
+
 [workspace.dependencies]
 anyhow = { version = "1.0.94", features = ["backtrace"] }
 backoff = "0.4.0"

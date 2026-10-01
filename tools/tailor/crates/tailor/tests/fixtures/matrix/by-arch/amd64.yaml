@@ -1,0 +1,6 @@
+# by-arch/amd64.yaml — base image + arch-derived constant for amd64 cells. The IC config is
+# arch-independent here; only the base path and the ${efiArch} token differ by arch.
+base:
+  path: ./bases/gizmo-amd64.img
+params:
+  efiArch: x64

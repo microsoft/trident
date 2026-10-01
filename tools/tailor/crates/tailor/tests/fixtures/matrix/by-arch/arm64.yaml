@@ -1,0 +1,5 @@
+# by-arch/arm64.yaml — base image + arch-derived constant for arm64 cells.
+base:
+  path: ./bases/gizmo-arm64.img
+params:
+  efiArch: aa64

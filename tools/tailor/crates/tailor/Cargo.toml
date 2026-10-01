@@ -1,0 +1,49 @@
+[package]
+name = "tailor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "tailor"
+path = "src/main.rs"
+
+[features]
+# Preview: the `tailor lock` / `tailor update` commands and the `build --locked`
+# flag. Off by default — lockfile *enforcement* is not yet implemented, so the
+# surface is gated out of release builds. Enable with `--features lock-preview`.
+lock-preview = []
+
+[dependencies]
+tailor-core = { workspace = true }
+tailor-config = { workspace = true }
+tailor-resolve = { workspace = true }
+tailor-exec = { workspace = true }
+tailor-sign = { workspace = true }
+clap = { workspace = true }
+indexmap = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+predicates = { workspace = true }
+tempfile = { workspace = true }
+
+[build-dependencies]
+# Build-only: enumerate the shipped dependency graph and read each crate's license text to embed a
+# third-party notice. Not linked into the binary.
+cargo_metadata = { workspace = true }
+
+[lints]
+workspace = true

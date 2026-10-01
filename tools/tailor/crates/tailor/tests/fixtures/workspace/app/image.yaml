@@ -1,0 +1,14 @@
+# Member image `app` — no `toolchain:` (uses the workspace default ic-main); no `architectures:`/
+# `outputs:` (inherits the workspace defaults: amd64, cosi). Just what makes it this image.
+name: app
+
+base:
+  azureLinux:
+    version: "3.0"
+    variant: minimal-os
+
+config:
+  os:
+    hostname: app
+    packages:
+      install: [app-server]

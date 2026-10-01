@@ -1,0 +1,9 @@
+name: ok-default
+signing: true
+base:
+  path: ./base.img
+outputs:
+  - format: cosi
+config:
+  os:
+    hostname: ok-default

@@ -1,0 +1,8 @@
+# Composite fragment (meta/docs/2026-06-29-directive-design.md §2): applies only to the (edition=pro, arch=arm64)
+# pair — the conjunction no single-axis fragment can express. Axes are in matrix-declared order
+# (edition before arch).
+config:
+  os:
+    packages:
+      install:
+        - composite-only-pkg

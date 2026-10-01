@@ -1,0 +1,7 @@
+# Synthetic rpm-source for the edge channel (referenced by by-channel/edge.yaml `rpmSources`).
+# tailor passes the path to IC as `--rpm-source`; the content is opaque to tailor.
+[gizmo-edge]
+name=Gizmo Edge (synthetic test repo)
+baseurl=https://packages.example/gizmo/edge/$basearch
+enabled=1
+gpgcheck=0
