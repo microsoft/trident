@@ -13,7 +13,8 @@ use trident_proto::{
         servicing_response::Response as ResponseBody,
         streaming_service_client::StreamingServiceClient, Completed, HostConfiguration,
         RebootHandling, RebootManagement, RebootStatus, ServicingKind, ServicingResponse,
-        StatusCode, StreamDiskRequest,
+        StatusCode, StreamDiskRequest, TridentError as RemoteError,
+        TridentErrorKind as ErrorCategory,
     },
     v1preview::{
         install_service_client::InstallServiceClient, status_service_client::StatusServiceClient,
@@ -83,11 +84,38 @@ pub(super) fn completion(completed: Completed) -> Result<Completion, Error> {
             })
         }
         StatusCode::Failure => Ok(Completion::Failure(match completed.error {
-            Some(error) => format!("{}\n\nReturned error details:\n{error:#?}", error.message),
+            Some(error) => format_error(&error),
             None => "Trident reported failure without error details".into(),
         })),
         StatusCode::Unspecified => bail!("Daemon returned an unspecified final status"),
     }
+}
+
+fn format_error(error: &RemoteError) -> String {
+    let category = match ErrorCategory::try_from(error.kind) {
+        Ok(ErrorCategory::Unspecified) => "Unspecified",
+        Ok(ErrorCategory::ExecutionEnvironmentMisconfigurationError) => "Execution environment",
+        Ok(ErrorCategory::HealthChecksError) => "Health checks",
+        Ok(ErrorCategory::InitializationError) => "Initialization",
+        Ok(ErrorCategory::InternalError) => "Internal error",
+        Ok(ErrorCategory::InvalidInputError) => "Invalid input",
+        Ok(ErrorCategory::ServicingError) => "Servicing",
+        Ok(ErrorCategory::UnsupportedConfigurationError) => "Unsupported configuration",
+        Err(_) => "Unknown",
+    };
+    let mut details = format!(
+        "{}\n\nCategory: {category} ({})\nCode: {}",
+        error.message.trim(),
+        error.kind,
+        error.subkind
+    );
+    if !error.error_message.is_empty() && !error.message.contains(&error.error_message) {
+        details.push_str(&format!("\nCause: {}", error.error_message));
+    }
+    if let Some(location) = &error.location {
+        details.push_str(&format!("\nLocation: {}:{}", location.path, location.line));
+    }
+    details
 }
 
 pub(super) async fn execute(
@@ -303,7 +331,7 @@ mod tests {
     use trident_proto::{
         v1::{
             streaming_service_server::{StreamingService, StreamingServiceServer},
-            Log, LogLevel, Started,
+            FileLocation, Log, LogLevel, Started,
         },
         v1preview::install_service_server::{InstallService, InstallServiceServer},
     };
@@ -350,6 +378,28 @@ mod tests {
                 performed: false
             }
         );
+    }
+
+    #[test]
+    fn errors_are_readable_without_debug_dumps() {
+        let error = RemoteError {
+            kind: ErrorCategory::ServicingError.into(),
+            subkind: "download-image".into(),
+            message: "Installation failed\n  Failed to download the image".into(),
+            error_message: "Connection timed out".into(),
+            location: Some(FileLocation {
+                path: "source.rs".into(),
+                line: 42,
+            }),
+        };
+        let formatted = format_error(&error);
+        assert!(formatted.contains("Installation failed\n  Failed to download the image"));
+        assert!(formatted.contains("Category: Servicing"));
+        assert!(formatted.contains("Code: download-image"));
+        assert!(formatted.contains("Cause: Connection timed out"));
+        assert!(formatted.contains("Location: source.rs:42"));
+        assert!(!formatted.contains("TridentError {"));
+        assert!(!formatted.contains("\\n"));
     }
 
     #[derive(Clone)]

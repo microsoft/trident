@@ -6,7 +6,7 @@ use tokio::{sync::mpsc::Sender, time};
 
 use trident_proto::v1::{
     servicing_response::Response as ResponseBody, Completed, Log, LogLevel, RebootStatus,
-    ServicingKind, ServicingResponse, Started, StatusCode, TridentError,
+    ServicingKind, ServicingResponse, Started, StatusCode, TridentError, TridentErrorKind,
 };
 
 use crate::client::{self, Event};
@@ -34,7 +34,7 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
     .await?;
     match scenario {
         Scenario::NoImages => return client::send(&tx, Event::Error {
-            details: "DEMO: No Host Configuration and no COSI images in cosi/.\nOpen Shell to configure networking, then select a remote source.".into(),
+            details: "DEMO: No Host Configuration and no COSI images in cosi/.\nTry the simulated shell or a remote-source recovery action.\nNo network requests or machine operations will be performed.".into(),
             uncertain: false,
         }).await,
         Scenario::AlreadyPresent => return client::send(&tx, Event::AlreadyPresent(
@@ -79,6 +79,7 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
             }
             .into(),
             error: failed.then(|| TridentError {
+                kind: TridentErrorKind::ServicingError.into(),
                 message:
                     "DEMO: Installation failed\nFailed to stream the OS image\nConnection timed out"
                         .into(),

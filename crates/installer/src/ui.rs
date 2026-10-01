@@ -45,6 +45,8 @@ const REBOOT_DELAY: Duration = Duration::from_secs(5);
 const EVENT_CAPACITY: usize = 64;
 const LOG_CAPACITY: usize = 500;
 const DISPLAY_LOG_CHARACTERS: usize = 4096;
+const DEMO_SHELL_HISTORY: usize = 8;
+const DEMO_SHELL_NOTICE: &str = "This shell is simulated. Commands are never executed.\nNo network, disk or power operations are performed.\nType exit or press Esc to return to the installer.";
 const ASCII_BORDER: BorderSet = BorderSet {
     top_left: "+",
     top_right: "+",
@@ -387,6 +389,56 @@ enum Action {
     Quit,
 }
 
+#[derive(Default)]
+struct DemoShell {
+    command: String,
+    responses: VecDeque<String>,
+}
+
+impl DemoShell {
+    fn key(&mut self, key: KeyEvent) -> bool {
+        if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+            return false;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            self.command.clear();
+            return false;
+        }
+        match key.code {
+            KeyCode::Esc => return true,
+            KeyCode::Backspace => {
+                self.command.pop();
+            }
+            KeyCode::Char(c) if !c.is_control() => self.command.push(c),
+            KeyCode::Enter => {
+                if self.command.trim() == "exit" {
+                    return true;
+                }
+                if self.responses.len() == DEMO_SHELL_HISTORY {
+                    self.responses.pop_front();
+                }
+                self.responses
+                    .push_back("DEMO: Command not executed".into());
+                self.command.clear();
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn text(&self) -> String {
+        format!(
+            "{DEMO_SHELL_NOTICE}\n\n{}\n\ndemo$ {}",
+            self.responses
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n"),
+            display_text(&self.command)
+        )
+    }
+}
+
 pub(super) struct Output {
     pub log: Option<File>,
     pub mirrors: Vec<File>,
@@ -515,6 +567,7 @@ pub(super) async fn run(
         None
     };
     let mut shell: Option<JoinHandle<Result<(), Error>>> = None;
+    let mut demo_shell: Option<DemoShell> = None;
     let mut printed_screen = None;
     loop {
         for _ in 0..EVENT_CAPACITY {
@@ -522,7 +575,11 @@ pub(super) async fn run(
             output.record(&event)?;
             if let Some(message) = model.event(event) {
                 output.announce(&message)?;
-                if display.is_none() && shell.is_none() {
+                if display.is_none()
+                    && shell.is_none()
+                    && demo_shell.is_none()
+                    && (interactive || !model.failed)
+                {
                     println!("{}", display_text(&message));
                 }
             }
@@ -582,30 +639,46 @@ pub(super) async fn run(
             }
         } else {
             if let Some(display) = &mut display {
-                display
-                    .terminal
-                    .draw(|frame| render(frame, &model, scenario.is_some()))?;
-            } else if printed_screen != Some(model.screen) {
-                println!(
-                    "\n{}\n{}",
-                    title(model.screen),
-                    display_text(&model.details)
-                );
-                for (index, choice) in model.choices().iter().enumerate() {
-                    println!("{}: {choice}", index + 1);
+                display.terminal.draw(|frame| match &demo_shell {
+                    Some(shell) => render_demo_shell(frame, shell),
+                    None => render(frame, &model, scenario.is_some()),
+                })?;
+            } else if printed_screen != Some((model.screen, demo_shell.is_some())) {
+                if let Some(shell) = &demo_shell {
+                    println!("\nSIMULATED SHELL\n{}", shell.text());
+                } else {
+                    println!(
+                        "\n{}\n{}",
+                        title(model.screen),
+                        display_text(&model.details)
+                    );
+                    for (index, choice) in model.choices().iter().enumerate() {
+                        println!("{}: {choice}", index + 1);
+                    }
+                    if matches!(model.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
+                        println!("Enter an http:// or https:// URL, then press Enter");
+                    }
+                    println!("Number + Enter: select; S + Enter: shell; Esc: menu; V: details");
                 }
-                if matches!(model.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
-                    println!("Enter an http:// or https:// URL, then press Enter");
-                }
-                println!("Number + Enter: select; S + Enter: shell; Esc: menu; V: details");
-                printed_screen = Some(model.screen);
+                printed_screen = Some((model.screen, demo_shell.is_some()));
             }
             if event::poll(Duration::ZERO)? {
                 let event = event::read()?;
                 if let TerminalEvent::Key(key) = event {
-                    if let Some(action) = model.key(key, scenario.is_some()) {
+                    if let Some(shell) = &mut demo_shell {
+                        if shell.key(key) {
+                            demo_shell = None;
+                            printed_screen = None;
+                        } else if key.code == KeyCode::Enter {
+                            printed_screen = None;
+                        }
+                    } else if let Some(action) = model.key(key, scenario.is_some()) {
                         match action {
                             Action::Quit => return Ok(()),
+                            Action::Shell if scenario.is_some() => {
+                                demo_shell = Some(DemoShell::default());
+                                printed_screen = None;
+                            }
                             Action::Shell => {
                                 if let Some(display) = &mut display {
                                     display.suspend()?;
@@ -666,8 +739,12 @@ pub(super) async fn run(
                 if signal.is_none() {
                     return Err(anyhow!("Installer interrupt handler closed"));
                 }
-                model.screen = if worker.is_some() { Screen::Menu } else { Screen::Recovery };
-                model.selected = 0;
+                if let Some(shell) = &mut demo_shell {
+                    shell.command.clear();
+                } else {
+                    model.screen = if worker.is_some() { Screen::Menu } else { Screen::Recovery };
+                    model.selected = 0;
+                }
             }
             _ = termination.recv() => return Err(anyhow!("Installer stopped; servicing may continue in Trident")),
         }
@@ -703,6 +780,24 @@ fn block(title: &str) -> Block<'_> {
         .title(title)
 }
 
+fn render_demo_shell(frame: &mut Frame, shell: &DemoShell) {
+    let areas = Layout::vertical([Constraint::Length(2), Constraint::Min(4)]).split(frame.area());
+    frame.render_widget(
+        Paragraph::new(" TRIDENT INSTALLER / DEMO / SIMULATED SHELL").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        areas[0],
+    );
+    frame.render_widget(
+        Paragraph::new(shell.text())
+            .block(block("No commands are executed"))
+            .wrap(Wrap { trim: false }),
+        areas[1],
+    );
+}
+
 fn render(frame: &mut Frame, model: &Model, demo: bool) {
     let areas = Layout::vertical([
         Constraint::Length(2),
@@ -720,7 +815,11 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
     frame.render_widget(
         Paragraph::new(header).style(
             Style::default()
-                .fg(Color::Cyan)
+                .fg(if model.screen == Screen::Error {
+                    Color::LightRed
+                } else {
+                    Color::Cyan
+                })
                 .add_modifier(Modifier::BOLD),
         ),
         areas[0],
@@ -744,7 +843,9 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         Screen::Force => Paragraph::new("Force reinstall will erase the disk selected by Trident.\n\nExisting partitions and files will be lost.\nCancel is selected by default.")
             .block(block("Destructive action")).wrap(Wrap { trim: false }),
         _ => Paragraph::new(display_text(&model.details))
-            .block(block(if model.screen == Screen::Error { "Full error details / PgUp, PgDn to scroll" } else { "Result" }))
+            .block(if model.screen == Screen::Error {
+                block("Error details / PgUp, PgDn to scroll").border_style(Style::default().fg(Color::LightRed))
+            } else { block("Result") })
             .wrap(Wrap { trim: false }).scroll((model.scroll, 0)),
     };
     frame.render_widget(content, areas[2]);
@@ -801,6 +902,40 @@ mod tests {
 
     fn enter() -> KeyEvent {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn demo_shell_never_executes_commands_and_exit_returns() {
+        let root = TempDir::new().unwrap();
+        let marker = root.path().join("must-not-exist");
+        let mut shell = DemoShell::default();
+        for c in format!("touch {}", marker.display()).chars() {
+            assert!(!shell.key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)));
+        }
+        assert!(!shell.key(enter()));
+        assert!(!marker.exists());
+        assert!(shell.text().contains("DEMO: Command not executed"));
+        for c in "exit".chars() {
+            assert!(!shell.key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)));
+        }
+        assert!(shell.key(enter()));
+    }
+
+    #[test]
+    fn demo_shell_is_visibly_simulated() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| render_demo_shell(frame, &DemoShell::default()))
+            .unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains("SIMULATED SHELL"), "{text}");
+        assert!(text.contains("Commands are never executed"), "{text}");
     }
 
     #[tokio::test]
