@@ -49,7 +49,7 @@ pub(super) enum Plan {
 }
 
 impl Plan {
-    pub fn description(&self) -> String {
+    pub(super) fn description(&self) -> String {
         match self {
             Self::Install { source, .. } => format!("Install from {source}"),
             Self::Stream { image } => format!("StreamDisk from {image}"),
