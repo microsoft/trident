@@ -89,8 +89,10 @@ edits take effect. Invalid or missing configuration never supplies implicit
 defaults for an installation.
 
 Display filtering never removes daemon log records. All received responses are
-also appended to the private `/var/log/trident-installer.log`. `V` toggles
-detailed logs; PgUp/PgDn scroll. A missing final Completed response means unknown
+also appended to the private `/var/log/trident-installer.log`. Logs are coloured
+by severity. `V` opens a live verbosity picker (Off, Error, Warn, Info, Debug,
+Trace); this only filters the display, not stored diagnostics. PgUp/PgDn scroll.
+A missing final Completed response means unknown
 outcome, not success. Another write requires a successful Trident status query
 establishing that the daemon is idle.
 

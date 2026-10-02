@@ -12,14 +12,14 @@ use crossterm::{
     execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use log::error;
+use log::{error, Level, LevelFilter};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols::border::Set as BorderSet,
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
 use tokio::{
@@ -47,7 +47,15 @@ const EVENT_CAPACITY: usize = 64;
 const LOG_CAPACITY: usize = 500;
 const DISPLAY_LOG_CHARACTERS: usize = 4096;
 const DEMO_SHELL_HISTORY: usize = 8;
-const WORDMARK_HEADER_HEIGHT: u16 = 10;
+const WORDMARK_HEADER_HEIGHT: u16 = 12;
+const VERBOSITY_LEVELS: [LevelFilter; 6] = [
+    LevelFilter::Off,
+    LevelFilter::Error,
+    LevelFilter::Warn,
+    LevelFilter::Info,
+    LevelFilter::Debug,
+    LevelFilter::Trace,
+];
 const COMPACT_HEADER_HEIGHT: u16 = 2;
 const MIN_WORDMARK_TERMINAL_HEIGHT: u16 = 24;
 const TRIDENT_WORDMARK: [&str; 8] = [
@@ -92,7 +100,9 @@ struct Model {
     activity: String,
     details: String,
     logs: VecDeque<(LogLevel, String)>,
-    verbose: bool,
+    verbosity: LevelFilter,
+    verbosity_open: bool,
+    verbosity_selected: usize,
     selected: usize,
     scroll: u16,
     url: String,
@@ -112,7 +122,9 @@ impl Model {
             activity: "Preparing installer".into(),
             details: String::new(),
             logs: VecDeque::new(),
-            verbose: false,
+            verbosity: LevelFilter::Info,
+            verbosity_open: false,
+            verbosity_selected: 3,
             selected: 0,
             scroll: 0,
             url: String::new(),
@@ -182,14 +194,7 @@ impl Model {
                         self.logs.pop_front();
                     }
                     self.logs.push_back((level, message.clone()));
-                    if matches!(
-                        level,
-                        LogLevel::Error | LogLevel::Warn | LogLevel::Info | LogLevel::Unspecified
-                    ) {
-                        Some(format!("{level}: {message}"))
-                    } else {
-                        None
-                    }
+                    Some(format!("{level}: {message}"))
                 }
                 Some(ResponseBody::Completed(completed)) => match client::completion(completed) {
                     Ok(Completion::Success {
@@ -251,6 +256,34 @@ impl Model {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return None;
         }
+        if self.verbosity_open {
+            match key.code {
+                KeyCode::Esc => self.verbosity_open = false,
+                KeyCode::Up | KeyCode::BackTab => {
+                    self.verbosity_selected = (self.verbosity_selected + VERBOSITY_LEVELS.len()
+                        - 1)
+                        % VERBOSITY_LEVELS.len();
+                }
+                KeyCode::Down | KeyCode::Tab => {
+                    self.verbosity_selected =
+                        (self.verbosity_selected + 1) % VERBOSITY_LEVELS.len();
+                }
+                KeyCode::Char(digit) if digit.is_ascii_digit() => {
+                    if let Some(index) = digit.to_digit(10).and_then(|value| value.checked_sub(1)) {
+                        if (index as usize) < VERBOSITY_LEVELS.len() {
+                            self.verbosity_selected = index as usize;
+                        }
+                    }
+                }
+                KeyCode::Enter => {
+                    self.verbosity = VERBOSITY_LEVELS[self.verbosity_selected];
+                    self.verbosity_open = false;
+                    self.scroll = 0;
+                }
+                _ => {}
+            }
+            return None;
+        }
         if matches!(self.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
             return match key.code {
                 KeyCode::Esc => {
@@ -302,8 +335,12 @@ impl Model {
             }
             KeyCode::Char('q') if demo => return Some(Action::Quit),
             KeyCode::Char('s') => return Some(Action::Shell),
-            KeyCode::Char('v') => {
-                self.verbose = !self.verbose;
+            KeyCode::Char('v' | 'V') => {
+                self.verbosity_selected = VERBOSITY_LEVELS
+                    .iter()
+                    .position(|level| *level == self.verbosity)
+                    .expect("invariant: all log levels are present in the verbosity picker");
+                self.verbosity_open = true;
                 return None;
             }
             KeyCode::PageUp => {
@@ -587,12 +624,24 @@ pub(super) async fn run(
         for _ in 0..EVENT_CAPACITY {
             let Ok(event) = rx.try_recv() else { break };
             output.record(&event)?;
+            let level = match &event {
+                Event::Response(response) => match &response.response {
+                    Some(ResponseBody::Log(log)) => Some(log.level()),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let visible = level.is_none_or(|level| log_visible(level, model.verbosity));
+            let mirrored = level.is_none_or(|level| log_visible(level, LevelFilter::Info));
             if let Some(message) = model.event(event) {
-                output.announce(&message)?;
+                if mirrored {
+                    output.announce(&message)?;
+                }
                 if display.is_none()
                     && shell.is_none()
                     && demo_shell.is_none()
                     && (interactive || !model.failed)
+                    && visible
                 {
                     println!("{}", display_text(&message));
                 }
@@ -657,9 +706,17 @@ pub(super) async fn run(
                     Some(shell) => render_demo_shell(frame, shell),
                     None => render(frame, &model, scenario.is_some()),
                 })?;
-            } else if printed_screen != Some((model.screen, demo_shell.is_some())) {
+            } else if printed_screen
+                != Some((model.screen, demo_shell.is_some(), model.verbosity_open))
+            {
                 if let Some(shell) = &demo_shell {
                     println!("\nSIMULATED SHELL\n{}", shell.text());
+                } else if model.verbosity_open {
+                    println!("\nLOG VERBOSITY (display only)");
+                    for (index, level) in VERBOSITY_LEVELS.iter().enumerate() {
+                        println!("{}: {level}", index + 1);
+                    }
+                    println!("Number + Enter: apply; Esc: cancel");
                 } else {
                     println!(
                         "\n{}\n{}",
@@ -672,9 +729,9 @@ pub(super) async fn run(
                     if matches!(model.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
                         println!("Enter an http:// or https:// URL, then press Enter");
                     }
-                    println!("Number + Enter: select; S + Enter: shell; Esc: menu; V: details");
+                    println!("Number + Enter: select; S + Enter: shell; Esc: menu; V: verbosity");
                 }
-                printed_screen = Some((model.screen, demo_shell.is_some()));
+                printed_screen = Some((model.screen, demo_shell.is_some(), model.verbosity_open));
             }
             if event::poll(Duration::ZERO)? {
                 let event = event::read()?;
@@ -772,6 +829,27 @@ fn display_text(text: &str) -> String {
         .replace('\t', "    ")
 }
 
+fn log_visible(level: LogLevel, verbosity: LevelFilter) -> bool {
+    let level = match level {
+        LogLevel::Error => Level::Error,
+        LogLevel::Warn | LogLevel::Unspecified => Level::Warn,
+        LogLevel::Info => Level::Info,
+        LogLevel::Debug => Level::Debug,
+        LogLevel::Trace => Level::Trace,
+    };
+    level.to_level_filter() <= verbosity
+}
+
+fn log_color(level: LogLevel) -> Color {
+    match level {
+        LogLevel::Error => Color::LightRed,
+        LogLevel::Warn | LogLevel::Unspecified => Color::Yellow,
+        LogLevel::Info => Color::Green,
+        LogLevel::Debug => Color::Cyan,
+        LogLevel::Trace => Color::DarkGray,
+    }
+}
+
 fn title(screen: Screen) -> &'static str {
     match screen {
         Screen::Progress => "INSTALLING",
@@ -816,12 +894,14 @@ fn render_header(frame: &mut Frame, area: Rect, state: &str, demo: bool, state_c
         .add_modifier(Modifier::BOLD);
     let mut lines = Vec::new();
     if area.height >= WORDMARK_HEADER_HEIGHT {
+        lines.push(Line::default());
         let width = wordmark_width();
         lines.extend(
             TRIDENT_WORDMARK
                 .iter()
                 .map(|row| Line::from(Span::styled(format!("{row:<width$}"), brand))),
         );
+        lines.push(Line::default());
     }
     lines.push(Line::from(Span::styled(APPLICATION_NAME, brand)));
     let mut status = vec![Span::styled(state, Style::default().fg(state_color))];
@@ -861,8 +941,12 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
     };
     let areas = Layout::vertical([
         Constraint::Length(header_height(frame.area())),
-        Constraint::Length(2),
-        Constraint::Min(4),
+        Constraint::Length(match model.screen {
+            Screen::Recovery => 0,
+            Screen::AlreadyPresent => 1,
+            _ => 2,
+        }),
+        Constraint::Min(3),
         Constraint::Length(action_height),
         Constraint::Length(2),
     ])
@@ -885,11 +969,14 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
     let content = match model.screen {
         Screen::Progress | Screen::Menu => {
             let mut lines = vec![Line::from(Span::styled(model.activity.clone(), Style::default().fg(Color::Cyan))), Line::default()];
-            let logs = model.logs.iter().filter(|(level, _)| model.verbose || matches!(level, LogLevel::Error | LogLevel::Warn | LogLevel::Info | LogLevel::Unspecified)).collect::<Vec<_>>();
+            let logs = model.logs.iter().filter(|(level, _)| log_visible(*level, model.verbosity)).collect::<Vec<_>>();
             let visible = usize::from(areas[2].height.saturating_sub(4));
             let end = logs.len().saturating_sub(usize::from(model.scroll).min(logs.len().saturating_sub(1)));
             let start = end.saturating_sub(visible);
-            lines.extend(logs[start..end].iter().map(|(level, message)| Line::from(format!("{level}  {message}"))));
+            lines.extend(logs[start..end].iter().map(|(level, message)| Line::from(vec![
+                Span::styled(format!("{:<5} ", level.to_string()), Style::default().fg(log_color(*level)).add_modifier(Modifier::BOLD)),
+                Span::styled(message.clone(), Style::default().fg(log_color(*level))),
+            ])));
             Paragraph::new(lines).block(block("Activity / logs")).wrap(Wrap { trim: false })
         }
         Screen::StreamUrl | Screen::HostConfigUrl => Paragraph::new(format!("Enter an http:// or https:// URL:\n\n{}\n\nEnter: start   Esc: back", display_text(&model.url)))
@@ -934,13 +1021,58 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         "Enter: start   Esc: return to recovery".to_owned()
     } else {
         format!(
-            "Up/Down + Enter: select   S: shell   V: details   Esc: menu{}",
+            "Tab/Arrows: choose  Enter: select  S: shell  V: {}  Esc: menu{}",
+            model.verbosity,
             if demo { "   Q: quit" } else { "" }
         )
     };
     frame.render_widget(
         Paragraph::new(format!("{controls}\n{countdown}")).style(Style::default().fg(Color::Cyan)),
         areas[4],
+    );
+    if model.verbosity_open {
+        render_verbosity_picker(frame, model);
+    }
+}
+
+fn render_verbosity_picker(frame: &mut Frame, model: &Model) {
+    let viewport = frame.area();
+    let width = viewport.width.min(44);
+    let height = viewport.height.min(10);
+    let area = Rect::new(
+        viewport.x + (viewport.width - width) / 2,
+        viewport.y + (viewport.height - height) / 2,
+        width,
+        height,
+    );
+    frame.render_widget(Clear, area);
+    let rows = VERBOSITY_LEVELS
+        .iter()
+        .enumerate()
+        .map(|(index, level)| {
+            Line::from(Span::styled(
+                format!(
+                    "{} {level}",
+                    if index == model.verbosity_selected {
+                        ">"
+                    } else {
+                        " "
+                    }
+                ),
+                if index == model.verbosity_selected {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                },
+            ))
+        })
+        .chain([Line::default(), Line::from("Enter: apply   Esc: cancel")])
+        .collect::<Vec<_>>();
+    frame.render_widget(
+        Paragraph::new(rows).block(block("Log verbosity / display only")),
+        area,
     );
 }
 
@@ -999,7 +1131,9 @@ mod tests {
             .unwrap();
         let buffer = terminal.backend().buffer();
         let padding = (80 - wordmark_width()) / 2;
+        assert!(buffer.content[..80].iter().all(|cell| cell.symbol() == " "));
         for (row_index, expected) in TRIDENT_WORDMARK.iter().enumerate() {
+            let row_index = row_index + 1;
             let row = buffer.content[row_index * 80..(row_index + 1) * 80]
                 .iter()
                 .map(|cell| cell.symbol())
@@ -1008,6 +1142,9 @@ mod tests {
             for column in padding..padding + expected.len() {
                 assert_eq!(buffer.content[row_index * 80 + column].fg, Color::Cyan);
             }
+            assert!(buffer.content[9 * 80..10 * 80]
+                .iter()
+                .all(|cell| cell.symbol() == " "));
         }
         let text = buffer
             .content
@@ -1016,6 +1153,66 @@ mod tests {
             .collect::<String>();
         assert!(text.contains(APPLICATION_NAME), "{text}");
         assert!(text.contains("ALL ACTIONS SIMULATED"), "{text}");
+    }
+
+    #[test]
+    fn live_verbosity_picker_filters_without_discarding_logs() {
+        let mut model = Model::new();
+        model
+            .logs
+            .push_back((LogLevel::Info, "ordinary event".into()));
+        model
+            .logs
+            .push_back((LogLevel::Trace, "diagnostic detail".into()));
+        assert!(!log_visible(LogLevel::Trace, model.verbosity));
+        model.key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE), true);
+        assert!(model.verbosity_open);
+        model.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), true);
+        model.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), true);
+        model.key(enter(), true);
+        assert_eq!(model.verbosity, LevelFilter::Trace);
+        assert!(!model.verbosity_open);
+        assert!(log_visible(LogLevel::Trace, model.verbosity));
+        assert_eq!(model.logs.len(), 2);
+        model.key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE), true);
+        model.key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE), true);
+        model.key(enter(), true);
+        assert_eq!(model.verbosity, LevelFilter::Off);
+        assert!(!log_visible(LogLevel::Error, model.verbosity));
+        assert_eq!(model.logs.len(), 2);
+    }
+
+    #[test]
+    fn rpc_logs_are_coloured_by_severity() {
+        let mut model = Model::new();
+        model.verbosity = LevelFilter::Trace;
+        let records = [
+            (LogLevel::Error, "error-line", Color::LightRed),
+            (LogLevel::Warn, "warn-line", Color::Yellow),
+            (LogLevel::Info, "info-line", Color::Green),
+            (LogLevel::Debug, "debug-line", Color::Cyan),
+            (LogLevel::Trace, "trace-line", Color::DarkGray),
+        ];
+        for (level, text, _) in records {
+            model.logs.push_back((level, text.into()));
+        }
+        let mut terminal = Terminal::new(TestBackend::new(80, 32)).unwrap();
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        let buffer = terminal.backend().buffer();
+        for (_, message, expected) in records {
+            let row = buffer
+                .content
+                .chunks(80)
+                .find(|row| {
+                    row.iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>()
+                        .contains(message)
+                })
+                .unwrap();
+            let text = row.iter().map(|cell| cell.symbol()).collect::<String>();
+            assert_eq!(row[text.find(message).unwrap()].fg, expected);
+        }
     }
 
     #[test]
