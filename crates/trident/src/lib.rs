@@ -587,7 +587,7 @@ impl Trident {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
                 if acl::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
-                    // For ACL, initialize datastore with known intitial state when
+                    // For ACL, initialize datastore with known initial state when
                     // the datastore is not already created.
                     let initial_host_status = acl::initial_host_status()
                         .structured(InvalidInputError::DeriveHostConfiguration)
