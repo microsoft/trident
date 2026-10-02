@@ -204,9 +204,9 @@ func CosiFromImage(imagePath string, arch metadata.OsArchitecture) (*cosi.Cosi, 
 	// Phase 2: Gather filesystem metadata from the raw (uncompressed)
 	// partition images — blkid, mount, os-release, packages, bootloader,
 	// and dm-verity root hashes.
-	if isCIHImage(parsedGPT) {
-		log.Info("Detected CIH (Code Integrity Host) image")
-		err = populateCIHFilesystemMetadata(&cosiMetadata, partitionInfos, tmpDir)
+	if isACLImage(parsedGPT) {
+		log.Info("Detected ACL (Azure Container Linux) image")
+		err = populateACLFilesystemMetadata(&cosiMetadata, partitionInfos, tmpDir)
 	} else {
 		err = populateFilesystemMetadata(&cosiMetadata, partitionInfos, tmpDir)
 	}

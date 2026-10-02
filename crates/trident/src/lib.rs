@@ -66,7 +66,7 @@ pub use crate::{
 
 use crate::{
     engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
-    init::cih,
+    init::acl,
     osimage::OsImage,
     stream::DiskSelectionStrategy,
 };
@@ -585,12 +585,12 @@ impl Trident {
         self.execute_and_record_error(datastore, |datastore| {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
-                if cih::is_cih().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running CIH")? {
-                    // For CIH, initialize datastore with known intitial state when
+                if acl::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
+                    // For ACL, initialize datastore with known intitial state when
                     // the datastore is not already created.
-                    let initial_host_status = cih::initial_host_status()
+                    let initial_host_status = acl::initial_host_status()
                                 .structured(InvalidInputError::DeriveHostConfiguration)
-                                .message("Failed to initialize host status for CIH")?;
+                                .message("Failed to initialize host status for ACL")?;
                     datastore
                         .with_host_status(|status| {
                             *status = initial_host_status;
@@ -598,7 +598,7 @@ impl Trident {
                         })
                         .message("Failed to initialize datastore")?;
                 } else {
-                    // For non-CIH images, if the datastore is not persistent, return error
+                    // For non-ACL images, if the datastore is not persistent, return error
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                         .message("Persistent datastore not found on host");
                 }
