@@ -266,18 +266,33 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT` | `20m` | How long a `stage` is allowed to run (a [`humantime`](https://docs.rs/humantime) duration, e.g. `20m`, `1h`) before it's considered failed. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | How long a `finalize` is allowed to run before it's considered failed. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL` | `60s` | Refresh cadence for the `InProgress` status heartbeat. |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT` | unset (wait forever) | How long the agent will keep waiting for its own Node object to reappear after a 404 before giving up and exiting (a [`humantime`](https://docs.rs/humantime) duration, e.g. `30m`, `1h`). Unset means the agent never gives up on its own — see below. |
 
 Kubernetes API server connectivity (both the startup/recovery Node read
-and the long-lived watch loop) is retried indefinitely; there is no
-configurable attempt limit for either path. The startup/recovery Node
-read uses capped exponential backoff with full jitter between attempts
-(2-second initial interval, doubling up to a 30-second cap, actual delay
-randomized over `[0, 2x the current interval]`); the watch loop's
-reconnect delay is governed entirely by `kube::runtime::watcher`'s own
-`default_backoff()` instead, which uses the same shape of backoff. A
+and the long-lived watch loop) is retried indefinitely by default; there
+is no configurable attempt limit for the watch loop. The startup/recovery
+Node read uses capped exponential backoff with full jitter between
+attempts (2-second initial interval, doubling up to a 30-second cap,
+actual delay randomized over `[0, 2x the current interval]`); the watch
+loop's reconnect delay is governed entirely by `kube::runtime::watcher`'s
+own `default_backoff()` instead, which uses the same shape of backoff. A
 quiet Node has no reliable signal that distinguishes an isolated,
 otherwise-healthy reconnect blip from a genuinely ongoing outage, so
 retrying forever is the simple, correct default.
+
+This also covers the Node object disappearing out from under the agent
+entirely (e.g. deleted and later recreated by the orchestrator, or by node
+replacement): a 404 reading or patching the Node (`NodeGone`) is **not**
+treated as fatal. The agent logs that the Node no longer exists and parks,
+polling with the same capped-backoff policy, until the Node reappears —
+local state (a pending post-reboot `commit`, `state.json`) is untouched by
+this, so nothing is lost while it waits. By default this waits forever, on
+the theory that a transient 404 and a genuinely-deleted-forever Node look
+identical from the agent's point of view and it's cheaper to keep polling
+than to guess wrong and exit. An operator that wants the old
+exit-on-Node-gone behavior back (e.g. to let an external supervisor/alert
+fire instead) can opt into a bound via
+`TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT`.
 
 ### Setting env vars via a systemd drop-in
 
