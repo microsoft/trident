@@ -95,7 +95,12 @@ async fn main() -> Result<(), Error> {
             {
                 let shutdown = shutdown.clone();
                 tokio::spawn(async move {
-                    let _ = tokio::signal::ctrl_c().await;
+                    if let Err(err) = tokio::signal::ctrl_c().await {
+                        log::error!(
+                            "failed to register Ctrl-C (SIGINT) handler: {err:#}; agent will not respond to Ctrl-C"
+                        );
+                        return;
+                    }
                     shutdown.cancel();
                 });
             }
@@ -104,9 +109,16 @@ async fn main() -> Result<(), Error> {
                 let shutdown = shutdown.clone();
                 tokio::spawn(async move {
                     use tokio::signal::unix::{signal, SignalKind};
-                    if let Ok(mut term) = signal(SignalKind::terminate()) {
-                        term.recv().await;
-                        shutdown.cancel();
+                    match signal(SignalKind::terminate()) {
+                        Ok(mut term) => {
+                            term.recv().await;
+                            shutdown.cancel();
+                        }
+                        Err(err) => {
+                            log::error!(
+                                "failed to register SIGTERM handler: {err:#}; agent will not respond to SIGTERM"
+                            );
+                        }
                     }
                 });
             }

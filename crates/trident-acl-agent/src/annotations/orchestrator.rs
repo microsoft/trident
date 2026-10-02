@@ -58,6 +58,11 @@ const NODE_READ_BACKOFF_MAX: Duration = Duration::from_secs(30);
 /// without flooding journald.
 const NODE_GONE_REANNOUNCE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
+/// Delay before re-establishing the Node watch stream after it ends on its
+/// own (which shouldn't normally happen). Without this, a stream that keeps
+/// ending immediately would otherwise spin in a tight reconnect loop.
+const WATCH_STREAM_RESTART_BACKOFF: Duration = Duration::from_secs(2);
+
 /// The machine-id source used for every Nebraska request this module makes,
 /// event reports included. Must match the source used by `handle_stage`'s
 /// initial `check_for_update` so all requests for a given node present the
@@ -185,7 +190,20 @@ impl Orchestrator {
             // stream item, so it wouldn't reset this counter either.
             let mut errors_since_last_node_event = 0u64;
             let mut node_gone = false;
-            while let Some(item) = stream.next().await {
+            loop {
+                let item = select! {
+                    _ = shutdown.cancelled() => {
+                        info!(
+                            "shutdown requested while watching node {}",
+                            self.config.kubernetes.node_name
+                        );
+                        return Ok(());
+                    }
+                    item = stream.next() => item,
+                };
+                let Some(item) = item else {
+                    break; // stream ended on its own
+                };
                 let node = match item {
                     Ok(node) => {
                         errors_since_last_node_event = 0;
@@ -223,8 +241,13 @@ impl Orchestrator {
                 }
                 continue;
             }
-            // Stream ended on its own (shouldn't normally happen) - loop
-            // back and re-establish it defensively.
+            // Stream ended on its own (shouldn't normally happen). Back off
+            // briefly before re-establishing it defensively, so a stream that
+            // keeps ending immediately doesn't spin in a tight retry loop.
+            select! {
+                _ = shutdown.cancelled() => return Ok(()),
+                _ = time::sleep(WATCH_STREAM_RESTART_BACKOFF) => {}
+            }
         }
     }
 
@@ -243,6 +266,13 @@ impl Orchestrator {
         info!("node {node_name} no longer exists; waiting for it to reappear");
         let started = time::Instant::now();
         let mut last_announced = started;
+        let max_wait = self.config.orchestration.node_gone_max_wait;
+        // Fixed deadline derived once up front, rather than re-deriving a
+        // "remaining time" from `started.elapsed()` on every iteration: lets
+        // us cap each sleep to the remaining budget below, so `max_wait`
+        // behaves as a true upper bound instead of being exceedable by up to
+        // one backoff interval.
+        let deadline = max_wait.map(|m| started + m);
         let mut backoff = ExponentialBackoffBuilder::new()
             .with_initial_interval(NODE_READ_BACKOFF)
             .with_max_interval(NODE_READ_BACKOFF_MAX)
@@ -251,14 +281,22 @@ impl Orchestrator {
             .with_max_elapsed_time(None)
             .build();
         loop {
-            if let Some(max_wait) = self.config.orchestration.node_gone_max_wait {
-                if started.elapsed() >= max_wait {
-                    return Err(anyhow!(
-                        "node {node_name} did not reappear within {max_wait:?} (TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT); giving up"
-                    ));
-                }
-            }
             let delay = backoff.next_backoff().unwrap_or(NODE_READ_BACKOFF_MAX);
+            let delay = match deadline {
+                Some(deadline) => {
+                    let now = time::Instant::now();
+                    if now >= deadline {
+                        return Err(anyhow!(
+                            "node {node_name} did not reappear within {} (TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT); giving up",
+                            humantime::format_duration(
+                                max_wait.expect("deadline is only set when max_wait is set")
+                            )
+                        ));
+                    }
+                    delay.min(deadline - now)
+                }
+                None => delay,
+            };
             select! {
                 _ = shutdown.cancelled() => {
                     info!("shutdown requested while waiting for node {node_name} to reappear");
@@ -269,16 +307,16 @@ impl Orchestrator {
             match self.k8s.get_node(node_name).await {
                 Ok(_) => {
                     info!(
-                        "node {node_name} reappeared after {:?}; resuming",
-                        started.elapsed()
+                        "node {node_name} reappeared after {}; resuming",
+                        humantime::format_duration(started.elapsed())
                     );
                     return Ok(true);
                 }
                 Err(K8sClientError::NodeGone) => {
                     if last_announced.elapsed() >= NODE_GONE_REANNOUNCE_INTERVAL {
                         info!(
-                            "still waiting for node {node_name} to reappear ({:?} elapsed)",
-                            started.elapsed()
+                            "still waiting for node {node_name} to reappear ({} elapsed)",
+                            humantime::format_duration(started.elapsed())
                         );
                         last_announced = time::Instant::now();
                     }

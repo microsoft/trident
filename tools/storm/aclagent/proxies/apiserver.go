@@ -95,6 +95,15 @@ func (s *NodeStore) Snapshot() *corev1.Node {
 	return s.node.DeepCopy()
 }
 
+// CurrentResourceVersion returns the store's current metadata.resourceVersion
+// without a full DeepCopy of the node, for callers (like handleList's
+// missing-node path) that need only the version stamp, not the node itself.
+func (s *NodeStore) CurrentResourceVersion() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.node.ResourceVersion
+}
+
 func (s *NodeStore) MergePatch(raw []byte) (*corev1.Node, error) {
 	var patch metadataPatch
 	if err := json.Unmarshal(raw, &patch); err != nil {
@@ -347,9 +356,11 @@ func (s *APIServer) handleGet(w http.ResponseWriter, _ *http.Request) {
 // stream, so it must return a well-formed NodeList (including
 // metadata.resourceVersion) even though this fake only ever tracks one node.
 func (s *APIServer) handleList(w http.ResponseWriter, r *http.Request) {
-	node := s.store.Snapshot()
 	items := []corev1.Node{}
+	resourceVersion := s.store.CurrentResourceVersion()
 	if !s.store.isMissing() {
+		node := s.store.Snapshot()
+		resourceVersion = node.ResourceVersion
 		if selector := r.URL.Query().Get("fieldSelector"); selector != "" {
 			if selector == "metadata.name="+s.nodeName {
 				items = append(items, *node)
@@ -360,7 +371,7 @@ func (s *APIServer) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 	list := corev1.NodeList{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "NodeList"},
-		ListMeta: metav1.ListMeta{ResourceVersion: node.ResourceVersion},
+		ListMeta: metav1.ListMeta{ResourceVersion: resourceVersion},
 		Items:    items,
 	}
 	writeJSON(w, http.StatusOK, &list)

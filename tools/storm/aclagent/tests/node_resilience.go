@@ -107,13 +107,19 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	// function's doc comment for why a restart, not a passive
 	// DeleteNode(), is the trigger here).
 	nodeStore.DeleteNode()
+	// Captured right before the restart and reused for every
+	// waitForJournalOccurrenceCountAbove call below (both phases), so
+	// journalctl queries stay scoped to this test run instead of the
+	// unit's entire history, while keeping occurrence counts cumulative
+	// and comparable across phase 1 and phase 2.
+	journalSince := time.Now().Format("2006-01-02 15:04:05")
 	if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo systemctl restart %s", aclAgentService)); err != nil {
 		return fmt.Errorf("failed to restart %s: %w", aclAgentService, err)
 	}
 
 	// Confirm the agent actually took the new resilience code path (not
 	// just that it happened to remain active for some unrelated reason).
-	nodeGoneCount, err := waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeGoneLogSubstring, 0, 30*time.Second)
+	nodeGoneCount, err := waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeGoneLogSubstring, 0, 30*time.Second, journalSince)
 	if err != nil {
 		return fmt.Errorf("phase 1: agent did not log entering the node-gone resilience path: %w", err)
 	}
@@ -135,7 +141,7 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	// Restore the Node and confirm the agent notices and resumes, still as
 	// the very same process.
 	nodeStore.RestoreNode()
-	reappearedCount, err := waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeReappearedLogSubstring, 0, 60*time.Second)
+	reappearedCount, err := waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeReappearedLogSubstring, 0, 60*time.Second, journalSince)
 	if err != nil {
 		return fmt.Errorf("phase 1: agent did not log resuming after the Node reappeared: %w", err)
 	}
@@ -181,7 +187,7 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	}
 	nodeStore.DeleteNode()
 
-	nodeGoneCount, err = waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeGoneLogSubstring, nodeGoneCount, 30*time.Second)
+	nodeGoneCount, err = waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeGoneLogSubstring, nodeGoneCount, 30*time.Second, journalSince)
 	if err != nil {
 		return fmt.Errorf("phase 2: agent did not log entering the node-gone resilience path for an in-flight PATCH: %w", err)
 	}
@@ -206,7 +212,7 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	nodeStore.PatchAnnotations(map[string]string{stormproxies.UpdateRequestAnnotation: ""})
 	nodeStore.RestoreNode()
 
-	if _, err := waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeReappearedLogSubstring, reappearedCount, 60*time.Second); err != nil {
+	if _, err := waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeReappearedLogSubstring, reappearedCount, 60*time.Second, journalSince); err != nil {
 		return fmt.Errorf("phase 2: agent did not log resuming after the Node reappeared: %w", err)
 	}
 	if err := assertServiceMainPIDUnchanged(vmConfig.VMConfig, vmIP, aclAgentService, pid, 15*time.Second); err != nil {
@@ -275,12 +281,21 @@ func assertServiceMainPIDUnchanged(cfg stormvmconfig.VMConfig, vmIP, service, pi
 // waitForJournalContains-style helper would) lets RunNodeResilience tell
 // phase 2's log lines apart from phase 1's identical ones earlier in the
 // same journal.
-func waitForJournalOccurrenceCountAbove(cfg stormvmconfig.VMConfig, vmIP, service, substr string, minCount int, timeout time.Duration) (int, error) {
+//
+// since (a journalctl --since timestamp, e.g. from
+// time.Now().Format("2006-01-02 15:04:05")) scopes every poll to entries
+// emitted no earlier than the start of this test run, rather than
+// re-fetching and re-scanning the unit's entire history on every 2s tick -
+// on a long-lived or noisy unit that would get slower over time and add
+// unnecessary load. Callers that need a cumulative count across multiple
+// calls (as RunNodeResilience's phase 1/phase 2 do) must pass the same
+// since value to every call so counts stay comparable.
+func waitForJournalOccurrenceCountAbove(cfg stormvmconfig.VMConfig, vmIP, service, substr string, minCount int, timeout time.Duration, since string) (int, error) {
 	deadline := time.Now().Add(timeout)
 	var lastJournal string
 	var lastCount int
 	for time.Now().Before(deadline) {
-		journal, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, fmt.Sprintf("sudo journalctl -u %s --no-pager", service))
+		journal, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, fmt.Sprintf("sudo journalctl -u %s --no-pager --since %q", service, since))
 		if err == nil {
 			lastJournal = journal
 			lastCount = strings.Count(journal, substr)
