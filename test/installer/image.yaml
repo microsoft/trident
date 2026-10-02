@@ -1,0 +1,78 @@
+name: installer
+
+outputs:
+  - format: iso
+
+base:
+  azureLinux:
+    version: "3.0"
+    variant: minimal-os
+
+rpmSources:
+  - rpms
+
+extraDependencies:
+  - files
+  - cosi
+  - rpms
+
+config:
+  previewFeatures:
+    - input-image-oci
+  os:
+    hostname: trident-installer-test
+    bootloader:
+      resetType: hard-reset
+    selinux:
+      mode: disabled
+    kernelCommandLine:
+      extraCommandLine:
+        - console=tty0
+        - console=ttyS0,115200n8
+    packages:
+      install:
+        - trident-installer
+        - device-mapper
+        - squashfs-tools
+        - veritysetup
+        - curl
+        - less
+        - iproute
+    services:
+      enable:
+        - tridentd.socket
+        - trident-installer.service
+    additionalFiles:
+      - source: files/installer.toml
+        destination: /etc/trident/installer.toml
+  storage:
+    bootType: efi
+    disks:
+      - partitionTableType: gpt
+        maxSize: 4G
+        partitions:
+          - id: esp
+            type: esp
+            size: 8M
+          - id: rootfs
+            size: grow
+    filesystems:
+      - deviceId: esp
+        type: fat32
+        mountPoint:
+          path: /boot/efi
+          options: umask=0077
+      - deviceId: rootfs
+        type: ext4
+        mountPoint:
+          path: /
+  iso:
+    initramfsType: full-os
+    additionalFiles:
+      - source: cosi/payload.cosi
+        destination: /cosi/payload.cosi
+    kernelCommandLine:
+      extraCommandLine:
+        - console=tty0
+        - console=ttyS0,115200n8
+        - loglevel=4
