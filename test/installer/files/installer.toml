@@ -1,0 +1,8 @@
+mode = "autorun"
+
+[media]
+cdromLabel = "CDROM"
+cosiDirectory = "cosi/"
+
+[autorun]
+reboot = false

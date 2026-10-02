@@ -1,0 +1,7 @@
+/artifacts/
+/.work/
+/.vm/
+/.tailor/
+/installer/.rendered/
+/installer/cosi/
+/installer/rpms/
