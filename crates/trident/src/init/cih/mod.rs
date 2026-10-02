@@ -30,6 +30,27 @@ pub fn is_cih() -> Result<bool, Error> {
     Ok(os_release.variant_id == Some("azurecontainerlinux".to_string()))
 }
 
+/// An expected partition on the CIH root disk, identified by label, along
+/// with its partition type, the actual `Partition` discovered on disk (if
+/// any), and whether the partition is required to be present.
+struct ExpectedPartition<'a> {
+    label: &'a str,
+    partition_type: PartitionType,
+    partition: Option<Partition>,
+    required: bool,
+}
+
+impl<'a> ExpectedPartition<'a> {
+    fn new(label: &'a str, partition_type: PartitionType, required: bool) -> Self {
+        Self {
+            label,
+            partition_type,
+            partition: None,
+            required,
+        }
+    }
+}
+
 /// Gathers information about the host's disk and partitions, framed by
 /// the expectations of the CIH image layout, and returns a HostStatus
 /// representing the current state of the host. This will be used to
@@ -75,21 +96,16 @@ fn inner_initial_host_status(
             .context("Root disk has invalid ptuuid")?,
     );
 
-    // Expected partition info is comprised of:
-    //   * partition label
-    //   * partition type
-    //   * actual partition (if it exists)
-    //   * whether the partition is required
-    let mut expected_partition_info: Vec<(&str, PartitionType, Option<Partition>, bool)> = vec![
-        ("efi-system", PartitionType::Esp, None, true),
-        ("usr-a", PartitionType::Usr, None, true),
-        ("hash-a", PartitionType::UsrVerity, None, true),
-        ("hash-sig-a", PartitionType::UsrVeritySig, None, false),
-        ("usr-b", PartitionType::Usr, None, true),
-        ("hash-b", PartitionType::UsrVerity, None, true),
-        ("hash-sig-b", PartitionType::UsrVeritySig, None, false),
-        ("oem", PartitionType::LinuxGeneric, None, true),
-        ("root", PartitionType::Root, None, true),
+    let mut expected_partition_info: Vec<ExpectedPartition> = vec![
+        ExpectedPartition::new("efi-system", PartitionType::Esp, true),
+        ExpectedPartition::new("usr-a", PartitionType::Usr, true),
+        ExpectedPartition::new("hash-a", PartitionType::UsrVerity, true),
+        ExpectedPartition::new("hash-sig-a", PartitionType::UsrVeritySig, false),
+        ExpectedPartition::new("usr-b", PartitionType::Usr, true),
+        ExpectedPartition::new("hash-b", PartitionType::UsrVerity, true),
+        ExpectedPartition::new("hash-sig-b", PartitionType::UsrVeritySig, false),
+        ExpectedPartition::new("oem", PartitionType::LinuxGeneric, true),
+        ExpectedPartition::new("root", PartitionType::Root, true),
     ];
 
     // Iterate through the current Host's partitions and create
@@ -109,23 +125,23 @@ fn inner_initial_host_status(
         //     been lowercased above.
         let expected_partition = expected_partition_info
             .iter_mut()
-            .find(|(expected_label, _, _, _)| *expected_label == label)
+            .find(|p| p.label == label)
             .context(format!(
                 "Unexpected partition label '{}' found on root disk",
                 label
             ))?;
         // Ensure there are not any duplicate partition labels.
-        if expected_partition.2.is_some() {
+        if expected_partition.partition.is_some() {
             return Err(anyhow!(
                 "Multiple identical partition labels found on root disk: '{}'",
                 label
             ));
         }
         trace!("Found partition '{}' on root disk", label);
-        expected_partition.2 = Some(Partition {
+        expected_partition.partition = Some(Partition {
             id: label.clone(),
             size: PartitionSize::from(p.size),
-            partition_type: expected_partition.1,
+            partition_type: expected_partition.partition_type,
             label: p.name.clone(),
             uuid: p.id.as_uuid(),
         });
@@ -156,8 +172,8 @@ fn inner_initial_host_status(
     // created, return error.
     let missing_partitions: Vec<_> = expected_partition_info
         .iter()
-        .filter(|k| k.2.is_none())
-        .filter_map(|(label, _, _, required)| if *required { Some(label) } else { None })
+        .filter(|p| p.partition.is_none() && p.required)
+        .map(|p| p.label)
         .collect();
     if !missing_partitions.is_empty() {
         return Err(anyhow!(
@@ -171,9 +187,7 @@ fn inner_initial_host_status(
     // them when both the "a" and "b" partitions were actually found.
     let hash_sig_pair_found = expected_partition_info
         .iter()
-        .filter(|(label, _, p, _)| {
-            (*label == "hash-sig-a" || *label == "hash-sig-b") && p.is_some()
-        })
+        .filter(|p| (p.label == "hash-sig-a" || p.label == "hash-sig-b") && p.partition.is_some())
         .count()
         == 2;
 
@@ -206,7 +220,7 @@ fn inner_initial_host_status(
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: expected_partition_info
                         .iter()
-                        .filter_map(|(_, _, p, _)| p.clone())
+                        .filter_map(|p| p.partition.clone())
                         .collect(),
                     ..Default::default()
                 }],
