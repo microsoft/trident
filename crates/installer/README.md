@@ -1,4 +1,4 @@
-# Trident installer
+# Trident Linux Installer
 
 `installer` builds the `trident-installer` binary and optional RPM. It is an
 autorun wrapper around Trident's gRPC API, not a partitioning engine.
@@ -69,6 +69,10 @@ HC disk paths are used as authored. The installer does not resolve legacy disk
 placeholders or automatically choose a disk for an HC.
 
 ## Console and recovery
+
+The UI uses the cyan Trident ASCII wordmark and the name Trident Linux
+Installer. At 80x24 and larger the complete wordmark is shown; smaller terminals
+use a compact text header to preserve usable controls and error details.
 
 On the ISO, `--system-console` prefers the graphical virtual console for local
 keyboard/monitor and BMC KVM, independent of `console=` order. An active serial

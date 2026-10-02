@@ -23,12 +23,13 @@ mod ui;
 const LOG_PATH: &str = "/var/log/trident-installer.log";
 const PRIVATE_FILE_MODE: u32 = 0o600;
 const WORKER_THREADS: usize = 2;
+const APPLICATION_NAME: &str = "Trident Linux Installer";
 
 #[derive(Debug, Parser)]
 #[command(
     name = "trident-installer",
     version,
-    about = "Autorun OS installer for Trident installer media"
+    about = APPLICATION_NAME
 )]
 struct Args {
     #[arg(long, default_value = DEFAULT_CONFIG)]

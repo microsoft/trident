@@ -15,7 +15,7 @@ use crossterm::{
 use log::error;
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Layout},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols::border::Set as BorderSet,
     text::{Line, Span},
@@ -38,6 +38,7 @@ use crate::{
     config::Config,
     demo::{self, Scenario},
     source::{self, Request},
+    APPLICATION_NAME,
 };
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(100);
@@ -46,6 +47,19 @@ const EVENT_CAPACITY: usize = 64;
 const LOG_CAPACITY: usize = 500;
 const DISPLAY_LOG_CHARACTERS: usize = 4096;
 const DEMO_SHELL_HISTORY: usize = 8;
+const WORDMARK_HEADER_HEIGHT: u16 = 10;
+const COMPACT_HEADER_HEIGHT: u16 = 2;
+const MIN_WORDMARK_TERMINAL_HEIGHT: u16 = 24;
+const TRIDENT_WORDMARK: [&str; 8] = [
+    r#"88888888888      d8b      888                   888"#,
+    r#"    888          Y8P      888                   888"#,
+    r#"    888                   888                   888"#,
+    r#"    888  888d888 888  .d88888  .d88b.  88888b.  888888"#,
+    r#"    888  888P"   888 d88" 888 d8P  Y8b 888 "88b 888"#,
+    r#"    888  888     888 888  888 88888888 888  888 888"#,
+    r#"    888  888     888 Y88b 888 Y8b.     888  888 Y88b."#,
+    r#"    888  888     888  "Y88888  "Y8888  888  888  "Y888"#,
+];
 const DEMO_SHELL_NOTICE: &str = "This shell is simulated. Commands are never executed.\nNo network, disk or power operations are performed.\nType exit or press Esc to return to the installer.";
 const ASCII_BORDER: BorderSet = BorderSet {
     top_left: "+",
@@ -780,16 +794,54 @@ fn block(title: &str) -> Block<'_> {
         .title(title)
 }
 
+fn wordmark_width() -> usize {
+    TRIDENT_WORDMARK
+        .iter()
+        .fold(0, |width, row| width.max(row.len()))
+}
+
+fn header_height(viewport: Rect) -> u16 {
+    if usize::from(viewport.width) >= wordmark_width()
+        && viewport.height >= MIN_WORDMARK_TERMINAL_HEIGHT
+    {
+        WORDMARK_HEADER_HEIGHT
+    } else {
+        COMPACT_HEADER_HEIGHT
+    }
+}
+
+fn render_header(frame: &mut Frame, area: Rect, state: &str, demo: bool, state_color: Color) {
+    let brand = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let mut lines = Vec::new();
+    if area.height >= WORDMARK_HEADER_HEIGHT {
+        let width = wordmark_width();
+        lines.extend(
+            TRIDENT_WORDMARK
+                .iter()
+                .map(|row| Line::from(Span::styled(format!("{row:<width$}"), brand))),
+        );
+    }
+    lines.push(Line::from(Span::styled(APPLICATION_NAME, brand)));
+    let mut status = vec![Span::styled(state, Style::default().fg(state_color))];
+    if demo {
+        status.push(Span::styled(
+            " / DEMO: ALL ACTIONS SIMULATED",
+            Style::default().fg(Color::Cyan),
+        ));
+    }
+    lines.push(Line::from(status));
+    frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
+}
+
 fn render_demo_shell(frame: &mut Frame, shell: &DemoShell) {
-    let areas = Layout::vertical([Constraint::Length(2), Constraint::Min(4)]).split(frame.area());
-    frame.render_widget(
-        Paragraph::new(" TRIDENT INSTALLER / DEMO / SIMULATED SHELL").style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        areas[0],
-    );
+    let areas = Layout::vertical([
+        Constraint::Length(header_height(frame.area())),
+        Constraint::Min(4),
+    ])
+    .split(frame.area());
+    render_header(frame, areas[0], "SIMULATED SHELL", true, Color::Cyan);
     frame.render_widget(
         Paragraph::new(shell.text())
             .block(block("No commands are executed"))
@@ -799,30 +851,32 @@ fn render_demo_shell(frame: &mut Frame, shell: &DemoShell) {
 }
 
 fn render(frame: &mut Frame, model: &Model, demo: bool) {
+    let choices = model.choices();
+    let action_height = if choices.is_empty() {
+        0
+    } else {
+        u16::try_from(choices.len())
+            .expect("invariant: static action lists have at most four items")
+            + 2
+    };
     let areas = Layout::vertical([
+        Constraint::Length(header_height(frame.area())),
         Constraint::Length(2),
-        Constraint::Length(3),
         Constraint::Min(4),
-        Constraint::Length(if model.choices().is_empty() { 0 } else { 6 }),
+        Constraint::Length(action_height),
         Constraint::Length(2),
     ])
     .split(frame.area());
-    let header = format!(
-        " TRIDENT INSTALLER{}   {}",
-        if demo { " / DEMO" } else { "" },
-        title(model.screen)
-    );
-    frame.render_widget(
-        Paragraph::new(header).style(
-            Style::default()
-                .fg(if model.screen == Screen::Error {
-                    Color::LightRed
-                } else {
-                    Color::Cyan
-                })
-                .add_modifier(Modifier::BOLD),
-        ),
+    render_header(
+        frame,
         areas[0],
+        title(model.screen),
+        demo,
+        if model.screen == Screen::Error {
+            Color::LightRed
+        } else {
+            Color::Cyan
+        },
     );
     frame.render_widget(
         Paragraph::new(display_text(&model.source)).wrap(Wrap { trim: false }),
@@ -849,8 +903,7 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
             .wrap(Wrap { trim: false }).scroll((model.scroll, 0)),
     };
     frame.render_widget(content, areas[2]);
-    let choices = model
-        .choices()
+    let choices = choices
         .iter()
         .enumerate()
         .map(|(index, choice)| {
@@ -936,6 +989,59 @@ mod tests {
             .collect::<String>();
         assert!(text.contains("SIMULATED SHELL"), "{text}");
         assert!(text.contains("Commands are never executed"), "{text}");
+    }
+
+    #[test]
+    fn wordmark_is_cyan_and_preserved_at_80_by_24() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| render(frame, &Model::new(), true))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let padding = (80 - wordmark_width()) / 2;
+        for (row_index, expected) in TRIDENT_WORDMARK.iter().enumerate() {
+            let row = buffer.content[row_index * 80..(row_index + 1) * 80]
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>();
+            assert_eq!(&row[padding..padding + expected.len()], *expected);
+            for column in padding..padding + expected.len() {
+                assert_eq!(buffer.content[row_index * 80 + column].fg, Color::Cyan);
+            }
+        }
+        let text = buffer
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains(APPLICATION_NAME), "{text}");
+        assert!(text.contains("ALL ACTIONS SIMULATED"), "{text}");
+    }
+
+    #[test]
+    fn small_terminals_use_a_readable_compact_header() {
+        assert_eq!(
+            header_height(Rect::new(0, 0, 40, 24)),
+            COMPACT_HEADER_HEIGHT
+        );
+        assert_eq!(
+            header_height(Rect::new(0, 0, 80, 16)),
+            COMPACT_HEADER_HEIGHT
+        );
+        let mut model = Model::new();
+        model.screen = Screen::Success;
+        let mut terminal = Terminal::new(TestBackend::new(40, 16)).unwrap();
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains(APPLICATION_NAME), "{text}");
+        assert!(text.contains("Reboot"), "{text}");
+        assert!(text.contains("Shell"), "{text}");
     }
 
     #[tokio::test]

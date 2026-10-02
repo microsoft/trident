@@ -1,5 +1,5 @@
 [Unit]
-Description=Trident Installer
+Description=Trident Linux Installer
 Wants=tridentd.socket systemd-udev-settle.service
 After=tridentd.socket systemd-udev-settle.service network.target
 Conflicts=trident-install.service
