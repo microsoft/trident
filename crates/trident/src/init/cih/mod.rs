@@ -75,19 +75,21 @@ fn inner_initial_host_status(
             .context("Root disk has invalid ptuuid")?,
     );
 
-    let mut expected_partition_info: Vec<(&str, PartitionType, Option<Partition>)> = vec![
-        ("efi-system", PartitionType::Esp, None),
-        // Note: this seems to be user-a currently
-        ("usr-a", PartitionType::Usr, None),
-        // Note: this doesn't seem to be present in images today
-        ("hash-a", PartitionType::UsrVerity, None),
-        // Note: this seems to be user-b currently
-        ("usr-b", PartitionType::Usr, None),
-        // Note: this doesn't seem to be present in images today
-        ("hash-b", PartitionType::UsrVerity, None),
-        // Note: this doesn't seem to be present in images today
-        ("oem", PartitionType::LinuxGeneric, None),
-        ("root", PartitionType::Root, None),
+    // Expected partition info is comprised of:
+    //   * partition label
+    //   * partition type
+    //   * actual partition (if it exists)
+    //   * whether the partition is required
+    let mut expected_partition_info: Vec<(&str, PartitionType, Option<Partition>, bool)> = vec![
+        ("efi-system", PartitionType::Esp, None, true),
+        ("usr-a", PartitionType::Usr, None, true),
+        ("hash-a", PartitionType::UsrVerity, None, true),
+        ("hash-sign-a", PartitionType::UsrVeritySig, None, false),
+        ("usr-b", PartitionType::Usr, None, true),
+        ("hash-b", PartitionType::UsrVerity, None, true),
+        ("hash-sign-b", PartitionType::UsrVeritySig, None, false),
+        ("oem", PartitionType::LinuxGeneric, None, true),
+        ("root", PartitionType::Root, None, true),
     ];
 
     // Iterate through the current Host's partitions and create
@@ -107,7 +109,7 @@ fn inner_initial_host_status(
         //     been lowercased above.
         let expected_partition = expected_partition_info
             .iter_mut()
-            .find(|(expected_label, _, _)| *expected_label == label)
+            .find(|(expected_label, _, _, _)| *expected_label == label)
             .context(format!(
                 "Unexpected partition label '{}' found on root disk",
                 label
@@ -155,7 +157,7 @@ fn inner_initial_host_status(
     let missing_partitions: Vec<_> = expected_partition_info
         .iter()
         .filter(|k| k.2.is_none())
-        .map(|(label, _, _)| *label)
+        .filter_map(|(label, _, _, required)| if *required { Some(label) } else { None })
         .collect();
     if !missing_partitions.is_empty() {
         return Err(anyhow!(
@@ -173,7 +175,7 @@ fn inner_initial_host_status(
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: expected_partition_info
                         .iter()
-                        .filter_map(|(_, _, p)| p.clone())
+                        .filter_map(|(_, _, p, _)| p.clone())
                         .collect(),
                     ..Default::default()
                 }],

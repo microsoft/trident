@@ -143,6 +143,11 @@ pub enum PartitionType {
     /// x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`
     UsrVerity,
 
+    /// # Usr-verity hash signature partition
+    ///
+    /// x64: `e7bb33fb-06cf-4e81-8273-e543b413e2e2`
+    UsrVeritySig,
+
     /// # Tmp partition
     ///
     /// `7ec6f557-3bc5-4aca-b293-16ef5df639d1`
@@ -200,6 +205,7 @@ impl PartitionType {
             PartitionType::Var => "var",
             PartitionType::Usr => "usr",
             PartitionType::UsrVerity => "usr-verity",
+            PartitionType::UsrVeritySig => "usr-verity-sig",
             PartitionType::Tmp => "tmp",
             PartitionType::LinuxGeneric => "linux-generic",
             PartitionType::Srv => "srv",
@@ -227,6 +233,7 @@ impl PartitionType {
 
             Self::RootVerity
             | Self::UsrVerity
+            | Self::UsrVeritySig
             | Self::Esp
             | Self::Swap
             | Self::Home
@@ -256,6 +263,7 @@ impl From<PartitionType> for DiscoverablePartitionType {
             PartitionType::Var => Self::Var,
             PartitionType::Usr => Self::Usr,
             PartitionType::UsrVerity => Self::UsrVerity,
+            PartitionType::UsrVeritySig => Self::UsrVeritySig,
             PartitionType::Tmp => Self::Tmp,
             PartitionType::LinuxGeneric => Self::LinuxGeneric,
             PartitionType::Srv => Self::Srv,
