@@ -259,14 +259,16 @@ The scenario runs these test cases in order:
 3. **run-node-resilience** — Proves `trident-acl-agent` survives its own
    Node object disappearing (see
    [`NodeGone`/`await_node_recreation`](../../Explanation/Trident-ACL-Agent.md))
-   instead of exiting: starts its own fake apiserver, makes the fake Node
-   return HTTP 404 (`NodeStore.DeleteNode`), restarts
-   `trident-acl-agent.service` so its startup Node read hits that 404, then
-   asserts the service's `systemd` `MainPID` stays unchanged (i.e. it never
-   crashes or restarts) while parked waiting for the Node, and that it
-   resumes once `NodeStore.RestoreNode` brings the Node back — all before
-   any fake Nebraska/image-server mocks or real update/rollback traffic is
-   involved
+   instead of exiting, across the two ways that can actually happen against
+   a real apiserver: **phase 1** restarts `trident-acl-agent.service` while
+   the fake Node is "deleted" (`NodeStore.DeleteNode`), forcing the agent's
+   startup Node read into the 404; **phase 2** patches in a `stage` request
+   and deletes the Node immediately after, so the already-running agent's
+   own in-flight status PATCH (no restart at all) hits the 404 instead.
+   Both phases assert the service's `systemd` `MainPID` stays unchanged
+   throughout (i.e. it never crashes or restarts) and that it resumes once
+   `NodeStore.RestoreNode` brings the Node back — all before any fake
+   Nebraska/image-server mocks or real update/rollback traffic is involved
 4. **run-ab-update** — Starts the fake apiserver and fake Nebraska/Omaha
    endpoints in-process (the latter over HTTPS — see [Nebraska/Image Server
    TLS](#nebraskaimage-server-tls)), delivers a fake kubeconfig and restarts

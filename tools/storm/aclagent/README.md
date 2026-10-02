@@ -21,8 +21,9 @@ There is intentionally no fake `tridentd`.
 - `check-deployment`
 - `run-node-resilience` — proves `trident-acl-agent` survives its own Node
   object disappearing (HTTP 404) instead of exiting, and resumes once it
-  reappears; runs before `run-ab-update` so it exercises a clean,
-  no-pending-state agent
+  reappears, both via a restart-triggered startup read and via an
+  already-running agent's in-flight status PATCH; runs before
+  `run-ab-update` so it exercises a clean, no-pending-state agent
 - `run-ab-update`
 - `run-rollback`
 - `collect-logs`
