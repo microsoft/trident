@@ -38,8 +38,6 @@ const ENV_PREFIX_NEBRASKA: &str = "TRIDENT_ACL_AGENT_NEBRASKA_";
 const ENV_PREFIX_KUBERNETES: &str = "TRIDENT_ACL_AGENT_KUBERNETES_";
 const ENV_PREFIX_TRIDENT: &str = "TRIDENT_ACL_AGENT_TRIDENT_";
 const ENV_PREFIX_ORCHESTRATION: &str = "TRIDENT_ACL_AGENT_ORCHESTRATION_";
-#[allow(dead_code)] // documented in OrchestrationConfig::node_gone_max_wait's docs
-const ENV_VAR_NODE_GONE_MAX_WAIT: &str = formatcp!("{ENV_PREFIX_ORCHESTRATION}NODE_GONE_MAX_WAIT");
 
 const DEFAULT_KUBERNETES_POLL_INTERVAL: Duration = Duration::from_secs(2);
 // TODO: placeholder until the real production Nebraska/Omaha endpoint is
