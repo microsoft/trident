@@ -250,7 +250,7 @@ The Trident ACL components required to orchestrate servicing of ACL images.
 # ------------------------------------------------------------------------------
 
 %package installer
-Summary:        Trident installer console for installer media
+Summary:        Trident Linux Installer console for installer media
 Requires:       %{name} = %{version}-%{release}
 Requires:       bash
 Conflicts:      %{name}-install-service
