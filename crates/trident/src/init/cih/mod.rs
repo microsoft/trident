@@ -166,6 +166,37 @@ fn inner_initial_host_status(
         ));
     }
 
+    // The usr-verity hash signature partitions are optional today (older
+    // images may not have them), so only register an AB volume pair for
+    // them when both the "a" and "b" partitions were actually found.
+    let hash_sign_pair_found = expected_partition_info
+        .iter()
+        .filter(|(label, _, p, _)| {
+            (*label == "hash-sign-a" || *label == "hash-sign-b") && p.is_some()
+        })
+        .count()
+        == 2;
+
+    let mut ab_volume_pairs = vec![
+        AbVolumePair {
+            id: "usr-data".to_string(),
+            volume_a_id: "usr-a".to_string(),
+            volume_b_id: "usr-b".to_string(),
+        },
+        AbVolumePair {
+            id: "usr-hash".to_string(),
+            volume_a_id: "hash-a".to_string(),
+            volume_b_id: "hash-b".to_string(),
+        },
+    ];
+    if hash_sign_pair_found {
+        ab_volume_pairs.push(AbVolumePair {
+            id: "usr-hash-sign".to_string(),
+            volume_a_id: "hash-sign-a".to_string(),
+            volume_b_id: "hash-sign-b".to_string(),
+        });
+    }
+
     Ok(HostStatus {
         spec: HostConfiguration {
             storage: Storage {
@@ -225,18 +256,7 @@ fn inner_initial_host_status(
                     ..Default::default()
                 }],
                 ab_update: Some(AbUpdate {
-                    volume_pairs: vec![
-                        AbVolumePair {
-                            id: "usr-data".to_string(),
-                            volume_a_id: "usr-a".to_string(),
-                            volume_b_id: "usr-b".to_string(),
-                        },
-                        AbVolumePair {
-                            id: "usr-hash".to_string(),
-                            volume_a_id: "hash-a".to_string(),
-                            volume_b_id: "hash-b".to_string(),
-                        },
-                    ],
+                    volume_pairs: ab_volume_pairs,
                 }),
                 ..Default::default()
             },
@@ -268,6 +288,8 @@ mod tests {
         MissingOne,
         ExtraOne,
         Duplicate,
+        WithHashSignPair,
+        WithHashSignPartial,
     }
     fn create_sfpart(
         label: String,
@@ -373,6 +395,33 @@ mod tests {
                     9,
                 ));
             }
+            TestPartitions::WithHashSignPair => {
+                // Add both usr-verity hash signature partitions
+                partitions.push(create_sfpart(
+                    "hash-sign-a".to_string(),
+                    &PathBuf::from("/dev/sda9"),
+                    DiscoverablePartitionType::UsrVeritySig,
+                    "123e4567-e89b-12d3-a456-426614174010",
+                    8,
+                ));
+                partitions.push(create_sfpart(
+                    "hash-sign-b".to_string(),
+                    &PathBuf::from("/dev/sda10"),
+                    DiscoverablePartitionType::UsrVeritySig,
+                    "123e4567-e89b-12d3-a456-426614174011",
+                    9,
+                ));
+            }
+            TestPartitions::WithHashSignPartial => {
+                // Add only one of the usr-verity hash signature partitions
+                partitions.push(create_sfpart(
+                    "hash-sign-a".to_string(),
+                    &PathBuf::from("/dev/sda9"),
+                    DiscoverablePartitionType::UsrVeritySig,
+                    "123e4567-e89b-12d3-a456-426614174010",
+                    8,
+                ));
+            }
         };
 
         SfDisk {
@@ -445,6 +494,84 @@ mod tests {
             init_host_status.spec.storage.disks[0].partitions[6].label,
             Some("root".to_string())
         );
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_without_hash_sign_partitions() {
+        // When the usr-verity hash signature partitions are absent (today's
+        // default), only the usr-data and usr-hash AB volume pairs should be
+        // registered.
+        let sfdisk = create_sfdisk("efi-system", TestPartitions::Correct);
+        let blkdevice = create_blk_device();
+
+        let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+        init_host_status.spec.validate().unwrap();
+
+        let volume_pairs = &init_host_status
+            .spec
+            .storage
+            .ab_update
+            .as_ref()
+            .unwrap()
+            .volume_pairs;
+        assert_eq!(volume_pairs.len(), 2);
+        assert!(volume_pairs.iter().all(|p| p.id != "usr-hash-sign"));
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_with_hash_sign_partitions() {
+        // When both usr-verity hash signature partitions are present, an
+        // additional AB volume pair should be registered for them.
+        let sfdisk = create_sfdisk("efi-system", TestPartitions::WithHashSignPair);
+        let blkdevice = create_blk_device();
+
+        let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+        init_host_status.spec.validate().unwrap();
+
+        let partitions = &init_host_status.spec.storage.disks[0].partitions;
+        assert!(partitions
+            .iter()
+            .any(|p| p.label == Some("hash-sign-a".to_string())));
+        assert!(partitions
+            .iter()
+            .any(|p| p.label == Some("hash-sign-b".to_string())));
+
+        let volume_pairs = &init_host_status
+            .spec
+            .storage
+            .ab_update
+            .as_ref()
+            .unwrap()
+            .volume_pairs;
+        assert_eq!(volume_pairs.len(), 3);
+        let hash_sign_pair = volume_pairs
+            .iter()
+            .find(|p| p.id == "usr-hash-sign")
+            .expect("expected 'usr-hash-sign' AB volume pair to be present");
+        assert_eq!(hash_sign_pair.volume_a_id, "hash-sign-a");
+        assert_eq!(hash_sign_pair.volume_b_id, "hash-sign-b");
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_with_partial_hash_sign_partitions() {
+        // When only one of the usr-verity hash signature partitions is
+        // present, it should still be optional (no error), but no AB volume
+        // pair should be registered for it since it's not a complete pair.
+        let sfdisk = create_sfdisk("efi-system", TestPartitions::WithHashSignPartial);
+        let blkdevice = create_blk_device();
+
+        let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+        init_host_status.spec.validate().unwrap();
+
+        let volume_pairs = &init_host_status
+            .spec
+            .storage
+            .ab_update
+            .as_ref()
+            .unwrap()
+            .volume_pairs;
+        assert_eq!(volume_pairs.len(), 2);
+        assert!(volume_pairs.iter().all(|p| p.id != "usr-hash-sign"));
     }
 
     #[test]
