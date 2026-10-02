@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Error};
-use log::trace;
+use log::{trace, warn};
 use uuid::Uuid;
 
 use osutils::{
@@ -28,6 +28,27 @@ pub fn is_cih() -> Result<bool, Error> {
     let os_release = OsRelease::read().context("Failed to read OS release information")?;
 
     Ok(os_release.variant_id == Some("azurecontainerlinux".to_string()))
+}
+
+/// An expected partition on the CIH root disk, identified by label, along
+/// with its partition type, the actual `Partition` discovered on disk (if
+/// any), and whether the partition is required to be present.
+struct ExpectedPartition<'a> {
+    label: &'a str,
+    partition_type: PartitionType,
+    partition: Option<Partition>,
+    required: bool,
+}
+
+impl<'a> ExpectedPartition<'a> {
+    fn new(label: &'a str, partition_type: PartitionType, required: bool) -> Self {
+        Self {
+            label,
+            partition_type,
+            partition: None,
+            required,
+        }
+    }
 }
 
 /// Gathers information about the host's disk and partitions, framed by
@@ -75,19 +96,16 @@ fn inner_initial_host_status(
             .context("Root disk has invalid ptuuid")?,
     );
 
-    let mut expected_partition_info: Vec<(&str, PartitionType, Option<Partition>)> = vec![
-        ("efi-system", PartitionType::Esp, None),
-        // Note: this seems to be user-a currently
-        ("usr-a", PartitionType::Usr, None),
-        // Note: this doesn't seem to be present in images today
-        ("hash-a", PartitionType::UsrVerity, None),
-        // Note: this seems to be user-b currently
-        ("usr-b", PartitionType::Usr, None),
-        // Note: this doesn't seem to be present in images today
-        ("hash-b", PartitionType::UsrVerity, None),
-        // Note: this doesn't seem to be present in images today
-        ("oem", PartitionType::LinuxGeneric, None),
-        ("root", PartitionType::Root, None),
+    let mut expected_partition_info: Vec<ExpectedPartition> = vec![
+        ExpectedPartition::new("efi-system", PartitionType::Esp, true),
+        ExpectedPartition::new("usr-a", PartitionType::Usr, true),
+        ExpectedPartition::new("hash-a", PartitionType::UsrVerity, true),
+        ExpectedPartition::new("hash-sig-a", PartitionType::UsrVeritySig, false),
+        ExpectedPartition::new("usr-b", PartitionType::Usr, true),
+        ExpectedPartition::new("hash-b", PartitionType::UsrVerity, true),
+        ExpectedPartition::new("hash-sig-b", PartitionType::UsrVeritySig, false),
+        ExpectedPartition::new("oem", PartitionType::LinuxGeneric, true),
+        ExpectedPartition::new("root", PartitionType::Root, true),
     ];
 
     // Iterate through the current Host's partitions and create
@@ -107,23 +125,23 @@ fn inner_initial_host_status(
         //     been lowercased above.
         let expected_partition = expected_partition_info
             .iter_mut()
-            .find(|(expected_label, _, _)| *expected_label == label)
+            .find(|p| p.label == label)
             .context(format!(
                 "Unexpected partition label '{}' found on root disk",
                 label
             ))?;
         // Ensure there are not any duplicate partition labels.
-        if expected_partition.2.is_some() {
+        if expected_partition.partition.is_some() {
             return Err(anyhow!(
                 "Multiple identical partition labels found on root disk: '{}'",
                 label
             ));
         }
         trace!("Found partition '{}' on root disk", label);
-        expected_partition.2 = Some(Partition {
+        expected_partition.partition = Some(Partition {
             id: label.clone(),
             size: PartitionSize::from(p.size),
-            partition_type: expected_partition.1,
+            partition_type: expected_partition.partition_type,
             label: p.name.clone(),
             uuid: p.id.as_uuid(),
         });
@@ -154,14 +172,54 @@ fn inner_initial_host_status(
     // created, return error.
     let missing_partitions: Vec<_> = expected_partition_info
         .iter()
-        .filter(|k| k.2.is_none())
-        .map(|(label, _, _)| *label)
+        .filter(|p| p.partition.is_none() && p.required)
+        .map(|p| p.label)
         .collect();
     if !missing_partitions.is_empty() {
         return Err(anyhow!(
             "Missing partition labels found on root disk: {:#?}",
             missing_partitions
         ));
+    }
+
+    // The usr-verity hash signature partitions are optional today (older
+    // images may not have them), so only register an AB volume pair for
+    // them when both the "a" and "b" partitions were actually found. A
+    // partial find (exactly one of the two present) likely indicates a
+    // corrupted or incomplete disk layout: the lone partition is still
+    // surfaced in disks[0].partitions below, but silently gets no AB pair,
+    // so warn loudly here to make that case visible rather than letting it
+    // pass unnoticed.
+    let hash_sig_count = expected_partition_info
+        .iter()
+        .filter(|p| (p.label == "hash-sig-a" || p.label == "hash-sig-b") && p.partition.is_some())
+        .count();
+    if hash_sig_count == 1 {
+        warn!(
+            "Only one of hash-sig-a/hash-sig-b was found on root disk; skipping AB volume pair \
+             registration for usr-hash-sig. This may indicate a corrupted or incomplete disk layout."
+        );
+    }
+    let hash_sig_pair_found = hash_sig_count == 2;
+
+    let mut ab_volume_pairs = vec![
+        AbVolumePair {
+            id: "usr-data".to_string(),
+            volume_a_id: "usr-a".to_string(),
+            volume_b_id: "usr-b".to_string(),
+        },
+        AbVolumePair {
+            id: "usr-hash".to_string(),
+            volume_a_id: "hash-a".to_string(),
+            volume_b_id: "hash-b".to_string(),
+        },
+    ];
+    if hash_sig_pair_found {
+        ab_volume_pairs.push(AbVolumePair {
+            id: "usr-hash-sig".to_string(),
+            volume_a_id: "hash-sig-a".to_string(),
+            volume_b_id: "hash-sig-b".to_string(),
+        });
     }
 
     Ok(HostStatus {
@@ -173,7 +231,7 @@ fn inner_initial_host_status(
                     partition_table_type: PartitionTableType::Gpt,
                     partitions: expected_partition_info
                         .iter()
-                        .filter_map(|(_, _, p)| p.clone())
+                        .filter_map(|p| p.partition.clone())
                         .collect(),
                     ..Default::default()
                 }],
@@ -223,18 +281,7 @@ fn inner_initial_host_status(
                     ..Default::default()
                 }],
                 ab_update: Some(AbUpdate {
-                    volume_pairs: vec![
-                        AbVolumePair {
-                            id: "usr-data".to_string(),
-                            volume_a_id: "usr-a".to_string(),
-                            volume_b_id: "usr-b".to_string(),
-                        },
-                        AbVolumePair {
-                            id: "usr-hash".to_string(),
-                            volume_a_id: "hash-a".to_string(),
-                            volume_b_id: "hash-b".to_string(),
-                        },
-                    ],
+                    volume_pairs: ab_volume_pairs,
                 }),
                 ..Default::default()
             },
@@ -266,6 +313,8 @@ mod tests {
         MissingOne,
         ExtraOne,
         Duplicate,
+        WithHashSigPair,
+        WithHashSigPartial,
     }
     fn create_sfpart(
         label: String,
@@ -371,6 +420,33 @@ mod tests {
                     9,
                 ));
             }
+            TestPartitions::WithHashSigPair => {
+                // Add both usr-verity hash signature partitions
+                partitions.push(create_sfpart(
+                    "hash-sig-a".to_string(),
+                    &PathBuf::from("/dev/sda9"),
+                    DiscoverablePartitionType::UsrVeritySig,
+                    "123e4567-e89b-12d3-a456-426614174010",
+                    8,
+                ));
+                partitions.push(create_sfpart(
+                    "hash-sig-b".to_string(),
+                    &PathBuf::from("/dev/sda10"),
+                    DiscoverablePartitionType::UsrVeritySig,
+                    "123e4567-e89b-12d3-a456-426614174011",
+                    9,
+                ));
+            }
+            TestPartitions::WithHashSigPartial => {
+                // Add only one of the usr-verity hash signature partitions
+                partitions.push(create_sfpart(
+                    "hash-sig-a".to_string(),
+                    &PathBuf::from("/dev/sda9"),
+                    DiscoverablePartitionType::UsrVeritySig,
+                    "123e4567-e89b-12d3-a456-426614174010",
+                    8,
+                ));
+            }
         };
 
         SfDisk {
@@ -443,6 +519,84 @@ mod tests {
             init_host_status.spec.storage.disks[0].partitions[6].label,
             Some("root".to_string())
         );
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_without_hash_sig_partitions() {
+        // When the usr-verity hash signature partitions are absent (today's
+        // default), only the usr-data and usr-hash AB volume pairs should be
+        // registered.
+        let sfdisk = create_sfdisk("efi-system", TestPartitions::Correct);
+        let blkdevice = create_blk_device();
+
+        let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+        init_host_status.spec.validate().unwrap();
+
+        let volume_pairs = &init_host_status
+            .spec
+            .storage
+            .ab_update
+            .as_ref()
+            .unwrap()
+            .volume_pairs;
+        assert_eq!(volume_pairs.len(), 2);
+        assert!(volume_pairs.iter().all(|p| p.id != "usr-hash-sig"));
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_with_hash_sig_partitions() {
+        // When both usr-verity hash signature partitions are present, an
+        // additional AB volume pair should be registered for them.
+        let sfdisk = create_sfdisk("efi-system", TestPartitions::WithHashSigPair);
+        let blkdevice = create_blk_device();
+
+        let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+        init_host_status.spec.validate().unwrap();
+
+        let partitions = &init_host_status.spec.storage.disks[0].partitions;
+        assert!(partitions
+            .iter()
+            .any(|p| p.label == Some("hash-sig-a".to_string())));
+        assert!(partitions
+            .iter()
+            .any(|p| p.label == Some("hash-sig-b".to_string())));
+
+        let volume_pairs = &init_host_status
+            .spec
+            .storage
+            .ab_update
+            .as_ref()
+            .unwrap()
+            .volume_pairs;
+        assert_eq!(volume_pairs.len(), 3);
+        let hash_sig_pair = volume_pairs
+            .iter()
+            .find(|p| p.id == "usr-hash-sig")
+            .expect("expected 'usr-hash-sig' AB volume pair to be present");
+        assert_eq!(hash_sig_pair.volume_a_id, "hash-sig-a");
+        assert_eq!(hash_sig_pair.volume_b_id, "hash-sig-b");
+    }
+
+    #[test]
+    fn test_inner_initial_host_status_with_partial_hash_sig_partitions() {
+        // When only one of the usr-verity hash signature partitions is
+        // present, it should still be optional (no error), but no AB volume
+        // pair should be registered for it since it's not a complete pair.
+        let sfdisk = create_sfdisk("efi-system", TestPartitions::WithHashSigPartial);
+        let blkdevice = create_blk_device();
+
+        let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+        init_host_status.spec.validate().unwrap();
+
+        let volume_pairs = &init_host_status
+            .spec
+            .storage
+            .ab_update
+            .as_ref()
+            .unwrap()
+            .volume_pairs;
+        assert_eq!(volume_pairs.len(), 2);
+        assert!(volume_pairs.iter().all(|p| p.id != "usr-hash-sig"));
     }
 
     #[test]

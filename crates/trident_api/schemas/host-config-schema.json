@@ -928,6 +928,14 @@
           ]
         },
         {
+          "title": "Usr-verity hash signature partition",
+          "description": "x64: `e7bb33fb-06cf-4e81-8273-e543b413e2e2`",
+          "type": "string",
+          "enum": [
+            "usr-verity-sig"
+          ]
+        },
+        {
           "title": "Tmp partition",
           "description": "`7ec6f557-3bc5-4aca-b293-16ef5df639d1`",
           "type": "string",

@@ -249,6 +249,7 @@ defined in the [Discoverable Partition Specification
 | var            | `/var`                           |
 | usr            | `/usr`                           |
 | usr-verity     | None                             |
+| usr-verity-sig | None                             |
 | tmp            | `/var/tmp`                       |
 | linux-generic  | Any path                         |
 | srv            | `/srv`                           |
