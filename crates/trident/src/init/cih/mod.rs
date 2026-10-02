@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context, Error};
-use log::trace;
+use log::{trace, warn};
 use uuid::Uuid;
 
 use osutils::{
@@ -184,12 +184,23 @@ fn inner_initial_host_status(
 
     // The usr-verity hash signature partitions are optional today (older
     // images may not have them), so only register an AB volume pair for
-    // them when both the "a" and "b" partitions were actually found.
-    let hash_sig_pair_found = expected_partition_info
+    // them when both the "a" and "b" partitions were actually found. A
+    // partial find (exactly one of the two present) likely indicates a
+    // corrupted or incomplete disk layout: the lone partition is still
+    // surfaced in disks[0].partitions below, but silently gets no AB pair,
+    // so warn loudly here to make that case visible rather than letting it
+    // pass unnoticed.
+    let hash_sig_count = expected_partition_info
         .iter()
         .filter(|p| (p.label == "hash-sig-a" || p.label == "hash-sig-b") && p.partition.is_some())
-        .count()
-        == 2;
+        .count();
+    if hash_sig_count == 1 {
+        warn!(
+            "Only one of hash-sig-a/hash-sig-b was found on root disk; skipping AB volume pair \
+             registration for usr-hash-sig. This may indicate a corrupted or incomplete disk layout."
+        );
+    }
+    let hash_sig_pair_found = hash_sig_count == 2;
 
     let mut ab_volume_pairs = vec![
         AbVolumePair {
