@@ -9,6 +9,20 @@ SPEC.loader.exec_module(VM)
 
 
 class VmCommandTests(unittest.TestCase):
+    def test_vnc_is_headless_and_bound_to_loopback(self):
+        launch = VM.command(
+            Path("/tmp/installer-test.iso"),
+            Path("/tmp/installer-test-owned"),
+            Path("/usr/share/OVMF/OVMF_CODE_4M.fd"),
+            6144,
+            2,
+            "gtk",
+            vnc=1,
+        )
+        self.assertEqual(launch[launch.index("-display") + 1], "none")
+        self.assertEqual(launch[launch.index("-vnc") + 1], "127.0.0.1:1")
+        self.assertNotIn("gtk", launch)
+
     def test_vm_exposes_only_new_disposable_storage(self):
         scratch = Path("/tmp/installer-test-owned")
         launch = VM.command(
@@ -31,6 +45,7 @@ class VmCommandTests(unittest.TestCase):
         self.assertIn("virtio-blk-pci,drive=hd0,bootindex=1", launch)
         self.assertIn("ide-cd,bus=ide.0,drive=cd0,bootindex=2", launch)
         self.assertIn("gtk", launch)
+        self.assertNotIn("-vnc", launch)
         self.assertEqual(
             launch[launch.index("-serial") + 1], f"file:{scratch}/serial.log"
         )

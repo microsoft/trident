@@ -18,11 +18,11 @@ CODE_CANDIDATES = [
 ]
 
 
-def command(iso, scratch, code, memory, cpus, display):
+def command(iso, scratch, code, memory, cpus, display, vnc=None):
     acceleration = (
         ["-enable-kvm", "-cpu", "host"] if os.access("/dev/kvm", os.W_OK) else []
     )
-    return [
+    launch = [
         "qemu-system-x86_64",
         *acceleration,
         "-m",
@@ -46,10 +46,13 @@ def command(iso, scratch, code, memory, cpus, display):
         "-nic",
         "user,model=virtio-net-pci",
         "-display",
-        display,
+        "none" if vnc is not None else display,
         "-serial",
         f"file:{scratch / 'serial.log'}",
     ]
+    if vnc is not None:
+        launch.extend(["-vnc", f"127.0.0.1:{vnc}"])
+    return launch
 
 
 def main():
@@ -57,7 +60,16 @@ def main():
         description="Boot the installer ISO in a disposable UEFI VM"
     )
     parser.add_argument("--iso", type=Path)
-    parser.add_argument("--display", default="gtk", choices=["gtk", "sdl", "none"])
+    displays = parser.add_mutually_exclusive_group()
+    displays.add_argument("--display", default="gtk", choices=["gtk", "sdl", "none"])
+    displays.add_argument(
+        "--vnc",
+        type=int,
+        nargs="?",
+        const=1,
+        metavar="DISPLAY",
+        help="Headless VNC on localhost; display 1 is TCP 5901 (default)",
+    )
     parser.add_argument("--memory", type=int, default=6144, help="Guest RAM in MiB")
     parser.add_argument("--cpus", type=int, default=2)
     parser.add_argument(
@@ -76,6 +88,8 @@ def main():
         help="Print launch command without creating or booting a VM",
     )
     args = parser.parse_args()
+    if args.vnc is not None and not 0 <= args.vnc <= 99:
+        parser.error("--vnc display must be between 0 and 99")
     for tool in ["qemu-system-x86_64", "qemu-img"]:
         if not shutil.which(tool):
             parser.error(f"{tool} is required")
@@ -111,6 +125,7 @@ def main():
                     args.memory,
                     args.cpus,
                     args.display,
+                    args.vnc,
                 )
             )
         )
@@ -132,7 +147,9 @@ def main():
             ],
             check=True,
         )
-        launch = command(iso, scratch, code, args.memory, args.cpus, args.display)
+        launch = command(
+            iso, scratch, code, args.memory, args.cpus, args.display, args.vnc
+        )
         print(
             f"ISO: {iso}\nDisposable disk: {scratch / 'disk.qcow2'}\nSerial log: {scratch / 'serial.log'}",
             flush=True,
@@ -141,6 +158,14 @@ def main():
             "Disk-first UEFI boot: the blank disk falls through to the ISO; after Reboot the installed OS wins.",
             flush=True,
         )
+        if args.vnc is not None:
+            port = 5900 + args.vnc
+            print(
+                f"VNC: localhost:{port} only. On your local machine, tunnel with:\n"
+                f"  ssh -N -L {port}:127.0.0.1:{port} USER@HOST\n"
+                f"Then open vnc://127.0.0.1:{port} in a VNC client.",
+                flush=True,
+            )
         process = subprocess.Popen(launch)
         try:
             status = process.wait()
