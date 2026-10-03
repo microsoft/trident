@@ -12,6 +12,10 @@ python3 test/run.py --display gtk
 The payload is copied into the ISO's `cosi/` folder. No HC is supplied, so
 autorun chooses StreamDisk. `reboot = false` leaves the success screen visible;
 use its Reboot button to boot the installed OS.
+The ISO disables `getty@tty1.service` and logind's automatic virtual gettys so
+they cannot reclaim the installer's graphical keyboard after startup. The
+installer mirrors source-discovery stages to the serial log; an idle-looking
+progress screen can be diagnosed there without sending keys to the guest.
 
 The generated ISO is `test/artifacts/installer_amd64_iso.iso`. This local build
 uses a pre-existing regular Azure Linux 3.0.20260909 COSI (175 MB compressed,
@@ -31,6 +35,10 @@ python3 test/run.py --dry-run
 `--keep` retains the disk, firmware variables and serial log for inspection.
 Otherwise that run's private `.vm/` directory is removed after QEMU exits.
 GTK uses the graphical installer console; serial status is captured separately.
+Do not rebuild over an ISO still attached to a running VM. Use
+`python3 test/build.py --output-dir test/.work/next-iso` and then pass
+`--iso test/.work/next-iso/installer_amd64_iso.iso` to `run.py` to test a
+replacement without changing the running guest's CD-ROM.
 
 ## Over SSH, including from a Wayland desktop
 
@@ -48,7 +56,10 @@ ssh -N -L 5901:127.0.0.1:5901 USER@HOST
 
 Connect a VNC client such as GNOME Connections or Remmina to
 `vnc://127.0.0.1:5901`. QEMU binds VNC to loopback only; the SSH tunnel carries
-the connection. No X11 forwarding or desktop environment changes are needed.
+the connection. The guest stays paused until the viewer connects, so there is
+no setup race. The screen is initially black while the guest is paused; boot
+begins automatically when the viewer connects. No X11 forwarding or desktop
+environment changes are needed.
 Use `--vnc 2` and tunnel TCP 5902 if display 1 is already occupied.
 
 ## Build prerequisites

@@ -149,6 +149,10 @@ impl Model {
 
     fn event(&mut self, event: Event) -> Option<String> {
         match event {
+            Event::Preparing(activity) => {
+                self.activity = activity;
+                Some(self.activity.clone())
+            }
             Event::Prepared {
                 description,
                 reboot,
@@ -1180,6 +1184,17 @@ mod tests {
         assert_eq!(model.verbosity, LevelFilter::Off);
         assert!(!log_visible(LogLevel::Error, model.verbosity));
         assert_eq!(model.logs.len(), 2);
+    }
+
+    #[test]
+    fn preparation_steps_replace_the_idle_status() {
+        let mut model = Model::new();
+        let step = "Looking for installer media by filesystem label";
+        assert_eq!(
+            model.event(Event::Preparing(step.into())),
+            Some(step.into())
+        );
+        assert_eq!(model.activity, step);
     }
 
     #[test]

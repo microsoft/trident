@@ -184,6 +184,12 @@ def main():
         action="store_true",
         help="Stage/validate inputs without building the ISO",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=HERE / "artifacts",
+        help="Build output directory (use a different path while an older ISO is attached to a VM)",
+    )
     args = parser.parse_args()
     for tool in ["docker", "tailor", "make"]:
         if not shutil.which(tool):
@@ -206,6 +212,8 @@ def main():
             str(HERE / "tailor.yaml"),
             "build",
             "installer",
+            "--output-dir",
+            str(args.output_dir.resolve()),
             "--log-dir",
             str(WORK / "logs"),
         ],

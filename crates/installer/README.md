@@ -78,6 +78,9 @@ On the ISO, `--system-console` prefers the graphical virtual console for local
 keyboard/monitor and BMC KVM, independent of `console=` order. An active serial
 console is the fallback. The chosen getty is stopped; other active consoles
 receive plain status once and identify the interactive console.
+The ISO must also disable `getty@tty1.service` and suppress logind's automatic
+virtual gettys (`NAutoVTs=0`, `ReserveVT=0`): stopping a getty before
+`getty.target` starts does not prevent it from claiming tty1 later.
 
 No ordinary source picker or confirmation precedes autorun. Missing sources
 and failures show scrollable error details. Continue opens recovery: Shell,

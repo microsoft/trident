@@ -10,7 +10,7 @@ use std::{
 
 use log::trace;
 use nix::{
-    sys::signal::{self, SigSet, SigmaskHow, Signal},
+    sys::signal::{self, Signal},
     unistd::{self, Pid},
 };
 use strum_macros::IntoStaticStr;
@@ -18,6 +18,8 @@ use strum_macros::IntoStaticStr;
 use trident_api::error::{
     ExecutionEnvironmentMisconfigurationError, ServicingError, TridentError, TridentResultExt,
 };
+
+use crate::terminal;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DependencyError {
@@ -248,7 +250,7 @@ impl Command {
                 .process_group(0);
             let mut child = command.spawn()?;
             let child_group = Pid::from_raw(i32::try_from(child.id()).map_err(io::Error::other)?);
-            let foreground = Self::set_foreground_group(terminal, child_group);
+            let foreground = terminal::set_foreground_group(terminal, child_group);
             if let Err(error) = foreground {
                 child.kill()?;
                 child.wait()?;
@@ -256,7 +258,7 @@ impl Command {
             }
             let continued = signal::killpg(child_group, Signal::SIGCONT);
             let status = child.wait();
-            let restored = Self::set_foreground_group(terminal, parent_group);
+            let restored = terminal::set_foreground_group(terminal, parent_group);
             restored?;
             continued?;
             Ok(Output {
@@ -279,17 +281,6 @@ impl Command {
     pub fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
         self.args.push(arg.as_ref().to_os_string());
         self
-    }
-
-    fn set_foreground_group(terminal: &File, group: Pid) -> io::Result<()> {
-        let mut blocked = SigSet::empty();
-        blocked.add(Signal::SIGTTOU);
-        let mut previous = SigSet::empty();
-        signal::pthread_sigmask(SigmaskHow::SIG_BLOCK, Some(&blocked), Some(&mut previous))?;
-        let result = unistd::tcsetpgrp(terminal, group);
-        signal::pthread_sigmask(SigmaskHow::SIG_SETMASK, Some(&previous), None)?;
-        result?;
-        Ok(())
     }
 
     pub fn with_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
