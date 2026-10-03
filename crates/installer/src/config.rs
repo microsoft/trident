@@ -19,6 +19,8 @@ pub(super) const DEFAULT_MEDIA_LABEL: &str = "TRIDENT_INSTALL";
 pub(super) struct Config {
     pub mode: Mode,
     #[serde(default)]
+    pub serial_mode: SerialMode,
+    #[serde(default)]
     pub media: Media,
     #[serde(default)]
     pub autorun: Autorun,
@@ -30,6 +32,14 @@ pub(super) enum Mode {
     #[default]
     Autorun,
     Interactive,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub(super) enum SerialMode {
+    #[default]
+    Logs,
+    Ui,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -99,6 +109,10 @@ impl Config {
 
     fn validate(&self) -> Result<(), Error> {
         ensure!(
+            self.serial_mode == SerialMode::Logs,
+            "serialMode = \"ui\" is not implemented yet; use \"logs\""
+        );
+        ensure!(
             self.media.cdrom_label.is_none() || self.media.mount_path.is_none(),
             "media.cdromLabel and media.mountPath are mutually exclusive"
         );
@@ -146,6 +160,10 @@ impl Config {
         };
         let overlay: TomlValue = toml::from_str(&text)
             .with_context(|| format!("Invalid media configuration '{}'", path.display()))?;
+        ensure!(
+            overlay.get("serialMode").is_none(),
+            "Media configuration cannot change bootstrap serialMode"
+        );
         if let Some(media) = overlay.get("media") {
             ensure!(
                 media.get("cdromLabel").is_none() && media.get("mountPath").is_none(),
@@ -234,12 +252,20 @@ mod tests {
         Config::parse("").unwrap_err();
         Config::parse("mode = 'autorun'\nunknown = true").unwrap_err();
         let config = Config::parse("mode = 'autorun'").unwrap();
+        assert_eq!(config.serial_mode, SerialMode::Logs);
         assert!(config.autorun.reboot);
         assert_eq!(config.media.cosi_directory, Path::new("cosi"));
         Config::parse("mode = 'interactive'")
             .unwrap()
             .require_autorun()
             .unwrap_err();
+    }
+
+    #[test]
+    fn serial_ui_mode_is_reserved_not_silently_enabled() {
+        Config::parse("mode = 'autorun'\nserialMode = 'logs'").unwrap();
+        let error = Config::parse("mode = 'autorun'\nserialMode = 'ui'").unwrap_err();
+        assert!(error.to_string().contains("not implemented"), "{error:#}");
     }
 
     #[test]
@@ -302,6 +328,8 @@ mod tests {
         assert!(!config.autorun.reboot);
         assert_eq!(config.media.cosi_directory, Path::new("cosi"));
         fs::write(&path, "[media]\ncdromLabel = 'OTHER'").unwrap();
+        config.overlay(root.path()).unwrap_err();
+        fs::write(&path, "serialMode = 'ui'").unwrap();
         config.overlay(root.path()).unwrap_err();
     }
 }

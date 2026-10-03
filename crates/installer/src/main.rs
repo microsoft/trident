@@ -1,18 +1,21 @@
 use std::{
     fs::{self, OpenOptions, Permissions},
+    io::Write,
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::PathBuf,
     process::ExitCode,
+    sync::OnceLock,
 };
 
 use anyhow::{Context, Error};
 use clap::Parser;
 use log::{warn, LevelFilter};
 use tokio::runtime::Builder;
+use tokio::sync::mpsc::UnboundedSender;
 
 use osutils::{systemd, terminal};
 
-use crate::{config::DEFAULT_CONFIG, demo::Scenario, ui::Output};
+use crate::{client::Event, config::DEFAULT_CONFIG, demo::Scenario, ui::Output};
 
 mod client;
 mod config;
@@ -24,6 +27,7 @@ const LOG_PATH: &str = "/var/log/trident-installer.log";
 const PRIVATE_FILE_MODE: u32 = 0o600;
 const WORKER_THREADS: usize = 2;
 const APPLICATION_NAME: &str = "Trident Linux Installer";
+static INSTALLER_LOG_TX: OnceLock<UnboundedSender<Event>> = OnceLock::new();
 
 #[derive(Debug, Parser)]
 #[command(
@@ -45,6 +49,26 @@ struct Args {
 fn main() -> ExitCode {
     env_logger::Builder::from_default_env()
         .filter_level(LevelFilter::Info)
+        .filter_module("installer", LevelFilter::Trace)
+        .filter_module("osutils", LevelFilter::Trace)
+        .format(|buf, record| {
+            let message = record.args().to_string();
+            if let Some(tx) = INSTALLER_LOG_TX.get() {
+                if tx
+                    .send(Event::InstallerLog {
+                        level: record.level(),
+                        message: message.clone(),
+                    })
+                    .is_err()
+                {
+                    writeln!(
+                        buf,
+                        "Installer log receiver unavailable; entry retained in journal"
+                    )?;
+                }
+            }
+            writeln!(buf, "[{} {}] {}", record.level(), record.target(), message)
+        })
         .init();
     let args = Args::parse();
     let result = Builder::new_multi_thread()
@@ -66,7 +90,6 @@ async fn run(args: Args) -> Result<(), Error> {
     let mut output = Output {
         log: None,
         mirrors: Vec::new(),
-        control: "current terminal".into(),
     };
     if args.demo.is_none() {
         output.log = Some(
@@ -80,21 +103,11 @@ async fn run(args: Args) -> Result<(), Error> {
         fs::set_permissions(LOG_PATH, Permissions::from_mode(PRIVATE_FILE_MODE))?;
         if args.system_console {
             let consoles = terminal::active_consoles()?;
-            let primary = terminal::preferred_console(&consoles)?;
-            let name = primary
-                .file_name()
-                .context("Console has no device name")?
-                .to_string_lossy();
-            let unit =
-                if name.starts_with("tty") && name.chars().skip(3).all(|c| c.is_ascii_digit()) {
-                    format!("getty@{name}.service")
-                } else {
-                    format!("serial-getty@{name}.service")
-                };
-            systemd::stop_unit(&unit)?;
-            let _terminal = terminal::attach(primary)?;
-            output.control = primary.display().to_string();
-            for path in consoles.iter().filter(|path| path.as_path() != primary) {
+            if let Some(graphical) = consoles.iter().find(|path| path.ends_with("tty1")) {
+                systemd::stop_unit("getty@tty1.service")?;
+                let _terminal = terminal::attach(graphical)?;
+            }
+            for path in consoles.iter().filter(|path| !path.ends_with("tty1")) {
                 match OpenOptions::new().write(true).open(path) {
                     Ok(terminal) => output.mirrors.push((path.clone(), terminal)),
                     Err(error) => warn!("Could not mirror status to '{}': {error}", path.display()),

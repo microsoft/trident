@@ -12,6 +12,10 @@ python3 test/run.py --display gtk
 The payload is copied into the ISO's `cosi/` folder. No HC is supplied, so
 autorun chooses StreamDisk. `reboot = false` leaves the success screen visible;
 use its Reboot button to check what the installed disk boots.
+`serialMode = "logs"` routes every INST and TRIDENT log record to the serial
+console as `MM:SS [SOURCE:LEVEL] message`, independent of TUI verbosity.
+This ISO suppresses the serial getty prompt and normal kernel/systemd status
+output; UEFI firmware output may still appear before the installer starts.
 The ISO disables `getty@tty1.service` and logind's automatic virtual gettys so
 they cannot reclaim the installer's graphical keyboard after startup. The
 installer mirrors source-discovery stages to the serial log; an idle-looking

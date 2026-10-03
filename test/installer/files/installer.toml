@@ -1,4 +1,5 @@
 mode = "autorun"
+serialMode = "logs"
 
 [media]
 cdromLabel = "CDROM"

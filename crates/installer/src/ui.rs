@@ -38,7 +38,7 @@ use crate::{
     config::Config,
     demo::{self, Scenario},
     source::{self, Request},
-    APPLICATION_NAME,
+    APPLICATION_NAME, INSTALLER_LOG_TX,
 };
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(100);
@@ -93,13 +93,75 @@ enum Screen {
     Menu,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogSource {
+    Inst,
+    Trident,
+}
+
+impl LogSource {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Inst => "INST",
+            Self::Trident => "TRIDENT",
+        }
+    }
+
+    fn color(self) -> Color {
+        match self {
+            Self::Inst => Color::LightMagenta,
+            Self::Trident => Color::LightGreen,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LogEntry {
+    elapsed: Duration,
+    source: LogSource,
+    level: LogLevel,
+    message: String,
+}
+
+impl LogEntry {
+    fn prefix(&self) -> String {
+        let seconds = self.elapsed.as_secs();
+        format!("{:02}:{:02} [", seconds / 60, seconds % 60)
+    }
+
+    fn plain(&self) -> String {
+        let message = display_text(&self.message).replace('\n', "\\n");
+        format!(
+            "{}{}:{}] {message}",
+            self.prefix(),
+            self.source.label(),
+            self.level
+        )
+    }
+
+    fn styled(&self) -> Line<'_> {
+        let level = Style::default().fg(log_color(self.level));
+        Line::from(vec![
+            Span::raw(self.prefix()),
+            Span::styled(
+                self.source.label(),
+                Style::default().fg(self.source.color()),
+            ),
+            Span::raw(":"),
+            Span::styled(self.level.to_string(), level.add_modifier(Modifier::BOLD)),
+            Span::raw("] "),
+            Span::styled(self.message.as_str(), level),
+        ])
+    }
+}
+
 #[derive(Debug)]
 struct Model {
     screen: Screen,
     source: String,
     activity: String,
     details: String,
-    logs: VecDeque<(LogLevel, String)>,
+    logs: VecDeque<LogEntry>,
     verbosity: LevelFilter,
     verbosity_open: bool,
     verbosity_selected: usize,
@@ -122,9 +184,9 @@ impl Model {
             activity: "Preparing installer".into(),
             details: String::new(),
             logs: VecDeque::new(),
-            verbosity: LevelFilter::Info,
+            verbosity: LevelFilter::Debug,
             verbosity_open: false,
-            verbosity_selected: 3,
+            verbosity_selected: 4,
             selected: 0,
             scroll: 0,
             url: String::new(),
@@ -147,58 +209,81 @@ impl Model {
         self.screen = Screen::Error;
     }
 
-    fn event(&mut self, event: Event) -> Option<String> {
+    fn log(&mut self, source: LogSource, level: LogLevel, message: String) -> LogEntry {
+        let entry = LogEntry {
+            elapsed: self.started.elapsed(),
+            source,
+            level,
+            message: display_text(&message),
+        };
+        let mut characters = entry.message.chars();
+        let mut displayed = characters
+            .by_ref()
+            .take(DISPLAY_LOG_CHARACTERS)
+            .collect::<String>()
+            .replace('\n', "\\n");
+        if characters.next().is_some() {
+            displayed.push_str(" [Display shortened; full record preserved in diagnostic log]");
+        }
+        if self.logs.len() == LOG_CAPACITY {
+            self.logs.pop_front();
+        }
+        self.logs.push_back(LogEntry {
+            message: displayed,
+            ..entry.clone()
+        });
+        entry
+    }
+
+    fn event(&mut self, event: Event) -> LogEntry {
         match event {
+            Event::InstallerLog { level, message } => self.log(
+                LogSource::Inst,
+                match level {
+                    Level::Error => LogLevel::Error,
+                    Level::Warn => LogLevel::Warn,
+                    Level::Info => LogLevel::Info,
+                    Level::Debug => LogLevel::Debug,
+                    Level::Trace => LogLevel::Trace,
+                },
+                message,
+            ),
             Event::Preparing(activity) => {
-                self.activity = activity;
-                Some(self.activity.clone())
+                self.activity = activity.clone();
+                self.log(LogSource::Inst, LogLevel::Info, activity)
             }
             Event::Prepared {
                 description,
                 reboot,
                 stream_image,
             } => {
-                self.source = description;
+                self.source = description.clone();
                 self.reboot = reboot;
                 self.stream_image = stream_image;
-                Some(self.source.clone())
+                self.log(LogSource::Inst, LogLevel::Info, description)
             }
             Event::AlreadyPresent(details) => {
-                self.details = details;
+                self.details = details.clone();
                 self.reboot_at = None;
                 self.screen = Screen::AlreadyPresent;
                 self.selected = 0;
-                Some(self.details.clone())
+                self.log(LogSource::Inst, LogLevel::Warn, details)
             }
             Event::Error { details, uncertain } => {
-                self.fail(details, uncertain);
-                Some(self.details.clone())
+                self.fail(details.clone(), uncertain);
+                self.log(LogSource::Inst, LogLevel::Error, details)
             }
             Event::Response(response) => match response.response {
                 Some(ResponseBody::Started(_)) => {
                     self.activity = "Servicing started".into();
-                    Some(self.activity.clone())
+                    self.log(LogSource::Inst, LogLevel::Info, self.activity.clone())
                 }
                 Some(ResponseBody::Log(log)) => {
                     let level = log.level();
-                    let mut characters = log.message.chars();
-                    let mut message = display_text(
-                        &characters
-                            .by_ref()
-                            .take(DISPLAY_LOG_CHARACTERS)
-                            .collect::<String>(),
-                    );
-                    if characters.next().is_some() {
-                        message.push_str("\n[Display shortened; the full record is preserved in the diagnostic log]");
-                    }
                     if level == LogLevel::Info {
-                        self.activity = message.clone();
+                        self.activity = display_text(&log.message);
                     }
-                    if self.logs.len() == LOG_CAPACITY {
-                        self.logs.pop_front();
-                    }
-                    self.logs.push_back((level, message.clone()));
-                    Some(format!("{level}: {message}"))
+                    self.log(LogSource::Trident, level, log.message)
                 }
                 Some(ResponseBody::Completed(completed)) => match client::completion(completed) {
                     Ok(Completion::Success {
@@ -216,24 +301,23 @@ impl Model {
                         };
                         self.reboot_at = (self.reboot && reboot_required && performed)
                             .then(|| Instant::now() + REBOOT_DELAY);
-                        Some(self.details.clone())
+                        self.log(LogSource::Inst, LogLevel::Info, self.details.clone())
                     }
                     Ok(Completion::Failure(details)) => {
                         self.uncertain = false;
-                        self.fail(details, false);
-                        Some(self.details.clone())
+                        self.fail(details.clone(), false);
+                        self.log(LogSource::Inst, LogLevel::Error, details)
                     }
                     Err(error) => {
-                        self.fail(format!("{error:#}"), true);
-                        Some(self.details.clone())
+                        let details = format!("{error:#}");
+                        self.fail(details.clone(), true);
+                        self.log(LogSource::Inst, LogLevel::Error, details)
                     }
                 },
                 None => {
-                    self.fail(
-                        "Response has no body; installation outcome is unknown".into(),
-                        true,
-                    );
-                    Some(self.details.clone())
+                    let details = "Response has no body; installation outcome is unknown";
+                    self.fail(details.into(), true);
+                    self.log(LogSource::Inst, LogLevel::Error, details.into())
                 }
             },
         }
@@ -497,7 +581,6 @@ impl DemoShell {
 pub(super) struct Output {
     pub log: Option<File>,
     pub mirrors: Vec<(PathBuf, File)>,
-    pub control: String,
 }
 
 impl Output {
@@ -509,14 +592,9 @@ impl Output {
         Ok(())
     }
 
-    fn announce(&mut self, message: &str) {
+    fn announce(&mut self, entry: &LogEntry) {
         self.mirrors.retain_mut(|(path, mirror)| {
-            if let Err(error) = writeln!(
-                mirror,
-                "\r\n[installer; control {}] {}",
-                self.control,
-                display_text(message)
-            ) {
+            if let Err(error) = writeln!(mirror, "{}", entry.plain()) {
                 warn!(
                     "Stopped mirroring installer status to '{}': {error}",
                     path.display()
@@ -609,6 +687,10 @@ pub(super) async fn run(
     mut output: Output,
 ) -> Result<(), Error> {
     let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
+    let (log_tx, mut log_rx) = mpsc::unbounded_channel();
+    INSTALLER_LOG_TX
+        .set(log_tx)
+        .map_err(|_| anyhow!("Installer log receiver already initialized"))?;
     let mut interrupts = unix::signal(SignalKind::interrupt())?;
     let mut termination = unix::signal(SignalKind::terminate())?;
     let mut model = Model::new();
@@ -631,29 +713,31 @@ pub(super) async fn run(
     let mut printed_screen = None;
     loop {
         for _ in 0..EVENT_CAPACITY {
-            let Ok(event) = rx.try_recv() else { break };
-            output.record(&event)?;
-            let level = match &event {
-                Event::Response(response) => match &response.response {
-                    Some(ResponseBody::Log(log)) => Some(log.level()),
-                    _ => None,
+            let event = match rx.try_recv() {
+                Ok(event) => event,
+                Err(_) => match log_rx.try_recv() {
+                    Ok(event) => event,
+                    Err(_) => break,
                 },
-                _ => None,
             };
-            let visible = level.is_none_or(|level| log_visible(level, model.verbosity));
-            let mirrored = level.is_none_or(|level| log_visible(level, LevelFilter::Info));
-            if let Some(message) = model.event(event) {
-                if mirrored {
-                    output.announce(&message);
-                }
-                if display.is_none()
-                    && shell.is_none()
-                    && demo_shell.is_none()
-                    && (interactive || !model.failed)
-                    && visible
-                {
-                    println!("{}", display_text(&message));
-                }
+            output.record(&event)?;
+            let already_present = matches!(event, Event::AlreadyPresent(_));
+            let entry = model.event(event);
+            output.announce(&entry);
+            if display.is_none()
+                && shell.is_none()
+                && demo_shell.is_none()
+                && log_visible(entry.level, model.verbosity)
+            {
+                println!("{}", entry.plain());
+            }
+            if !interactive && already_present {
+                model.failed = true;
+                let explanation =
+                    "Already installed; remove the media or confirm a force reinstall on a graphical console";
+                model.details.push_str(&format!("\n{explanation}"));
+                let error = model.log(LogSource::Inst, LogLevel::Error, explanation.into());
+                output.announce(&error);
             }
         }
         if worker.as_ref().is_some_and(JoinHandle::is_finished) {
@@ -693,6 +777,12 @@ pub(super) async fn run(
         {
             model.reboot_at = None;
             if scenario.is_none() {
+                let reboot = model.log(
+                    LogSource::Inst,
+                    LogLevel::Info,
+                    "Rebooting after successful installation".into(),
+                );
+                output.announce(&reboot);
                 match systemd::reboot() {
                     Ok(()) => return Ok(()),
                     Err(error) => model.fail(format!("Failed to reboot: {error:#}"), false),
@@ -700,7 +790,7 @@ pub(super) async fn run(
             }
         }
         if !interactive {
-            if worker.is_none() && rx.is_empty() {
+            if worker.is_none() && rx.is_empty() && log_rx.is_empty() && model.reboot_at.is_none() {
                 if model.failed {
                     return Err(anyhow!(
                         "{}\nRecovery requires an interactive terminal.",
@@ -796,18 +886,32 @@ pub(super) async fn run(
                                 model.screen = Screen::Success;
                                 model.selected = 0;
                             }
-                            Action::Reboot => match systemd::reboot() {
-                                Ok(()) => return Ok(()),
-                                Err(error) => {
-                                    model.fail(format!("Failed to reboot: {error:#}"), false)
+                            Action::Reboot => {
+                                let action = model.log(
+                                    LogSource::Inst,
+                                    LogLevel::Info,
+                                    "Reboot requested".into(),
+                                );
+                                output.announce(&action);
+                                if let Err(error) = systemd::reboot() {
+                                    model.fail(format!("Failed to reboot: {error:#}"), false);
+                                } else {
+                                    return Ok(());
                                 }
-                            },
-                            Action::Poweroff => match systemd::poweroff() {
-                                Ok(()) => return Ok(()),
-                                Err(error) => {
-                                    model.fail(format!("Failed to shut down: {error:#}"), false)
+                            }
+                            Action::Poweroff => {
+                                let action = model.log(
+                                    LogSource::Inst,
+                                    LogLevel::Info,
+                                    "Shutdown requested".into(),
+                                );
+                                output.announce(&action);
+                                if let Err(error) = systemd::poweroff() {
+                                    model.fail(format!("Failed to shut down: {error:#}"), false);
+                                } else {
+                                    return Ok(());
                                 }
-                            },
+                            }
                         }
                     }
                 }
@@ -852,10 +956,10 @@ fn log_visible(level: LogLevel, verbosity: LevelFilter) -> bool {
 fn log_color(level: LogLevel) -> Color {
     match level {
         LogLevel::Error => Color::LightRed,
-        LogLevel::Warn | LogLevel::Unspecified => Color::Yellow,
-        LogLevel::Info => Color::Green,
-        LogLevel::Debug => Color::Cyan,
-        LogLevel::Trace => Color::DarkGray,
+        LogLevel::Warn | LogLevel::Unspecified => Color::Rgb(255, 165, 0),
+        LogLevel::Info => Color::LightBlue,
+        LogLevel::Debug => Color::Rgb(170, 100, 255),
+        LogLevel::Trace => Color::Gray,
     }
 }
 
@@ -971,21 +1075,33 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
             Color::Cyan
         },
     );
-    frame.render_widget(
-        Paragraph::new(display_text(&model.source)).wrap(Wrap { trim: false }),
-        areas[1],
-    );
+    if areas[1].width > 22 {
+        let operation =
+            Layout::horizontal([Constraint::Min(0), Constraint::Length(21)]).split(areas[1]);
+        frame.render_widget(
+            Paragraph::new(display_text(&model.source)).wrap(Wrap { trim: false }),
+            operation[0],
+        );
+        frame.render_widget(
+            Paragraph::new(format!("Logs: {} [V]", model.verbosity))
+                .alignment(Alignment::Right)
+                .style(Style::default().fg(Color::Cyan)),
+            operation[1],
+        );
+    } else {
+        frame.render_widget(
+            Paragraph::new(display_text(&model.source)).wrap(Wrap { trim: false }),
+            areas[1],
+        );
+    }
     let content = match model.screen {
         Screen::Progress | Screen::Menu => {
             let mut lines = vec![Line::from(Span::styled(model.activity.clone(), Style::default().fg(Color::Cyan))), Line::default()];
-            let logs = model.logs.iter().filter(|(level, _)| log_visible(*level, model.verbosity)).collect::<Vec<_>>();
+            let logs = model.logs.iter().filter(|entry| log_visible(entry.level, model.verbosity)).collect::<Vec<_>>();
             let visible = usize::from(areas[2].height.saturating_sub(4));
             let end = logs.len().saturating_sub(usize::from(model.scroll).min(logs.len().saturating_sub(1)));
             let start = end.saturating_sub(visible);
-            lines.extend(logs[start..end].iter().map(|(level, message)| Line::from(vec![
-                Span::styled(format!("{:<5} ", level.to_string()), Style::default().fg(log_color(*level)).add_modifier(Modifier::BOLD)),
-                Span::styled(message.clone(), Style::default().fg(log_color(*level))),
-            ])));
+            lines.extend(logs[start..end].iter().map(|entry| entry.styled()));
             Paragraph::new(lines).block(block("Activity / logs")).wrap(Wrap { trim: false })
         }
         Screen::StreamUrl | Screen::HostConfigUrl => Paragraph::new(format!("Enter an http:// or https:// URL:\n\n{}\n\nEnter: start   Esc: back", display_text(&model.url)))
@@ -1030,8 +1146,7 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         "Enter: start   Esc: return to recovery".to_owned()
     } else {
         format!(
-            "Tab/Arrows: choose  Enter: select  S: shell  V: {}  Esc: menu{}",
-            model.verbosity,
+            "Tab/Arrows: choose  Enter: select  S: shell  V: logs  Esc: menu{}",
             if demo { "   Q: quit" } else { "" }
         )
     };
@@ -1093,6 +1208,7 @@ mod tests {
 
     use ratatui::backend::TestBackend;
     use tempfile::TempDir;
+    use trident_proto::v1::{Completed, RebootStatus, ServicingResponse, StatusCode};
 
     #[test]
     fn unavailable_serial_mirror_does_not_stop_the_installer() {
@@ -1115,14 +1231,23 @@ mod tests {
                         .unwrap(),
                 ),
             ],
-            control: "/dev/tty1".into(),
         };
-        output.announce("Preparing installer");
+        let entry = LogEntry {
+            elapsed: Duration::from_secs(125),
+            source: LogSource::Inst,
+            level: LogLevel::Info,
+            message: "Preparing installer".into(),
+        };
+        output.announce(&entry);
         assert_eq!(output.mirrors.len(), 1);
-        output.announce("Still running");
-        assert!(fs::read_to_string(transcript)
-            .unwrap()
-            .contains("Still running"));
+        output.announce(&LogEntry {
+            message: "Still running".into(),
+            ..entry
+        });
+        assert_eq!(
+            fs::read_to_string(transcript).unwrap(),
+            "02:05 [INST:INFO] Preparing installer\n02:05 [INST:INFO] Still running\n"
+        );
     }
 
     fn enter() -> KeyEvent {
@@ -1198,16 +1323,16 @@ mod tests {
     #[test]
     fn live_verbosity_picker_filters_without_discarding_logs() {
         let mut model = Model::new();
-        model
-            .logs
-            .push_back((LogLevel::Info, "ordinary event".into()));
-        model
-            .logs
-            .push_back((LogLevel::Trace, "diagnostic detail".into()));
+        model.log(LogSource::Inst, LogLevel::Info, "ordinary event".into());
+        model.log(
+            LogSource::Trident,
+            LogLevel::Trace,
+            "diagnostic detail".into(),
+        );
+        assert_eq!(model.verbosity, LevelFilter::Debug);
         assert!(!log_visible(LogLevel::Trace, model.verbosity));
         model.key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE), true);
         assert!(model.verbosity_open);
-        model.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), true);
         model.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), true);
         model.key(enter(), true);
         assert_eq!(model.verbosity, LevelFilter::Trace);
@@ -1226,10 +1351,9 @@ mod tests {
     fn preparation_steps_replace_the_idle_status() {
         let mut model = Model::new();
         let step = "Looking for installer media by filesystem label";
-        assert_eq!(
-            model.event(Event::Preparing(step.into())),
-            Some(step.into())
-        );
+        let entry = model.event(Event::Preparing(step.into()));
+        assert_eq!(entry.source, LogSource::Inst);
+        assert_eq!(entry.message, step);
         assert_eq!(model.activity, step);
     }
 
@@ -1239,13 +1363,13 @@ mod tests {
         model.verbosity = LevelFilter::Trace;
         let records = [
             (LogLevel::Error, "error-line", Color::LightRed),
-            (LogLevel::Warn, "warn-line", Color::Yellow),
-            (LogLevel::Info, "info-line", Color::Green),
-            (LogLevel::Debug, "debug-line", Color::Cyan),
-            (LogLevel::Trace, "trace-line", Color::DarkGray),
+            (LogLevel::Warn, "warn-line", Color::Rgb(255, 165, 0)),
+            (LogLevel::Info, "info-line", Color::LightBlue),
+            (LogLevel::Debug, "debug-line", Color::Rgb(170, 100, 255)),
+            (LogLevel::Trace, "trace-line", Color::Gray),
         ];
         for (level, text, _) in records {
-            model.logs.push_back((level, text.into()));
+            model.log(LogSource::Trident, level, text.into());
         }
         let mut terminal = Terminal::new(TestBackend::new(80, 32)).unwrap();
         terminal.draw(|frame| render(frame, &model, true)).unwrap();
@@ -1263,7 +1387,102 @@ mod tests {
                 .unwrap();
             let text = row.iter().map(|cell| cell.symbol()).collect::<String>();
             assert_eq!(row[text.find(message).unwrap()].fg, expected);
+            let source = text.find("TRIDENT").unwrap();
+            assert_eq!(row[source].fg, Color::LightGreen);
         }
+    }
+
+    #[test]
+    fn operation_and_verbosity_share_one_line() {
+        let mut model = Model::new();
+        model.source = "StreamDisk from file:///media/cosi/payload.cosi".into();
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        let row = terminal.backend().buffer().content[12 * 80..13 * 80]
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(row.contains("StreamDisk from file://"), "{row}");
+        assert!(row.contains("Logs: DEBUG [V]"), "{row}");
+    }
+
+    #[test]
+    fn all_log_levels_reach_serial_regardless_of_display_filter() {
+        let mut model = Model::new();
+        let root = TempDir::new().unwrap();
+        let serial = root.path().join("serial.log");
+        let mut output = Output {
+            log: None,
+            mirrors: vec![(serial.clone(), File::create(&serial).unwrap())],
+        };
+        for level in [
+            LogLevel::Error,
+            LogLevel::Warn,
+            LogLevel::Info,
+            LogLevel::Debug,
+            LogLevel::Trace,
+        ] {
+            let entry = model.log(LogSource::Trident, level, "first\nsecond".into());
+            output.announce(&entry);
+        }
+        let text = fs::read_to_string(serial).unwrap();
+        let lines = text.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 5);
+        assert!(lines.iter().all(|line| line.starts_with("00:00 [TRIDENT:")));
+        assert!(lines.iter().all(|line| line.ends_with("first\\nsecond")));
+        assert!(lines[4].contains("[TRIDENT:TRACE]"));
+        assert!(!log_visible(LogLevel::Trace, model.verbosity));
+        assert_eq!(model.logs.len(), 5);
+    }
+
+    #[test]
+    fn installer_logger_records_use_inst_source_and_colour() {
+        let mut model = Model::new();
+        let entry = model.event(Event::InstallerLog {
+            level: Level::Debug,
+            message: "Loaded installer settings".into(),
+        });
+        assert_eq!(entry.source, LogSource::Inst);
+        assert_eq!(
+            entry.plain(),
+            "00:00 [INST:DEBUG] Loaded installer settings"
+        );
+        assert_eq!(entry.styled().spans[1].style.fg, Some(Color::LightMagenta));
+        assert_eq!(
+            entry.styled().spans[3].style.fg,
+            Some(Color::Rgb(170, 100, 255))
+        );
+        assert_eq!(model.logs.len(), 1);
+    }
+
+    #[test]
+    fn headless_autorun_keeps_automatic_reboot_enabled_by_default() {
+        let config = Config::parse("mode = 'autorun'\nserialMode = 'logs'").unwrap();
+        let mut model = Model::new();
+        model.reboot = config.autorun.reboot;
+        model.event(Event::Response(ServicingResponse {
+            response: Some(ResponseBody::Completed(Completed {
+                status: StatusCode::Success.into(),
+                reboot_status: RebootStatus::RebootRequired.into(),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }));
+        assert!(model.reboot_at.is_some());
+    }
+
+    #[test]
+    fn errors_for_missing_inputs_are_tagged_for_serial_without_a_tui() {
+        let mut model = Model::new();
+        let entry = model.event(Event::Error {
+            details: "No image or Host Configuration".into(),
+            uncertain: false,
+        });
+        assert!(model.failed);
+        assert_eq!(
+            entry.plain(),
+            "00:00 [INST:ERROR] No image or Host Configuration"
+        );
     }
 
     #[test]

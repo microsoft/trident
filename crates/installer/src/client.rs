@@ -33,6 +33,10 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug)]
 pub(super) enum Event {
+    InstallerLog {
+        level: log::Level,
+        message: String,
+    },
     Preparing(String),
     Prepared {
         description: String,
