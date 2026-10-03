@@ -26,6 +26,7 @@ Read `/etc/trident/installer.toml` or the path supplied with `--config`.
 
 ```toml
 mode = "autorun"
+serialMode = "logs"
 
 [media]
 cdromLabel = "TRIDENT_INSTALL"
@@ -41,6 +42,8 @@ reboot = true
 Unknown fields and conflicting media selectors are errors. `interactive` is
 reserved for later work, not an alias for autorun. COSI directory paths must
 stay beneath the media root.
+`serialMode` defaults to `logs`. `ui` is reserved and currently rejected with
+an error rather than showing an unfinished serial TUI.
 
 Media is mounted read-only at `/run/trident/installer-media`. Duplicate labels
 are rejected. Optional `installer/installer.toml` on the mounted media can
@@ -74,12 +77,17 @@ The UI uses the cyan Trident ASCII wordmark and the name Trident Linux
 Installer. At 80x24 and larger the complete wordmark is shown; smaller terminals
 use a compact text header to preserve usable controls and error details.
 
-On the ISO, `--system-console` prefers the graphical virtual console for local
-keyboard/monitor and BMC KVM, independent of `console=` order. An active serial
-console is the fallback. The chosen getty is stopped; other active consoles
-receive plain status once and identify the interactive console. Failure to
-open or write to a secondary console is logged and stops mirroring to that
-console; it does not stop the installation.
+On the ISO, `--system-console` uses the graphical virtual console for local
+keyboard/monitor and BMC KVM, independent of `console=` order. With
+`serialMode = "logs"`, active serial consoles receive only formatted installer
+and gRPC logs, never a TUI, even when no graphical console exists. Autorun
+continues without an interactive console; missing inputs, repeat-install
+protection and other cases needing operator input emit an error and stop.
+Failures to open or write a serial console are logged and mirroring to that
+console stops; they do not stop installation. Disable serial getty on a
+logs-only installer ISO so its login prompt cannot mix with application logs.
+Firmware, kernel and systemd output during boot is separate from the
+installer's stream and may precede it; scrapers should match tagged log lines.
 The ISO must also disable `getty@tty1.service` and suppress logind's automatic
 virtual gettys (`NAutoVTs=0`, `ReserveVT=0`): stopping a getty before
 `getty.target` starts does not prevent it from claiming tty1 later.
@@ -94,9 +102,15 @@ edits take effect. Invalid or missing configuration never supplies implicit
 defaults for an installation.
 
 Display filtering never removes daemon log records. All received responses are
-also appended to the private `/var/log/trident-installer.log`. Logs are coloured
-by severity. `V` opens a live verbosity picker (Off, Error, Warn, Info, Debug,
-Trace); this only filters the display, not stored diagnostics. PgUp/PgDn scroll.
+also appended to the private `/var/log/trident-installer.log`. Installer events
+and daemon records use `MM:SS [INST:LEVEL] message` and
+`MM:SS [TRIDENT:LEVEL] message`, respectively. The serial stream includes all
+levels, even when the TUI is filtered, and escapes embedded newlines as `\n`
+to keep one record per line. The TUI defaults to Debug: errors red, warnings
+orange, info bright blue, debug purple, trace gray; installer source labels
+are magenta and Trident labels green. `V` opens a live verbosity picker (Off,
+Error, Warn, Info, Debug, Trace) beside the operation; this only filters the
+display, not serial or stored diagnostics. PgUp/PgDn scroll.
 A missing final Completed response means unknown
 outcome, not success. Another write requires a successful Trident status query
 establishing that the daemon is idle.

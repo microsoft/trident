@@ -29,6 +29,9 @@ config:
       extraCommandLine:
         - console=tty0
         - console=ttyS0,115200n8
+        - quiet
+        - loglevel=0
+        - systemd.show_status=false
     packages:
       install:
         - trident-installer
@@ -49,6 +52,8 @@ config:
         destination: /etc/trident/installer.toml
       - source: files/installer-logind.conf
         destination: /etc/systemd/logind.conf.d/installer.conf
+      - source: files/installer-serial-getty.conf
+        destination: /etc/systemd/system/serial-getty@ttyS0.service.d/installer.conf
   storage:
     bootType: efi
     disks:
@@ -79,4 +84,6 @@ config:
       extraCommandLine:
         - console=tty0
         - console=ttyS0,115200n8
-        - loglevel=4
+        - quiet
+        - loglevel=0
+        - systemd.show_status=false
