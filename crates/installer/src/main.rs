@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{Context, Error};
 use clap::Parser;
-use log::LevelFilter;
+use log::{warn, LevelFilter};
 use tokio::runtime::Builder;
 
 use osutils::{systemd, terminal};
@@ -95,11 +95,10 @@ async fn run(args: Args) -> Result<(), Error> {
             let _terminal = terminal::attach(primary)?;
             output.control = primary.display().to_string();
             for path in consoles.iter().filter(|path| path.as_path() != primary) {
-                output
-                    .mirrors
-                    .push(OpenOptions::new().write(true).open(path).with_context(|| {
-                        format!("Failed to open active console '{}'", path.display())
-                    })?);
+                match OpenOptions::new().write(true).open(path) {
+                    Ok(terminal) => output.mirrors.push((path.clone(), terminal)),
+                    Err(error) => warn!("Could not mirror status to '{}': {error}", path.display()),
+                }
             }
         }
     }

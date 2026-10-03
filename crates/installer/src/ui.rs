@@ -12,7 +12,7 @@ use crossterm::{
     execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use log::{error, Level, LevelFilter};
+use log::{error, warn, Level, LevelFilter};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Layout, Rect},
@@ -496,7 +496,7 @@ impl DemoShell {
 
 pub(super) struct Output {
     pub log: Option<File>,
-    pub mirrors: Vec<File>,
+    pub mirrors: Vec<(PathBuf, File)>,
     pub control: String,
 }
 
@@ -509,17 +509,22 @@ impl Output {
         Ok(())
     }
 
-    fn announce(&mut self, message: &str) -> Result<(), Error> {
-        for mirror in &mut self.mirrors {
-            writeln!(
+    fn announce(&mut self, message: &str) {
+        self.mirrors.retain_mut(|(path, mirror)| {
+            if let Err(error) = writeln!(
                 mirror,
                 "\r\n[installer; control {}] {}",
                 self.control,
                 display_text(message)
-            )
-            .context("Failed to mirror installer output to an active console")?;
-        }
-        Ok(())
+            ) {
+                warn!(
+                    "Stopped mirroring installer status to '{}': {error}",
+                    path.display()
+                );
+                return false;
+            }
+            true
+        });
     }
 }
 
@@ -639,7 +644,7 @@ pub(super) async fn run(
             let mirrored = level.is_none_or(|level| log_visible(level, LevelFilter::Info));
             if let Some(message) = model.event(event) {
                 if mirrored {
-                    output.announce(&message)?;
+                    output.announce(&message);
                 }
                 if display.is_none()
                     && shell.is_none()
@@ -1088,6 +1093,37 @@ mod tests {
 
     use ratatui::backend::TestBackend;
     use tempfile::TempDir;
+
+    #[test]
+    fn unavailable_serial_mirror_does_not_stop_the_installer() {
+        let root = TempDir::new().unwrap();
+        let transcript = root.path().join("serial.log");
+        let mut output = Output {
+            log: None,
+            mirrors: vec![
+                (
+                    PathBuf::from("/dev/full"),
+                    OpenOptions::new().write(true).open("/dev/full").unwrap(),
+                ),
+                (
+                    transcript.clone(),
+                    OpenOptions::new()
+                        .create(true)
+                        .truncate(true)
+                        .write(true)
+                        .open(&transcript)
+                        .unwrap(),
+                ),
+            ],
+            control: "/dev/tty1".into(),
+        };
+        output.announce("Preparing installer");
+        assert_eq!(output.mirrors.len(), 1);
+        output.announce("Still running");
+        assert!(fs::read_to_string(transcript)
+            .unwrap()
+            .contains("Still running"));
+    }
 
     fn enter() -> KeyEvent {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)

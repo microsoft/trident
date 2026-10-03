@@ -231,7 +231,7 @@ def main():
             flush=True,
         )
         print(
-            "Disk-first UEFI boot: the blank disk falls through to the ISO; after Reboot the installed OS wins.",
+            "Disk-first UEFI boot: a blank or non-bootable disk falls through to the ISO.",
             flush=True,
         )
         if args.vnc is not None:
