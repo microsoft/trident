@@ -16,6 +16,9 @@ use its Reboot button to check what the installed disk boots.
 console as `MM:SS [SOURCE:LEVEL] message`, independent of TUI verbosity.
 This ISO suppresses the serial getty prompt and normal kernel/systemd status
 output; UEFI firmware output may still appear before the installer starts.
+With only a serial console active, autorun runs without a TUI and honors
+`autorun.reboot`; missing inputs or an already-present image produce tagged
+errors instead of waiting for a keyboard response.
 The ISO disables `getty@tty1.service` and logind's automatic virtual gettys so
 they cannot reclaim the installer's graphical keyboard after startup. The
 installer mirrors source-discovery stages to the serial log; an idle-looking
