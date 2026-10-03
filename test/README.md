@@ -32,6 +32,27 @@ python3 test/run.py --dry-run
 Otherwise that run's private `.vm/` directory is removed after QEMU exits.
 GTK uses the graphical installer console; serial status is captured separately.
 
+## Over SSH, including from a Wayland desktop
+
+On the VM host:
+
+```console
+./test/run.py --vnc --keep
+```
+
+On your local desktop, open a second terminal:
+
+```console
+ssh -N -L 5901:127.0.0.1:5901 USER@HOST
+```
+
+Connect a VNC client such as GNOME Connections or Remmina to
+`vnc://127.0.0.1:5901`. QEMU binds VNC to loopback only; the SSH tunnel carries
+the connection. No X11 forwarding or desktop environment changes are needed.
+Use `--vnc 2` and tunnel TCP 5902 if display 1 is already occupied.
+
+## Build prerequisites
+
 Build prerequisites: Python 3.11+, Docker, Tailor and the cached
 `azl3/trident-builder:latest` image. Trident binaries are built inside Azure
 Linux rather than using workstation binaries with potentially incompatible
