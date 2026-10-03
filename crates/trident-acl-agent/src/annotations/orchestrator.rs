@@ -17,6 +17,7 @@ use k8s_openapi::api::core::v1::Node;
 use log::{debug, info, warn};
 use semver::Version;
 use tokio::{pin, select, task, time};
+use tokio_util::sync::CancellationToken;
 use url::Url;
 use uuid::Uuid;
 
@@ -49,6 +50,18 @@ const NODE_READ_BACKOFF: Duration = Duration::from_secs(2);
 /// Cap on the backoff delay in `get_node_with_retry`, so retries never
 /// slow to an unreasonably long cadence during an extended outage.
 const NODE_READ_BACKOFF_MAX: Duration = Duration::from_secs(30);
+
+/// After a Node is confirmed gone, logging "still waiting" at every
+/// backoff tick (as often as every ~30s) would be log spam across a
+/// long maintenance window. Only re-announce the wait at this cadence,
+/// so the fact that the agent is still alive and looking stays visible
+/// without flooding journald.
+const NODE_GONE_REANNOUNCE_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// Delay before re-establishing the Node watch stream after it ends on its
+/// own (which shouldn't normally happen). Without this, a stream that keeps
+/// ending immediately would otherwise spin in a tight reconnect loop.
+const WATCH_STREAM_RESTART_BACKOFF: Duration = Duration::from_secs(2);
 
 /// The machine-id source used for every Nebraska request this module makes,
 /// event reports included. Must match the source used by `handle_stage`'s
@@ -123,75 +136,204 @@ impl Orchestrator {
             .context("failed to issue systemctl reboot")
     }
 
-    pub async fn run(&self) -> Result<(), Error> {
-        match self.recover_from_trident_state().await {
-            Ok(LoopControl::Continue) => {}
-            Ok(LoopControl::ExitForReboot) => return Ok(()),
-            Err(err) => {
-                if self.log_and_swallow_node_gone(&err, "recovering persisted state") {
-                    return Ok(());
-                }
-                return Err(err);
-            }
-        }
-        let mut stream = self
-            .k8s
-            .watch_node(self.config.kubernetes.node_name.clone());
-        // Watch-stream errors are tolerated indefinitely, so a transient
-        // reconnect hiccup doesn't abort the whole orchestrator the way a
-        // bare `node?` would. No extra sleep here (unlike
-        // `get_node_with_retry`): `kube::runtime::watcher`'s own
-        // `default_backoff()` (see `k8s::NodeClient::watch_node`) already
-        // delays before the stream's next reconnect attempt, so sleeping
-        // here as well would only stack a second, redundant delay on top
-        // of it.
-        //
-        // A bounded give-up-eventually budget for this loop was tried and
-        // repeatedly found to be unsound: a long-lived watch has no clean
-        // notion of "consecutive" failures like a one-shot retry does - a
-        // quiet Node produces no stream item on a successful reconnect, so
-        // there's no reliable signal to tell an isolated, otherwise-healthy
-        // blip apart from a genuinely ongoing outage. Retrying forever here
-        // is the simple, correct choice until a real need for a bound (and
-        // a real recovery signal to bound it safely) arises. A running
-        // `errors_since_last_node_event` count is still logged with every
-        // failure - purely for operator visibility into an ongoing outage -
-        // but nothing here decides anything based on it. Note this counts
-        // errors since the last *Node event*, not truly consecutive
-        // failures: a healthy reconnect between two errors produces no
-        // stream item, so it wouldn't reset this counter either.
-        let mut errors_since_last_node_event = 0u64;
-        while let Some(item) = stream.next().await {
-            let node = match item {
-                Ok(node) => {
-                    errors_since_last_node_event = 0;
-                    node
-                }
+    /// Drives the agent until `shutdown` is cancelled (e.g. SIGTERM/SIGINT,
+    /// see `main.rs`) or a reboot is armed. A Node 404 (`NodeGone`) is no
+    /// longer treated as a reason to exit the process (see `await_node_recreation`
+    /// for why, and `config::OrchestrationConfig::node_gone_max_wait` for the
+    /// opt-in bound on how long this will wait before giving up): the
+    /// orchestrator parks until the Node reappears (or was never really
+    /// gone - a transient 404), then re-runs startup recovery and re-opens
+    /// the watch from scratch. This is safe because nothing here caches k8s
+    /// state across the gap: the Node snapshot is always re-read fresh, and
+    /// `state.json` (pendingCommit / completed cache) is purely local and
+    /// untouched by a 404.
+    pub async fn run(&self, shutdown: CancellationToken) -> Result<(), Error> {
+        loop {
+            match self.recover_from_trident_state(&shutdown).await {
+                Ok(Some(LoopControl::Continue)) => {}
+                Ok(Some(LoopControl::ExitForReboot)) => return Ok(()),
+                Ok(None) => return Ok(()), // shutdown requested while recovering
                 Err(err) => {
-                    let err: Error = err.into();
-                    if self.log_and_swallow_node_gone(&err, "watching node") {
-                        return Ok(());
-                    }
-                    errors_since_last_node_event += 1;
-                    warn!(
-                        "transient error watching node {} (errors since last node event: {errors_since_last_node_event}): {err:#}",
-                        self.config.kubernetes.node_name
-                    );
-                    continue;
-                }
-            };
-            match self.reconcile_node(&node).await {
-                Ok(LoopControl::Continue) => {}
-                Ok(LoopControl::ExitForReboot) => return Ok(()),
-                Err(err) => {
-                    if self.log_and_swallow_node_gone(&err, "reconciling node") {
-                        return Ok(());
+                    if self.is_node_gone_error(&err) {
+                        if !self.await_node_recreation(&shutdown).await? {
+                            return Ok(()); // shutdown requested while waiting
+                        }
+                        continue;
                     }
                     return Err(err);
                 }
             }
+            let mut stream = self
+                .k8s
+                .watch_node(self.config.kubernetes.node_name.clone());
+            // Watch-stream errors are tolerated indefinitely, so a transient
+            // reconnect hiccup doesn't abort the whole orchestrator the way a
+            // bare `node?` would. No extra sleep here (unlike
+            // `get_node_with_retry`): `kube::runtime::watcher`'s own
+            // `default_backoff()` (see `k8s::NodeClient::watch_node`) already
+            // delays before the stream's next reconnect attempt, so sleeping
+            // here as well would only stack a second, redundant delay on top
+            // of it.
+            //
+            // A bounded give-up-eventually budget for this loop was tried and
+            // repeatedly found to be unsound: a long-lived watch has no clean
+            // notion of "consecutive" failures like a one-shot retry does - a
+            // quiet Node produces no stream item on a successful reconnect, so
+            // there's no reliable signal to tell an isolated, otherwise-healthy
+            // blip apart from a genuinely ongoing outage. Retrying forever here
+            // is the simple, correct choice until a real need for a bound (and
+            // a real recovery signal to bound it safely) arises. A running
+            // `errors_since_last_node_event` count is still logged with every
+            // failure - purely for operator visibility into an ongoing outage -
+            // but nothing here decides anything based on it. Note this counts
+            // errors since the last *Node event*, not truly consecutive
+            // failures: a healthy reconnect between two errors produces no
+            // stream item, so it wouldn't reset this counter either.
+            let mut errors_since_last_node_event = 0u64;
+            let mut node_gone = false;
+            loop {
+                let item = select! {
+                    _ = shutdown.cancelled() => {
+                        info!(
+                            "shutdown requested while watching node {}",
+                            self.config.kubernetes.node_name
+                        );
+                        return Ok(());
+                    }
+                    item = stream.next() => item,
+                };
+                let Some(item) = item else {
+                    break; // stream ended on its own
+                };
+                let node = match item {
+                    Ok(node) => {
+                        errors_since_last_node_event = 0;
+                        node
+                    }
+                    Err(err) => {
+                        let err: Error = err.into();
+                        if self.is_node_gone_error(&err) {
+                            node_gone = true;
+                            break;
+                        }
+                        errors_since_last_node_event += 1;
+                        warn!(
+                            "transient error watching node {} (errors since last node event: {errors_since_last_node_event}): {err:#}",
+                            self.config.kubernetes.node_name
+                        );
+                        continue;
+                    }
+                };
+                match self.reconcile_node(&node).await {
+                    Ok(LoopControl::Continue) => {}
+                    Ok(LoopControl::ExitForReboot) => return Ok(()),
+                    Err(err) => {
+                        if self.is_node_gone_error(&err) {
+                            node_gone = true;
+                            break;
+                        }
+                        return Err(err);
+                    }
+                }
+            }
+            if node_gone {
+                if !self.await_node_recreation(&shutdown).await? {
+                    return Ok(());
+                }
+                continue;
+            }
+            // Stream ended on its own (shouldn't normally happen). Back off
+            // briefly before re-establishing it defensively, so a stream that
+            // keeps ending immediately doesn't spin in a tight retry loop.
+            select! {
+                _ = shutdown.cancelled() => return Ok(()),
+                _ = time::sleep(WATCH_STREAM_RESTART_BACKOFF) => {}
+            }
         }
-        Ok(())
+    }
+
+    /// Parks here while the agent's own Node object doesn't exist, polling
+    /// with the same capped-exponential-backoff-with-jitter policy used by
+    /// `get_node_with_retry`, until either the Node reappears (`Ok(true)`),
+    /// `shutdown` is cancelled (`Ok(false)`), or
+    /// `config.orchestration.node_gone_max_wait` elapses without the Node
+    /// coming back (`Err`, preserving the old fail-fast/exit behavior as an
+    /// opt-in bound - see that field's docs). With no bound configured
+    /// (the default), this waits indefinitely: at most one cheap GET every
+    /// `NODE_READ_BACKOFF_MAX`, an acceptable idle cost in exchange for not
+    /// permanently killing the agent on a transient 404 or a delete+recreate.
+    async fn await_node_recreation(&self, shutdown: &CancellationToken) -> Result<bool, Error> {
+        let node_name = &self.config.kubernetes.node_name;
+        info!("node {node_name} no longer exists; waiting for it to reappear");
+        let started = time::Instant::now();
+        let mut last_announced = started;
+        let max_wait = self.config.orchestration.node_gone_max_wait;
+        // Fixed deadline derived once up front, rather than re-deriving a
+        // "remaining time" from `started.elapsed()` on every iteration: lets
+        // us cap each sleep to the remaining budget below, so `max_wait`
+        // behaves as a true upper bound instead of being exceedable by up to
+        // one backoff interval.
+        let deadline = max_wait.map(|m| started + m);
+        let mut backoff = ExponentialBackoffBuilder::new()
+            .with_initial_interval(NODE_READ_BACKOFF)
+            .with_max_interval(NODE_READ_BACKOFF_MAX)
+            .with_multiplier(2.0)
+            .with_randomization_factor(1.0)
+            .with_max_elapsed_time(None)
+            .build();
+        loop {
+            let delay = backoff.next_backoff().unwrap_or(NODE_READ_BACKOFF_MAX);
+            let delay = match deadline {
+                Some(deadline) => {
+                    let now = time::Instant::now();
+                    if now >= deadline {
+                        return Err(anyhow!(
+                            "node {node_name} did not reappear within {} (TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT); giving up",
+                            humantime::format_duration(
+                                max_wait.expect("deadline is only set when max_wait is set")
+                            )
+                        ));
+                    }
+                    delay.min(deadline - now)
+                }
+                None => delay,
+            };
+            select! {
+                _ = shutdown.cancelled() => {
+                    info!("shutdown requested while waiting for node {node_name} to reappear");
+                    return Ok(false);
+                }
+                _ = time::sleep(delay) => {}
+            }
+            let get_result = select! {
+                _ = shutdown.cancelled() => {
+                    info!("shutdown requested while polling for node {node_name} recreation");
+                    return Ok(false);
+                }
+                result = self.k8s.get_node(node_name) => result,
+            };
+            match get_result {
+                Ok(_) => {
+                    info!(
+                        "node {node_name} reappeared after {}; resuming",
+                        humantime::format_duration(started.elapsed())
+                    );
+                    return Ok(true);
+                }
+                Err(K8sClientError::NodeGone) => {
+                    if last_announced.elapsed() >= NODE_GONE_REANNOUNCE_INTERVAL {
+                        info!(
+                            "still waiting for node {node_name} to reappear ({} elapsed)",
+                            humantime::format_duration(started.elapsed())
+                        );
+                        last_announced = time::Instant::now();
+                    }
+                }
+                Err(err) => {
+                    warn!("transient error polling for node {node_name} recreation: {err:#}");
+                }
+            }
+        }
     }
 
     /// Startup recovery. Order matters: a pending post-reboot `commit()` is
@@ -203,18 +345,26 @@ impl Orchestrator {
     /// publish is already best-effort/retried (see
     /// `best_effort_publish_terminal`), so deferring the k8s read this far
     /// costs nothing when k8s is healthy and avoids a crash-loop when it
-    /// isn't.
-    async fn recover_from_trident_state(&self) -> Result<LoopControl, Error> {
+    /// isn't. Returns `Ok(None)` if `shutdown` fires while retrying the
+    /// Node read, mirroring `await_node_recreation`'s `Ok(false)` so `run()`
+    /// can exit promptly instead of blocking on an indefinite retry loop.
+    async fn recover_from_trident_state(
+        &self,
+        shutdown: &CancellationToken,
+    ) -> Result<Option<LoopControl>, Error> {
         let persisted = self.state.load()?;
 
         if let Some(pending) = persisted.pending_commit.clone() {
             self.resume_pending_commit(pending).await?;
-            return Ok(LoopControl::Continue);
+            return Ok(Some(LoopControl::Continue));
         }
 
-        let node = self
-            .get_node_with_retry(&self.config.kubernetes.node_name)
-            .await?;
+        let Some(node) = self
+            .get_node_with_retry(&self.config.kubernetes.node_name, shutdown)
+            .await?
+        else {
+            return Ok(None); // shutdown requested while retrying
+        };
         let snapshot = Snapshot::from_node(&node, &self.annotation_keys);
 
         if let Some(request) = snapshot.request.clone() {
@@ -236,7 +386,7 @@ impl Orchestrator {
                     if !matches {
                         self.publish_status(&operation).await?;
                     }
-                    return Ok(LoopControl::Continue);
+                    return Ok(Some(LoopControl::Continue));
                 }
             }
         }
@@ -244,9 +394,10 @@ impl Orchestrator {
         if let Some(request) = snapshot.request {
             return self
                 .reconstruct_without_pending_record(&request, snapshot.operation_status.as_ref())
-                .await;
+                .await
+                .map(Some);
         }
-        Ok(LoopControl::Continue)
+        Ok(Some(LoopControl::Continue))
     }
 
     async fn reconcile_node(&self, node: &Node) -> Result<LoopControl, Error> {
@@ -1230,7 +1381,25 @@ impl Orchestrator {
     /// function's docs). `NodeGone` is returned immediately without
     /// retrying, since it's terminal - the node was deleted, and no amount
     /// of retrying changes that.
-    async fn get_node_with_retry(&self, name: &str) -> Result<Node, K8sClientError> {
+    /// Reads the agent's own Node object, retrying indefinitely with capped
+    /// exponential backoff and full jitter between attempts, so a transient
+    /// Kubernetes hiccup at startup recovery doesn't propagate the first
+    /// error straight into a process exit / crash-loop the way a bare
+    /// `self.k8s.get_node(...).await?` would, and repeated retries don't
+    /// pile onto an API server that's already struggling. Only used by
+    /// `recover_from_trident_state`'s "no pending commit to resume" branch;
+    /// the pending-commit resume itself never touches k8s at all (see that
+    /// function's docs). `NodeGone` is returned immediately without
+    /// retrying, since it's terminal - the node was deleted, and no amount
+    /// of retrying changes that. Both the GET itself and the backoff sleep
+    /// are raced against `shutdown`, so a SIGTERM/SIGINT during startup
+    /// recovery returns promptly (`Ok(None)`) instead of blocking process
+    /// exit on an in-flight retry loop.
+    async fn get_node_with_retry(
+        &self,
+        name: &str,
+        shutdown: &CancellationToken,
+    ) -> Result<Option<Node>, K8sClientError> {
         let mut backoff = ExponentialBackoffBuilder::new()
             .with_initial_interval(NODE_READ_BACKOFF)
             .with_max_interval(NODE_READ_BACKOFF_MAX)
@@ -1239,8 +1408,12 @@ impl Orchestrator {
             .with_max_elapsed_time(None)
             .build();
         loop {
-            match self.k8s.get_node(name).await {
-                Ok(node) => return Ok(node),
+            let get_result = select! {
+                _ = shutdown.cancelled() => return Ok(None),
+                result = self.k8s.get_node(name) => result,
+            };
+            match get_result {
+                Ok(node) => return Ok(Some(node)),
                 Err(err @ K8sClientError::NodeGone) => return Err(err),
                 Err(err) => {
                     // `max_elapsed_time(None)` means `next_backoff()` never
@@ -1251,7 +1424,10 @@ impl Orchestrator {
                     warn!(
                         "transient error reading node {name} during startup recovery, retrying in {delay:?}: {err:#}"
                     );
-                    time::sleep(delay).await;
+                    select! {
+                        _ = shutdown.cancelled() => return Ok(None),
+                        _ = time::sleep(delay) => {}
+                    }
                 }
             }
         }
@@ -1262,18 +1438,6 @@ impl Orchestrator {
             err.downcast_ref::<K8sClientError>(),
             Some(K8sClientError::NodeGone)
         )
-    }
-
-    fn log_and_swallow_node_gone(&self, err: &Error, context: &str) -> bool {
-        if self.is_node_gone_error(err) {
-            info!(
-                "stopping trident-acl-agent while {context}: node {} no longer exists",
-                self.config.kubernetes.node_name
-            );
-            true
-        } else {
-            false
-        }
     }
 
     async fn run_with_status_heartbeat<F>(&self, status: UpdateStatus, future: F) -> F::Output

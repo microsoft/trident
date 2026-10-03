@@ -27,6 +27,16 @@ type NodeStore struct {
 	watchers        map[int]chan *corev1.Node
 	nextID          int
 	resourceVersion int64
+	// missing simulates the Node object having been deleted from the API
+	// server: GET/PATCH for it return 404, and LIST returns an empty
+	// NodeList, exactly as real Kubernetes would for a fieldSelector-based
+	// LIST matching zero objects. See DeleteNode/RestoreNode.
+	missing bool
+	// deleteOnNextPatch, when armed via DeleteAfterNextPatch, causes the
+	// very next MergePatch call to flip `missing` to true inside that same
+	// locked critical section, instead of a separate later DeleteNode()
+	// call. See DeleteAfterNextPatch's doc comment for why.
+	deleteOnNextPatch bool
 }
 
 func NewSeedNode(name string, labels map[string]string) *corev1.Node {
@@ -90,6 +100,15 @@ func (s *NodeStore) Snapshot() *corev1.Node {
 	return s.node.DeepCopy()
 }
 
+// CurrentResourceVersion returns the store's current metadata.resourceVersion
+// without a full DeepCopy of the node, for callers (like handleList's
+// missing-node path) that need only the version stamp, not the node itself.
+func (s *NodeStore) CurrentResourceVersion() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.node.ResourceVersion
+}
+
 func (s *NodeStore) MergePatch(raw []byte) (*corev1.Node, error) {
 	var patch metadataPatch
 	if err := json.Unmarshal(raw, &patch); err != nil {
@@ -105,6 +124,10 @@ func (s *NodeStore) MergePatch(raw []byte) (*corev1.Node, error) {
 	}
 	s.bumpLocked()
 	s.broadcastLocked()
+	if s.deleteOnNextPatch {
+		s.deleteOnNextPatch = false
+		s.missing = true
+	}
 	return s.node.DeepCopy(), nil
 }
 
@@ -152,6 +175,60 @@ func (s *NodeStore) SetReadyCondition(ready bool) *corev1.Node {
 	s.bumpLocked()
 	s.broadcastLocked()
 	return s.node.DeepCopy()
+}
+
+// DeleteNode simulates the Node object being deleted from the API server:
+// subsequent GET/PATCH requests for it return HTTP 404, and LIST requests
+// return an empty NodeList - used by run-node-resilience to exercise
+// trident-acl-agent's NodeGone handling
+// (crates/trident-acl-agent/src/annotations/orchestrator.rs's
+// await_node_recreation). The underlying node state itself is left
+// untouched so RestoreNode can bring it straight back.
+//
+// This intentionally does not touch any open watch connection: a real
+// deleted-then-recreated Node is invisible to kube-rs's watcher() relist
+// path anyway (a fieldSelector-filtered LIST matching zero objects is a
+// 200 with empty items, not a 404), so NodeGone only ever originates from
+// an explicit single-object GET or PATCH call - exactly the two call sites
+// this method affects.
+func (s *NodeStore) DeleteNode() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.missing = true
+}
+
+// DeleteAfterNextPatch arms a one-shot trigger that marks the Node missing
+// (as DeleteNode does) atomically within the very next MergePatch call's
+// locked critical section, rather than via a separate later call. This
+// exists for scenarios like node_resilience.go's phase 2, which needs the
+// Node to go missing immediately after a specific triggering patch (e.g.
+// the agent's in-flight publish_status PATCH) is applied: a plain
+// DeleteNode() call made after that patch's HTTP response returns races
+// the real VM agent's network round-trip reaction to the same patch's
+// broadcast, with correctness depending on the local call being faster -
+// a timing assumption, not a guarantee. Arming the flag here instead
+// ties the missing-flip to the same lock acquisition that delivers the
+// triggering patch's broadcast, so no reactive request from the agent can
+// ever be processed before the Node is reported missing.
+func (s *NodeStore) DeleteAfterNextPatch() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deleteOnNextPatch = true
+}
+
+// RestoreNode undoes DeleteNode: GET/PATCH/LIST all succeed again as if the
+// Node had never gone away.
+func (s *NodeStore) RestoreNode() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.missing = false
+}
+
+// isMissing reports whether DeleteNode is currently in effect.
+func (s *NodeStore) isMissing() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.missing
 }
 
 // watcherBufferSize bounds how many pending node snapshots a watcher can
@@ -295,6 +372,10 @@ func (s *APIServer) ListenAndServe(ctx context.Context, listenAddr string) (list
 }
 
 func (s *APIServer) handleGet(w http.ResponseWriter, _ *http.Request) {
+	if s.store.isMissing() {
+		writeNodeNotFound(w, s.nodeName)
+		return
+	}
 	writeJSON(w, http.StatusOK, s.store.Snapshot())
 }
 
@@ -303,24 +384,32 @@ func (s *APIServer) handleGet(w http.ResponseWriter, _ *http.Request) {
 // stream, so it must return a well-formed NodeList (including
 // metadata.resourceVersion) even though this fake only ever tracks one node.
 func (s *APIServer) handleList(w http.ResponseWriter, r *http.Request) {
-	node := s.store.Snapshot()
 	items := []corev1.Node{}
-	if selector := r.URL.Query().Get("fieldSelector"); selector != "" {
-		if selector == "metadata.name="+s.nodeName {
+	resourceVersion := s.store.CurrentResourceVersion()
+	if !s.store.isMissing() {
+		node := s.store.Snapshot()
+		resourceVersion = node.ResourceVersion
+		if selector := r.URL.Query().Get("fieldSelector"); selector != "" {
+			if selector == "metadata.name="+s.nodeName {
+				items = append(items, *node)
+			}
+		} else {
 			items = append(items, *node)
 		}
-	} else {
-		items = append(items, *node)
 	}
 	list := corev1.NodeList{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "NodeList"},
-		ListMeta: metav1.ListMeta{ResourceVersion: node.ResourceVersion},
+		ListMeta: metav1.ListMeta{ResourceVersion: resourceVersion},
 		Items:    items,
 	}
 	writeJSON(w, http.StatusOK, &list)
 }
 
 func (s *APIServer) handlePatch(w http.ResponseWriter, r *http.Request) {
+	if s.store.isMissing() {
+		writeNodeNotFound(w, s.nodeName)
+		return
+	}
 	if contentType := r.Header.Get("Content-Type"); contentType != "" && !strings.Contains(contentType, "merge-patch+json") {
 		http.Error(w, "expected application/merge-patch+json", http.StatusUnsupportedMediaType)
 		return
@@ -398,6 +487,18 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+// writeNodeNotFound writes a minimal 404 response for a "deleted" Node (see
+// NodeStore.DeleteNode). kube-rs's error handling
+// (kube_client::client::Client's handle_api_errors) reconstructs its
+// ErrorResponse purely from the HTTP status code whenever the response body
+// doesn't parse as a Kubernetes Status object, so a full Status JSON body
+// is not required here - the bare status code is sufficient to trigger
+// K8sClientError::NodeGone in trident-acl-agent's k8s client
+// (crates/trident-acl-agent/src/annotations/k8s.rs's map_kube_error).
+func writeNodeNotFound(w http.ResponseWriter, nodeName string) {
+	http.Error(w, fmt.Sprintf("nodes %q not found", nodeName), http.StatusNotFound)
 }
 
 type metadataPatch struct {

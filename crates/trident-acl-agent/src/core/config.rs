@@ -53,6 +53,10 @@ const DEFAULT_NODE_NAME: &str = "localhost";
 const DEFAULT_STAGE_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DEFAULT_FINALIZE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(60);
+/// Default for `node_gone_max_wait`: unset, i.e. wait for the Node to
+/// reappear indefinitely. See that field's docs for why this is the
+/// safer default and when an operator would want to bound it instead.
+const DEFAULT_NODE_GONE_MAX_WAIT: Option<Duration> = None;
 /// File name for the persisted agent state (see `annotations::state`).
 pub const STATE_FILE_NAME: &str = "state.json";
 pub const DEFAULT_STATE_PATH: &str = formatcp!("/var/lib/trident-acl-agent/{STATE_FILE_NAME}");
@@ -130,6 +134,9 @@ impl AgentConfig {
                 heartbeat_interval: orchestration
                     .heartbeat_interval
                     .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL),
+                node_gone_max_wait: orchestration
+                    .node_gone_max_wait
+                    .or(DEFAULT_NODE_GONE_MAX_WAIT),
             },
         })
     }
@@ -185,6 +192,8 @@ struct RawOrchestrationConfig {
     finalize_timeout: Option<Duration>,
     #[serde(deserialize_with = "empty_duration_as_none")]
     heartbeat_interval: Option<Duration>,
+    #[serde(deserialize_with = "empty_duration_as_none")]
+    node_gone_max_wait: Option<Duration>,
 }
 
 /// Treats "set to the empty string" the same as "unset": a drop-in override
@@ -359,6 +368,19 @@ pub struct OrchestrationConfig {
     /// Refresh cadence for in-flight InProgress heartbeats. Default is well
     /// below the ~10 minute watchdog staleness target.
     pub heartbeat_interval: Duration,
+    /// Bounds how long `Orchestrator::await_node_recreation` will wait for
+    /// the agent's own Node object to reappear after a 404 before giving up
+    /// and returning an error (which propagates out of `run()` and exits the
+    /// process - the pre-resilience behavior). Unset (`None`) by default:
+    /// the agent waits indefinitely, since a 404 can be transient (e.g. a
+    /// startup race before kubelet registers the Node) or self-healing (a
+    /// delete+recreate during node replacement), and there is no reliable
+    /// way to distinguish those from a truly permanent deletion from this
+    /// side. Set `TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT` (e.g.
+    /// `30m`) to restore a bounded, fail-fast exit for deployments that
+    /// prefer an external supervisor (systemd, a DaemonSet controller) to
+    /// own re-creation/restart decisions instead.
+    pub node_gone_max_wait: Option<Duration>,
 }
 
 impl Default for OrchestrationConfig {
@@ -369,6 +391,7 @@ impl Default for OrchestrationConfig {
             stage_timeout: DEFAULT_STAGE_TIMEOUT,
             finalize_timeout: DEFAULT_FINALIZE_TIMEOUT,
             heartbeat_interval: DEFAULT_HEARTBEAT_INTERVAL,
+            node_gone_max_wait: DEFAULT_NODE_GONE_MAX_WAIT,
         }
     }
 }
@@ -436,6 +459,10 @@ mod tests {
             DEFAULT_HEARTBEAT_INTERVAL
         );
         assert_eq!(
+            config.orchestration.node_gone_max_wait, None,
+            "node_gone_max_wait should default to unset so the agent waits indefinitely for the node to reappear"
+        );
+        assert_eq!(
             config.kubernetes.annotation_prefix,
             DEFAULT_ANNOTATION_PREFIX
         );
@@ -471,6 +498,7 @@ mod tests {
             ("TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT", "21m"),
             ("TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT", "11m"),
             ("TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL", "45s"),
+            ("TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT", "30m"),
             (
                 "TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX",
                 "contoso.example.com",
@@ -511,6 +539,10 @@ mod tests {
             config.orchestration.heartbeat_interval,
             Duration::from_secs(45)
         );
+        assert_eq!(
+            config.orchestration.node_gone_max_wait,
+            Some(Duration::from_secs(30 * 60))
+        );
         assert_eq!(config.kubernetes.annotation_prefix, "contoso.example.com");
     }
 
@@ -519,6 +551,26 @@ mod tests {
         let config =
             AgentConfig::from_vars(vars(&[("TRIDENT_ACL_AGENT_NEBRASKA_APP_ID", "")])).unwrap();
         assert_eq!(config.nebraska.app_id, DEFAULT_NEBRASKA_APP_ID);
+    }
+
+    #[test]
+    fn node_gone_max_wait_unset_by_empty_value_waits_indefinitely() {
+        let config = AgentConfig::from_vars(vars(&[(
+            "TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT",
+            "",
+        )]))
+        .unwrap();
+        assert_eq!(config.orchestration.node_gone_max_wait, None);
+    }
+
+    #[test]
+    fn malformed_node_gone_max_wait_is_a_parse_error() {
+        let err = AgentConfig::from_vars(vars(&[(
+            "TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT",
+            "not a duration",
+        )]))
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("not a duration"), "{err:#}");
     }
 
     #[test]
