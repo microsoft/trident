@@ -32,6 +32,11 @@ type NodeStore struct {
 	// NodeList, exactly as real Kubernetes would for a fieldSelector-based
 	// LIST matching zero objects. See DeleteNode/RestoreNode.
 	missing bool
+	// deleteOnNextPatch, when armed via DeleteAfterNextPatch, causes the
+	// very next MergePatch call to flip `missing` to true inside that same
+	// locked critical section, instead of a separate later DeleteNode()
+	// call. See DeleteAfterNextPatch's doc comment for why.
+	deleteOnNextPatch bool
 }
 
 func NewSeedNode(name string, labels map[string]string) *corev1.Node {
@@ -119,6 +124,10 @@ func (s *NodeStore) MergePatch(raw []byte) (*corev1.Node, error) {
 	}
 	s.bumpLocked()
 	s.broadcastLocked()
+	if s.deleteOnNextPatch {
+		s.deleteOnNextPatch = false
+		s.missing = true
+	}
 	return s.node.DeepCopy(), nil
 }
 
@@ -186,6 +195,25 @@ func (s *NodeStore) DeleteNode() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.missing = true
+}
+
+// DeleteAfterNextPatch arms a one-shot trigger that marks the Node missing
+// (as DeleteNode does) atomically within the very next MergePatch call's
+// locked critical section, rather than via a separate later call. This
+// exists for scenarios like node_resilience.go's phase 2, which needs the
+// Node to go missing immediately after a specific triggering patch (e.g.
+// the agent's in-flight publish_status PATCH) is applied: a plain
+// DeleteNode() call made after that patch's HTTP response returns races
+// the real VM agent's network round-trip reaction to the same patch's
+// broadcast, with correctness depending on the local call being faster -
+// a timing assumption, not a guarantee. Arming the flag here instead
+// ties the missing-flip to the same lock acquisition that delivers the
+// triggering patch's broadcast, so no reactive request from the agent can
+// ever be processed before the Node is reported missing.
+func (s *NodeStore) DeleteAfterNextPatch() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.deleteOnNextPatch = true
 }
 
 // RestoreNode undoes DeleteNode: GET/PATCH/LIST all succeed again as if the

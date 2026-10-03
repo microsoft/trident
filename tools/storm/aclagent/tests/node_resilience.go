@@ -158,12 +158,14 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	// so the agent's already-open watch connection delivers it. handle_stage
 	// calls publish_status(&in_progress) - a PATCH - as its very first
 	// action once from_version != to_version, before it ever touches
-	// Nebraska (see orchestrator.rs's handle_stage), so deleting the Node
-	// immediately after this patch call returns reliably wins the race
-	// against the agent's reaction: the test's DeleteNode() is a local,
-	// synchronous field write, while the agent still has to receive the
-	// watch event and round-trip a PATCH back over the network, which is
-	// strictly slower. targetVersion is set to testConfig.TargetVersion
+	// Nebraska (see orchestrator.rs's handle_stage). The Node must go
+	// missing no later than that reactive PATCH, so DeleteAfterNextPatch
+	// arms the fake apiserver to flip the Node missing atomically inside
+	// the very same locked MergePatch call that applies this stage patch
+	// and delivers its broadcast - rather than a separate DeleteNode()
+	// call made after RunScenario returns, which would instead depend on
+	// winning a race against the agent's network round-trip reaction to
+	// that broadcast. targetVersion is set to testConfig.TargetVersion
 	// (guaranteed different from the VM's current version - the same
 	// value run-ab-update stages for real) purely so from_version !=
 	// to_version; server/appId/track are syntactically valid but
@@ -182,10 +184,10 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 			Track:                "stable",
 		}},
 	}}
+	nodeStore.DeleteAfterNextPatch()
 	if _, err := rp.RunScenario(ctx, stageScenario); err != nil {
 		return fmt.Errorf("phase 2: failed to patch in stage request: %w", err)
 	}
-	nodeStore.DeleteNode()
 
 	nodeGoneCount, err = waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeGoneLogSubstring, nodeGoneCount, 30*time.Second, journalSince)
 	if err != nil {

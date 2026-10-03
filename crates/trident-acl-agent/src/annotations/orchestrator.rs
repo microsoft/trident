@@ -149,9 +149,10 @@ impl Orchestrator {
     /// untouched by a 404.
     pub async fn run(&self, shutdown: CancellationToken) -> Result<(), Error> {
         loop {
-            match self.recover_from_trident_state().await {
-                Ok(LoopControl::Continue) => {}
-                Ok(LoopControl::ExitForReboot) => return Ok(()),
+            match self.recover_from_trident_state(&shutdown).await {
+                Ok(Some(LoopControl::Continue)) => {}
+                Ok(Some(LoopControl::ExitForReboot)) => return Ok(()),
+                Ok(None) => return Ok(()), // shutdown requested while recovering
                 Err(err) => {
                     if self.is_node_gone_error(&err) {
                         if !self.await_node_recreation(&shutdown).await? {
@@ -304,7 +305,14 @@ impl Orchestrator {
                 }
                 _ = time::sleep(delay) => {}
             }
-            match self.k8s.get_node(node_name).await {
+            let get_result = select! {
+                _ = shutdown.cancelled() => {
+                    info!("shutdown requested while polling for node {node_name} recreation");
+                    return Ok(false);
+                }
+                result = self.k8s.get_node(node_name) => result,
+            };
+            match get_result {
                 Ok(_) => {
                     info!(
                         "node {node_name} reappeared after {}; resuming",
@@ -337,18 +345,26 @@ impl Orchestrator {
     /// publish is already best-effort/retried (see
     /// `best_effort_publish_terminal`), so deferring the k8s read this far
     /// costs nothing when k8s is healthy and avoids a crash-loop when it
-    /// isn't.
-    async fn recover_from_trident_state(&self) -> Result<LoopControl, Error> {
+    /// isn't. Returns `Ok(None)` if `shutdown` fires while retrying the
+    /// Node read, mirroring `await_node_recreation`'s `Ok(false)` so `run()`
+    /// can exit promptly instead of blocking on an indefinite retry loop.
+    async fn recover_from_trident_state(
+        &self,
+        shutdown: &CancellationToken,
+    ) -> Result<Option<LoopControl>, Error> {
         let persisted = self.state.load()?;
 
         if let Some(pending) = persisted.pending_commit.clone() {
             self.resume_pending_commit(pending).await?;
-            return Ok(LoopControl::Continue);
+            return Ok(Some(LoopControl::Continue));
         }
 
-        let node = self
-            .get_node_with_retry(&self.config.kubernetes.node_name)
-            .await?;
+        let Some(node) = self
+            .get_node_with_retry(&self.config.kubernetes.node_name, shutdown)
+            .await?
+        else {
+            return Ok(None); // shutdown requested while retrying
+        };
         let snapshot = Snapshot::from_node(&node, &self.annotation_keys);
 
         if let Some(request) = snapshot.request.clone() {
@@ -370,7 +386,7 @@ impl Orchestrator {
                     if !matches {
                         self.publish_status(&operation).await?;
                     }
-                    return Ok(LoopControl::Continue);
+                    return Ok(Some(LoopControl::Continue));
                 }
             }
         }
@@ -378,9 +394,10 @@ impl Orchestrator {
         if let Some(request) = snapshot.request {
             return self
                 .reconstruct_without_pending_record(&request, snapshot.operation_status.as_ref())
-                .await;
+                .await
+                .map(Some);
         }
-        Ok(LoopControl::Continue)
+        Ok(Some(LoopControl::Continue))
     }
 
     async fn reconcile_node(&self, node: &Node) -> Result<LoopControl, Error> {
@@ -1364,7 +1381,25 @@ impl Orchestrator {
     /// function's docs). `NodeGone` is returned immediately without
     /// retrying, since it's terminal - the node was deleted, and no amount
     /// of retrying changes that.
-    async fn get_node_with_retry(&self, name: &str) -> Result<Node, K8sClientError> {
+    /// Reads the agent's own Node object, retrying indefinitely with capped
+    /// exponential backoff and full jitter between attempts, so a transient
+    /// Kubernetes hiccup at startup recovery doesn't propagate the first
+    /// error straight into a process exit / crash-loop the way a bare
+    /// `self.k8s.get_node(...).await?` would, and repeated retries don't
+    /// pile onto an API server that's already struggling. Only used by
+    /// `recover_from_trident_state`'s "no pending commit to resume" branch;
+    /// the pending-commit resume itself never touches k8s at all (see that
+    /// function's docs). `NodeGone` is returned immediately without
+    /// retrying, since it's terminal - the node was deleted, and no amount
+    /// of retrying changes that. Both the GET itself and the backoff sleep
+    /// are raced against `shutdown`, so a SIGTERM/SIGINT during startup
+    /// recovery returns promptly (`Ok(None)`) instead of blocking process
+    /// exit on an in-flight retry loop.
+    async fn get_node_with_retry(
+        &self,
+        name: &str,
+        shutdown: &CancellationToken,
+    ) -> Result<Option<Node>, K8sClientError> {
         let mut backoff = ExponentialBackoffBuilder::new()
             .with_initial_interval(NODE_READ_BACKOFF)
             .with_max_interval(NODE_READ_BACKOFF_MAX)
@@ -1373,8 +1408,12 @@ impl Orchestrator {
             .with_max_elapsed_time(None)
             .build();
         loop {
-            match self.k8s.get_node(name).await {
-                Ok(node) => return Ok(node),
+            let get_result = select! {
+                _ = shutdown.cancelled() => return Ok(None),
+                result = self.k8s.get_node(name) => result,
+            };
+            match get_result {
+                Ok(node) => return Ok(Some(node)),
                 Err(err @ K8sClientError::NodeGone) => return Err(err),
                 Err(err) => {
                     // `max_elapsed_time(None)` means `next_backoff()` never
@@ -1385,7 +1424,10 @@ impl Orchestrator {
                     warn!(
                         "transient error reading node {name} during startup recovery, retrying in {delay:?}: {err:#}"
                     );
-                    time::sleep(delay).await;
+                    select! {
+                        _ = shutdown.cancelled() => return Ok(None),
+                        _ = time::sleep(delay) => {}
+                    }
                 }
             }
         }
