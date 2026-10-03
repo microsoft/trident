@@ -77,7 +77,9 @@ use a compact text header to preserve usable controls and error details.
 On the ISO, `--system-console` prefers the graphical virtual console for local
 keyboard/monitor and BMC KVM, independent of `console=` order. An active serial
 console is the fallback. The chosen getty is stopped; other active consoles
-receive plain status once and identify the interactive console.
+receive plain status once and identify the interactive console. Failure to
+open or write to a secondary console is logged and stops mirroring to that
+console; it does not stop the installation.
 The ISO must also disable `getty@tty1.service` and suppress logind's automatic
 virtual gettys (`NAutoVTs=0`, `ReserveVT=0`): stopping a getty before
 `getty.target` starts does not prevent it from claiming tty1 later.

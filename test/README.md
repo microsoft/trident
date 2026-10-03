@@ -11,7 +11,7 @@ python3 test/run.py --display gtk
 
 The payload is copied into the ISO's `cosi/` folder. No HC is supplied, so
 autorun chooses StreamDisk. `reboot = false` leaves the success screen visible;
-use its Reboot button to boot the installed OS.
+use its Reboot button to check what the installed disk boots.
 The ISO disables `getty@tty1.service` and logind's automatic virtual gettys so
 they cannot reclaim the installer's graphical keyboard after startup. The
 installer mirrors source-discovery stages to the serial log; an idle-looking
@@ -24,8 +24,12 @@ uses a pre-existing regular Azure Linux 3.0.20260909 COSI (175 MB compressed,
 The launcher follows the ACL test runner's UEFI setup, but is Python. It creates
 a new sparse qcow2 disk and private firmware variables for every run. No host
 disk or shared host directory is exposed to the guest. Per-device `bootindex`
-makes the hard disk first: a blank disk falls through to the ISO, and the
-installed OS takes over after reboot.
+makes the hard disk first: a blank or non-bootable disk falls through to the ISO.
+For this cached `regular.cosi`, the installer successfully streams the image,
+but a subsequent UEFI boot reports a missing `\\EFI\\BOOT\\grubx64.efi` even
+after ejecting the ISO. This fixture verifies installation, **not** a bootable
+target OS; choose a known-bootable COSI to test both. If the ISO remains attached,
+the repeat-install guard prevents a second stream.
 
 ```console
 python3 test/run.py --display gtk --keep
