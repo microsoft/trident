@@ -48,7 +48,7 @@ an error rather than showing an unfinished serial TUI.
 Media is mounted read-only at `/run/trident/installer-media`. Duplicate labels
 are rejected. Optional `installer/installer.toml` on the mounted media can
 override mode, image directory, and autorun options, but not bootstrap media
-discovery. Relative HC paths are media-relative; absolute paths and `file://`
+discovery or `serialMode`. Relative HC paths are media-relative; absolute paths and `file://`
 refer to the live filesystem. HTTP(S) HC sources are supported.
 
 With an HC, use Install. Otherwise stream the first regular `.cosi` file in
@@ -111,6 +111,7 @@ orange, info bright blue, debug purple, trace gray; installer source labels
 are magenta and Trident labels green. `V` opens a live verbosity picker (Off,
 Error, Warn, Info, Debug, Trace) beside the operation; this only filters the
 display, not serial or stored diagnostics. PgUp/PgDn scroll.
+TRACE output can expose low-level inputs; restrict access to BMC serial captures.
 A missing final Completed response means unknown
 outcome, not success. Another write requires a successful Trident status query
 establishing that the daemon is idle.
