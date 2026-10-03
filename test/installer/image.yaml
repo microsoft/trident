@@ -42,9 +42,13 @@ config:
       enable:
         - tridentd.socket
         - trident-installer.service
+      disable:
+        - getty@tty1.service
     additionalFiles:
       - source: files/installer.toml
         destination: /etc/trident/installer.toml
+      - source: files/installer-logind.conf
+        destination: /etc/systemd/logind.conf.d/installer.conf
   storage:
     bootType: efi
     disks:

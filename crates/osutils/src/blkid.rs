@@ -1,6 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use anyhow::{ensure, Context, Error};
+use anyhow::{Context, Error};
 use uuid::Uuid;
 
 use crate::dependencies::Dependency;

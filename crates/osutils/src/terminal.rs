@@ -6,7 +6,11 @@ use std::{
 };
 
 use anyhow::{ensure, Context, Error};
-use nix::{libc, unistd};
+use nix::{
+    libc,
+    sys::signal::{self, SigSet, SigmaskHow, Signal},
+    unistd::{self, Pid},
+};
 
 use crate::dependencies::Dependency;
 
@@ -71,6 +75,8 @@ pub fn attach(path: impl AsRef<Path>) -> Result<File, Error> {
     if unsafe { libc::ioctl(terminal.as_raw_fd(), libc::TIOCSCTTY, 1) } < 0 {
         return Err(io::Error::last_os_error()).context("Failed to claim controlling terminal");
     }
+    set_foreground_group(&terminal, unistd::getpgrp())
+        .context("Failed to make installer the terminal's foreground process group")?;
     for target in [libc::STDIN_FILENO, libc::STDOUT_FILENO] {
         // dup2 redirects the inherited stdio descriptors without transferring ownership.
         if unsafe { libc::dup2(terminal.as_raw_fd(), target) } < 0 {
@@ -78,6 +84,17 @@ pub fn attach(path: impl AsRef<Path>) -> Result<File, Error> {
         }
     }
     Ok(terminal)
+}
+
+pub(crate) fn set_foreground_group(terminal: &File, group: Pid) -> io::Result<()> {
+    let mut blocked = SigSet::empty();
+    blocked.add(Signal::SIGTTOU);
+    let mut previous = SigSet::empty();
+    signal::pthread_sigmask(SigmaskHow::SIG_BLOCK, Some(&blocked), Some(&mut previous))?;
+    let result = unistd::tcsetpgrp(terminal, group);
+    signal::pthread_sigmask(SigmaskHow::SIG_SETMASK, Some(&previous), None)?;
+    result?;
+    Ok(())
 }
 
 pub fn shell(terminal: &File) -> Result<(), Error> {

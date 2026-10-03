@@ -33,6 +33,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug)]
 pub(super) enum Event {
+    Preparing(String),
     Prepared {
         description: String,
         reboot: bool,
@@ -147,7 +148,15 @@ pub(super) async fn execute(
         },
     )
     .await?;
-    let prepared = task::spawn_blocking(move || source::prepare(&settings, &request)).await?;
+    let progress = tx.clone();
+    let prepared = task::spawn_blocking(move || {
+        source::prepare_with_progress(&settings, &request, |stage| {
+            progress
+                .blocking_send(Event::Preparing(stage.to_owned()))
+                .map_err(|_| anyhow!("Installer event receiver closed"))
+        })
+    })
+    .await?;
     let (settings, plan) = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
@@ -174,6 +183,11 @@ pub(super) async fn execute(
     )
     .await?;
     if let Plan::Stream { image } = &plan {
+        send(
+            &tx,
+            Event::Preparing("Checking image metadata and available disks".into()),
+        )
+        .await?;
         let image = image.clone();
         match task::spawn_blocking(move || source::stream_preflight(&image, force)).await? {
             Ok(true) => return send(&tx, Event::AlreadyPresent(
@@ -183,6 +197,7 @@ pub(super) async fn execute(
             Err(error) => return send(&tx, Event::Error { details: format!("{error:#}"), uncertain: false }).await,
         }
     }
+    send(&tx, Event::Preparing("Connecting to Trident daemon".into())).await?;
     let channel = match connect(TRIDENT_DEFAULT_SOCKET_URI).await {
         Ok(channel) => channel,
         Err(error) => {

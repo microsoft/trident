@@ -4,12 +4,16 @@ import contextlib
 import json
 import os
 from pathlib import Path
+import select
 import shlex
 import shutil
+import socket
 import subprocess
 import tempfile
+import time
 
 HERE = Path(__file__).resolve().parent
+QMP_STARTUP_TIMEOUT_SECONDS = 30
 CODE_CANDIDATES = [
     Path("/usr/share/OVMF/OVMF_CODE_4M.fd"),
     Path("/usr/share/OVMF/OVMF_CODE.fd"),
@@ -51,8 +55,80 @@ def command(iso, scratch, code, memory, cpus, display, vnc=None):
         f"file:{scratch / 'serial.log'}",
     ]
     if vnc is not None:
-        launch.extend(["-vnc", f"127.0.0.1:{vnc}"])
+        launch.extend(
+            [
+                "-S",
+                "-qmp",
+                f"unix:{scratch / 'monitor.sock'},server=on,wait=off",
+                "-vnc",
+                f"127.0.0.1:{vnc}",
+            ]
+        )
     return launch
+
+
+class Qmp:
+    def __init__(self, connection, process):
+        self.connection = connection
+        self.process = process
+        self.pending = b""
+        self.viewer_connected = False
+
+    def receive(self):
+        while b"\n" not in self.pending:
+            if self.process.poll() is not None:
+                raise RuntimeError("QEMU exited while waiting for a VNC viewer")
+            if not select.select([self.connection], [], [], 1)[0]:
+                continue
+            data = self.connection.recv(4096)
+            if not data:
+                raise RuntimeError("QEMU monitor disconnected")
+            self.pending += data
+        line, self.pending = self.pending.split(b"\n", 1)
+        message = json.loads(line)
+        if message.get("event") == "VNC_INITIALIZED":
+            self.viewer_connected = True
+        elif message.get("event") == "VNC_DISCONNECTED":
+            self.viewer_connected = False
+        return message
+
+    def execute(self, command):
+        request = {"execute": command, "id": command}
+        self.connection.sendall(json.dumps(request).encode() + b"\n")
+        while True:
+            response = self.receive()
+            if response.get("id") == command:
+                if "error" in response:
+                    raise RuntimeError(f"QEMU {command}: {response['error']}")
+                return response["return"]
+
+
+def wait_for_vnc_viewer(process, monitor_path, on_ready):
+    deadline = time.monotonic() + QMP_STARTUP_TIMEOUT_SECONDS
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        while True:
+            if process.poll() is not None:
+                raise RuntimeError("QEMU exited before the VNC monitor was ready")
+            try:
+                connection.connect(str(monitor_path))
+                break
+            except (FileNotFoundError, ConnectionRefusedError):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("QEMU monitor did not become ready")
+                time.sleep(0.1)
+        qmp = Qmp(connection, process)
+        if "QMP" not in qmp.receive():
+            raise RuntimeError("Invalid greeting from QEMU monitor")
+        qmp.execute("qmp_capabilities")
+        status = qmp.execute("query-vnc")
+        if not status.get("enabled"):
+            raise RuntimeError("QEMU VNC display is not enabled")
+        on_ready()
+        if not status.get("clients"):
+            while not qmp.viewer_connected:
+                qmp.receive()
+        print("VNC viewer connected. Starting the guest now.", flush=True)
+        qmp.execute("cont")
 
 
 def main():
@@ -160,14 +236,21 @@ def main():
         )
         if args.vnc is not None:
             port = 5900 + args.vnc
-            print(
-                f"VNC: localhost:{port} only. On your local machine, tunnel with:\n"
-                f"  ssh -N -L {port}:127.0.0.1:{port} USER@HOST\n"
-                f"Then open vnc://127.0.0.1:{port} in a VNC client.",
-                flush=True,
-            )
         process = subprocess.Popen(launch)
         try:
+            if args.vnc is not None:
+
+                def show_vnc_instructions():
+                    print(
+                        f"Guest paused; VNC on localhost:{port} only. Tunnel from your local machine:\n"
+                        f"  ssh -N -L {port}:127.0.0.1:{port} USER@HOST\n"
+                        f"Connect to vnc://127.0.0.1:{port}; boot begins after the viewer connects.",
+                        flush=True,
+                    )
+
+                wait_for_vnc_viewer(
+                    process, scratch / "monitor.sock", show_vnc_instructions
+                )
             status = process.wait()
         finally:
             if process.poll() is None:

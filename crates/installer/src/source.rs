@@ -13,7 +13,6 @@ use tar::Archive;
 use url::Url;
 
 use osutils::{
-    blkid,
     filesystems::MountFileSystemType,
     findmnt::FindMnt,
     lsblk::{self, BlockDevice, BlockDeviceType},
@@ -57,25 +56,42 @@ impl Plan {
     }
 }
 
-pub(super) fn prepare(settings: &Config, request: &Request) -> Result<(Config, Plan), Error> {
-    let root = media_root(settings)?;
-    prepare_from_media(settings, request, root.as_deref())
+pub(super) fn prepare_with_progress(
+    settings: &Config,
+    request: &Request,
+    mut progress: impl FnMut(&str) -> Result<(), Error>,
+) -> Result<(Config, Plan), Error> {
+    let root = media_root(settings, &mut progress)?;
+    prepare_from_media_with_progress(settings, request, root.as_deref(), &mut progress)
 }
 
+#[cfg(test)]
 fn prepare_from_media(
     settings: &Config,
     request: &Request,
     root: Option<&Path>,
 ) -> Result<(Config, Plan), Error> {
+    prepare_from_media_with_progress(settings, request, root, &mut |_| Ok(()))
+}
+
+fn prepare_from_media_with_progress(
+    settings: &Config,
+    request: &Request,
+    root: Option<&Path>,
+    progress: &mut impl FnMut(&str) -> Result<(), Error>,
+) -> Result<(Config, Plan), Error> {
+    progress("Reading installer configuration")?;
     let settings = match root {
         Some(root) => settings.overlay(root)?,
         None => settings.clone(),
     };
     settings.require_autorun()?;
+    progress("Scanning media for COSI images")?;
     let images = match root {
         Some(root) => config::discover_images(root, &settings.media.cosi_directory)?,
         None => Vec::new(),
     };
+    progress("Checking Host Configuration")?;
     let source = match request {
         Request::HostConfiguration(source) => {
             remote_url(source)?;
@@ -126,8 +142,12 @@ fn prepare_from_media(
     Ok((settings, plan))
 }
 
-fn media_root(settings: &Config) -> Result<Option<PathBuf>, Error> {
+fn media_root(
+    settings: &Config,
+    progress: &mut impl FnMut(&str) -> Result<(), Error>,
+) -> Result<Option<PathBuf>, Error> {
     if let Some(path) = &settings.media.mount_path {
+        progress("Checking the configured media mount")?;
         ensure!(
             mountpoint::check_is_mountpoint(path)?,
             "media.mountPath is not a mount point: {}",
@@ -140,7 +160,8 @@ fn media_root(settings: &Config) -> Result<Option<PathBuf>, Error> {
         .cdrom_label
         .as_deref()
         .unwrap_or(config::DEFAULT_MEDIA_LABEL);
-    let devices = blkid::devices_by_label(label)?;
+    progress("Looking for installer media by filesystem label")?;
+    let devices = lsblk::devices_by_label(label)?;
     let Some(device) = config::choose_media(&devices)? else {
         return Ok(None);
     };
@@ -161,6 +182,7 @@ fn media_root(settings: &Config) -> Result<Option<PathBuf>, Error> {
             "Existing installer mount does not match the requested read-only media"
         );
     } else {
+        progress("Mounting installer media read-only")?;
         mount::mount(
             device,
             target,
