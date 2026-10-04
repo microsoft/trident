@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, ensure, Context, Error};
+use log::LevelFilter;
 use serde::{Deserialize, Serialize};
 use toml::Value as TomlValue;
 
@@ -20,6 +21,8 @@ pub(super) struct Config {
     pub mode: Mode,
     #[serde(default)]
     pub serial_mode: SerialMode,
+    #[serde(default)]
+    pub serial_verbosity: SerialVerbosity,
     #[serde(default)]
     pub media: Media,
     #[serde(default)]
@@ -40,6 +43,31 @@ pub(super) enum SerialMode {
     #[default]
     Logs,
     Ui,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub(super) enum SerialVerbosity {
+    Off,
+    Error,
+    Warn,
+    Info,
+    #[default]
+    Debug,
+    Trace,
+}
+
+impl SerialVerbosity {
+    pub(super) fn filter(self) -> LevelFilter {
+        match self {
+            Self::Off => LevelFilter::Off,
+            Self::Error => LevelFilter::Error,
+            Self::Warn => LevelFilter::Warn,
+            Self::Info => LevelFilter::Info,
+            Self::Debug => LevelFilter::Debug,
+            Self::Trace => LevelFilter::Trace,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -253,6 +281,7 @@ mod tests {
         Config::parse("mode = 'autorun'\nunknown = true").unwrap_err();
         let config = Config::parse("mode = 'autorun'").unwrap();
         assert_eq!(config.serial_mode, SerialMode::Logs);
+        assert_eq!(config.serial_verbosity, SerialVerbosity::Debug);
         assert!(config.autorun.reboot);
         assert_eq!(config.media.cosi_directory, Path::new("cosi"));
         Config::parse("mode = 'interactive'")
@@ -266,6 +295,15 @@ mod tests {
         Config::parse("mode = 'autorun'\nserialMode = 'logs'").unwrap();
         let error = Config::parse("mode = 'autorun'\nserialMode = 'ui'").unwrap_err();
         assert!(error.to_string().contains("not implemented"), "{error:#}");
+    }
+
+    #[test]
+    fn serial_verbosity_defaults_to_debug_and_rejects_invalid_levels() {
+        let config = Config::parse("mode = 'autorun'\nserialVerbosity = 'trace'").unwrap();
+        assert_eq!(config.serial_verbosity.filter(), LevelFilter::Trace);
+        let config = Config::parse("mode = 'autorun'\nserialVerbosity = 'off'").unwrap();
+        assert_eq!(config.serial_verbosity.filter(), LevelFilter::Off);
+        Config::parse("mode = 'autorun'\nserialVerbosity = 'verbose'").unwrap_err();
     }
 
     #[test]

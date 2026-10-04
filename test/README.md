@@ -12,8 +12,9 @@ python3 test/run.py --display gtk
 The payload is copied into the ISO's `cosi/` folder. No HC is supplied, so
 autorun chooses StreamDisk. `reboot = false` leaves the success screen visible;
 use its Reboot button to check what the installed disk boots.
-`serialMode = "logs"` routes every INST and TRIDENT log record to the serial
-console as `MM:SS [SOURCE:LEVEL] message`, independent of TUI verbosity.
+`serialMode = "logs"` routes INST and TRIDENT log records to the serial
+console as `MM:SS [SOURCE:LEVEL] message`, up to `serialVerbosity` (default
+`debug`), independently of TUI verbosity.
 This ISO suppresses the serial getty prompt and normal kernel/systemd status
 output; UEFI firmware output may still appear before the installer starts.
 With only a serial console active, autorun runs without a TUI and honors
@@ -45,7 +46,12 @@ python3 test/run.py --dry-run
 
 `--keep` retains the disk, firmware variables and serial log for inspection.
 Otherwise that run's private `.vm/` directory is removed after QEMU exits.
-GTK uses the graphical installer console; serial status is captured separately.
+The launcher follows tagged INST and TRIDENT serial records in the same
+terminal, including TRACE when `serialVerbosity = "trace"`, without forwarding
+firmware/GRUB escape sequences that could redraw your terminal. The complete
+raw serial capture stays
+in the indicated `serial.log` file while the VM runs; use `--keep` to retain it
+after exit. GTK uses a separate graphical window for the interactive console.
 Do not rebuild over an ISO still attached to a running VM. Use
 `python3 test/build.py --output-dir test/.work/next-iso` and then pass
 `--iso test/.work/next-iso/installer_amd64_iso.iso` to `run.py` to test a

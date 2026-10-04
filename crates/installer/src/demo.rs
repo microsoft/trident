@@ -9,7 +9,10 @@ use trident_proto::v1::{
     ServicingKind, ServicingResponse, Started, StatusCode, TridentError, TridentErrorKind,
 };
 
-use crate::client::{self, Event};
+use crate::{
+    client::{self, Event},
+    config::SerialVerbosity,
+};
 
 const DEMO_STEP: Duration = Duration::from_millis(500);
 
@@ -28,6 +31,7 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
         Event::Prepared {
             description: "DEMO: StreamDisk from ISO image".into(),
             reboot: false,
+            serial_verbosity: SerialVerbosity::Debug,
             stream_image: None,
         },
     )

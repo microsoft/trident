@@ -4,16 +4,20 @@ import contextlib
 import json
 import os
 from pathlib import Path
+import re
 import select
 import shlex
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 
 HERE = Path(__file__).resolve().parent
 QMP_STARTUP_TIMEOUT_SECONDS = 30
+SERIAL_POLL_SECONDS = 0.1
+INSTALLER_RECORD = re.compile(r"^\d{2,}:[0-5]\d \[(?:INST|TRIDENT):[A-Z]+\] ")
 CODE_CANDIDATES = [
     Path("/usr/share/OVMF/OVMF_CODE_4M.fd"),
     Path("/usr/share/OVMF/OVMF_CODE.fd"),
@@ -129,6 +133,31 @@ def wait_for_vnc_viewer(process, monitor_path, on_ready):
                 qmp.receive()
         print("VNC viewer connected. Starting the guest now.", flush=True)
         qmp.execute("cont")
+
+
+def follow_serial(process, path, output=sys.stdout, interval=SERIAL_POLL_SECONDS):
+    stream = None
+    pending = ""
+    try:
+        while True:
+            if stream is None and path.exists():
+                stream = path.open(encoding="utf-8", errors="replace")
+            if stream is not None:
+                pending += stream.read()
+                while "\n" in pending:
+                    line, pending = pending.split("\n", 1)
+                    line = line.rstrip("\r")
+                    if INSTALLER_RECORD.match(line):
+                        print(line, file=output, flush=True)
+            status = process.poll()
+            if status is not None:
+                if pending and INSTALLER_RECORD.match(pending):
+                    print(pending.rstrip("\r"), file=output, flush=True)
+                return status
+            time.sleep(interval)
+    finally:
+        if stream is not None:
+            stream.close()
 
 
 def main():
@@ -251,7 +280,11 @@ def main():
                 wait_for_vnc_viewer(
                     process, scratch / "monitor.sock", show_vnc_instructions
                 )
-            status = process.wait()
+            print(
+                "Following installer serial records here (full capture: serial.log).",
+                flush=True,
+            )
+            status = follow_serial(process, scratch / "serial.log")
         finally:
             if process.poll() is None:
                 process.terminate()
