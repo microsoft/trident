@@ -1700,6 +1700,22 @@ mod tests {
         assert!(text.contains("FAILURE - Installation stopped"));
         assert!(text.contains("Earlier warning"));
         assert!(text.contains("FAILURE: Network timeout"));
+        for marker in ["FAILURE - Installation stopped", "FAILURE: Network timeout"] {
+            let row = terminal
+                .backend()
+                .buffer()
+                .content
+                .chunks(80)
+                .find(|row| {
+                    row.iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>()
+                        .contains(marker)
+                })
+                .unwrap();
+            let content = row.iter().map(|cell| cell.symbol()).collect::<String>();
+            assert_eq!(row[content.find(marker).unwrap()].fg, Color::LightRed);
+        }
         model.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), true);
         assert!(model.error_details_open);
         terminal.draw(|frame| render(frame, &model, true)).unwrap();
