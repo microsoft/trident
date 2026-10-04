@@ -58,6 +58,44 @@ const COLOR_INFO: Color = Color::Rgb(229, 234, 236);
 const COLOR_DEBUG: Color = Color::Rgb(167, 180, 189);
 const COLOR_TRACE: Color = Color::Rgb(99, 115, 129);
 const COLOR_SUCCESS: Color = Color::Rgb(93, 200, 148);
+// Linux VT maps RGB SGR values into 16 colours, so give each UI role its own ANSI slot.
+const VT_PALETTE: &[(u8, Color, Color)] = &[
+    (0, COLOR_BACKGROUND, Color::Black),
+    (1, COLOR_ERROR, Color::Red),
+    (2, COLOR_TRIDENT, Color::Green),
+    (3, COLOR_WARN, Color::Yellow),
+    (4, COLOR_FRAME, Color::Blue),
+    (5, COLOR_INST, Color::Magenta),
+    (6, COLOR_BRAND, Color::Cyan),
+    (7, COLOR_DEBUG, Color::Gray),
+    (8, COLOR_TRACE, Color::DarkGray),
+    (10, COLOR_SUCCESS, Color::LightGreen),
+    (15, COLOR_INFO, Color::White),
+];
+
+fn theme_color(color: Color, linux_vt: bool) -> Color {
+    if !linux_vt {
+        return color;
+    }
+    VT_PALETTE
+        .iter()
+        .find(|(_, rgb, _)| *rgb == color)
+        .map(|(_, _, ansi)| *ansi)
+        .unwrap_or(color)
+}
+
+fn vt_rgb_palette() -> Result<Vec<(u8, u8, u8, u8)>, io::Error> {
+    VT_PALETTE
+        .iter()
+        .map(|(slot, color, _)| match color {
+            Color::Rgb(red, green, blue) => Ok((*slot, *red, *green, *blue)),
+            other => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Linux VT palette requires RGB values, got {other:?}"),
+            )),
+        })
+        .collect()
+}
 const WORDMARK_HEADER_HEIGHT: u16 = 12;
 const VERBOSITY_LEVELS: [LevelFilter; 6] = [
     LevelFilter::Off,
@@ -118,11 +156,14 @@ impl LogSource {
         }
     }
 
-    fn color(self) -> Color {
-        match self {
-            Self::Inst => COLOR_INST,
-            Self::Trident => COLOR_TRIDENT,
-        }
+    fn color(self, linux_vt: bool) -> Color {
+        theme_color(
+            match self {
+                Self::Inst => COLOR_INST,
+                Self::Trident => COLOR_TRIDENT,
+            },
+            linux_vt,
+        )
     }
 }
 
@@ -150,17 +191,20 @@ impl LogEntry {
             .join("\n")
     }
 
-    fn styled(&self) -> Line<'_> {
-        let level = Style::default().fg(self.result_color.unwrap_or(log_color(self.level)));
+    fn styled(&self, linux_vt: bool) -> Line<'_> {
+        let level = Style::default().fg(theme_color(
+            self.result_color.unwrap_or(log_color(self.level)),
+            linux_vt,
+        ));
         let surrounding = self
             .result_color
-            .map(|color| Style::default().fg(color))
+            .map(|color| Style::default().fg(theme_color(color, linux_vt)))
             .unwrap_or_default();
         Line::from(vec![
             Span::styled(self.prefix(), surrounding),
             Span::styled(
                 self.source.label(),
-                Style::default().fg(self.source.color()),
+                Style::default().fg(self.source.color(linux_vt)),
             ),
             Span::styled(":", surrounding),
             Span::styled(self.level.to_string(), level.add_modifier(Modifier::BOLD)),
@@ -191,6 +235,7 @@ struct Model {
     started: Instant,
     failed: bool,
     error_details_open: bool,
+    linux_vt: bool,
 }
 
 impl Model {
@@ -215,6 +260,7 @@ impl Model {
             started: Instant::now(),
             failed: false,
             error_details_open: false,
+            linux_vt: false,
         }
     }
 
@@ -664,13 +710,15 @@ impl Output {
 struct Display {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
     active: bool,
+    linux_vt: bool,
 }
 
 impl Display {
-    fn new() -> Result<Self, Error> {
+    fn new(linux_vt: bool) -> Result<Self, Error> {
         let mut display = Self {
             terminal: Terminal::new(CrosstermBackend::new(io::stdout()))?,
             active: false,
+            linux_vt,
         };
         display.resume()?;
         Ok(display)
@@ -679,16 +727,29 @@ impl Display {
     fn resume(&mut self) -> Result<(), Error> {
         terminal::enable_raw_mode()?;
         self.active = true;
+        if self.linux_vt {
+            os_terminal::set_vt_palette(&mut io::stdout(), &vt_rgb_palette()?)?;
+        }
         execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
         self.terminal.clear()?;
         Ok(())
     }
 
     fn suspend(&mut self) -> Result<(), Error> {
-        terminal::disable_raw_mode()?;
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
-        self.terminal.show_cursor()?;
+        let restore = (|| -> Result<(), Error> {
+            terminal::disable_raw_mode()?;
+            execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+            self.terminal.show_cursor()?;
+            Ok(())
+        })();
+        let palette = if self.linux_vt {
+            os_terminal::reset_vt_palette(&mut io::stdout())
+        } else {
+            Ok(())
+        };
         self.active = false;
+        restore?;
+        palette?;
         Ok(())
     }
 }
@@ -739,6 +800,7 @@ pub(super) async fn run(
     config_path: Option<PathBuf>,
     scenario: Option<Scenario>,
     plain: bool,
+    linux_vt: bool,
     mut output: Output,
 ) -> Result<(), Error> {
     let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
@@ -749,6 +811,7 @@ pub(super) async fn run(
     let mut interrupts = unix::signal(SignalKind::interrupt())?;
     let mut termination = unix::signal(SignalKind::terminate())?;
     let mut model = Model::new();
+    model.linux_vt = linux_vt;
     let mut worker = Some(spawn_operation(
         config_path.clone(),
         Request::Autorun,
@@ -759,7 +822,7 @@ pub(super) async fn run(
     ));
     let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
     let mut display = if interactive && !plain {
-        Some(Display::new()?)
+        Some(Display::new(linux_vt)?)
     } else {
         None
     };
@@ -1050,12 +1113,12 @@ fn title(screen: Screen) -> &'static str {
     }
 }
 
-fn block(title: &str) -> Block<'_> {
+fn block(title: &str, linux_vt: bool) -> Block<'_> {
     Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
-        .style(Style::default().bg(COLOR_BACKGROUND))
-        .border_style(Style::default().fg(COLOR_FRAME))
+        .style(Style::default().bg(theme_color(COLOR_BACKGROUND, linux_vt)))
+        .border_style(Style::default().fg(theme_color(COLOR_FRAME, linux_vt)))
         .title(title)
 }
 
@@ -1075,9 +1138,16 @@ fn header_height(viewport: Rect) -> u16 {
     }
 }
 
-fn render_header(frame: &mut Frame, area: Rect, state: &str, demo: bool, state_color: Color) {
+fn render_header(
+    frame: &mut Frame,
+    area: Rect,
+    state: &str,
+    demo: bool,
+    state_color: Color,
+    linux_vt: bool,
+) {
     let brand = Style::default()
-        .fg(COLOR_BRAND)
+        .fg(theme_color(COLOR_BRAND, linux_vt))
         .add_modifier(Modifier::BOLD);
     let mut lines = Vec::new();
     if area.height >= WORDMARK_HEADER_HEIGHT {
@@ -1091,11 +1161,14 @@ fn render_header(frame: &mut Frame, area: Rect, state: &str, demo: bool, state_c
         lines.push(Line::default());
     }
     lines.push(Line::from(Span::styled(APPLICATION_NAME, brand)));
-    let mut status = vec![Span::styled(state, Style::default().fg(state_color))];
+    let mut status = vec![Span::styled(
+        state,
+        Style::default().fg(theme_color(state_color, linux_vt)),
+    )];
     if demo {
         status.push(Span::styled(
             " / DEMO: ALL ACTIONS SIMULATED",
-            Style::default().fg(COLOR_BRAND),
+            Style::default().fg(theme_color(COLOR_BRAND, linux_vt)),
         ));
     }
     lines.push(Line::from(status));
@@ -1112,10 +1185,10 @@ fn render_demo_shell(frame: &mut Frame, shell: &DemoShell) {
         Constraint::Min(4),
     ])
     .split(frame.area());
-    render_header(frame, areas[0], "SIMULATED SHELL", true, COLOR_BRAND);
+    render_header(frame, areas[0], "SIMULATED SHELL", true, COLOR_BRAND, false);
     frame.render_widget(
         Paragraph::new(shell.text())
-            .block(block("No commands are executed"))
+            .block(block("No commands are executed", false))
             .wrap(Wrap { trim: false }),
         areas[1],
     );
@@ -1137,7 +1210,7 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
     if header_lines > 0 {
         lines.push(Line::from(Span::styled(
             model.activity.clone(),
-            Style::default().fg(COLOR_BRAND),
+            Style::default().fg(theme_color(COLOR_BRAND, model.linux_vt)),
         )));
         lines.push(Line::default());
     }
@@ -1160,13 +1233,20 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
         .len()
         .saturating_sub(usize::from(model.scroll).min(logs.len().saturating_sub(1)));
     let start = end.saturating_sub(visible);
-    lines.extend(logs[start..end].iter().map(|entry| entry.styled()));
+    lines.extend(
+        logs[start..end]
+            .iter()
+            .map(|entry| entry.styled(model.linux_vt)),
+    );
     let block = Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
-        .style(Style::default().bg(COLOR_BACKGROUND))
-        .border_style(Style::default().fg(color))
-        .title(Span::styled(title, Style::default().fg(color)));
+        .style(Style::default().bg(theme_color(COLOR_BACKGROUND, model.linux_vt)))
+        .border_style(Style::default().fg(theme_color(color, model.linux_vt)))
+        .title(Span::styled(
+            title,
+            Style::default().fg(theme_color(color, model.linux_vt)),
+        ));
     Paragraph::new(lines)
         .block(block)
         .wrap(Wrap { trim: false })
@@ -1174,7 +1254,7 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
 
 fn render(frame: &mut Frame, model: &Model, demo: bool) {
     frame.render_widget(
-        Block::default().style(Style::default().bg(COLOR_BACKGROUND)),
+        Block::default().style(Style::default().bg(theme_color(COLOR_BACKGROUND, model.linux_vt))),
         frame.area(),
     );
     let choices = model.choices();
@@ -1208,6 +1288,7 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
             Screen::AlreadyPresent => COLOR_WARN,
             _ => COLOR_BRAND,
         },
+        model.linux_vt,
     );
     if areas[1].width > 22 {
         let operation =
@@ -1219,7 +1300,7 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         frame.render_widget(
             Paragraph::new(format!("Logs: {} [V]", model.verbosity))
                 .alignment(Alignment::Right)
-                .style(Style::default().fg(COLOR_BRAND)),
+                .style(Style::default().fg(theme_color(COLOR_BRAND, model.linux_vt))),
             operation[1],
         );
     } else {
@@ -1231,15 +1312,15 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
     let content = match model.screen {
         _ if model.showing_logs() => log_panel(model, areas[2]),
         Screen::StreamUrl | Screen::HostConfigUrl => Paragraph::new(format!("Enter an http:// or https:// URL:\n\n{}\n\nEnter: start   Esc: back", display_text(&model.url)))
-            .block(block("Remote source")).wrap(Wrap { trim: false }),
+            .block(block("Remote source", model.linux_vt)).wrap(Wrap { trim: false }),
         Screen::Force => Paragraph::new("Force reinstall will erase the disk selected by Trident.\n\nExisting partitions and files will be lost.\nCancel is selected by default.")
-            .block(block("Destructive action")).wrap(Wrap { trim: false }),
+            .block(block("Destructive action", model.linux_vt)).wrap(Wrap { trim: false }),
         Screen::Error => Paragraph::new(display_text(&model.details))
-            .block(block("Full error details / Esc to return")
-                .border_style(Style::default().fg(COLOR_ERROR)))
+            .block(block("Full error details / Esc to return", model.linux_vt)
+                .border_style(Style::default().fg(theme_color(COLOR_ERROR, model.linux_vt))))
             .wrap(Wrap { trim: false }).scroll((model.scroll, 0)),
         _ => Paragraph::new(display_text(&model.details))
-            .block(block("Result")).wrap(Wrap { trim: false }),
+            .block(block("Result", model.linux_vt)).wrap(Wrap { trim: false }),
     };
     frame.render_widget(content, areas[2]);
     let choices = choices
@@ -1252,14 +1333,17 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
             ))
             .style(if index == model.selected {
                 Style::default()
-                    .fg(COLOR_BRAND)
+                    .fg(theme_color(COLOR_BRAND, model.linux_vt))
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             })
         })
         .collect::<Vec<_>>();
-    frame.render_widget(List::new(choices).block(block("Actions")), areas[3]);
+    frame.render_widget(
+        List::new(choices).block(block("Actions", model.linux_vt)),
+        areas[3],
+    );
     let countdown = model
         .reboot_at
         .map(|deadline| {
@@ -1283,7 +1367,8 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         )
     };
     frame.render_widget(
-        Paragraph::new(format!("{controls}\n{countdown}")).style(Style::default().fg(COLOR_BRAND)),
+        Paragraph::new(format!("{controls}\n{countdown}"))
+            .style(Style::default().fg(theme_color(COLOR_BRAND, model.linux_vt))),
         areas[4],
     );
     if model.verbosity_open {
@@ -1317,7 +1402,7 @@ fn render_verbosity_picker(frame: &mut Frame, model: &Model) {
                 ),
                 if index == model.verbosity_selected {
                     Style::default()
-                        .fg(COLOR_BRAND)
+                        .fg(theme_color(COLOR_BRAND, model.linux_vt))
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
@@ -1327,7 +1412,7 @@ fn render_verbosity_picker(frame: &mut Frame, model: &Model) {
         .chain([Line::default(), Line::from("Enter: apply   Esc: cancel")])
         .collect::<Vec<_>>();
     frame.render_widget(
-        Paragraph::new(rows).block(block("Log verbosity / display only")),
+        Paragraph::new(rows).block(block("Log verbosity / display only", model.linux_vt)),
         area,
     );
 }
@@ -1534,6 +1619,51 @@ mod tests {
     }
 
     #[test]
+    fn linux_vt_palette_uses_distinct_slots_for_a1_log_levels() {
+        let entries = vt_rgb_palette().unwrap();
+        assert!(entries.contains(&(15, 229, 234, 236)));
+        assert!(entries.contains(&(7, 167, 180, 189)));
+        assert!(entries.contains(&(8, 99, 115, 129)));
+        assert_eq!(theme_color(COLOR_INFO, true), Color::White);
+        assert_eq!(theme_color(COLOR_DEBUG, true), Color::Gray);
+        assert_eq!(theme_color(COLOR_TRACE, true), Color::DarkGray);
+        assert_eq!(theme_color(COLOR_SUCCESS, true), Color::LightGreen);
+        assert_eq!(theme_color(COLOR_DEBUG, false), Color::Rgb(167, 180, 189));
+
+        let mut model = Model::new();
+        model.linux_vt = true;
+        model.verbosity = LevelFilter::Trace;
+        for (level, message) in [
+            (LogLevel::Info, "info-vt"),
+            (LogLevel::Debug, "debug-vt"),
+            (LogLevel::Trace, "trace-vt"),
+        ] {
+            model.log(LogSource::Trident, level, message.into());
+        }
+        let mut terminal = Terminal::new(TestBackend::new(80, 32)).unwrap();
+        terminal.draw(|frame| render(frame, &model, false)).unwrap();
+        let buffer = terminal.backend().buffer();
+        for (message, expected) in [
+            ("info-vt", Color::White),
+            ("debug-vt", Color::Gray),
+            ("trace-vt", Color::DarkGray),
+        ] {
+            let row = buffer
+                .content
+                .chunks(80)
+                .find(|row| {
+                    row.iter()
+                        .map(|cell| cell.symbol())
+                        .collect::<String>()
+                        .contains(message)
+                })
+                .unwrap();
+            let text = row.iter().map(|cell| cell.symbol()).collect::<String>();
+            assert_eq!(row[text.find(message).unwrap()].fg, expected);
+        }
+    }
+
+    #[test]
     fn operation_and_verbosity_share_one_line() {
         let mut model = Model::new();
         model.source = "StreamDisk from file:///media/cosi/payload.cosi".into();
@@ -1598,11 +1728,11 @@ mod tests {
             "00:00 [INST:DEBUG] Loaded installer settings"
         );
         assert_eq!(
-            entry.styled().spans[1].style.fg,
+            entry.styled(false).spans[1].style.fg,
             Some(Color::Rgb(171, 186, 196))
         );
         assert_eq!(
-            entry.styled().spans[3].style.fg,
+            entry.styled(false).spans[3].style.fg,
             Some(Color::Rgb(167, 180, 189))
         );
         assert_eq!(model.logs.len(), 1);

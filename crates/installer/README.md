@@ -116,7 +116,10 @@ serial stream independently of TUI verbosity; each line of a multiline message
 gets its own `MM:SS [SOURCE:LEVEL]` prefix. The TUI defaults to Debug: errors red, warnings
 amber, INFO pale neutral, DEBUG steel gray and TRACE slate gray; INST labels
 are muted slate and TRIDENT labels seafoam. The wordmark remains cyan and
-success is green. Terminals with limited palettes approximate these colours.
+success is green. On the graphical Linux virtual terminal, the installer
+programs its 16 ANSI palette slots to A1 RGB values, then restores the
+original palette when opening a shell or leaving the UI. Workstation demo
+terminals use the RGB values directly.
 `V` opens a live verbosity picker (Off,
 Error, Warn, Info, Debug, Trace) beside the operation; this only filters the
 display, not serial or stored diagnostics. The private diagnostic file retains

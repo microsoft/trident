@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, IsTerminal},
+    io::{self, IsTerminal, Write},
     os::{fd::AsRawFd, unix::fs::FileTypeExt},
     path::{Path, PathBuf},
 };
@@ -16,6 +16,26 @@ use crate::dependencies::Dependency;
 
 const ACTIVE_CONSOLES_PATH: &str = "/sys/class/tty/console/active";
 const GRAPHICAL_CONSOLE: &str = "tty1";
+const VT_PALETTE_SIZE: u8 = 16;
+
+/// Sets RGB values for the Linux virtual console's 16 ANSI colour slots.
+pub fn set_vt_palette(output: &mut impl Write, colours: &[(u8, u8, u8, u8)]) -> io::Result<()> {
+    for &(slot, red, green, blue) in colours {
+        if slot >= VT_PALETTE_SIZE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Invalid Linux VT palette slot {slot}"),
+            ));
+        }
+        write!(output, "\x1b]P{slot:x}{red:02x}{green:02x}{blue:02x}")?;
+    }
+    output.flush()
+}
+
+pub fn reset_vt_palette(output: &mut impl Write) -> io::Result<()> {
+    output.write_all(b"\x1b]R")?;
+    output.flush()
+}
 
 pub fn active_consoles() -> Result<Vec<PathBuf>, Error> {
     let active = fs::read_to_string(ACTIVE_CONSOLES_PATH)
@@ -122,5 +142,14 @@ mod tests {
         );
         console_paths("../tty1").unwrap_err();
         console_paths("").unwrap_err();
+    }
+
+    #[test]
+    fn linux_vt_palette_sequences_set_rgb_slots_and_reset() {
+        let mut output = Vec::new();
+        set_vt_palette(&mut output, &[(0, 11, 17, 24), (15, 229, 234, 236)]).unwrap();
+        reset_vt_palette(&mut output).unwrap();
+        assert_eq!(output, b"\x1b]P00b1118\x1b]Pfe5eaec\x1b]R");
+        set_vt_palette(&mut output, &[(16, 0, 0, 0)]).unwrap_err();
     }
 }
