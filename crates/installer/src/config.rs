@@ -102,6 +102,8 @@ pub(super) struct Autorun {
     pub host_configuration: Option<String>,
     #[serde(default = "default_reboot")]
     pub reboot: bool,
+    #[serde(default)]
+    pub force: bool,
 }
 
 impl Default for Autorun {
@@ -109,6 +111,7 @@ impl Default for Autorun {
         Self {
             host_configuration: None,
             reboot: default_reboot(),
+            force: false,
         }
     }
 }
@@ -283,11 +286,21 @@ mod tests {
         assert_eq!(config.serial_mode, SerialMode::Logs);
         assert_eq!(config.serial_verbosity, SerialVerbosity::Debug);
         assert!(config.autorun.reboot);
+        assert!(!config.autorun.force);
         assert_eq!(config.media.cosi_directory, Path::new("cosi"));
         Config::parse("mode = 'interactive'")
             .unwrap()
             .require_autorun()
             .unwrap_err();
+    }
+
+    #[test]
+    fn autorun_force_is_opt_in() {
+        let config = Config::parse("mode = 'autorun'\n[autorun]\nforce = true").unwrap();
+        assert!(config.autorun.force);
+        let config = Config::parse("mode = 'autorun'\n[autorun]\nforce = false").unwrap();
+        assert!(!config.autorun.force);
+        Config::parse("mode = 'autorun'\n[autorun]\nforce = 'yes'").unwrap_err();
     }
 
     #[test]
@@ -358,12 +371,13 @@ mod tests {
         let root = TempDir::new().unwrap();
         fs::create_dir(root.path().join("installer")).unwrap();
         let path = root.path().join(MEDIA_CONFIG);
-        fs::write(&path, "[autorun]\nreboot = false").unwrap();
+        fs::write(&path, "[autorun]\nreboot = false\nforce = true").unwrap();
         let config = Config::parse("mode = 'autorun'")
             .unwrap()
             .overlay(root.path())
             .unwrap();
         assert!(!config.autorun.reboot);
+        assert!(config.autorun.force);
         assert_eq!(config.media.cosi_directory, Path::new("cosi"));
         fs::write(&path, "[media]\ncdromLabel = 'OTHER'").unwrap();
         config.overlay(root.path()).unwrap_err();

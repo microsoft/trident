@@ -31,6 +31,10 @@ use crate::{
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+fn stream_force_requested(automatic: bool, configured: bool, confirmed: bool) -> bool {
+    confirmed || (automatic && configured)
+}
+
 #[derive(Debug)]
 pub(super) enum Event {
     InstallerLog {
@@ -131,6 +135,7 @@ pub(super) async fn execute(
     require_idle: bool,
     tx: Sender<Event>,
 ) -> Result<(), Error> {
+    let automatic = matches!(request, Request::Autorun);
     let description = match &request {
         Request::Autorun => format!(
             "Autorun: HC '{}' or first ISO COSI in '{}'",
@@ -196,9 +201,10 @@ pub(super) async fn execute(
         )
         .await?;
         let image = image.clone();
+        let force = stream_force_requested(automatic, settings.autorun.force, force);
         match task::spawn_blocking(move || source::stream_preflight(&image, force)).await? {
             Ok(true) => return send(&tx, Event::AlreadyPresent(
-                "Every COSI filesystem UUID was found on an attached disk.\nNo installation was started.\nThis is an identity guard, not a health check.".into()
+                "Every COSI filesystem UUID was found on an attached disk.\nNo installation was started.".into()
             )).await,
             Ok(false) => {}
             Err(error) => return send(&tx, Event::Error { details: format!("{error:#}"), uncertain: false }).await,
@@ -359,6 +365,14 @@ mod tests {
     };
 
     type ResponseStream = Iter<IntoIter<Result<ServicingResponse, Status>>>;
+
+    #[test]
+    fn only_automatic_streams_use_configured_force() {
+        assert!(!stream_force_requested(true, false, false));
+        assert!(stream_force_requested(true, true, false));
+        assert!(!stream_force_requested(false, true, false));
+        assert!(stream_force_requested(false, false, true));
+    }
 
     fn successful() -> Completed {
         Completed {
