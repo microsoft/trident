@@ -114,8 +114,10 @@ and daemon records use `MM:SS [INST:LEVEL] message` and
 `MM:SS [TRIDENT:LEVEL] message`, respectively. `serialVerbosity` controls the
 serial stream independently of TUI verbosity; each line of a multiline message
 gets its own `MM:SS [SOURCE:LEVEL]` prefix. The TUI defaults to Debug: errors red, warnings
-orange, info bright blue, debug purple, trace gray; installer source labels
-are magenta and Trident labels green. `V` opens a live verbosity picker (Off,
+amber, INFO pale neutral, DEBUG steel gray and TRACE slate gray; INST labels
+are muted slate and TRIDENT labels seafoam. The wordmark remains cyan and
+success is green. Terminals with limited palettes approximate these colours.
+`V` opens a live verbosity picker (Off,
 Error, Warn, Info, Debug, Trace) beside the operation; this only filters the
 display, not serial or stored diagnostics. The private diagnostic file retains
 all levels even when serialVerbosity filters them. PgUp/PgDn scroll.
