@@ -47,6 +47,17 @@ const EVENT_CAPACITY: usize = 64;
 const LOG_CAPACITY: usize = 500;
 const DISPLAY_LOG_CHARACTERS: usize = 4096;
 const DEMO_SHELL_HISTORY: usize = 8;
+const COLOR_BACKGROUND: Color = Color::Rgb(11, 17, 24);
+const COLOR_FRAME: Color = Color::Rgb(53, 69, 83);
+const COLOR_BRAND: Color = Color::Rgb(75, 216, 220);
+const COLOR_INST: Color = Color::Rgb(171, 186, 196);
+const COLOR_TRIDENT: Color = Color::Rgb(114, 185, 165);
+const COLOR_ERROR: Color = Color::Rgb(255, 107, 115);
+const COLOR_WARN: Color = Color::Rgb(245, 182, 93);
+const COLOR_INFO: Color = Color::Rgb(229, 234, 236);
+const COLOR_DEBUG: Color = Color::Rgb(167, 180, 189);
+const COLOR_TRACE: Color = Color::Rgb(99, 115, 129);
+const COLOR_SUCCESS: Color = Color::Rgb(93, 200, 148);
 const WORDMARK_HEADER_HEIGHT: u16 = 12;
 const VERBOSITY_LEVELS: [LevelFilter; 6] = [
     LevelFilter::Off,
@@ -109,8 +120,8 @@ impl LogSource {
 
     fn color(self) -> Color {
         match self {
-            Self::Inst => Color::LightMagenta,
-            Self::Trident => Color::LightGreen,
+            Self::Inst => COLOR_INST,
+            Self::Trident => COLOR_TRIDENT,
         }
     }
 }
@@ -216,11 +227,7 @@ impl Model {
         self.selected = 0;
         self.screen = Screen::Error;
         self.error_details_open = false;
-        self.result_log(
-            LogLevel::Error,
-            format!("FAILURE: {details}"),
-            Color::LightRed,
-        )
+        self.result_log(LogLevel::Error, format!("FAILURE: {details}"), COLOR_ERROR)
     }
 
     fn log(&mut self, source: LogSource, level: LogLevel, message: String) -> LogEntry {
@@ -296,7 +303,7 @@ impl Model {
                 self.result_log(
                     LogLevel::Warn,
                     format!("ALREADY PRESENT: {details}"),
-                    Color::Yellow,
+                    COLOR_WARN,
                 )
             }
             Event::Error { details, uncertain } => self.fail(details, uncertain),
@@ -331,7 +338,7 @@ impl Model {
                         self.result_log(
                             LogLevel::Info,
                             format!("SUCCESS: {}", self.details),
-                            Color::LightGreen,
+                            COLOR_SUCCESS,
                         )
                     }
                     Ok(Completion::Failure(details)) => {
@@ -1021,11 +1028,11 @@ fn log_visible(level: LogLevel, verbosity: LevelFilter) -> bool {
 
 fn log_color(level: LogLevel) -> Color {
     match level {
-        LogLevel::Error => Color::LightRed,
-        LogLevel::Warn | LogLevel::Unspecified => Color::Rgb(255, 165, 0),
-        LogLevel::Info => Color::LightBlue,
-        LogLevel::Debug => Color::Rgb(170, 100, 255),
-        LogLevel::Trace => Color::Gray,
+        LogLevel::Error => COLOR_ERROR,
+        LogLevel::Warn | LogLevel::Unspecified => COLOR_WARN,
+        LogLevel::Info => COLOR_INFO,
+        LogLevel::Debug => COLOR_DEBUG,
+        LogLevel::Trace => COLOR_TRACE,
     }
 }
 
@@ -1047,7 +1054,8 @@ fn block(title: &str) -> Block<'_> {
     Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
-        .border_style(Style::default().fg(Color::DarkGray))
+        .style(Style::default().bg(COLOR_BACKGROUND))
+        .border_style(Style::default().fg(COLOR_FRAME))
         .title(title)
 }
 
@@ -1069,7 +1077,7 @@ fn header_height(viewport: Rect) -> u16 {
 
 fn render_header(frame: &mut Frame, area: Rect, state: &str, demo: bool, state_color: Color) {
     let brand = Style::default()
-        .fg(Color::Cyan)
+        .fg(COLOR_BRAND)
         .add_modifier(Modifier::BOLD);
     let mut lines = Vec::new();
     if area.height >= WORDMARK_HEADER_HEIGHT {
@@ -1087,7 +1095,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &str, demo: bool, state_c
     if demo {
         status.push(Span::styled(
             " / DEMO: ALL ACTIONS SIMULATED",
-            Style::default().fg(Color::Cyan),
+            Style::default().fg(COLOR_BRAND),
         ));
     }
     lines.push(Line::from(status));
@@ -1095,12 +1103,16 @@ fn render_header(frame: &mut Frame, area: Rect, state: &str, demo: bool, state_c
 }
 
 fn render_demo_shell(frame: &mut Frame, shell: &DemoShell) {
+    frame.render_widget(
+        Block::default().style(Style::default().bg(COLOR_BACKGROUND)),
+        frame.area(),
+    );
     let areas = Layout::vertical([
         Constraint::Length(header_height(frame.area())),
         Constraint::Min(4),
     ])
     .split(frame.area());
-    render_header(frame, areas[0], "SIMULATED SHELL", true, Color::Cyan);
+    render_header(frame, areas[0], "SIMULATED SHELL", true, COLOR_BRAND);
     frame.render_widget(
         Paragraph::new(shell.text())
             .block(block("No commands are executed"))
@@ -1111,10 +1123,10 @@ fn render_demo_shell(frame: &mut Frame, shell: &DemoShell) {
 
 fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
     let (title, color) = match model.screen {
-        Screen::Success => ("SUCCESS - Installation complete", Color::LightGreen),
-        Screen::Error => ("FAILURE - Installation stopped", Color::LightRed),
-        Screen::AlreadyPresent => ("ALREADY PRESENT - No write", Color::Yellow),
-        _ => ("Activity / logs", Color::DarkGray),
+        Screen::Success => ("SUCCESS - Installation complete", COLOR_SUCCESS),
+        Screen::Error => ("FAILURE - Installation stopped", COLOR_ERROR),
+        Screen::AlreadyPresent => ("ALREADY PRESENT - No write", COLOR_WARN),
+        _ => ("Activity / logs", COLOR_FRAME),
     };
     let mut lines = Vec::new();
     let header_lines = if matches!(model.screen, Screen::Progress | Screen::Menu) {
@@ -1125,7 +1137,7 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
     if header_lines > 0 {
         lines.push(Line::from(Span::styled(
             model.activity.clone(),
-            Style::default().fg(Color::Cyan),
+            Style::default().fg(COLOR_BRAND),
         )));
         lines.push(Line::default());
     }
@@ -1152,6 +1164,7 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
+        .style(Style::default().bg(COLOR_BACKGROUND))
         .border_style(Style::default().fg(color))
         .title(Span::styled(title, Style::default().fg(color)));
     Paragraph::new(lines)
@@ -1160,6 +1173,10 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
 }
 
 fn render(frame: &mut Frame, model: &Model, demo: bool) {
+    frame.render_widget(
+        Block::default().style(Style::default().bg(COLOR_BACKGROUND)),
+        frame.area(),
+    );
     let choices = model.choices();
     let action_height = if choices.is_empty() {
         0
@@ -1186,10 +1203,10 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         title(model.screen),
         demo,
         match model.screen {
-            Screen::Error => Color::LightRed,
-            Screen::Success => Color::LightGreen,
-            Screen::AlreadyPresent => Color::Yellow,
-            _ => Color::Cyan,
+            Screen::Error => COLOR_ERROR,
+            Screen::Success => COLOR_SUCCESS,
+            Screen::AlreadyPresent => COLOR_WARN,
+            _ => COLOR_BRAND,
         },
     );
     if areas[1].width > 22 {
@@ -1202,7 +1219,7 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         frame.render_widget(
             Paragraph::new(format!("Logs: {} [V]", model.verbosity))
                 .alignment(Alignment::Right)
-                .style(Style::default().fg(Color::Cyan)),
+                .style(Style::default().fg(COLOR_BRAND)),
             operation[1],
         );
     } else {
@@ -1219,7 +1236,7 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
             .block(block("Destructive action")).wrap(Wrap { trim: false }),
         Screen::Error => Paragraph::new(display_text(&model.details))
             .block(block("Full error details / Esc to return")
-                .border_style(Style::default().fg(Color::LightRed)))
+                .border_style(Style::default().fg(COLOR_ERROR)))
             .wrap(Wrap { trim: false }).scroll((model.scroll, 0)),
         _ => Paragraph::new(display_text(&model.details))
             .block(block("Result")).wrap(Wrap { trim: false }),
@@ -1235,7 +1252,7 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
             ))
             .style(if index == model.selected {
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(COLOR_BRAND)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -1266,7 +1283,7 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         )
     };
     frame.render_widget(
-        Paragraph::new(format!("{controls}\n{countdown}")).style(Style::default().fg(Color::Cyan)),
+        Paragraph::new(format!("{controls}\n{countdown}")).style(Style::default().fg(COLOR_BRAND)),
         areas[4],
     );
     if model.verbosity_open {
@@ -1300,7 +1317,7 @@ fn render_verbosity_picker(frame: &mut Frame, model: &Model) {
                 ),
                 if index == model.verbosity_selected {
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(COLOR_BRAND)
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
@@ -1408,12 +1425,14 @@ mod tests {
     }
 
     #[test]
-    fn wordmark_is_cyan_and_preserved_at_80_by_24() {
+    fn wordmark_and_background_use_clear_neutrals_palette_at_80_by_24() {
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal
             .draw(|frame| render(frame, &Model::new(), true))
             .unwrap();
         let buffer = terminal.backend().buffer();
+        assert_eq!(buffer.content[0].bg, Color::Rgb(11, 17, 24));
+        assert_eq!(buffer.content[14 * 80].fg, Color::Rgb(53, 69, 83));
         let padding = (80 - wordmark_width()) / 2;
         assert!(buffer.content[..80].iter().all(|cell| cell.symbol() == " "));
         for (row_index, expected) in TRIDENT_WORDMARK.iter().enumerate() {
@@ -1424,7 +1443,10 @@ mod tests {
                 .collect::<String>();
             assert_eq!(&row[padding..padding + expected.len()], *expected);
             for column in padding..padding + expected.len() {
-                assert_eq!(buffer.content[row_index * 80 + column].fg, Color::Cyan);
+                assert_eq!(
+                    buffer.content[row_index * 80 + column].fg,
+                    Color::Rgb(75, 216, 220)
+                );
             }
             assert!(buffer.content[9 * 80..10 * 80]
                 .iter()
@@ -1481,11 +1503,11 @@ mod tests {
         let mut model = Model::new();
         model.verbosity = LevelFilter::Trace;
         let records = [
-            (LogLevel::Error, "error-line", Color::LightRed),
-            (LogLevel::Warn, "warn-line", Color::Rgb(255, 165, 0)),
-            (LogLevel::Info, "info-line", Color::LightBlue),
-            (LogLevel::Debug, "debug-line", Color::Rgb(170, 100, 255)),
-            (LogLevel::Trace, "trace-line", Color::Gray),
+            (LogLevel::Error, "error-line", Color::Rgb(255, 107, 115)),
+            (LogLevel::Warn, "warn-line", Color::Rgb(245, 182, 93)),
+            (LogLevel::Info, "info-line", Color::Rgb(229, 234, 236)),
+            (LogLevel::Debug, "debug-line", Color::Rgb(167, 180, 189)),
+            (LogLevel::Trace, "trace-line", Color::Rgb(99, 115, 129)),
         ];
         for (level, text, _) in records {
             model.log(LogSource::Trident, level, text.into());
@@ -1507,7 +1529,7 @@ mod tests {
             let text = row.iter().map(|cell| cell.symbol()).collect::<String>();
             assert_eq!(row[text.find(message).unwrap()].fg, expected);
             let source = text.find("TRIDENT").unwrap();
-            assert_eq!(row[source].fg, Color::LightGreen);
+            assert_eq!(row[source].fg, Color::Rgb(114, 185, 165));
         }
     }
 
@@ -1575,10 +1597,13 @@ mod tests {
             entry.plain(),
             "00:00 [INST:DEBUG] Loaded installer settings"
         );
-        assert_eq!(entry.styled().spans[1].style.fg, Some(Color::LightMagenta));
+        assert_eq!(
+            entry.styled().spans[1].style.fg,
+            Some(Color::Rgb(171, 186, 196))
+        );
         assert_eq!(
             entry.styled().spans[3].style.fg,
-            Some(Color::Rgb(170, 100, 255))
+            Some(Color::Rgb(167, 180, 189))
         );
         assert_eq!(model.logs.len(), 1);
     }
@@ -1629,7 +1654,7 @@ mod tests {
             })),
             ..Default::default()
         }));
-        assert_eq!(result.result_color, Some(Color::LightGreen));
+        assert_eq!(result.result_color, Some(Color::Rgb(93, 200, 148)));
         assert_eq!(
             result.plain(),
             "00:00 [INST:INFO] SUCCESS: Installation completed successfully.\n\
@@ -1653,7 +1678,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             rows[title][rendered[title].find("SUCCESS").unwrap()].fg,
-            Color::LightGreen
+            Color::Rgb(93, 200, 148)
         );
         let result_row = rendered
             .iter()
@@ -1661,7 +1686,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             rows[result_row][rendered[result_row].find("SUCCESS:").unwrap()].fg,
-            Color::LightGreen
+            Color::Rgb(93, 200, 148)
         );
         assert!(rendered
             .iter()
@@ -1687,7 +1712,7 @@ mod tests {
             details: "Network timeout\nUnderlying transport failure".into(),
             uncertain: false,
         });
-        assert_eq!(result.result_color, Some(Color::LightRed));
+        assert_eq!(result.result_color, Some(Color::Rgb(255, 107, 115)));
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal.draw(|frame| render(frame, &model, true)).unwrap();
         let text = terminal
@@ -1714,7 +1739,10 @@ mod tests {
                 })
                 .unwrap();
             let content = row.iter().map(|cell| cell.symbol()).collect::<String>();
-            assert_eq!(row[content.find(marker).unwrap()].fg, Color::LightRed);
+            assert_eq!(
+                row[content.find(marker).unwrap()].fg,
+                Color::Rgb(255, 107, 115)
+            );
         }
         model.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), true);
         assert!(model.error_details_open);
