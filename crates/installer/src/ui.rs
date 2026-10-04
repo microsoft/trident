@@ -8,9 +8,12 @@ use std::{
 
 use anyhow::{anyhow, Context, Error};
 use crossterm::{
+    cursor::MoveTo,
     event::{self, Event as TerminalEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
-    terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        self, Clear as ClearTerminal, ClearType, EnterAlternateScreen, LeaveAlternateScreen,
+    },
 };
 use log::{error, warn, Level, LevelFilter};
 use ratatui::{
@@ -739,6 +742,14 @@ impl Display {
         let restore = (|| -> Result<(), Error> {
             terminal::disable_raw_mode()?;
             execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+            if self.linux_vt {
+                // Linux VT leaves the old TUI visible when exiting its alternate screen.
+                execute!(
+                    self.terminal.backend_mut(),
+                    ClearTerminal(ClearType::All),
+                    MoveTo(0, 0)
+                )?;
+            }
             self.terminal.show_cursor()?;
             Ok(())
         })();
