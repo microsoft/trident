@@ -38,6 +38,7 @@ cosiDirectory = "cosi/"
 # If omitted, use /etc/trident/config.yaml when that file exists.
 # hostConfiguration = "installer/host-configuration.yaml"
 reboot = true
+force = false
 ```
 
 Unknown fields and conflicting media selectors are errors. `interactive` is
@@ -125,8 +126,12 @@ establishing that the daemon is idle.
 
 Streaming checks COSI filesystem UUIDs before writing. A complete match opens
 the already-present screen with a separately confirmed Force reinstall action.
-It is an identity heuristic, not proof of image contents or OS health. Mounted
-or read-only potential stream targets are never force-overwritten.
+`autorun.force` defaults to false. Setting it to true skips the matching-UUID
+check on automatic COSI streams, without weakening the mounted/read-only target
+checks. It does not change HC installs or manually supplied recovery URLs.
+**With force enabled, an ISO left in the boot path can reimage the machine on
+every boot.** Remove or deprioritize the media after installation.
+Mounted or read-only potential stream targets are never force-overwritten.
 **HC installation intentionally has no repeat-install/Force guard:** the HC is
 the operator's authority to overwrite its selected disks. Remove ISO media or
 correct boot order to avoid repeated HC-driven installations.
