@@ -14,7 +14,8 @@ autorun chooses StreamDisk. `reboot = false` leaves the success screen visible;
 use its Reboot button to check what the installed disk boots.
 `serialMode = "logs"` routes INST and TRIDENT log records to the serial
 console as `MM:SS [SOURCE:LEVEL] message`, up to `serialVerbosity` (default
-`debug`), independently of TUI verbosity.
+`debug`), independently of TUI verbosity. Multiline messages repeat the prefix
+on each line instead of printing a literal `\n`.
 This ISO suppresses the serial getty prompt and normal kernel/systemd status
 output; UEFI firmware output may still appear before the installer starts.
 With only a serial console active, autorun runs without a TUI and honors

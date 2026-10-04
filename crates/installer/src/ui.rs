@@ -121,6 +121,7 @@ struct LogEntry {
     source: LogSource,
     level: LogLevel,
     message: String,
+    result_color: Option<Color>,
 }
 
 impl LogEntry {
@@ -130,26 +131,29 @@ impl LogEntry {
     }
 
     fn plain(&self) -> String {
-        let message = display_text(&self.message).replace('\n', "\\n");
-        format!(
-            "{}{}:{}] {message}",
-            self.prefix(),
-            self.source.label(),
-            self.level
-        )
+        let prefix = format!("{}{}:{}] ", self.prefix(), self.source.label(), self.level);
+        display_text(&self.message)
+            .split('\n')
+            .map(|line| format!("{prefix}{line}"))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn styled(&self) -> Line<'_> {
-        let level = Style::default().fg(log_color(self.level));
+        let level = Style::default().fg(self.result_color.unwrap_or(log_color(self.level)));
+        let surrounding = self
+            .result_color
+            .map(|color| Style::default().fg(color))
+            .unwrap_or_default();
         Line::from(vec![
-            Span::raw(self.prefix()),
+            Span::styled(self.prefix(), surrounding),
             Span::styled(
                 self.source.label(),
                 Style::default().fg(self.source.color()),
             ),
-            Span::raw(":"),
+            Span::styled(":", surrounding),
             Span::styled(self.level.to_string(), level.add_modifier(Modifier::BOLD)),
-            Span::raw("] "),
+            Span::styled("] ", surrounding),
             Span::styled(self.message.as_str(), level),
         ])
     }
@@ -175,6 +179,7 @@ struct Model {
     stream_image: Option<Url>,
     started: Instant,
     failed: bool,
+    error_details_open: bool,
 }
 
 impl Model {
@@ -198,17 +203,24 @@ impl Model {
             stream_image: None,
             started: Instant::now(),
             failed: false,
+            error_details_open: false,
         }
     }
 
-    fn fail(&mut self, details: String, uncertain: bool) {
-        self.details = details;
+    fn fail(&mut self, details: String, uncertain: bool) -> LogEntry {
+        self.details = details.clone();
         self.uncertain |= uncertain;
         self.reboot_at = None;
         self.failed = true;
         self.scroll = 0;
         self.selected = 0;
         self.screen = Screen::Error;
+        self.error_details_open = false;
+        self.result_log(
+            LogLevel::Error,
+            format!("FAILURE: {details}"),
+            Color::LightRed,
+        )
     }
 
     fn log(&mut self, source: LogSource, level: LogLevel, message: String) -> LogEntry {
@@ -217,13 +229,14 @@ impl Model {
             source,
             level,
             message: display_text(&message),
+            result_color: None,
         };
         let mut characters = entry.message.chars();
         let mut displayed = characters
             .by_ref()
             .take(DISPLAY_LOG_CHARACTERS)
             .collect::<String>()
-            .replace('\n', "\\n");
+            .replace('\n', " ");
         if characters.next().is_some() {
             displayed.push_str(" [Display shortened; full record preserved in diagnostic log]");
         }
@@ -234,6 +247,15 @@ impl Model {
             message: displayed,
             ..entry.clone()
         });
+        entry
+    }
+
+    fn result_log(&mut self, level: LogLevel, message: String, color: Color) -> LogEntry {
+        let mut entry = self.log(LogSource::Inst, level, message);
+        entry.result_color = Some(color);
+        if let Some(last) = self.logs.back_mut() {
+            last.result_color = Some(color);
+        }
         entry
     }
 
@@ -271,12 +293,13 @@ impl Model {
                 self.reboot_at = None;
                 self.screen = Screen::AlreadyPresent;
                 self.selected = 0;
-                self.log(LogSource::Inst, LogLevel::Warn, details)
+                self.result_log(
+                    LogLevel::Warn,
+                    format!("ALREADY PRESENT: {details}"),
+                    Color::Yellow,
+                )
             }
-            Event::Error { details, uncertain } => {
-                self.fail(details.clone(), uncertain);
-                self.log(LogSource::Inst, LogLevel::Error, details)
-            }
+            Event::Error { details, uncertain } => self.fail(details, uncertain),
             Event::Response(response) => match response.response {
                 Some(ResponseBody::Started(_)) => {
                     self.activity = "Servicing started".into();
@@ -305,23 +328,24 @@ impl Model {
                         };
                         self.reboot_at = (self.reboot && reboot_required && performed)
                             .then(|| Instant::now() + REBOOT_DELAY);
-                        self.log(LogSource::Inst, LogLevel::Info, self.details.clone())
+                        self.result_log(
+                            LogLevel::Info,
+                            format!("SUCCESS: {}", self.details),
+                            Color::LightGreen,
+                        )
                     }
                     Ok(Completion::Failure(details)) => {
                         self.uncertain = false;
-                        self.fail(details.clone(), false);
-                        self.log(LogSource::Inst, LogLevel::Error, details)
+                        self.fail(details, false)
                     }
                     Err(error) => {
                         let details = format!("{error:#}");
-                        self.fail(details.clone(), true);
-                        self.log(LogSource::Inst, LogLevel::Error, details)
+                        self.fail(details, true)
                     }
                 },
                 None => {
                     let details = "Response has no body; installation outcome is unknown";
-                    self.fail(details.into(), true);
-                    self.log(LogSource::Inst, LogLevel::Error, details.into())
+                    self.fail(details.into(), true)
                 }
             },
         }
@@ -342,6 +366,13 @@ impl Model {
             Screen::Error => vec!["Continue to recovery", "Shell"],
             _ => Vec::new(),
         }
+    }
+
+    fn showing_logs(&self) -> bool {
+        matches!(
+            self.screen,
+            Screen::Progress | Screen::Menu | Screen::Success | Screen::AlreadyPresent
+        ) || self.screen == Screen::Error && !self.error_details_open
     }
 
     fn key(&mut self, key: KeyEvent, demo: bool) -> Option<Action> {
@@ -407,6 +438,11 @@ impl Model {
                 _ => None,
             };
         }
+        if self.screen == Screen::Error && matches!(key.code, KeyCode::Char('d' | 'D')) {
+            self.error_details_open = !self.error_details_open;
+            self.scroll = 0;
+            return None;
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.screen = if self.screen == Screen::Progress {
                 Screen::Menu
@@ -436,7 +472,7 @@ impl Model {
                 return None;
             }
             KeyCode::PageUp => {
-                self.scroll = if matches!(self.screen, Screen::Progress | Screen::Menu) {
+                self.scroll = if self.showing_logs() {
                     self.scroll.saturating_add(5)
                 } else {
                     self.scroll.saturating_sub(5)
@@ -444,7 +480,7 @@ impl Model {
                 return None;
             }
             KeyCode::PageDown => {
-                self.scroll = if matches!(self.screen, Screen::Progress | Screen::Menu) {
+                self.scroll = if self.showing_logs() {
                     self.scroll.saturating_sub(5)
                 } else {
                     self.scroll.saturating_add(5)
@@ -452,6 +488,11 @@ impl Model {
                 return None;
             }
             KeyCode::Esc => {
+                if self.screen == Screen::Error && self.error_details_open {
+                    self.error_details_open = false;
+                    self.scroll = 0;
+                    return None;
+                }
                 self.screen = match self.screen {
                     Screen::Progress => Screen::Menu,
                     Screen::Menu => Screen::Progress,
@@ -749,21 +790,31 @@ pub(super) async fn run(
         }
         if worker.as_ref().is_some_and(JoinHandle::is_finished) {
             if let Some(finished) = worker.take() {
-                match finished.await {
-                    Ok(Ok(())) => {}
+                let failure = match finished.await {
+                    Ok(Ok(())) => None,
                     Ok(Err(error)) => {
-                        model.fail(format!("Installer worker failed: {error:#}"), true)
+                        Some(model.fail(format!("Installer worker failed: {error:#}"), true))
                     }
-                    Err(error) => model.fail(format!("Installer worker terminated: {error}"), true),
+                    Err(error) => {
+                        Some(model.fail(format!("Installer worker terminated: {error}"), true))
+                    }
+                };
+                if let Some(failure) = failure {
+                    output.announce(&failure, model.serial_verbosity);
                 }
             }
         }
         if shell.as_ref().is_some_and(JoinHandle::is_finished) {
             if let Some(finished) = shell.take() {
-                match finished.await {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => model.fail(format!("Shell failed: {error:#}"), false),
-                    Err(error) => model.fail(format!("Shell task terminated: {error}"), false),
+                let failure = match finished.await {
+                    Ok(Ok(())) => None,
+                    Ok(Err(error)) => Some(model.fail(format!("Shell failed: {error:#}"), false)),
+                    Err(error) => {
+                        Some(model.fail(format!("Shell task terminated: {error}"), false))
+                    }
+                };
+                if let Some(failure) = failure {
+                    output.announce(&failure, model.serial_verbosity);
                 }
             }
             if let Some(display) = &mut display {
@@ -792,7 +843,10 @@ pub(super) async fn run(
                 output.announce(&reboot, model.serial_verbosity);
                 match systemd::reboot() {
                     Ok(()) => return Ok(()),
-                    Err(error) => model.fail(format!("Failed to reboot: {error:#}"), false),
+                    Err(error) => {
+                        let failure = model.fail(format!("Failed to reboot: {error:#}"), false);
+                        output.announce(&failure, model.serial_verbosity);
+                    }
                 }
             }
         }
@@ -868,7 +922,8 @@ pub(super) async fn run(
                             }
                             Action::Start(request, force) => {
                                 if worker.is_some() {
-                                    model.fail("An installer operation is still active. Wait for it to finish.".into(), true);
+                                    let failure = model.fail("An installer operation is still active. Wait for it to finish.".into(), true);
+                                    output.announce(&failure, model.serial_verbosity);
                                 } else {
                                     model.screen = Screen::Progress;
                                     model.activity = "Preparing installation".into();
@@ -901,7 +956,9 @@ pub(super) async fn run(
                                 );
                                 output.announce(&action, model.serial_verbosity);
                                 if let Err(error) = systemd::reboot() {
-                                    model.fail(format!("Failed to reboot: {error:#}"), false);
+                                    let failure =
+                                        model.fail(format!("Failed to reboot: {error:#}"), false);
+                                    output.announce(&failure, model.serial_verbosity);
                                 } else {
                                     return Ok(());
                                 }
@@ -914,7 +971,9 @@ pub(super) async fn run(
                                 );
                                 output.announce(&action, model.serial_verbosity);
                                 if let Err(error) = systemd::poweroff() {
-                                    model.fail(format!("Failed to shut down: {error:#}"), false);
+                                    let failure = model
+                                        .fail(format!("Failed to shut down: {error:#}"), false);
+                                    output.announce(&failure, model.serial_verbosity);
                                 } else {
                                     return Ok(());
                                 }
@@ -1050,6 +1109,56 @@ fn render_demo_shell(frame: &mut Frame, shell: &DemoShell) {
     );
 }
 
+fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
+    let (title, color) = match model.screen {
+        Screen::Success => ("SUCCESS - Installation complete", Color::LightGreen),
+        Screen::Error => ("FAILURE - Installation stopped", Color::LightRed),
+        Screen::AlreadyPresent => ("ALREADY PRESENT - No write", Color::Yellow),
+        _ => ("Activity / logs", Color::DarkGray),
+    };
+    let mut lines = Vec::new();
+    let header_lines = if matches!(model.screen, Screen::Progress | Screen::Menu) {
+        2
+    } else {
+        0
+    };
+    if header_lines > 0 {
+        lines.push(Line::from(Span::styled(
+            model.activity.clone(),
+            Style::default().fg(Color::Cyan),
+        )));
+        lines.push(Line::default());
+    }
+    let mut logs = model
+        .logs
+        .iter()
+        .filter(|entry| entry.result_color.is_some() || log_visible(entry.level, model.verbosity))
+        .collect::<Vec<_>>();
+    if matches!(
+        model.screen,
+        Screen::Success | Screen::Error | Screen::AlreadyPresent
+    ) {
+        if let Some(index) = logs.iter().rposition(|entry| entry.result_color.is_some()) {
+            let result = logs.remove(index);
+            logs.push(result);
+        }
+    }
+    let visible = usize::from(area.height.saturating_sub(2 + header_lines));
+    let end = logs
+        .len()
+        .saturating_sub(usize::from(model.scroll).min(logs.len().saturating_sub(1)));
+    let start = end.saturating_sub(visible);
+    lines.extend(logs[start..end].iter().map(|entry| entry.styled()));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(ASCII_BORDER)
+        .border_style(Style::default().fg(color))
+        .title(Span::styled(title, Style::default().fg(color)));
+    Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false })
+}
+
 fn render(frame: &mut Frame, model: &Model, demo: bool) {
     let choices = model.choices();
     let action_height = if choices.is_empty() {
@@ -1076,10 +1185,11 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         areas[0],
         title(model.screen),
         demo,
-        if model.screen == Screen::Error {
-            Color::LightRed
-        } else {
-            Color::Cyan
+        match model.screen {
+            Screen::Error => Color::LightRed,
+            Screen::Success => Color::LightGreen,
+            Screen::AlreadyPresent => Color::Yellow,
+            _ => Color::Cyan,
         },
     );
     if areas[1].width > 22 {
@@ -1102,24 +1212,17 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         );
     }
     let content = match model.screen {
-        Screen::Progress | Screen::Menu => {
-            let mut lines = vec![Line::from(Span::styled(model.activity.clone(), Style::default().fg(Color::Cyan))), Line::default()];
-            let logs = model.logs.iter().filter(|entry| log_visible(entry.level, model.verbosity)).collect::<Vec<_>>();
-            let visible = usize::from(areas[2].height.saturating_sub(4));
-            let end = logs.len().saturating_sub(usize::from(model.scroll).min(logs.len().saturating_sub(1)));
-            let start = end.saturating_sub(visible);
-            lines.extend(logs[start..end].iter().map(|entry| entry.styled()));
-            Paragraph::new(lines).block(block("Activity / logs")).wrap(Wrap { trim: false })
-        }
+        _ if model.showing_logs() => log_panel(model, areas[2]),
         Screen::StreamUrl | Screen::HostConfigUrl => Paragraph::new(format!("Enter an http:// or https:// URL:\n\n{}\n\nEnter: start   Esc: back", display_text(&model.url)))
             .block(block("Remote source")).wrap(Wrap { trim: false }),
         Screen::Force => Paragraph::new("Force reinstall will erase the disk selected by Trident.\n\nExisting partitions and files will be lost.\nCancel is selected by default.")
             .block(block("Destructive action")).wrap(Wrap { trim: false }),
-        _ => Paragraph::new(display_text(&model.details))
-            .block(if model.screen == Screen::Error {
-                block("Error details / PgUp, PgDn to scroll").border_style(Style::default().fg(Color::LightRed))
-            } else { block("Result") })
+        Screen::Error => Paragraph::new(display_text(&model.details))
+            .block(block("Full error details / Esc to return")
+                .border_style(Style::default().fg(Color::LightRed)))
             .wrap(Wrap { trim: false }).scroll((model.scroll, 0)),
+        _ => Paragraph::new(display_text(&model.details))
+            .block(block("Result")).wrap(Wrap { trim: false }),
     };
     frame.render_widget(content, areas[2]);
     let choices = choices
@@ -1153,8 +1256,13 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         "Enter: start   Esc: return to recovery".to_owned()
     } else {
         format!(
-            "Tab/Arrows: choose  Enter: select  S: shell  V: logs  Esc: menu{}",
-            if demo { "   Q: quit" } else { "" }
+            "Arrows: choose  Enter: select  S: shell  V: logs{}  Esc: back{}",
+            if model.screen == Screen::Error {
+                "  D: details"
+            } else {
+                ""
+            },
+            if demo { "  Q: quit" } else { "" }
         )
     };
     frame.render_widget(
@@ -1244,6 +1352,7 @@ mod tests {
             source: LogSource::Inst,
             level: LogLevel::Info,
             message: "Preparing installer".into(),
+            result_color: None,
         };
         output.announce(&entry, LevelFilter::Debug);
         assert_eq!(output.mirrors.len(), 1);
@@ -1437,9 +1546,11 @@ mod tests {
         }
         let text = fs::read_to_string(&serial).unwrap();
         let lines = text.lines().collect::<Vec<_>>();
-        assert_eq!(lines.len(), 4);
+        assert_eq!(lines.len(), 8);
         assert!(lines.iter().all(|line| line.starts_with("00:00 [TRIDENT:")));
-        assert!(lines.iter().all(|line| line.ends_with("first\\nsecond")));
+        assert_eq!(lines[0], "00:00 [TRIDENT:ERROR] first");
+        assert_eq!(lines[1], "00:00 [TRIDENT:ERROR] second");
+        assert!(!text.contains("\\n"));
         let trace = model.log(LogSource::Trident, LogLevel::Trace, "trace detail".into());
         output.announce(&trace, SerialVerbosity::Trace.filter());
         let text = fs::read_to_string(serial).unwrap();
@@ -1498,8 +1609,111 @@ mod tests {
         assert!(model.failed);
         assert_eq!(
             entry.plain(),
-            "00:00 [INST:ERROR] No image or Host Configuration"
+            "00:00 [INST:ERROR] FAILURE: No image or Host Configuration"
         );
+    }
+
+    #[test]
+    fn success_keeps_prior_logs_and_highlights_the_final_record() {
+        let mut model = Model::new();
+        model.log(
+            LogSource::Trident,
+            LogLevel::Debug,
+            "Earlier disk action".into(),
+        );
+        let result = model.event(Event::Response(ServicingResponse {
+            response: Some(ResponseBody::Completed(Completed {
+                status: StatusCode::Success.into(),
+                reboot_status: RebootStatus::RebootNotRequired.into(),
+                ..Default::default()
+            })),
+            ..Default::default()
+        }));
+        assert_eq!(result.result_color, Some(Color::LightGreen));
+        assert_eq!(
+            result.plain(),
+            "00:00 [INST:INFO] SUCCESS: Installation completed successfully.\n\
+             00:00 [INST:INFO] Remove the installation media before booting the installed OS."
+        );
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(80)
+            .collect::<Vec<_>>();
+        let rendered = rows
+            .iter()
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        let title = rendered
+            .iter()
+            .position(|row| row.contains("SUCCESS - Installation complete"))
+            .unwrap();
+        assert_eq!(
+            rows[title][rendered[title].find("SUCCESS").unwrap()].fg,
+            Color::LightGreen
+        );
+        let result_row = rendered
+            .iter()
+            .position(|row| row.contains("SUCCESS: Installation"))
+            .unwrap();
+        assert_eq!(
+            rows[result_row][rendered[result_row].find("SUCCESS:").unwrap()].fg,
+            Color::LightGreen
+        );
+        assert!(rendered
+            .iter()
+            .any(|row| row.contains("Earlier disk action")));
+        model.verbosity = LevelFilter::Off;
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains("SUCCESS: Installation"));
+        assert!(!text.contains("Earlier disk action"));
+    }
+
+    #[test]
+    fn failure_shows_logs_by_default_and_keeps_full_details_accessible() {
+        let mut model = Model::new();
+        model.log(LogSource::Trident, LogLevel::Warn, "Earlier warning".into());
+        let result = model.event(Event::Error {
+            details: "Network timeout\nUnderlying transport failure".into(),
+            uncertain: false,
+        });
+        assert_eq!(result.result_color, Some(Color::LightRed));
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains("FAILURE - Installation stopped"));
+        assert!(text.contains("Earlier warning"));
+        assert!(text.contains("FAILURE: Network timeout"));
+        model.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), true);
+        assert!(model.error_details_open);
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        let text = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(text.contains("Underlying transport failure"));
+        model.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), true);
+        assert_eq!(model.screen, Screen::Error);
+        assert!(!model.error_details_open);
     }
 
     #[test]
