@@ -1,9 +1,11 @@
 import importlib.util
+import io
 import json
 from pathlib import Path
 import socket
 import tempfile
 import threading
+import time
 import unittest
 
 HERE = Path(__file__).resolve().parent
@@ -13,6 +15,43 @@ SPEC.loader.exec_module(VM)
 
 
 class VmCommandTests(unittest.TestCase):
+    def test_follows_new_serial_records_without_replaying_firmware_escape_codes(self):
+        class RunningProcess:
+            def __init__(self):
+                self.finished = threading.Event()
+
+            def poll(self):
+                return 0 if self.finished.is_set() else None
+
+        process = RunningProcess()
+        with tempfile.TemporaryDirectory() as directory:
+            serial = Path(directory) / "serial.log"
+            output = io.StringIO()
+
+            def guest():
+                time.sleep(0.03)
+                with serial.open("w") as log:
+                    log.write("\x1b[2JWelcome to firmware\r\n")
+                    log.write("00:00 [INST:INFO] Installer starting\r\n")
+                    log.flush()
+                    time.sleep(0.03)
+                    log.write("00:01 [TRIDENT:TRACE] first\\nsecond\r\n")
+                    log.flush()
+                    process.finished.set()
+
+            writer = threading.Thread(target=guest)
+            writer.start()
+            self.assertEqual(
+                VM.follow_serial(process, serial, output=output, interval=0.005), 0
+            )
+            writer.join(timeout=3)
+            self.assertFalse(writer.is_alive())
+            self.assertEqual(
+                output.getvalue(),
+                "00:00 [INST:INFO] Installer starting\n"
+                "00:01 [TRIDENT:TRACE] first\\nsecond\n",
+            )
+
     def test_vnc_is_headless_and_bound_to_loopback(self):
         launch = VM.command(
             Path("/tmp/installer-test.iso"),

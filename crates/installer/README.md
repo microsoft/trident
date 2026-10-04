@@ -27,6 +27,7 @@ Read `/etc/trident/installer.toml` or the path supplied with `--config`.
 ```toml
 mode = "autorun"
 serialMode = "logs"
+serialVerbosity = "debug"
 
 [media]
 cdromLabel = "TRIDENT_INSTALL"
@@ -44,6 +45,8 @@ reserved for later work, not an alias for autorun. COSI directory paths must
 stay beneath the media root.
 `serialMode` defaults to `logs`. `ui` is reserved and currently rejected with
 an error rather than showing an unfinished serial TUI.
+`serialVerbosity` defaults to `debug` and accepts `off`, `error`, `warn`,
+`info`, `debug`, and `trace`.
 
 Media is mounted read-only at `/run/trident/installer-media`. Duplicate labels
 are rejected. Optional `installer/installer.toml` on the mounted media can
@@ -104,13 +107,14 @@ defaults for an installation.
 Display filtering never removes daemon log records. All received responses are
 also appended to the private `/var/log/trident-installer.log`. Installer events
 and daemon records use `MM:SS [INST:LEVEL] message` and
-`MM:SS [TRIDENT:LEVEL] message`, respectively. The serial stream includes all
-levels, even when the TUI is filtered, and escapes embedded newlines as `\n`
+`MM:SS [TRIDENT:LEVEL] message`, respectively. `serialVerbosity` controls the
+serial stream independently of TUI verbosity, and embedded newlines become `\n`
 to keep one record per line. The TUI defaults to Debug: errors red, warnings
 orange, info bright blue, debug purple, trace gray; installer source labels
 are magenta and Trident labels green. `V` opens a live verbosity picker (Off,
 Error, Warn, Info, Debug, Trace) beside the operation; this only filters the
-display, not serial or stored diagnostics. PgUp/PgDn scroll.
+display, not serial or stored diagnostics. The private diagnostic file retains
+all levels even when serialVerbosity filters them. PgUp/PgDn scroll.
 TRACE output can expose low-level inputs; restrict access to BMC serial captures.
 A missing final Completed response means unknown
 outcome, not success. Another write requires a successful Trident status query

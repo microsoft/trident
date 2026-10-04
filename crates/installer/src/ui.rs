@@ -35,7 +35,7 @@ use trident_proto::v1::{servicing_response::Response as ResponseBody, LogLevel};
 
 use crate::{
     client::{self, Completion, Event},
-    config::Config,
+    config::{Config, SerialVerbosity},
     demo::{self, Scenario},
     source::{self, Request},
     APPLICATION_NAME, INSTALLER_LOG_TX,
@@ -163,6 +163,7 @@ struct Model {
     details: String,
     logs: VecDeque<LogEntry>,
     verbosity: LevelFilter,
+    serial_verbosity: LevelFilter,
     verbosity_open: bool,
     verbosity_selected: usize,
     selected: usize,
@@ -185,6 +186,7 @@ impl Model {
             details: String::new(),
             logs: VecDeque::new(),
             verbosity: LevelFilter::Debug,
+            serial_verbosity: SerialVerbosity::Debug.filter(),
             verbosity_open: false,
             verbosity_selected: 4,
             selected: 0,
@@ -255,10 +257,12 @@ impl Model {
             Event::Prepared {
                 description,
                 reboot,
+                serial_verbosity,
                 stream_image,
             } => {
                 self.source = description.clone();
                 self.reboot = reboot;
+                self.serial_verbosity = serial_verbosity.filter();
                 self.stream_image = stream_image;
                 self.log(LogSource::Inst, LogLevel::Info, description)
             }
@@ -592,7 +596,10 @@ impl Output {
         Ok(())
     }
 
-    fn announce(&mut self, entry: &LogEntry) {
+    fn announce(&mut self, entry: &LogEntry, verbosity: LevelFilter) {
+        if !log_visible(entry.level, verbosity) {
+            return;
+        }
         self.mirrors.retain_mut(|(path, mirror)| {
             if let Err(error) = writeln!(mirror, "{}", entry.plain()) {
                 warn!(
@@ -723,7 +730,7 @@ pub(super) async fn run(
             output.record(&event)?;
             let already_present = matches!(event, Event::AlreadyPresent(_));
             let entry = model.event(event);
-            output.announce(&entry);
+            output.announce(&entry, model.serial_verbosity);
             if display.is_none()
                 && shell.is_none()
                 && demo_shell.is_none()
@@ -737,7 +744,7 @@ pub(super) async fn run(
                     "Already installed; remove the media or confirm a force reinstall on a graphical console";
                 model.details.push_str(&format!("\n{explanation}"));
                 let error = model.log(LogSource::Inst, LogLevel::Error, explanation.into());
-                output.announce(&error);
+                output.announce(&error, model.serial_verbosity);
             }
         }
         if worker.as_ref().is_some_and(JoinHandle::is_finished) {
@@ -782,7 +789,7 @@ pub(super) async fn run(
                     LogLevel::Info,
                     "Rebooting after successful installation".into(),
                 );
-                output.announce(&reboot);
+                output.announce(&reboot, model.serial_verbosity);
                 match systemd::reboot() {
                     Ok(()) => return Ok(()),
                     Err(error) => model.fail(format!("Failed to reboot: {error:#}"), false),
@@ -892,7 +899,7 @@ pub(super) async fn run(
                                     LogLevel::Info,
                                     "Reboot requested".into(),
                                 );
-                                output.announce(&action);
+                                output.announce(&action, model.serial_verbosity);
                                 if let Err(error) = systemd::reboot() {
                                     model.fail(format!("Failed to reboot: {error:#}"), false);
                                 } else {
@@ -905,7 +912,7 @@ pub(super) async fn run(
                                     LogLevel::Info,
                                     "Shutdown requested".into(),
                                 );
-                                output.announce(&action);
+                                output.announce(&action, model.serial_verbosity);
                                 if let Err(error) = systemd::poweroff() {
                                     model.fail(format!("Failed to shut down: {error:#}"), false);
                                 } else {
@@ -1238,12 +1245,15 @@ mod tests {
             level: LogLevel::Info,
             message: "Preparing installer".into(),
         };
-        output.announce(&entry);
+        output.announce(&entry, LevelFilter::Debug);
         assert_eq!(output.mirrors.len(), 1);
-        output.announce(&LogEntry {
-            message: "Still running".into(),
-            ..entry
-        });
+        output.announce(
+            &LogEntry {
+                message: "Still running".into(),
+                ..entry
+            },
+            LevelFilter::Debug,
+        );
         assert_eq!(
             fs::read_to_string(transcript).unwrap(),
             "02:05 [INST:INFO] Preparing installer\n02:05 [INST:INFO] Still running\n"
@@ -1407,7 +1417,7 @@ mod tests {
     }
 
     #[test]
-    fn all_log_levels_reach_serial_regardless_of_display_filter() {
+    fn serial_verbosity_filters_independently_of_display() {
         let mut model = Model::new();
         let root = TempDir::new().unwrap();
         let serial = root.path().join("serial.log");
@@ -1423,16 +1433,23 @@ mod tests {
             LogLevel::Trace,
         ] {
             let entry = model.log(LogSource::Trident, level, "first\nsecond".into());
-            output.announce(&entry);
+            output.announce(&entry, SerialVerbosity::Debug.filter());
         }
-        let text = fs::read_to_string(serial).unwrap();
+        let text = fs::read_to_string(&serial).unwrap();
         let lines = text.lines().collect::<Vec<_>>();
-        assert_eq!(lines.len(), 5);
+        assert_eq!(lines.len(), 4);
         assert!(lines.iter().all(|line| line.starts_with("00:00 [TRIDENT:")));
         assert!(lines.iter().all(|line| line.ends_with("first\\nsecond")));
-        assert!(lines[4].contains("[TRIDENT:TRACE]"));
+        let trace = model.log(LogSource::Trident, LogLevel::Trace, "trace detail".into());
+        output.announce(&trace, SerialVerbosity::Trace.filter());
+        let text = fs::read_to_string(serial).unwrap();
+        assert!(text
+            .lines()
+            .last()
+            .unwrap()
+            .ends_with("[TRIDENT:TRACE] trace detail"));
         assert!(!log_visible(LogLevel::Trace, model.verbosity));
-        assert_eq!(model.logs.len(), 5);
+        assert_eq!(model.logs.len(), 6);
     }
 
     #[test]

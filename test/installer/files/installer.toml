@@ -1,5 +1,6 @@
 mode = "autorun"
 serialMode = "logs"
+serialVerbosity = "debug"
 
 [media]
 cdromLabel = "CDROM"

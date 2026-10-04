@@ -24,7 +24,7 @@ use trident_proto::{
 };
 
 use crate::{
-    config::{Config, DEFAULT_HOST_CONFIGURATION},
+    config::{Config, SerialVerbosity, DEFAULT_HOST_CONFIGURATION},
     source::{self, Plan, Request},
 };
 
@@ -41,6 +41,7 @@ pub(super) enum Event {
     Prepared {
         description: String,
         reboot: bool,
+        serial_verbosity: SerialVerbosity,
         stream_image: Option<Url>,
     },
     Response(ServicingResponse),
@@ -148,6 +149,7 @@ pub(super) async fn execute(
         Event::Prepared {
             description,
             reboot: settings.autorun.reboot,
+            serial_verbosity: settings.serial_verbosity,
             stream_image: None,
         },
     )
@@ -179,6 +181,7 @@ pub(super) async fn execute(
         Event::Prepared {
             description: plan.description(),
             reboot: settings.autorun.reboot,
+            serial_verbosity: settings.serial_verbosity,
             stream_image: match &plan {
                 Plan::Stream { image } => Some(image.clone()),
                 Plan::Install { .. } => None,
