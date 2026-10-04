@@ -35,7 +35,8 @@ class VmCommandTests(unittest.TestCase):
                     log.write("00:00 [INST:INFO] Installer starting\r\n")
                     log.flush()
                     time.sleep(0.03)
-                    log.write("00:01 [TRIDENT:TRACE] first\\nsecond\r\n")
+                    log.write("00:01 [TRIDENT:TRACE] first\r\n")
+                    log.write("00:01 [TRIDENT:TRACE] second\r\n")
                     log.flush()
                     process.finished.set()
 
@@ -49,7 +50,8 @@ class VmCommandTests(unittest.TestCase):
             self.assertEqual(
                 output.getvalue(),
                 "00:00 [INST:INFO] Installer starting\n"
-                "00:01 [TRIDENT:TRACE] first\\nsecond\n",
+                "00:01 [TRIDENT:TRACE] first\n"
+                "00:01 [TRIDENT:TRACE] second\n",
             )
 
     def test_vnc_is_headless_and_bound_to_loopback(self):

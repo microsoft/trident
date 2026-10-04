@@ -96,7 +96,10 @@ virtual gettys (`NAutoVTs=0`, `ReserveVT=0`): stopping a getty before
 `getty.target` starts does not prevent it from claiming tty1 later.
 
 No ordinary source picker or confirmation precedes autorun. Missing sources
-and failures show scrollable error details. Continue opens recovery: Shell,
+and failures keep recent logs visible in a red result frame; `D` opens the
+scrollable full error details and Esc returns to the logs. Successful installs
+keep their logs in a green result frame. Each result is also the last highlighted
+log entry. Continue opens recovery: Shell,
 Stream COSI URL, remote HC URL, or Shutdown. Shell `exit` returns to the
 originating screen. Installation continues while a shell is open; automatic
 reboot waits. The success screen offers Reboot and Shell.
@@ -108,8 +111,8 @@ Display filtering never removes daemon log records. All received responses are
 also appended to the private `/var/log/trident-installer.log`. Installer events
 and daemon records use `MM:SS [INST:LEVEL] message` and
 `MM:SS [TRIDENT:LEVEL] message`, respectively. `serialVerbosity` controls the
-serial stream independently of TUI verbosity, and embedded newlines become `\n`
-to keep one record per line. The TUI defaults to Debug: errors red, warnings
+serial stream independently of TUI verbosity; each line of a multiline message
+gets its own `MM:SS [SOURCE:LEVEL]` prefix. The TUI defaults to Debug: errors red, warnings
 orange, info bright blue, debug purple, trace gray; installer source labels
 are magenta and Trident labels green. `V` opens a live verbosity picker (Off,
 Error, Warn, Info, Debug, Trace) beside the operation; this only filters the
