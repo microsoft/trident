@@ -87,6 +87,7 @@ fn main() -> ExitCode {
 }
 
 async fn run(args: Args) -> Result<(), Error> {
+    let mut linux_vt = false;
     let mut output = Output {
         log: None,
         mirrors: Vec::new(),
@@ -106,6 +107,7 @@ async fn run(args: Args) -> Result<(), Error> {
             if let Some(graphical) = consoles.iter().find(|path| path.ends_with("tty1")) {
                 systemd::stop_unit("getty@tty1.service")?;
                 let _terminal = terminal::attach(graphical)?;
+                linux_vt = true;
             }
             for path in consoles.iter().filter(|path| !path.ends_with("tty1")) {
                 match OpenOptions::new().write(true).open(path) {
@@ -116,5 +118,5 @@ async fn run(args: Args) -> Result<(), Error> {
         }
     }
     let config_path = args.demo.is_none().then_some(args.config);
-    ui::run(config_path, args.demo, args.plain, output).await
+    ui::run(config_path, args.demo, args.plain, linux_vt, output).await
 }
