@@ -938,16 +938,19 @@ impl Orchestrator {
                 match self.reboot() {
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
-                        if let Some(ref v) = current_ver {
-                            self.report_nebraska_event(
-                                &request,
-                                NebraskaReport::Failed {
-                                    previous: v.clone(),
-                                    current: v.clone(),
-                                },
-                            )
-                            .await;
-                        }
+                        // Do not report a Nebraska 'Failed' terminal event
+                        // here: state.json/the update-status annotation
+                        // already durably recorded this finalize as a
+                        // Success with a pendingCommit armed, before this
+                        // reboot() call was ever made. A `systemctl reboot`
+                        // invocation's own exit status is inherently racy
+                        // to observe - the reboot it just triggered can
+                        // tear down this very process before the result
+                        // comes back - so an Err here does not reliably
+                        // mean the reboot didn't happen. Mirrors
+                        // `resume_pending_commit`'s own reboot-reissue
+                        // failure branch, which reports no Nebraska event
+                        // for the same reason.
                         let status = UpdateStatus::new(
                             &request,
                             Operation::Finalize,
