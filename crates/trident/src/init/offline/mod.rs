@@ -534,7 +534,7 @@ pub fn execute(
 
     esp::bootstrap_azla_from_fallback(esp_path)
         .structured(InvalidInputError::InvalidBootConfiguration)
-        .message("Failed to copy boot files to AZLA ESP path")?;
+        .message("Failed to bootstrap AZLA from fallback")?;
 
     let datastore_path = host_status.spec.trident.datastore_path.clone();
 

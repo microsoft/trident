@@ -655,8 +655,11 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
                 azla_tmp_path.display()
             ))?;
         }
-        replace_boot_files(&boot_esp_path, &azla_tmp_path)
-            .context("Failed to copy boot files to temporary AZLA bootstrap path")?;
+        replace_boot_files(&boot_esp_path, &azla_tmp_path).context(format!(
+            "Failed to copy boot files from '{}' to temporary AZLA bootstrap path '{}'",
+            boot_esp_path.display(),
+            azla_tmp_path.display()
+        ))?;
         fs::rename(&azla_tmp_path, &azla_esp_path).context(format!(
             "Failed to atomically publish AZLA bootstrap directory '{}' to '{}'",
             azla_tmp_path.display(),
