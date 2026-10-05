@@ -143,6 +143,11 @@ pub enum PartitionType {
     /// x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`
     UsrVerity,
 
+    /// # Usr-verity hash signature partition
+    ///
+    /// x64: `e7bb33fb-06cf-4e81-8273-e543b413e2e2`
+    UsrVeritySig,
+
     /// # Tmp partition
     ///
     /// `7ec6f557-3bc5-4aca-b293-16ef5df639d1`
@@ -200,6 +205,7 @@ impl PartitionType {
             PartitionType::Var => "var",
             PartitionType::Usr => "usr",
             PartitionType::UsrVerity => "usr-verity",
+            PartitionType::UsrVeritySig => "usr-verity-sig",
             PartitionType::Tmp => "tmp",
             PartitionType::LinuxGeneric => "linux-generic",
             PartitionType::Srv => "srv",
@@ -227,6 +233,7 @@ impl PartitionType {
 
             Self::RootVerity
             | Self::UsrVerity
+            | Self::UsrVeritySig
             | Self::Esp
             | Self::Swap
             | Self::Home
@@ -256,6 +263,7 @@ impl From<PartitionType> for DiscoverablePartitionType {
             PartitionType::Var => Self::Var,
             PartitionType::Usr => Self::Usr,
             PartitionType::UsrVerity => Self::UsrVerity,
+            PartitionType::UsrVeritySig => Self::UsrVeritySig,
             PartitionType::Tmp => Self::Tmp,
             PartitionType::LinuxGeneric => Self::LinuxGeneric,
             PartitionType::Srv => Self::Srv,
@@ -315,13 +323,16 @@ impl From<DiscoverablePartitionType> for PartitionType {
             | DiscoverablePartitionType::UsrAmd64Verity
             | DiscoverablePartitionType::UsrArm64Verity => Self::UsrVerity,
 
-            // These types do not have a direct mapping, so we treat them as unknown.
-            DiscoverablePartitionType::RootVeritySig
-            | DiscoverablePartitionType::UsrVeritySig
-            | DiscoverablePartitionType::RootAmd64VeritySig
+            // We coalesce all usr verity signature variants into one.
+            DiscoverablePartitionType::UsrVeritySig
             | DiscoverablePartitionType::UsrAmd64VeritySig
-            | DiscoverablePartitionType::RootArm64VeritySig
-            | DiscoverablePartitionType::UsrArm64VeritySig => Self::Unknown(dpt.to_uuid()),
+            | DiscoverablePartitionType::UsrArm64VeritySig => Self::UsrVeritySig,
+
+            // Root verity signature partitions do not have a corresponding
+            // PartitionType variant yet, so we treat them as unknown.
+            DiscoverablePartitionType::RootVeritySig
+            | DiscoverablePartitionType::RootAmd64VeritySig
+            | DiscoverablePartitionType::RootArm64VeritySig => Self::Unknown(dpt.to_uuid()),
 
             // Fallback for unknown types
             DiscoverablePartitionType::Unknown(uuid) => Self::Unknown(uuid),
@@ -387,6 +398,40 @@ impl PartitionSize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_usr_verity_sig_discoverable_partition_type_conversion() {
+        // Forward conversion: PartitionType::UsrVeritySig maps to the
+        // generic DiscoverablePartitionType::UsrVeritySig.
+        assert_eq!(
+            DiscoverablePartitionType::from(PartitionType::UsrVeritySig),
+            DiscoverablePartitionType::UsrVeritySig
+        );
+
+        // Reverse conversion: all usr-verity-sig discoverable variants
+        // (generic and arch-specific) must coalesce back into
+        // PartitionType::UsrVeritySig, not Unknown.
+        for dpt in [
+            DiscoverablePartitionType::UsrVeritySig,
+            DiscoverablePartitionType::UsrAmd64VeritySig,
+            DiscoverablePartitionType::UsrArm64VeritySig,
+        ] {
+            assert_eq!(PartitionType::from(dpt), PartitionType::UsrVeritySig);
+        }
+
+        // Root-verity-sig variants have no corresponding PartitionType
+        // variant yet, so they still fall back to Unknown.
+        for dpt in [
+            DiscoverablePartitionType::RootVeritySig,
+            DiscoverablePartitionType::RootAmd64VeritySig,
+            DiscoverablePartitionType::RootArm64VeritySig,
+        ] {
+            assert!(matches!(
+                PartitionType::from(dpt),
+                PartitionType::Unknown(_)
+            ));
+        }
+    }
 
     #[test]
     fn test_serialization_roundtrip() {
