@@ -16,6 +16,12 @@ toolchains:
       tag: local
       pull: never
 
+toolsDirSources:
+  - name: producer-tools
+    container: special-tools
+    tag: local
+    pull: never
+
 defaults:
   outputs:
     - format: cosi
