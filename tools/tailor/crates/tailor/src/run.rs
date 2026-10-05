@@ -1568,9 +1568,14 @@ async fn build(
     let _ = fs::create_dir_all(&base_hash_cache_dir);
     let resolver = OciResolver::with_cache_dir(base_hash_cache_dir.clone());
     let lock = Lockfile::read(&workspace.root.join(LOCK_FILE))?;
-    let toolchains = resolve_toolchains(&targets, &tool, &runtime, &resolver, &lock).await?;
+    // Resolve toolchains and tools-dir sources over the full dependency closure
+    // (`ordered`), not just the explicitly-requested `targets`: planning below walks
+    // the whole closure, so a requested image's transitive producer that uses a
+    // different toolchain (or tools-dir source) must be resolved too. Otherwise the
+    // producer's toolchain is "not resolved before planning" when its node is planned.
+    let toolchains = resolve_toolchains(&ordered, &tool, &runtime, &resolver, &lock).await?;
     preflight_toolchain_arches(&targets, &tool, &toolchains, &selection)?;
-    let tools_dir_sources = resolve_tools_dir_sources(&targets, &runtime, &resolver, &lock).await?;
+    let tools_dir_sources = resolve_tools_dir_sources(&ordered, &runtime, &resolver, &lock).await?;
     let orchestrator = Orchestrator::new(IcExecutor::new(runtime), resolver);
 
     status("Toolchain", &describe_toolchains(&tool));
@@ -2945,6 +2950,61 @@ toolsDirSources:
                 "toolchain `ic` local image is `amd64` but cell `gizmo_lite_arm64_stable_cosi` targets `arm64`"
             ),
             "got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_resolves_toolchains_across_the_dependency_closure() {
+        // A consumer on the default toolchain depends on a producer that pins a
+        // different, `pull: never` toolchain. Building only the consumer must still
+        // resolve the producer's toolchain, because planning walks the whole closure.
+        let workspace = discover(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("fixtures")
+                .join("producer-toolchain"),
+        )
+        .unwrap();
+        let tool = tool_config(&workspace);
+        let all_members = all_member_targets(&workspace).unwrap();
+        let selected = build_targets(&workspace, &["consumer".to_owned()]).unwrap();
+        let closure = imagedep::dependency_closure(&selected, &all_members).unwrap();
+        let ordered = imagedep::topological_order(&closure, &all_members).unwrap();
+        let runtime = MockRuntime {
+            image: Some(local_image(Vec::new())),
+        };
+
+        // Resolving only the named image misses the producer's toolchain — this is the
+        // gap that left it "not resolved before planning".
+        let named_only = resolve_toolchains(
+            &selected,
+            &tool,
+            &runtime,
+            &FakeResolver,
+            &Lockfile::default(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            !named_only.contains_key("special-imagecustomizer:local"),
+            "named-only resolution should not cover the producer toolchain; got {:?}",
+            named_only.keys().collect::<Vec<_>>()
+        );
+
+        // Resolving the dependency closure (what the build path now passes) covers it.
+        let over_closure = resolve_toolchains(
+            &ordered,
+            &tool,
+            &runtime,
+            &FakeResolver,
+            &Lockfile::default(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            over_closure.contains_key("special-imagecustomizer:local"),
+            "closure resolution must cover the producer toolchain; got {:?}",
+            over_closure.keys().collect::<Vec<_>>()
         );
     }
 

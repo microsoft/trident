@@ -1,0 +1,14 @@
+# Producer image: pins the `special-ic` toolchain (pull: never, local only). It is
+# never named on the build command line in the regression test — it is reached only
+# as a transitive dependency of `consumer`.
+name: producer
+toolchain: special-ic
+
+base:
+  azureLinux:
+    version: "3.0"
+    variant: minimal-os
+
+config:
+  os:
+    hostname: producer
