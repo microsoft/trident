@@ -69,6 +69,7 @@ use crate::{
     init::cih,
     osimage::OsImage,
     stream::DiskSelectionStrategy,
+    subsystems::esp,
 };
 
 /// Trident version as provided by environment variables at build time
@@ -589,8 +590,28 @@ impl Trident {
                     // For CIH, initialize datastore with known intitial state when
                     // the datastore is not already created.
                     let initial_host_status = cih::initial_host_status()
-                                .structured(InvalidInputError::DeriveHostConfiguration)
-                                .message("Failed to initialize host status for CIH")?;
+                        .structured(InvalidInputError::DeriveHostConfiguration)
+                        .message("Failed to initialize host status for CIH")?;
+
+                    // Mirror offline-initialize's bootstrap: CIH lazy adoption derives
+                    // HostStatus metadata only, it never touches the ESP. Seed EFI/AZLA from
+                    // EFI/BOOT now so manual rollback's "AZLA must already exist" invariant
+                    // holds for CIH-adopted hosts too.
+                    let esp_path = initial_host_status
+                        .spec
+                        .storage
+                        .filesystems
+                        .iter()
+                        .find(|fs| fs.is_esp)
+                        .and_then(|fs| fs.mount_point_path())
+                        .structured(InternalError::Internal(
+                            "Failed to find ESP filesystem in CIH-derived Host Status",
+                        ))?;
+
+                    esp::bootstrap_azla_from_fallback(esp_path)
+                        .structured(InvalidInputError::InvalidBootConfiguration)
+                        .message("Failed to bootstrap AZLA ESP path for CIH")?;
+
                     datastore
                         .with_host_status(|status| {
                             *status = initial_host_status;

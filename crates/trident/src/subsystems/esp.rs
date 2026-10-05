@@ -626,6 +626,26 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Ensures `EFI/AZLA` exists on the ESP, seeding it from the `EFI/BOOT`
+/// fallback loader if it's missing. Used by both offline-initialize and CIH
+/// lazy-adoption bootstrap, so a freshly-derived HostStatus is always backed
+/// by a matching on-disk ESP layout before the first A/B update or manual
+/// rollback ever runs and assumes AZLA already exists.
+pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
+    let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
+    trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
+    if !azla_esp_path.exists() {
+        trace!(
+            "AZLA volume ESP path {:?} does not exist, attempting to copy from fallback location",
+            azla_esp_path
+        );
+        let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        replace_boot_files(&boot_esp_path, &azla_esp_path)
+            .context("Failed to copy boot files to AZLA ESP path")?;
+    }
+    Ok(())
+}
+
 /// Copies boot files from temp_mount_dir, where image was mounted to, to given dir esp_dir.
 ///
 /// Returns a boolean indicating whether grub-noprefix.efi is used.
@@ -1334,6 +1354,36 @@ mod tests {
             if !file_infos.iter().any(|(f, _)| f == file_name) {
                 assert!(!to_dir.path().join(file_name).exists());
             }
+        }
+    }
+
+    #[test]
+    fn test_bootstrap_azla_from_fallback() {
+        let esp_dir = TempDir::new().unwrap();
+        let boot_dir = esp_dir.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let azla_dir = esp_dir.path().join(ESP_EFI_DIRECTORY).join("AZLA");
+
+        let file_infos = vec![
+            (BOOT_EFI, "Fallback bootloader"),
+            (GRUB_EFI, "Fallback grub"),
+        ];
+
+        fs::create_dir_all(&boot_dir).unwrap();
+        for (file_name, content) in &file_infos {
+            let file_path = boot_dir.join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{content}").unwrap();
+        }
+
+        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
+
+        for (file_name, _content) in &file_infos {
+            assert!(
+                files_are_identical(&boot_dir.join(file_name), &azla_dir.join(file_name)),
+                "Files are not identical: {} and {}",
+                boot_dir.join(file_name).display(),
+                azla_dir.join(file_name).display()
+            );
         }
     }
 
