@@ -608,7 +608,14 @@ impl Trident {
                             "Failed to find ESP filesystem in CIH-derived Host Status",
                         ))?;
 
-                    esp::bootstrap_azla_from_fallback(esp_path)
+                    // Resolve the ESP path relative to the host filesystem root,
+                    // matching the A/B update and manual-rollback paths. Without
+                    // this, containerized Trident bootstraps AZLA under the
+                    // container's own /boot instead of the host's ESP.
+                    let esp_path = container::get_host_relative_path(esp_path.to_path_buf())
+                        .message("Failed to resolve ESP path relative to host for CIH")?;
+
+                    esp::bootstrap_azla_from_fallback(&esp_path)
                         .structured(InvalidInputError::InvalidBootConfiguration)
                         .message("Failed to bootstrap AZLA ESP path for CIH")?;
 

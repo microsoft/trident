@@ -640,8 +640,28 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
             azla_esp_path
         );
         let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-        replace_boot_files(&boot_esp_path, &azla_esp_path)
-            .context("Failed to copy boot files to AZLA ESP path")?;
+
+        // Stage the copy in a temporary sibling directory and publish it via
+        // an atomic rename only once the copy has fully succeeded. Creating
+        // azla_esp_path directly (via replace_boot_files' create_dir_all)
+        // before the copy completes would leave a partially-populated
+        // directory behind on failure, and since this function only checks
+        // for *existence*, every subsequent retry would then skip
+        // bootstrapping entirely.
+        let azla_tmp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA.bootstrap-tmp");
+        if azla_tmp_path.exists() {
+            fs::remove_dir_all(&azla_tmp_path).context(format!(
+                "Failed to remove stale temporary AZLA bootstrap directory '{}'",
+                azla_tmp_path.display()
+            ))?;
+        }
+        replace_boot_files(&boot_esp_path, &azla_tmp_path)
+            .context("Failed to copy boot files to temporary AZLA bootstrap path")?;
+        fs::rename(&azla_tmp_path, &azla_esp_path).context(format!(
+            "Failed to atomically publish AZLA bootstrap directory '{}' to '{}'",
+            azla_tmp_path.display(),
+            azla_esp_path.display()
+        ))?;
     }
     Ok(())
 }
