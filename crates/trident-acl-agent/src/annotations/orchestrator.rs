@@ -7,7 +7,7 @@
 //! rollback). See the design doc for the full state-machine rationale;
 //! keep it in sync with this file if the design changes.
 
-use std::{collections::BTreeMap, future::Future, time::Duration};
+use std::{collections::BTreeMap, future, future::Future, time::Duration};
 
 use anyhow::{anyhow, Context, Error};
 use backoff::{backoff::Backoff, ExponentialBackoffBuilder};
@@ -147,9 +147,33 @@ impl Orchestrator {
     /// state across the gap: the Node snapshot is always re-read fresh, and
     /// `state.json` (pendingCommit / completed cache) is purely local and
     /// untouched by a 404.
+    ///
+    /// `recover_from_trident_state` and `reconcile_node` are themselves
+    /// raced against `shutdown` below (rather than just awaited), so a
+    /// SIGTERM/SIGINT during a long-running stage/finalize/rollback/commit
+    /// RPC still makes `run()` return promptly instead of blocking for up
+    /// to `OrchestrationConfig::stage_timeout`/`finalize_timeout`. Dropping
+    /// that in-flight RPC this way is safe for the same reason an
+    /// ungraceful kill of the agent already was before this change: every
+    /// servicing operation is resumable from `state.json`
+    /// (`PendingCommit`/completed cache) or reconstructable from tridentd's
+    /// own state (see `resume_pending_commit` and
+    /// `reconstruct_without_state`), and nothing here commits agent-local
+    /// state until after the RPC returns - so there is no partial write to
+    /// clean up, only a retry to make on next start.
     pub async fn run(&self, shutdown: CancellationToken) -> Result<(), Error> {
         loop {
-            match self.recover_from_trident_state(&shutdown).await {
+            let recovery_result = select! {
+                _ = shutdown.cancelled() => {
+                    info!(
+                        "shutdown requested while recovering trident state; exiting (any \
+                         in-flight post-reboot commit resumes from state.json on next start)"
+                    );
+                    return Ok(());
+                }
+                result = self.recover_from_trident_state(&shutdown) => result,
+            };
+            match recovery_result {
                 Ok(Some(LoopControl::Continue)) => {}
                 Ok(Some(LoopControl::ExitForReboot)) => return Ok(()),
                 Ok(None) => return Ok(()), // shutdown requested while recovering
@@ -224,7 +248,19 @@ impl Orchestrator {
                         continue;
                     }
                 };
-                match self.reconcile_node(&node).await {
+                let reconcile_result = select! {
+                    _ = shutdown.cancelled() => {
+                        info!(
+                            "shutdown requested while reconciling node {}; exiting (any \
+                             in-flight stage/finalize/rollback/commit resumes from \
+                             state.json on next start)",
+                            self.config.kubernetes.node_name
+                        );
+                        return Ok(());
+                    }
+                    result = self.reconcile_node(&node) => result,
+                };
+                match reconcile_result {
                     Ok(LoopControl::Continue) => {}
                     Ok(LoopControl::ExitForReboot) => return Ok(()),
                     Err(err) => {
@@ -287,12 +323,7 @@ impl Orchestrator {
                 Some(deadline) => {
                     let now = time::Instant::now();
                     if now >= deadline {
-                        return Err(anyhow!(
-                            "node {node_name} did not reappear within {} (TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT); giving up",
-                            humantime::format_duration(
-                                max_wait.expect("deadline is only set when max_wait is set")
-                            )
-                        ));
+                        return Err(Self::node_gone_deadline_error(node_name, max_wait));
                     }
                     delay.min(deadline - now)
                 }
@@ -309,6 +340,14 @@ impl Orchestrator {
                 _ = shutdown.cancelled() => {
                     info!("shutdown requested while polling for node {node_name} recreation");
                     return Ok(false);
+                }
+                // Also bound the GET itself by the deadline, not just the
+                // pre-sleep check above: without this branch, a stalled API
+                // server could hold this future past `max_wait` indefinitely,
+                // defeating the whole point of `node_gone_max_wait` as an
+                // upper bound.
+                _ = Self::until_deadline(deadline) => {
+                    return Err(Self::node_gone_deadline_error(node_name, max_wait));
                 }
                 result = self.k8s.get_node(node_name) => result,
             };
@@ -334,6 +373,32 @@ impl Orchestrator {
                 }
             }
         }
+    }
+
+    /// Resolves to nothing until `deadline` (if any) is reached, so it can
+    /// be used as a `select!` branch that bounds another future by a
+    /// possibly-absent deadline. Never resolves when `deadline` is `None`
+    /// (an unconfigured `node_gone_max_wait` means "wait indefinitely"),
+    /// mirroring the same `Option` semantics used for the pre-sleep check
+    /// above.
+    async fn until_deadline(deadline: Option<time::Instant>) {
+        match deadline {
+            Some(deadline) => time::sleep_until(deadline).await,
+            None => future::pending().await,
+        }
+    }
+
+    /// Builds the "gave up waiting for the node to reappear" error, shared
+    /// between the pre-sleep deadline check and the deadline branch that
+    /// bounds the recreation GET itself, so the message can't drift between
+    /// the two call sites.
+    fn node_gone_deadline_error(node_name: &str, max_wait: Option<Duration>) -> Error {
+        anyhow!(
+            "node {node_name} did not reappear within {} (TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT); giving up",
+            humantime::format_duration(
+                max_wait.expect("deadline is only set when max_wait is set")
+            )
+        )
     }
 
     /// Startup recovery. Order matters: a pending post-reboot `commit()` is
@@ -1378,23 +1443,15 @@ impl Orchestrator {
     /// pile onto an API server that's already struggling. Only used by
     /// `recover_from_trident_state`'s "no pending commit to resume" branch;
     /// the pending-commit resume itself never touches k8s at all (see that
-    /// function's docs). `NodeGone` is returned immediately without
-    /// retrying, since it's terminal - the node was deleted, and no amount
-    /// of retrying changes that.
-    /// Reads the agent's own Node object, retrying indefinitely with capped
-    /// exponential backoff and full jitter between attempts, so a transient
-    /// Kubernetes hiccup at startup recovery doesn't propagate the first
-    /// error straight into a process exit / crash-loop the way a bare
-    /// `self.k8s.get_node(...).await?` would, and repeated retries don't
-    /// pile onto an API server that's already struggling. Only used by
-    /// `recover_from_trident_state`'s "no pending commit to resume" branch;
-    /// the pending-commit resume itself never touches k8s at all (see that
-    /// function's docs). `NodeGone` is returned immediately without
-    /// retrying, since it's terminal - the node was deleted, and no amount
-    /// of retrying changes that. Both the GET itself and the backoff sleep
-    /// are raced against `shutdown`, so a SIGTERM/SIGINT during startup
-    /// recovery returns promptly (`Ok(None)`) instead of blocking process
-    /// exit on an in-flight retry loop.
+    /// function's docs).
+    ///
+    /// `NodeGone` is returned immediately without retrying, rather than
+    /// being retried like other errors - but it is *not* terminal for the
+    /// agent as a whole: the caller (`run()`) treats it as a signal to pause
+    /// via `await_node_recreation` rather than exiting. Both the GET itself
+    /// and the backoff sleep are raced against `shutdown`, so a SIGTERM/
+    /// SIGINT during startup recovery returns promptly (`Ok(None)`) instead
+    /// of blocking process exit on an in-flight retry loop.
     async fn get_node_with_retry(
         &self,
         name: &str,
