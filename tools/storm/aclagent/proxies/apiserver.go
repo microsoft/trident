@@ -109,14 +109,24 @@ func (s *NodeStore) CurrentResourceVersion() string {
 	return s.node.ResourceVersion
 }
 
-func (s *NodeStore) MergePatch(raw []byte) (*corev1.Node, error) {
+// MergePatch atomically checks whether the Node is currently present and,
+// if so, applies raw as a merge patch - both under a single lock
+// acquisition, so a concurrent DeleteNode/RestoreNode call can never land
+// between the missing-check and the mutation the way two separate
+// isMissing()/MergePatch() calls (as handlePatch used to make) could.
+// Returns ok=false, leaving the store untouched, if the Node is currently
+// missing.
+func (s *NodeStore) MergePatch(raw []byte) (*corev1.Node, bool, error) {
 	var patch metadataPatch
 	if err := json.Unmarshal(raw, &patch); err != nil {
-		return nil, fmt.Errorf("failed to parse merge patch: %w", err)
+		return nil, false, fmt.Errorf("failed to parse merge patch: %w", err)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.missing {
+		return nil, false, nil
+	}
 	applyOptionalStringMap(s.node.Labels, patch.Metadata.Labels)
 	applyOptionalStringMap(s.node.Annotations, patch.Metadata.Annotations)
 	if patch.Status.Conditions != nil {
@@ -128,7 +138,23 @@ func (s *NodeStore) MergePatch(raw []byte) (*corev1.Node, error) {
 		s.deleteOnNextPatch = false
 		s.missing = true
 	}
-	return s.node.DeepCopy(), nil
+	return s.node.DeepCopy(), true, nil
+}
+
+// SnapshotIfPresent atomically checks whether the Node is present and, if
+// so, returns a deep copy of it - both under a single lock acquisition, so
+// a concurrent DeleteNode/RestoreNode call can never land between the
+// missing-check and the snapshot the way two separate isMissing()/
+// Snapshot() calls (as handleGet used to make) could. Plain Snapshot()
+// remains available (and is still used elsewhere) for callers that already
+// know the Node is present, or that only need its content when it is.
+func (s *NodeStore) SnapshotIfPresent() (*corev1.Node, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.missing {
+		return nil, false
+	}
+	return s.node.DeepCopy(), true
 }
 
 func (s *NodeStore) PatchLabels(labels map[string]string) *corev1.Node {
@@ -372,11 +398,12 @@ func (s *APIServer) ListenAndServe(ctx context.Context, listenAddr string) (list
 }
 
 func (s *APIServer) handleGet(w http.ResponseWriter, _ *http.Request) {
-	if s.store.isMissing() {
+	node, ok := s.store.SnapshotIfPresent()
+	if !ok {
 		writeNodeNotFound(w, s.nodeName)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.store.Snapshot())
+	writeJSON(w, http.StatusOK, node)
 }
 
 // handleList serves the collection endpoint's plain (non-watch) LIST
@@ -406,6 +433,13 @@ func (s *APIServer) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *APIServer) handlePatch(w http.ResponseWriter, r *http.Request) {
+	// Fast-path check: mirrors real Kubernetes, which rejects a PATCH
+	// against a missing resource with 404 regardless of body validity, and
+	// keeps that the common-case response even for a malformed/empty body
+	// (see TestNodeStoreDeleteNodeMakesPatchReturn404). This check alone
+	// cannot close the TOCTOU race MergePatch's own atomic check below
+	// does - a concurrent DeleteNode could still land after this line - so
+	// MergePatch's check remains the authoritative one.
 	if s.store.isMissing() {
 		writeNodeNotFound(w, s.nodeName)
 		return
@@ -430,9 +464,13 @@ func (s *APIServer) handlePatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to re-marshal patch: %v", err), http.StatusInternalServerError)
 		return
 	}
-	updated, err := s.store.MergePatch(bytes)
+	updated, ok, err := s.store.MergePatch(bytes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !ok {
+		writeNodeNotFound(w, s.nodeName)
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
