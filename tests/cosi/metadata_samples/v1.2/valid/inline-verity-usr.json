@@ -1,0 +1,125 @@
+{
+    "version": "1.2",
+    "osArch": "x86_64",
+    "images": [
+        {
+            "image": {
+                "path": "images/esp.rawzst",
+                "compressedSize": 839345,
+                "uncompressedSize": 8388608,
+                "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
+            },
+            "mountPoint": "/boot",
+            "fsType": "vfat",
+            "fsUuid": "A1B2-C3D4",
+            "partType": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b",
+            "verity": null
+        },
+        {
+            "image": {
+                "path": "images/usr.rawzst",
+                "compressedSize": 299718933,
+                "uncompressedSize": 1073741824,
+                "sha384": "fd2992ee573ab5314deeb8f1a467bdf48f5d9a530f1f1988b105e29bc1d82ba6a156f2d1ed4ae8ed4dd60784bec1c6b0"
+            },
+            "mountPoint": "/usr",
+            "fsType": "ext4",
+            "fsUuid": "695a5ef2-6e5d-4f0d-b819-dae630122b8f",
+            "partType": "8484680c-9521-48c6-9c11-b0720656f69e",
+            "verity": {
+                "image": {
+                    "path": "images/usr.rawzst",
+                    "compressedSize": 299718933,
+                    "uncompressedSize": 1073741824,
+                    "sha384": "fd2992ee573ab5314deeb8f1a467bdf48f5d9a530f1f1988b105e29bc1d82ba6a156f2d1ed4ae8ed4dd60784bec1c6b0"
+                },
+                "roothash": "270ed371044dd0be4429a3945b1defa6a4cf202aa1308220c1ff40ea20cfb9c5",
+                "hashOffset": 1065345024
+            }
+        },
+        {
+            "image": {
+                "path": "images/root.rawzst",
+                "compressedSize": 2930305,
+                "uncompressedSize": 286777344,
+                "sha384": "482a777838afb87abed487bd054f4f2cebf6416586cd11f0c3c6e4bd37090f50039ffa45032ea0732e1b586cfb1e1af4"
+            },
+            "mountPoint": "/",
+            "fsType": "ext4",
+            "fsUuid": "05ce50c7-885b-4544-b4ba-79471420655e",
+            "partType": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
+            "verity": null
+        }
+    ],
+    "osRelease": "NAME=\"Microsoft Azure Linux\"\nVERSION=\"3.0.20240824\"\nID=azurelinux\nVERSION_ID=\"3.0\"\nPRETTY_NAME=\"Microsoft Azure Linux 3.0\"\nANSI_COLOR=\"1;34\"\nHOME_URL=\"https://aka.ms/azurelinux\"\nBUG_REPORT_URL=\"https://aka.ms/azurelinux\"\nSUPPORT_URL=\"https://aka.ms/azurelinux\"\n",
+    "bootloader": {
+        "type": "systemd-boot",
+        "systemdBoot": {
+            "entries": [
+                {
+                    "type": "uki-standalone",
+                    "path": "/boot/EFI/Linux/azurelinux-uki.efi",
+                    "cmdline": "mount.usr=/dev/mapper/usr mount.usrflags=ro systemd.verity_usr_data=PARTUUID=7130c94a-213a-4e5a-8e26-6cce9662f132 systemd.verity_usr_hash=PARTUUID=7130c94a-213a-4e5a-8e26-6cce9662f132 systemd.verity_usr_options=hash-offset=1065345024,panic-on-corruption usrhash=270ed371044dd0be4429a3945b1defa6a4cf202aa1308220c1ff40ea20cfb9c5 root=LABEL=ROOT rootflags=rw",
+                    "kernel": "6.6.78.1-3.azl3"
+                }
+            ]
+        }
+    },
+    "osPackages": [
+        {
+            "name": "systemd",
+            "version": "255",
+            "release": "20.azl3",
+            "arch": "x86_64"
+        }
+    ],
+    "disk": {
+        "size": 1073741824,
+        "type": "gpt",
+        "lbaSize": 512,
+        "gptRegions": [
+            {
+                "image": {
+                    "path": "images/primary-gpt.rawzst",
+                    "compressedSize": 16384,
+                    "uncompressedSize": 32768,
+                    "sha384": "a3f5c6e2b4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7"
+                },
+                "type": "primary-gpt"
+            },
+            {
+                "image": {
+                    "path": "images/esp.rawzst",
+                    "compressedSize": 839345,
+                    "uncompressedSize": 8388608,
+                    "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
+                },
+                "type": "partition",
+                "number": 1
+            },
+            {
+                "image": {
+                    "path": "images/usr.rawzst",
+                    "compressedSize": 299718933,
+                    "uncompressedSize": 1073741824,
+                    "sha384": "fd2992ee573ab5314deeb8f1a467bdf48f5d9a530f1f1988b105e29bc1d82ba6a156f2d1ed4ae8ed4dd60784bec1c6b0"
+                },
+                "type": "partition",
+                "number": 2
+            },
+            {
+                "image": {
+                    "path": "images/root.rawzst",
+                    "compressedSize": 2930305,
+                    "uncompressedSize": 286777344,
+                    "sha384": "482a777838afb87abed487bd054f4f2cebf6416586cd11f0c3c6e4bd37090f50039ffa45032ea0732e1b586cfb1e1af4"
+                },
+                "type": "partition",
+                "number": 3
+            }
+        ]
+    },
+    "compression": {
+        "maxWindowLog": 27
+    }
+}

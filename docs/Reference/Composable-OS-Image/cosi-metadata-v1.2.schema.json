@@ -89,12 +89,17 @@
       "required": ["image", "roothash"],
       "properties": {
         "image": {
-          "description": "Details of the hash partition image file in the tar file.",
+          "description": "Details of the hash partition image file in the tar file. For inline verity the hash tree lives inside the data partition, so this refers to the same image file as the filesystem's own image.",
           "$ref": "#/$defs/ImageFile"
         },
         "roothash": {
           "description": "Verity root hash.",
           "type": "string"
+        },
+        "hashOffset": {
+          "description": "Byte offset at which the verity hash tree starts inside the image. MUST be specified for inline verity, where the hash tree is stored inside the data partition itself; otherwise omitted or null.",
+          "type": ["integer", "null"],
+          "minimum": 0
         }
       }
     },
