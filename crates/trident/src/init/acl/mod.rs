@@ -30,7 +30,7 @@ pub fn is_acl() -> Result<bool, Error> {
     Ok(os_release.variant_id == Some("azurecontainerlinux".to_string()))
 }
 
-/// An expected partition on the CIH root disk, identified by label, along
+/// An expected partition on the ACL root disk, identified by label, along
 /// with its partition type, the actual `Partition` discovered on disk (if
 /// any), and whether the partition is required to be present.
 struct ExpectedPartition<'a> {
