@@ -14,7 +14,7 @@
 Summary:        Declarative, security-first OS lifecycle agent designed primarily for Azure Linux
 Name:           trident
 # Use hard-coded versions for distro build
-Version:        0.22.0
+Version:        0.29.0
 Release:        1%{?dist}
 License:        MIT
 Vendor:         Microsoft Corporation
@@ -41,6 +41,7 @@ BuildRequires:  protobuf-compiler
 BuildRequires:  protobuf-devel
 BuildRequires:  systemd-units
 BuildRequires:  rust
+BuildRequires:  bzip2
 
 %if %{undefined rpm_ver}
 # For distro build, require cargo to build
@@ -229,6 +230,7 @@ be removed once the fix is merged in AZL 4.0.
 %package acl
 Summary:        Trident ACL Components
 Requires:       %{name} = %{version}-%{release}
+Requires:       %{name}-static-pcrlock-files = %{version}-%{release}
 
 %description acl
 The Trident ACL components required to orchestrate servicing of ACL images.
@@ -337,6 +339,9 @@ mkdir -p "$pcrlockroot"
 )
 
 %changelog
+* Tue Oct 06 2026 Brian Fjeldstad <bfjelds@microsoft.com> 0.29.0-1
+- Upgrade to version 0.29.0
+
 * Thu Mar 26 2026 Brian Fjeldstad <bfjelds@microsoft.com> 0.22.0-1
 - Upgrade to version 0.22.0
 
