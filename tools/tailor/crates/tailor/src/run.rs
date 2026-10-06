@@ -1557,6 +1557,19 @@ async fn build(
             )));
         }
     };
+    // Also lock the effective scratch base (`buildDirBase`): a build and a clean (or two builds) that
+    // share a `--build-dir-base` write the same `<base>/<slug>` dirs even when their output
+    // directories differ, which the output lock above cannot protect. Acquire after the output lock
+    // (same order as `clean`) to avoid deadlock.
+    let scratch_base = tool
+        .runtime
+        .as_ref()
+        .and_then(|runtime| runtime.build_dir_base.clone())
+        .map(|base| tailor_config::absolutize(base, &workspace.root));
+    let _scratch_lock = scratch_base
+        .as_deref()
+        .map(acquire_scratch_lock)
+        .transpose()?;
 
     // Wire Ctrl+C / SIGTERM to a cancellation token so an interrupted build tears down its running
     // container instead of orphaning it in the daemon (the container runtime removes the container on
@@ -1694,28 +1707,43 @@ async fn clean(
             )));
         }
     };
+    // Also lock the effective scratch base: a build and a clean that share a `--build-dir-base` touch
+    // the same `<base>/<slug>` dirs even when their output directories differ, so the output lock
+    // alone can't stop clean from deleting a running build's scratch. Same acquire order as build.
+    let _scratch_lock = acquire_scratch_lock(&build_dir_base)?;
 
-    let paths = clean_paths(&targets, &tool, selector, &output_dir, &build_dir_base)?;
+    let (artifacts, scratch) =
+        clean_paths(&targets, &tool, selector, &output_dir, &build_dir_base)?;
 
     let executor = IcExecutor::new(establish_runtime(engine, &tool).await?);
+    // Scratch goes through the guarded path (each target validated against the build-dir guard before
+    // any removal); artifacts are plain output files under the output directory.
     executor
-        .clean(&paths, &rt_config, CancellationToken::new())
+        .clean_scratch(&scratch, &rt_config, CancellationToken::new())
         .await?;
-    println!("cleaned {} artifact path(s)", paths.len());
+    executor
+        .clean(&artifacts, &rt_config, CancellationToken::new())
+        .await?;
+    println!(
+        "cleaned {} path(s)",
+        artifacts.len().saturating_add(scratch.len())
+    );
     Ok(())
 }
 
-/// The host paths `tailor clean` removes for the selected cells: each cell's output artifact, its
-/// enrollable CA cert when the image is signed, and its IC `--build-dir` scratch (root-owned and
-/// never reaped by IC, so cleanup must sweep it or it accumulates undeletable without sudo).
+/// The host paths `tailor clean` removes for the selected cells, split into `(artifacts, scratch)`:
+/// artifacts are each cell's output file (plus its enrollable CA cert when the image is signed);
+/// scratch is each cell's IC `--build-dir` directory (root-owned and never reaped by IC). They are
+/// removed by different paths — scratch is guarded (`clean_scratch`), artifacts are plain files.
 fn clean_paths(
     targets: &[Arc<Target>],
     tool: &ToolConfig,
     selector: &Selector,
     output_dir: &Path,
     build_dir_base: &Path,
-) -> Result<Vec<PathBuf>, AppError> {
-    let mut paths = Vec::new();
+) -> Result<(Vec<PathBuf>, Vec<PathBuf>), AppError> {
+    let mut artifacts = Vec::new();
+    let mut scratch = Vec::new();
     for target in targets {
         // A signed image also drops an enrollable CA cert beside each cell's image (§6); remove it
         // too. Lenient on config: `validate` surfaces signing errors; cleanup should not fail on them.
@@ -1727,17 +1755,35 @@ fn clean_paths(
         .flatten()
         .is_some();
         for cell in cells_selected(target, selector)? {
-            paths.push(output_dir.join(tailor_core::artifact_name(
+            artifacts.push(output_dir.join(tailor_core::artifact_name(
                 cell.slug.as_ref(),
                 cell.output.format,
             )));
             if signed {
-                paths.push(output_dir.join(ca_cert_name(cell.slug.as_ref())));
+                artifacts.push(output_dir.join(ca_cert_name(cell.slug.as_ref())));
             }
-            paths.push(build_dir_base.join(cell.slug.as_ref()));
+            scratch.push(build_dir_base.join(cell.slug.as_ref()));
         }
     }
-    Ok(paths)
+    Ok((artifacts, scratch))
+}
+
+/// Acquire the single-writer lock keyed to the effective scratch base (`buildDirBase`). The lock file
+/// sits at the base, outside the per-cell `<base>/<slug>` directories that get removed, so it is safe
+/// across a clean. Shared by `build` and `clean` with a consistent acquire order (output lock first,
+/// then scratch) to avoid deadlock.
+fn acquire_scratch_lock(base: &Path) -> Result<WorktreeLock, AppError> {
+    match WorktreeLock::acquire(base) {
+        Ok(Some(lock)) => Ok(lock),
+        Ok(None) => Err(AppError::Message(format!(
+            "another tailor build or clean is using the scratch base `{}`; wait for it to finish",
+            base.display()
+        ))),
+        Err(source) => Err(AppError::Message(format!(
+            "failed to acquire the scratch lock under `{}`: {source}",
+            base.display()
+        ))),
+    }
 }
 
 /// Gather the connection-resolution inputs (`meta/docs/2026-06-29-container-runtimes.md` §3): the per-invocation
@@ -3013,19 +3059,37 @@ toolsDirSources:
         let output_dir = PathBuf::from("/ws/artifacts");
         let build_dir_base = output_dir.join(".tailor").join("build");
 
-        let paths = clean_paths(&targets, &tool, &selector, &output_dir, &build_dir_base).unwrap();
+        let (artifacts, scratch) =
+            clean_paths(&targets, &tool, &selector, &output_dir, &build_dir_base).unwrap();
 
-        let mut expected = Vec::new();
+        let mut expected_scratch = Vec::new();
+        let mut expected_artifacts = Vec::new();
         for target in &targets {
             for cell in cells_selected(target, &selector).unwrap() {
-                expected.push(build_dir_base.join(cell.slug.as_ref()));
+                expected_scratch.push(build_dir_base.join(cell.slug.as_ref()));
+                expected_artifacts.push(output_dir.join(tailor_core::artifact_name(
+                    cell.slug.as_ref(),
+                    cell.output.format,
+                )));
             }
         }
-        assert!(!expected.is_empty(), "fixture should yield cells");
-        for dir in &expected {
+        assert!(!expected_scratch.is_empty(), "fixture should yield cells");
+        // Every cell's build-dir scratch must be in the (guarded) scratch set, and never mixed into
+        // the artifacts set.
+        for dir in &expected_scratch {
             assert!(
-                paths.contains(dir),
-                "clean must remove build-dir scratch {dir:?}; got {paths:?}"
+                scratch.contains(dir),
+                "clean must remove build-dir scratch {dir:?}; got {scratch:?}"
+            );
+            assert!(
+                !artifacts.contains(dir),
+                "scratch {dir:?} must not be in the artifact set {artifacts:?}"
+            );
+        }
+        for artifact in &expected_artifacts {
+            assert!(
+                artifacts.contains(artifact),
+                "clean must remove artifact {artifact:?}; got {artifacts:?}"
             );
         }
     }

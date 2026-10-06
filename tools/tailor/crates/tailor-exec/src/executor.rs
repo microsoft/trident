@@ -492,6 +492,22 @@ impl<R: ContainerRuntime> IcExecutor<R> {
         }
     }
 
+    /// Remove per-cell scratch directories (`<buildDirBase>/<slug>`), validating each against the
+    /// build-directory safety guard **before** removing anything — so a stray `--build-dir-base`
+    /// cannot direct the janitor at `/`, a system directory, `$HOME`, or a directory containing the
+    /// current working directory (the janitor's own bind guard only rejects the filesystem root).
+    pub async fn clean_scratch(
+        &self,
+        scratch_dirs: &[PathBuf],
+        runtime: &RuntimeConfig,
+        cancel: CancellationToken,
+    ) -> Result<(), ExecError> {
+        for dir in scratch_dirs {
+            guard::ensure_safe_build_dir(dir)?;
+        }
+        janitor::remove_paths(&self.runtime, scratch_dirs, runtime, cancel).await
+    }
+
     /// Reclaim a janitor-managed scratch path, subordinating the cleanup to a failed IC run: when
     /// `ic_failed`, a cleanup error (e.g. `EBUSY` from real `proc`/`sys`/`dev` mounts IC left behind
     /// when it crashed mid-chroot) is logged and swallowed so the real IC failure stays the headline
