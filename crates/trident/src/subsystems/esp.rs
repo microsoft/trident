@@ -686,6 +686,49 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Ensures `EFI/AZLA` exists on the ESP, seeding it from the `EFI/BOOT`
+/// fallback loader if it's missing. Used by both offline-initialize and CIH
+/// lazy-adoption bootstrap, so a freshly-derived HostStatus is always backed
+/// by a matching on-disk ESP layout before the first A/B update or manual
+/// rollback ever runs and assumes AZLA already exists.
+pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
+    let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
+    trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
+    if !azla_esp_path.exists() {
+        trace!(
+            "AZLA volume ESP path {:?} does not exist, attempting to copy from fallback location",
+            azla_esp_path
+        );
+        let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+
+        // Stage the copy in a temporary sibling directory and publish it via
+        // an atomic rename only once the copy has fully succeeded. Creating
+        // azla_esp_path directly (via replace_boot_files' create_dir_all)
+        // before the copy completes would leave a partially-populated
+        // directory behind on failure, and since this function only checks
+        // for *existence*, every subsequent retry would then skip
+        // bootstrapping entirely.
+        let azla_tmp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA.bootstrap-tmp");
+        if azla_tmp_path.exists() {
+            fs::remove_dir_all(&azla_tmp_path).context(format!(
+                "Failed to remove stale temporary AZLA bootstrap directory '{}'",
+                azla_tmp_path.display()
+            ))?;
+        }
+        replace_boot_files(&boot_esp_path, &azla_tmp_path).context(format!(
+            "Failed to copy boot files from '{}' to temporary AZLA bootstrap path '{}'",
+            boot_esp_path.display(),
+            azla_tmp_path.display()
+        ))?;
+        fs::rename(&azla_tmp_path, &azla_esp_path).context(format!(
+            "Failed to atomically publish AZLA bootstrap directory '{}' to '{}'",
+            azla_tmp_path.display(),
+            azla_esp_path.display()
+        ))?;
+    }
+    Ok(())
+}
+
 /// Copies boot files from temp_mount_dir, where image was mounted to, to given dir esp_dir.
 ///
 /// Returns a boolean indicating whether grub-noprefix.efi is used.
@@ -1394,6 +1437,122 @@ mod tests {
             if !file_infos.iter().any(|(f, _)| f == file_name) {
                 assert!(!to_dir.path().join(file_name).exists());
             }
+        }
+    }
+
+    #[test]
+    fn test_bootstrap_azla_from_fallback() {
+        let esp_dir = TempDir::new().unwrap();
+        let boot_dir = esp_dir.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let azla_dir = esp_dir.path().join(ESP_EFI_DIRECTORY).join("AZLA");
+
+        let file_infos = vec![
+            (BOOT_EFI, "Fallback bootloader"),
+            (GRUB_EFI, "Fallback grub"),
+        ];
+
+        fs::create_dir_all(&boot_dir).unwrap();
+        for (file_name, content) in &file_infos {
+            let file_path = boot_dir.join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{content}").unwrap();
+        }
+
+        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
+
+        for (file_name, _content) in &file_infos {
+            assert!(
+                files_are_identical(&boot_dir.join(file_name), &azla_dir.join(file_name)),
+                "Files are not identical: {} and {}",
+                boot_dir.join(file_name).display(),
+                azla_dir.join(file_name).display()
+            );
+        }
+    }
+
+    #[test]
+    fn test_bootstrap_azla_from_fallback_is_idempotent_when_azla_already_exists() {
+        let esp_dir = TempDir::new().unwrap();
+        let boot_dir = esp_dir.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let azla_dir = esp_dir.path().join(ESP_EFI_DIRECTORY).join("AZLA");
+
+        let fallback_file_infos = vec![
+            (BOOT_EFI, "Fallback bootloader"),
+            (GRUB_EFI, "Fallback grub"),
+        ];
+        fs::create_dir_all(&boot_dir).unwrap();
+        for (file_name, content) in &fallback_file_infos {
+            let file_path = boot_dir.join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{content}").unwrap();
+        }
+
+        // Pre-populate AZLA with content that does not match the fallback
+        // location, so any attempt to re-copy would be detectable.
+        fs::create_dir_all(&azla_dir).unwrap();
+        let sentinel_path = azla_dir.join(BOOT_EFI);
+        let mut sentinel_file = File::create(&sentinel_path).unwrap();
+        writeln!(sentinel_file, "Pre-existing AZLA content").unwrap();
+
+        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
+
+        // AZLA must be left untouched: bootstrap only runs when AZLA is
+        // absent, so a second call must be a no-op.
+        let contents = fs::read_to_string(&sentinel_path).unwrap();
+        assert_eq!(
+            contents.trim(),
+            "Pre-existing AZLA content",
+            "bootstrap_azla_from_fallback must not modify an already-existing AZLA directory"
+        );
+        assert!(
+            !azla_dir.join(GRUB_EFI).exists(),
+            "bootstrap_azla_from_fallback must not add files to an already-existing AZLA directory"
+        );
+    }
+
+    #[test]
+    fn test_bootstrap_azla_from_fallback_cleans_up_stale_tmp_dir() {
+        let esp_dir = TempDir::new().unwrap();
+        let boot_dir = esp_dir.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let azla_dir = esp_dir.path().join(ESP_EFI_DIRECTORY).join("AZLA");
+        let azla_tmp_dir = esp_dir
+            .path()
+            .join(ESP_EFI_DIRECTORY)
+            .join("AZLA.bootstrap-tmp");
+
+        let file_infos = vec![
+            (BOOT_EFI, "Fallback bootloader"),
+            (GRUB_EFI, "Fallback grub"),
+        ];
+        fs::create_dir_all(&boot_dir).unwrap();
+        for (file_name, content) in &file_infos {
+            let file_path = boot_dir.join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{content}").unwrap();
+        }
+
+        // Simulate a prior crashed bootstrap attempt: staging succeeded but
+        // the rename into place never happened, leaving a stale temp dir
+        // with unrelated/incomplete content.
+        fs::create_dir_all(&azla_tmp_dir).unwrap();
+        let mut stale_file = File::create(azla_tmp_dir.join("stale-leftover")).unwrap();
+        writeln!(stale_file, "Leftover from a crashed bootstrap").unwrap();
+
+        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
+
+        // The stale temp dir must be cleaned up, and bootstrapping must
+        // still succeed despite it being present beforehand.
+        assert!(
+            !azla_tmp_dir.exists(),
+            "stale temporary bootstrap directory must be removed"
+        );
+        for (file_name, _content) in &file_infos {
+            assert!(
+                files_are_identical(&boot_dir.join(file_name), &azla_dir.join(file_name)),
+                "Files are not identical: {} and {}",
+                boot_dir.join(file_name).display(),
+                azla_dir.join(file_name).display()
+            );
         }
     }
 
