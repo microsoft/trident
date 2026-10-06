@@ -1,0 +1,23 @@
+# Producer image: pins the `special-ic` toolchain (pull: never, local only) and a
+# `special-tools` tools-dir source (also pull: never). It is never named on the
+# build command line in the regression tests — it is reached only as a transitive
+# dependency of `consumer`. Its arm64 axis lets a preflight test exercise a
+# producer whose local toolchain architecture mismatches a required cell.
+name: producer
+toolchain: special-ic
+matrix:
+  arch: [arm64]
+
+toolsDir:
+  source: producer-tools
+
+base:
+  azureLinux:
+    version: "3.0"
+    variant: minimal-os
+
+config:
+  previewFeatures:
+    - tools-dir
+  os:
+    hostname: producer

@@ -979,12 +979,12 @@ async fn resolve_toolchains<R: ContainerRuntime, S: BaseResolver>(
 }
 
 fn preflight_toolchain_arches(
-    targets: &[Arc<Target>],
+    nodes: &[Arc<Target>],
     tool: &ToolConfig,
     toolchains: &BTreeMap<String, ResolvedToolchain>,
-    selector: &Selector,
+    selection: &BuildSelection,
 ) -> Result<(), AppError> {
-    for target in targets {
+    for target in nodes {
         let (toolchain_id, entry) = toolchain_for(target, tool)?;
         let key = toolchain_key(&entry);
         let resolved = toolchains
@@ -996,7 +996,11 @@ fn preflight_toolchain_arches(
         let Some(architecture) = resolved.architecture.as_deref() else {
             continue;
         };
-        for cell in cells_selected(target, selector)? {
+        // Walk every node's actually-scheduled cells via `BuildSelection` (which applies the user
+        // selector only to requested images and uses `required` cells for transitive producers), so
+        // a producer on a `pull: never` toolchain is arch-checked too — without erroring by applying
+        // the consumer's selector to a producer that lacks its axis.
+        for cell in selection.cells_for(target)? {
             preflight_toolchain_cell_arch(
                 &toolchain_id,
                 Some(architecture),
@@ -1568,9 +1572,14 @@ async fn build(
     let _ = fs::create_dir_all(&base_hash_cache_dir);
     let resolver = OciResolver::with_cache_dir(base_hash_cache_dir.clone());
     let lock = Lockfile::read(&workspace.root.join(LOCK_FILE))?;
-    let toolchains = resolve_toolchains(&targets, &tool, &runtime, &resolver, &lock).await?;
-    preflight_toolchain_arches(&targets, &tool, &toolchains, &selection)?;
-    let tools_dir_sources = resolve_tools_dir_sources(&targets, &runtime, &resolver, &lock).await?;
+    // Resolve toolchains and tools-dir sources over the full dependency closure
+    // (`ordered`), not just the explicitly-requested `targets`: planning below walks
+    // the whole closure, so a requested image's transitive producer that uses a
+    // different toolchain (or tools-dir source) must be resolved too. Otherwise the
+    // producer's toolchain is "not resolved before planning" when its node is planned.
+    let toolchains = resolve_toolchains(&ordered, &tool, &runtime, &resolver, &lock).await?;
+    preflight_toolchain_arches(&ordered, &tool, &toolchains, &build_selection)?;
+    let tools_dir_sources = resolve_tools_dir_sources(&ordered, &runtime, &resolver, &lock).await?;
     let orchestrator = Orchestrator::new(IcExecutor::new(runtime), resolver);
 
     status("Toolchain", &describe_toolchains(&tool));
@@ -2938,12 +2947,147 @@ toolsDirSources:
         .unwrap();
         let selection = Selector::parse(&[], &[], &["arm64".to_owned()]).unwrap();
 
-        let err = preflight_toolchain_arches(&targets, &tool, &toolchains, &selection).unwrap_err();
+        let err = preflight_toolchain_arches(
+            &targets,
+            &tool,
+            &toolchains,
+            &BuildSelection::from_selector(&selection),
+        )
+        .unwrap_err();
 
         assert!(
             err.to_string().contains(
                 "toolchain `ic` local image is `amd64` but cell `gizmo_lite_arm64_stable_cosi` targets `arm64`"
             ),
+            "got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_resolves_toolchains_across_the_dependency_closure() {
+        // A consumer on the default toolchain depends on a producer that pins a
+        // different, `pull: never` toolchain. Building only the consumer must still
+        // resolve the producer's toolchain, because planning walks the whole closure.
+        let workspace = discover(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("fixtures")
+                .join("producer-toolchain"),
+        )
+        .unwrap();
+        let tool = tool_config(&workspace);
+        let all_members = all_member_targets(&workspace).unwrap();
+        let selected = build_targets(&workspace, &["consumer".to_owned()]).unwrap();
+        let closure = imagedep::dependency_closure(&selected, &all_members).unwrap();
+        let ordered = imagedep::topological_order(&closure, &all_members).unwrap();
+        let runtime = MockRuntime {
+            image: Some(local_image(Vec::new())),
+        };
+
+        // Resolving only the named image misses the producer's toolchain — this is the
+        // gap that left it "not resolved before planning".
+        let named_only = resolve_toolchains(
+            &selected,
+            &tool,
+            &runtime,
+            &FakeResolver,
+            &Lockfile::default(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            !named_only.contains_key("special-imagecustomizer:local"),
+            "named-only resolution should not cover the producer toolchain; got {:?}",
+            named_only.keys().collect::<Vec<_>>()
+        );
+
+        // Resolving the dependency closure (what the build path now passes) covers it.
+        let over_closure = resolve_toolchains(
+            &ordered,
+            &tool,
+            &runtime,
+            &FakeResolver,
+            &Lockfile::default(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            over_closure.contains_key("special-imagecustomizer:local"),
+            "closure resolution must cover the producer toolchain; got {:?}",
+            over_closure.keys().collect::<Vec<_>>()
+        );
+
+        // The parallel tools-dir resolution has the same closure requirement: the
+        // producer's `pull: never` tools-dir source is only reachable via the closure.
+        let td_named =
+            resolve_tools_dir_sources(&selected, &runtime, &FakeResolver, &Lockfile::default())
+                .await
+                .unwrap();
+        assert!(
+            !td_named.contains_key("special-tools:local"),
+            "named-only resolution should not cover the producer tools-dir source; got {:?}",
+            td_named.keys().collect::<Vec<_>>()
+        );
+        let td_closure =
+            resolve_tools_dir_sources(&ordered, &runtime, &FakeResolver, &Lockfile::default())
+                .await
+                .unwrap();
+        assert!(
+            td_closure.contains_key("special-tools:local"),
+            "closure resolution must cover the producer tools-dir source; got {:?}",
+            td_closure.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn preflight_rejects_transitive_producer_toolchain_arch_mismatch() {
+        // The consumer requires the producer's arm64 cell, but the producer's
+        // `pull: never` toolchain image is amd64. Preflight must flag it before any
+        // container runs — even though the producer is only a transitive dependency
+        // and so is arch-checked via its `required` cells, not the consumer's selector.
+        let workspace = discover(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("fixtures")
+                .join("producer-toolchain"),
+        )
+        .unwrap();
+        let tool = tool_config(&workspace);
+        let all_members = all_member_targets(&workspace).unwrap();
+        let selected = build_targets(&workspace, &["consumer".to_owned()]).unwrap();
+        let closure = imagedep::dependency_closure(&selected, &all_members).unwrap();
+        let ordered = imagedep::topological_order(&closure, &all_members).unwrap();
+        let runtime = MockRuntime {
+            image: Some(local_image_with_arch("amd64")),
+        };
+        let toolchains = resolve_toolchains(
+            &ordered,
+            &tool,
+            &runtime,
+            &FakeResolver,
+            &Lockfile::default(),
+        )
+        .await
+        .unwrap();
+
+        let producer = ordered.iter().find(|t| t.name() == "producer").unwrap();
+        let producer_slug = cells(producer).unwrap()[0].slug.as_ref().to_owned();
+        let selector = Selector::parse(&[], &[], &[]).unwrap();
+        let selection = BuildSelection {
+            selector: &selector,
+            requested: BTreeSet::from(["consumer".to_owned()]),
+            required: BTreeMap::from([(
+                "producer".to_owned(),
+                BTreeSet::from([producer_slug.clone()]),
+            )]),
+        };
+
+        let err = preflight_toolchain_arches(&ordered, &tool, &toolchains, &selection).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("toolchain `special-ic` local image is `amd64`")
+                && err.to_string().contains("arm64"),
             "got {err:?}"
         );
     }

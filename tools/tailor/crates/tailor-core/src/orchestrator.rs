@@ -730,7 +730,7 @@ impl<'a> BuildSelection<'a> {
     }
 
     /// This target's build cells under this selection.
-    fn cells_for(&self, target: &Arc<Target>) -> Result<Vec<Cell>, CoreError> {
+    pub fn cells_for(&self, target: &Arc<Target>) -> Result<Vec<Cell>, CoreError> {
         let apply_selector = self.requested.is_empty() || self.requested.contains(target.name());
         select_node_cells(
             target,
