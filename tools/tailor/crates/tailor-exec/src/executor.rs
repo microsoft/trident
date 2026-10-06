@@ -258,6 +258,20 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
             self.reclaim_subordinate(&writable_farms, &context.runtime, cancel.clone(), ic_failed)
                 .await?;
         }
+        // Reclaim the per-cell IC `--build-dir` scratch (`<buildDirBase>/<slug>`). IC writes it
+        // root-owned and does not remove it, so without this it accumulates across builds (undeletable
+        // without sudo) and a crashed cell can leave mounts/loop-backed state under it that collide
+        // with the next cell. Best-effort on IC failure, like the tools-dir/farm reclaims above; the
+        // janitor binds the parent and removes the slug dir as a child, so an own mountpoint is fine.
+        if let Some(build_dir) = arg_builder::build_dir_path(cell, context) {
+            self.reclaim_subordinate(
+                slice::from_ref(&build_dir),
+                &context.runtime,
+                cancel.clone(),
+                ic_failed,
+            )
+            .await?;
+        }
         let result = result?;
 
         if result.exit_code != 0 {

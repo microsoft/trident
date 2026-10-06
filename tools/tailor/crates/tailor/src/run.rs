@@ -1657,9 +1657,36 @@ async fn clean(
     let targets = build_targets(workspace, names)?;
     let output_dir = workspace.root.join(ARTIFACTS_DIR);
     let lock = Lockfile::read(&workspace.root.join(LOCK_FILE))?;
+    let rt_config = runtime_config(&tool, &lock, &workspace.root);
+    // Per-cell IC build-dir scratch lives under `buildDirBase`, defaulting to the same
+    // `<output>/.tailor/build` the build driver injects (run.rs build path).
+    let build_dir_base = rt_config
+        .build_dir_base
+        .clone()
+        .unwrap_or_else(|| output_dir.join(TAILOR_STATE_DIR).join(BUILD_DIR));
 
+    let paths = clean_paths(&targets, &tool, selector, &output_dir, &build_dir_base)?;
+
+    let executor = IcExecutor::new(establish_runtime(engine, &tool).await?);
+    executor
+        .clean(&paths, &rt_config, CancellationToken::new())
+        .await?;
+    println!("cleaned {} artifact path(s)", paths.len());
+    Ok(())
+}
+
+/// The host paths `tailor clean` removes for the selected cells: each cell's output artifact, its
+/// enrollable CA cert when the image is signed, and its IC `--build-dir` scratch (root-owned and
+/// never reaped by IC, so cleanup must sweep it or it accumulates undeletable without sudo).
+fn clean_paths(
+    targets: &[Arc<Target>],
+    tool: &ToolConfig,
+    selector: &Selector,
+    output_dir: &Path,
+    build_dir_base: &Path,
+) -> Result<Vec<PathBuf>, AppError> {
     let mut paths = Vec::new();
-    for target in &targets {
+    for target in targets {
         // A signed image also drops an enrollable CA cert beside each cell's image (§6); remove it
         // too. Lenient on config: `validate` surfaces signing errors; cleanup should not fail on them.
         let signed = tailor_config::resolve_signing(
@@ -1677,19 +1704,10 @@ async fn clean(
             if signed {
                 paths.push(output_dir.join(ca_cert_name(cell.slug.as_ref())));
             }
+            paths.push(build_dir_base.join(cell.slug.as_ref()));
         }
     }
-
-    let executor = IcExecutor::new(establish_runtime(engine, &tool).await?);
-    executor
-        .clean(
-            &paths,
-            &runtime_config(&tool, &lock, &workspace.root),
-            CancellationToken::new(),
-        )
-        .await?;
-    println!("cleaned {} artifact path(s)", paths.len());
-    Ok(())
+    Ok(paths)
 }
 
 /// Gather the connection-resolution inputs (`meta/docs/2026-06-29-container-runtimes.md` §3): the per-invocation
@@ -2946,6 +2964,40 @@ toolsDirSources:
             ),
             "got {err:?}"
         );
+    }
+
+    #[test]
+    fn clean_includes_each_cell_build_dir_scratch() {
+        // `tailor clean` must sweep every selected cell's IC `--build-dir` scratch, not just its
+        // output artifact — IC leaves that dir root-owned and never removes it.
+        let workspace = discover(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests")
+                .join("fixtures")
+                .join("workspace"),
+        )
+        .unwrap();
+        let tool = tool_config(&workspace);
+        let targets = build_targets(&workspace, &[]).unwrap();
+        let selector = Selector::parse(&[], &[], &[]).unwrap();
+        let output_dir = PathBuf::from("/ws/artifacts");
+        let build_dir_base = output_dir.join(".tailor").join("build");
+
+        let paths = clean_paths(&targets, &tool, &selector, &output_dir, &build_dir_base).unwrap();
+
+        let mut expected = Vec::new();
+        for target in &targets {
+            for cell in cells_selected(target, &selector).unwrap() {
+                expected.push(build_dir_base.join(cell.slug.as_ref()));
+            }
+        }
+        assert!(!expected.is_empty(), "fixture should yield cells");
+        for dir in &expected {
+            assert!(
+                paths.contains(dir),
+                "clean must remove build-dir scratch {dir:?}; got {paths:?}"
+            );
+        }
     }
 
     #[test]
