@@ -19,7 +19,7 @@ indoc = {workspace = true}
 inventory = {workspace = true}
 log = {workspace = true, features = ["std"]}
 netplan-types = {workspace = true}
-nix = {workspace = true, features = ["fs"]}
+nix = {workspace = true, features = ["fs", "process", "term"]}
 once_cell = {workspace = true}
 openssl = {workspace = true}
 serde = {workspace = true}

@@ -4,6 +4,7 @@ default-members = ["crates/trident"]
 
 members = [
     "crates/docbuilder",
+    "crates/installer",
     "crates/trident-acl-agent",
     "crates/osmodifier",
     "crates/osutils",
@@ -30,6 +31,7 @@ chrono = { version = "0.4.38", features = ["serde"] }
 clap = { version = "4.4.18", features = ["derive", "wrap_help"] }
 configparser = { version = "3.1.0", features = ["indexmap"] }
 const_format = "0.2.33"
+crossterm = "0.28.1"
 derive_more = "0.99.19"
 docker_credential = "1.0.1"
 documented = "0.6.0"
@@ -74,6 +76,7 @@ prost = "0.14.1"
 prost-types = "0.14.1"
 quote = "1.0.37"
 rand = "0.9.3"
+ratatui = "0.29.0"
 rayon = "1.10"
 regex = "1.11.1"
 reqwest = { version = "0.12.9", features = [
@@ -110,6 +113,7 @@ tonic = "0.14.2"
 tonic-middleware = "0.4.0"
 tonic-prost = "0.14.2"
 tonic-prost-build = "0.14.2"
+toml = "0.8.23"
 tower = "0.5.2"
 tracing = "0.1.41"
 tracing-journald = "0.3.0"
