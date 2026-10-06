@@ -938,19 +938,16 @@ impl Orchestrator {
                 match self.reboot() {
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
-                        // Do not report a Nebraska 'Failed' terminal event
-                        // here: state.json/the update-status annotation
-                        // already durably recorded this finalize as a
-                        // Success with a pendingCommit armed, before this
-                        // reboot() call was ever made. A `systemctl reboot`
-                        // invocation's own exit status is inherently racy
-                        // to observe - the reboot it just triggered can
-                        // tear down this very process before the result
-                        // comes back - so an Err here does not reliably
-                        // mean the reboot didn't happen. Mirrors
-                        // `resume_pending_commit`'s own reboot-reissue
-                        // failure branch, which reports no Nebraska event
-                        // for the same reason.
+                        if let Some(ref v) = current_ver {
+                            self.report_nebraska_event(
+                                &request,
+                                NebraskaReport::Failed {
+                                    previous: v.clone(),
+                                    current: v.clone(),
+                                },
+                            )
+                            .await;
+                        }
                         let status = UpdateStatus::new(
                             &request,
                             Operation::Finalize,
@@ -973,11 +970,11 @@ impl Orchestrator {
                 // update_finalize returned success but did not report a
                 // reboot as required - nothing was actually armed (e.g.
                 // nothing staged to finalize; mirrors handle_rollback's
-                // ManualRollbackAb check below). Treating any Ok(_) as
-                // "boot armed" here previously meant only the agent-local
-                // NotStaged cache guard above stood between a no-op
-                // finalize and a real reboot + a false-positive Success -
-                // Trident's own response is the authoritative signal now.
+                // ManualRollbackAb check below). Trident's own response is
+                // the authoritative signal for whether a reboot was armed;
+                // treating any Ok(_) here as "boot armed" would let a no-op
+                // finalize produce a false-positive Success with no reboot
+                // ever following it.
                 let status = UpdateStatus::new(
                     &request,
                     Operation::Finalize,
@@ -1128,11 +1125,10 @@ impl Orchestrator {
             // No reboot has happened since finalize/rollback armed this
             // boot - the agent restarted (crash, watchdog, crash-loop)
             // without the reboot ever taking effect. Re-issue it instead of
-            // just waiting: previously this branch only logged and
-            // returned, so a reboot inhibited/delayed past the original
-            // process exit left the node armed-but-never-rebooting
-            // forever, showing `finalize: Success` with no commit until an
-            // external watchdog eventually wiped it.
+            // just logging and returning: otherwise a reboot inhibited or
+            // delayed past the original process exit would leave the node
+            // armed-but-never-rebooting forever, showing `finalize: Success`
+            // with no commit until an external watchdog eventually wiped it.
             info!(
                 "pending commit {} is still waiting for the reboot to happen; re-issuing reboot",
                 pending.operation_id
