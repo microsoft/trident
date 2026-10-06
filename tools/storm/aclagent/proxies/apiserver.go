@@ -113,7 +113,7 @@ func (s *NodeStore) CurrentResourceVersion() string {
 // if so, applies raw as a merge patch - both under a single lock
 // acquisition, so a concurrent DeleteNode/RestoreNode call can never land
 // between the missing-check and the mutation the way two separate
-// isMissing()/MergePatch() calls (as handlePatch used to make) could.
+// isMissing() and MergePatch() calls could.
 // Returns ok=false, leaving the store untouched, if the Node is currently
 // missing.
 func (s *NodeStore) MergePatch(raw []byte) (*corev1.Node, bool, error) {
@@ -144,8 +144,8 @@ func (s *NodeStore) MergePatch(raw []byte) (*corev1.Node, bool, error) {
 // SnapshotIfPresent atomically checks whether the Node is present and, if
 // so, returns a deep copy of it - both under a single lock acquisition, so
 // a concurrent DeleteNode/RestoreNode call can never land between the
-// missing-check and the snapshot the way two separate isMissing()/
-// Snapshot() calls (as handleGet used to make) could. Plain Snapshot()
+// missing-check and the snapshot the way two separate isMissing() and
+// Snapshot() calls could. Plain Snapshot()
 // remains available (and is still used elsewhere) for callers that already
 // know the Node is present, or that only need its content when it is.
 func (s *NodeStore) SnapshotIfPresent() (*corev1.Node, bool) {
