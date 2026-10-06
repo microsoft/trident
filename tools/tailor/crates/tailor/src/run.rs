@@ -178,6 +178,8 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<(), AppError> {
                 &workspace,
                 &args.images,
                 &selector(&args.select, &[])?,
+                args.output_dir.as_deref(),
+                args.build_dir_base.as_deref(),
                 &engine,
             )
             .await
@@ -1651,11 +1653,20 @@ async fn clean(
     workspace: &Workspace,
     names: &[String],
     selector: &Selector,
+    output_dir_override: Option<&Path>,
+    build_dir_base_override: Option<&Path>,
     engine: &EngineOverride,
 ) -> Result<(), AppError> {
-    let tool = tool_config(workspace);
+    let mut tool = tool_config(workspace);
     let targets = build_targets(workspace, names)?;
-    let output_dir = workspace.root.join(ARTIFACTS_DIR);
+    // Resolve the scratch locations with the SAME precedence as `build` so clean targets the right
+    // paths when a build overrode them: `--output-dir` (default `<workspace>/artifacts`), and the
+    // `--build-dir-base` override applied over `runtime.buildDirBase`.
+    let output_dir = tailor_config::absolutize(
+        output_dir_override.map_or_else(|| workspace.root.join(ARTIFACTS_DIR), Path::to_path_buf),
+        &env::current_dir().map_err(|e| AppError::Message(format!("current dir: {e}")))?,
+    );
+    apply_build_dir_base_override(&mut tool, build_dir_base_override)?;
     let lock = Lockfile::read(&workspace.root.join(LOCK_FILE))?;
     let rt_config = runtime_config(&tool, &lock, &workspace.root);
     // Per-cell IC build-dir scratch lives under `buildDirBase`, defaulting to the same
@@ -1664,6 +1675,25 @@ async fn clean(
         .build_dir_base
         .clone()
         .unwrap_or_else(|| output_dir.join(TAILOR_STATE_DIR).join(BUILD_DIR));
+
+    // Hold the same single-writer lock a build takes on the output directory, so clean never deletes
+    // scratch out from under a running build (or a concurrent clean).
+    let _clean_lock = match WorktreeLock::acquire(output_dir.join(TAILOR_STATE_DIR)) {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            return Err(AppError::Message(format!(
+                "a tailor build or clean is already running for output directory `{}`; wait for it \
+                 to finish",
+                output_dir.display()
+            )));
+        }
+        Err(source) => {
+            return Err(AppError::Message(format!(
+                "failed to acquire the build lock under `{}`: {source}",
+                output_dir.join(TAILOR_STATE_DIR).display()
+            )));
+        }
+    };
 
     let paths = clean_paths(&targets, &tool, selector, &output_dir, &build_dir_base)?;
 

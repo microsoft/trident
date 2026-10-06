@@ -263,11 +263,14 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
         // without sudo) and a crashed cell can leave mounts/loop-backed state under it that collide
         // with the next cell. Best-effort on IC failure, like the tools-dir/farm reclaims above; the
         // janitor binds the parent and removes the slug dir as a child, so an own mountpoint is fine.
+        // Use a fresh cancellation token so a Ctrl+C/SIGTERM that cancelled the build still lets this
+        // cleanup finish (otherwise the janitor container is force-removed and the root-owned scratch
+        // survives); `reclaim_subordinate` still preserves the original IC/cancellation error.
         if let Some(build_dir) = arg_builder::build_dir_path(cell, context) {
             self.reclaim_subordinate(
                 slice::from_ref(&build_dir),
                 &context.runtime,
-                cancel.clone(),
+                CancellationToken::new(),
                 ic_failed,
             )
             .await?;

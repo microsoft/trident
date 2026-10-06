@@ -145,7 +145,7 @@ pub(crate) enum Command {
         field: Option<String>,
     },
     /// Remove generated artifacts and build stamps (sudo-free via the janitor).
-    Clean(ImagesArgs),
+    Clean(CleanArgs),
     /// Resolve digests/hashes without building.
     Resolve(ImagesArgs),
     /// Freeze `tailor.lock`: pin any new inputs, keeping already-locked digests unchanged.
@@ -259,6 +259,26 @@ pub(crate) struct ImagesArgs {
 
     #[command(flatten)]
     pub(crate) select: SelectArgs,
+}
+
+/// Args for `tailor clean`. Mirrors the build directory overrides so cleanup can target the scratch
+/// a build left under `--output-dir`/`--build-dir-base` (resolved with the same precedence as build).
+#[derive(Debug, Args)]
+pub(crate) struct CleanArgs {
+    /// Image names to clean (default: all in the workspace).
+    pub(crate) images: Vec<String>,
+
+    #[command(flatten)]
+    pub(crate) select: SelectArgs,
+
+    /// Where the build wrote artifacts (default: `<workspace>/artifacts`). Must match the build.
+    #[arg(long)]
+    pub(crate) output_dir: Option<PathBuf>,
+
+    /// The `runtime.buildDirBase` override the build used, so clean removes the per-cell build
+    /// scratch from the same location.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) build_dir_base: Option<PathBuf>,
 }
 
 /// Args for `tailor export`. With an `export:` block in `tailor.yaml`, all fields are optional, so
