@@ -146,17 +146,49 @@ impl NodeClient {
         watcher::watcher(self.api.clone(), watcher_config)
             .default_backoff()
             .touched_objects()
-            .map_err(K8sClientError::from)
+            .map_err(map_watch_error)
             .boxed()
     }
 }
 
+/// True if `resp` represents a Kubernetes API 404 (Not Found).
+fn is_not_found_response(resp: &ErrorResponse) -> bool {
+    resp.code == StatusCode::NOT_FOUND.as_u16()
+}
+
+/// True if `err` is a Kubernetes API error wrapping a 404 (Not Found).
+fn is_not_found(err: &KubeError) -> bool {
+    matches!(err, KubeError::Api(resp) if is_not_found_response(resp))
+}
+
 fn map_kube_error(err: KubeError) -> K8sClientError {
-    if matches!(&err, KubeError::Api(ErrorResponse { code, .. }) if *code == StatusCode::NOT_FOUND.as_u16())
-    {
+    if is_not_found(&err) {
         K8sClientError::NodeGone
     } else {
         K8sClientError::Api(err)
+    }
+}
+
+/// The watch path can fail three different ways (initial list, a watch-event
+/// error body, or a dropped watch connection), each wrapping either a bare
+/// ErrorResponse or a full kube_client::Error. A Node 404 can surface through
+/// any of them (e.g. the node is deleted mid-watch, or the initial LIST used
+/// to seed the watch 404s). Treat all three the same way map_kube_error
+/// treats a direct API 404: classify as NodeGone so is_node_gone_error() can
+/// route it into await_node_recreation() instead of retrying it indefinitely
+/// via default_backoff().
+fn map_watch_error(err: WatchError) -> K8sClientError {
+    let is_404 = match &err {
+        WatchError::WatchError(resp) => is_not_found_response(resp),
+        WatchError::WatchFailed(e)
+        | WatchError::InitialListFailed(e)
+        | WatchError::WatchStartFailed(e) => is_not_found(e),
+        WatchError::NoResourceVersion => false,
+    };
+    if is_404 {
+        K8sClientError::NodeGone
+    } else {
+        K8sClientError::Watch(err)
     }
 }
 
@@ -176,27 +208,69 @@ async fn load_client_config(config: &KubernetesConfig) -> Result<Config, Error> 
 mod tests {
     use super::*;
 
+    fn error_response(code: u16) -> ErrorResponse {
+        ErrorResponse {
+            status: "Failure".to_string(),
+            message: if code == 404 {
+                "nodes \"n\" not found".to_string()
+            } else {
+                "forbidden".to_string()
+            },
+            reason: if code == 404 {
+                "NotFound".to_string()
+            } else {
+                "Forbidden".to_string()
+            },
+            code,
+        }
+    }
+
     #[test]
     fn maps_404_to_node_gone() {
-        let err = KubeError::Api(ErrorResponse {
-            status: "Failure".to_string(),
-            message: "nodes \"n\" not found".to_string(),
-            reason: "NotFound".to_string(),
-            code: 404,
-        });
+        let err = KubeError::Api(error_response(404));
 
         assert!(matches!(map_kube_error(err), K8sClientError::NodeGone));
     }
 
     #[test]
     fn leaves_other_api_errors_as_api() {
-        let err = KubeError::Api(ErrorResponse {
-            status: "Failure".to_string(),
-            message: "forbidden".to_string(),
-            reason: "Forbidden".to_string(),
-            code: 403,
-        });
+        let err = KubeError::Api(error_response(403));
 
         assert!(matches!(map_kube_error(err), K8sClientError::Api(_)));
+    }
+
+    #[test]
+    fn maps_watch_error_404_to_node_gone() {
+        let err = WatchError::WatchError(error_response(404));
+
+        assert!(matches!(map_watch_error(err), K8sClientError::NodeGone));
+    }
+
+    #[test]
+    fn maps_watch_failed_404_to_node_gone() {
+        let err = WatchError::WatchFailed(KubeError::Api(error_response(404)));
+
+        assert!(matches!(map_watch_error(err), K8sClientError::NodeGone));
+    }
+
+    #[test]
+    fn maps_initial_list_failed_404_to_node_gone() {
+        let err = WatchError::InitialListFailed(KubeError::Api(error_response(404)));
+
+        assert!(matches!(map_watch_error(err), K8sClientError::NodeGone));
+    }
+
+    #[test]
+    fn leaves_other_watch_errors_as_watch() {
+        let err = WatchError::WatchError(error_response(403));
+
+        assert!(matches!(map_watch_error(err), K8sClientError::Watch(_)));
+    }
+
+    #[test]
+    fn leaves_other_watch_failed_as_watch() {
+        let err = WatchError::WatchFailed(KubeError::Api(error_response(403)));
+
+        assert!(matches!(map_watch_error(err), K8sClientError::Watch(_)));
     }
 }

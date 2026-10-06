@@ -2,6 +2,7 @@ use anyhow::{Context, Error};
 use clap::Parser;
 use osutils::logging::filter::LogFilter;
 use systemd_journal_logger::{connected_to_journal, JournalLog};
+use tokio_util::sync::CancellationToken;
 
 use trident_acl_agent::{
     annotations::orchestrator::Orchestrator,
@@ -89,6 +90,39 @@ async fn main() -> Result<(), Error> {
         // commit against tridentd, writes <prefix>/update-status; prefix
         // defaults to acl.microsoft.com, overridable via
         // TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX).
-        Mode::Annotations => Orchestrator::from_config(config).await?.run().await,
+        Mode::Annotations => {
+            let shutdown = CancellationToken::new();
+            {
+                let shutdown = shutdown.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = tokio::signal::ctrl_c().await {
+                        log::error!(
+                            "failed to register Ctrl-C (SIGINT) handler: {err:#}; agent will not respond to Ctrl-C"
+                        );
+                        return;
+                    }
+                    shutdown.cancel();
+                });
+            }
+            #[cfg(unix)]
+            {
+                let shutdown = shutdown.clone();
+                tokio::spawn(async move {
+                    use tokio::signal::unix::{signal, SignalKind};
+                    match signal(SignalKind::terminate()) {
+                        Ok(mut term) => {
+                            term.recv().await;
+                            shutdown.cancel();
+                        }
+                        Err(err) => {
+                            log::error!(
+                                "failed to register SIGTERM handler: {err:#}; agent will not respond to SIGTERM"
+                            );
+                        }
+                    }
+                });
+            }
+            Orchestrator::from_config(config).await?.run(shutdown).await
+        }
     }
 }

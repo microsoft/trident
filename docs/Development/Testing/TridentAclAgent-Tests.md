@@ -256,21 +256,35 @@ The scenario runs these test cases in order:
 
 1. **deploy-vm** — Copies the base qcow2 image and creates a QEMU VM
 2. **check-deployment** — Verifies the VM booted and is accessible via SSH
-3. **run-ab-update** — Starts the fake apiserver and fake Nebraska/Omaha
+3. **run-node-resilience** — Proves `trident-acl-agent` survives its own
+   Node object disappearing (see
+   [`NodeGone`/`await_node_recreation`](../../Explanation/Trident-ACL-Agent.md))
+   instead of exiting, across the two ways that can actually happen against
+   a real apiserver: **phase 1** restarts `trident-acl-agent.service` while
+   the fake Node is "deleted" (`NodeStore.DeleteNode`), forcing the agent's
+   startup Node read into the 404; **phase 2** patches in a `stage` request
+   and deletes the Node immediately after, so the already-running agent's
+   own in-flight status PATCH (no restart at all) hits the 404 instead.
+   Both phases assert the service's `systemd` `MainPID` stays unchanged
+   throughout (i.e. it never crashes or restarts) and that it resumes once
+   `NodeStore.RestoreNode` brings the Node back — all before any fake
+   Nebraska/image-server mocks or real update/rollback traffic is involved
+4. **run-ab-update** — Starts the fake apiserver and fake Nebraska/Omaha
    endpoints in-process (the latter over HTTPS — see [Nebraska/Image Server
    TLS](#nebraskaimage-server-tls)), delivers a fake kubeconfig and restarts
    `trident-acl-agent.service`, patches the `acl.azure.com/update-request`
    annotation, and waits for `trident-acl-agent` to drive a real Trident A/B
    update to completion (including a real reboot)
-4. **run-rollback** — Exercises the `rollback` annotation end-to-end against
+5. **run-rollback** — Exercises the `rollback` annotation end-to-end against
    tridentd's `RollbackService` gRPC API, followed by a real reboot and
    post-reboot commit; must run after `run-ab-update` in the same VM
    lifetime, since it rolls back to the volume active before that update
-5. **collect-logs** — Fetches `trident-acl-agent` and Trident logs from the
+6. **collect-logs** — Fetches `trident-acl-agent` and Trident logs from the
    VM via SSH; also runs automatically (with a `journalctl` dump for
-   `trident-acl-agent.service`) if an update/rollback step times out waiting
-   for the service to become active, to make crash-loops self-diagnosing
-6. **cleanup-vm** — Destroys the QEMU VM
+   `trident-acl-agent.service`) if an update/rollback/resilience step times
+   out waiting for the service to become active, to make crash-loops
+   self-diagnosing
+7. **cleanup-vm** — Destroys the QEMU VM
 
 ### Flags
 
