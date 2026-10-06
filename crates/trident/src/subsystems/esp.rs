@@ -687,7 +687,7 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
 }
 
 /// Ensures `EFI/AZLA` exists on the ESP, seeding it from the `EFI/BOOT`
-/// fallback loader if it's missing. Used by both offline-initialize and CIH
+/// fallback loader if it's missing. Used by both offline-initialize and ACL
 /// lazy-adoption bootstrap, so a freshly-derived HostStatus is always backed
 /// by a matching on-disk ESP layout before the first A/B update or manual
 /// rollback ever runs and assumes AZLA already exists.

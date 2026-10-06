@@ -23,14 +23,14 @@ use trident_api::{
     BlockDeviceId,
 };
 
-/// Returns whether the host is running the CIH image.
-pub fn is_cih() -> Result<bool, Error> {
+/// Returns whether the host is running the ACL image.
+pub fn is_acl() -> Result<bool, Error> {
     let os_release = OsRelease::read().context("Failed to read OS release information")?;
 
     Ok(os_release.variant_id == Some("azurecontainerlinux".to_string()))
 }
 
-/// An expected partition on the CIH root disk, identified by label, along
+/// An expected partition on the ACL root disk, identified by label, along
 /// with its partition type, the actual `Partition` discovered on disk (if
 /// any), and whether the partition is required to be present.
 struct ExpectedPartition<'a> {
@@ -52,7 +52,7 @@ impl<'a> ExpectedPartition<'a> {
 }
 
 /// Gathers information about the host's disk and partitions, framed by
-/// the expectations of the CIH image layout, and returns a HostStatus
+/// the expectations of the ACL image layout, and returns a HostStatus
 /// representing the current state of the host. This will be used to
 /// initialize the Trident datastore if it has not been created yet.
 pub fn initial_host_status() -> Result<HostStatus, Error> {
@@ -76,7 +76,7 @@ pub fn initial_host_status() -> Result<HostStatus, Error> {
 }
 
 /// Internal function that does much of the work of creating the
-/// initial CIH HostStatus, separated from the code that gets the
+/// initial ACL HostStatus, separated from the code that gets the
 /// Host's current disk information. This allows for easier testing
 /// of the HostStatus creation logic.
 fn inner_initial_host_status(
@@ -167,7 +167,7 @@ fn inner_initial_host_status(
         })
         .collect();
 
-    // Make sure that all the expected CIH partitions were found
+    // Make sure that all the expected ACL partitions were found
     // and Partition structs were created for them. If any were not
     // created, return error.
     let missing_partitions: Vec<_> = expected_partition_info
