@@ -169,14 +169,14 @@ fn map_kube_error(err: KubeError) -> K8sClientError {
     }
 }
 
-// The watch path can fail three different ways (initial list, a watch-event
-// error body, or a dropped watch connection), each wrapping either a bare
-// ErrorResponse or a full kube_client::Error. A Node 404 can surface through
-// any of them (e.g. the node is deleted mid-watch, or the initial LIST used
-// to seed the watch 404s). Treat all three the same way map_kube_error
-// treats a direct API 404: classify as NodeGone so is_node_gone_error() can
-// route it into await_node_recreation() instead of retrying it indefinitely
-// via default_backoff().
+/// The watch path can fail three different ways (initial list, a watch-event
+/// error body, or a dropped watch connection), each wrapping either a bare
+/// ErrorResponse or a full kube_client::Error. A Node 404 can surface through
+/// any of them (e.g. the node is deleted mid-watch, or the initial LIST used
+/// to seed the watch 404s). Treat all three the same way map_kube_error
+/// treats a direct API 404: classify as NodeGone so is_node_gone_error() can
+/// route it into await_node_recreation() instead of retrying it indefinitely
+/// via default_backoff().
 fn map_watch_error(err: WatchError) -> K8sClientError {
     let is_404 = match &err {
         WatchError::WatchError(resp) => is_not_found_response(resp),
