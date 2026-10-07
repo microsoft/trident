@@ -100,7 +100,23 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
             })?;
         }
         if let Some(build_dir) = arg_builder::build_dir_path(cell, context) {
-            guard::ensure_safe_build_dir(&build_dir)?;
+            // The reap removes `build_dir` recursively, so guard the exact directory that gets
+            // deleted: it must be a strict descendant of the scratch base (no `.`/`..` escape) and
+            // must not contain the retained output/cache/log dirs (else success deletes its own
+            // artifact or shared state).
+            let base = context
+                .runtime
+                .build_dir_base
+                .as_deref()
+                .expect("build_dir_path returns Some only when build_dir_base is set");
+            let mut retained: Vec<&Path> = vec![context.output_dir.as_path()];
+            if let Some(cache) = &context.runtime.image_cache_dir {
+                retained.push(cache);
+            }
+            if let Some(log) = &context.runtime.log_dir {
+                retained.push(log);
+            }
+            guard::ensure_safe_scratch_dir(&build_dir, base, &retained)?;
             fs::create_dir_all(&build_dir).map_err(|source| ExecError::Io {
                 context: format!("failed to create build directory `{}`", build_dir.display()),
                 source,

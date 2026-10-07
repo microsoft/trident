@@ -94,6 +94,41 @@ fn unsafe_dir(path: PathBuf, reason: String) -> ExecError {
     ExecError::UnsafeDir { path, reason }
 }
 
+/// Guard a per-cell scratch directory that the build-dir reap removes **recursively**. On top of the
+/// generic [`ensure_safe_build_dir`] checks it enforces, for the exact directory that gets deleted:
+/// (a) it is a *strict* descendant of its scratch `base`, so a `.`/`..` slug cannot normalize to the
+/// base or its parent and delete unrelated files; and (b) it does not *contain* any `retained` path
+/// (the output, cache, or log directory), so a successful build cannot delete its own artifact or
+/// shared state. Symlinks are resolved throughout (same as [`ensure_safe_build_dir`]).
+pub(crate) fn ensure_safe_scratch_dir(
+    scratch: &Path,
+    base: &Path,
+    retained: &[&Path],
+) -> Result<(), ExecError> {
+    ensure_safe_build_dir(scratch)?;
+    let scratch = resolve_path(scratch)?;
+    let base = resolve_path(base)?;
+    if scratch == base || !scratch.starts_with(&base) {
+        return Err(unsafe_dir(
+            scratch,
+            format!(
+                "must be a strict subdirectory of the build-dir base `{}`",
+                base.display()
+            ),
+        ));
+    }
+    for path in retained {
+        let path = resolve_path(path)?;
+        if path.starts_with(&scratch) {
+            return Err(unsafe_dir(
+                scratch,
+                format!("must not contain the retained path `{}`", path.display()),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Absolutize and lexically collapse `.`/`..`, then **resolve symlinks** on the deepest existing
 /// ancestor, re-attaching any not-yet-created leaf lexically. A purely lexical check treats a
 /// symlinked build/scratch dir like `/tmp/tailor-build -> /` as safe; resolving the existing
@@ -164,6 +199,40 @@ mod tests {
     fn rejects_filesystem_root() {
         let err = ensure_safe_build_dir(Path::new(ROOT_PATH)).unwrap_err();
         assert!(matches!(err, ExecError::UnsafeDir { .. }));
+    }
+
+    #[test]
+    fn scratch_dir_enforces_strict_descent_and_retained_containment() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("scratch");
+        let child = base.join("cell");
+        std::fs::create_dir_all(&child).unwrap();
+
+        // A strict child of the base, containing no retained path, is fine.
+        ensure_safe_scratch_dir(&child, &base, &[]).unwrap();
+
+        // The base itself (a `.` slug) and its parent (a `..` slug) are not strict descendants.
+        assert!(matches!(
+            ensure_safe_scratch_dir(&base, &base, &[]).unwrap_err(),
+            ExecError::UnsafeDir { .. }
+        ));
+        assert!(matches!(
+            ensure_safe_scratch_dir(tmp.path(), &base, &[]).unwrap_err(),
+            ExecError::UnsafeDir { .. }
+        ));
+
+        // A retained path inside the scratch dir (e.g. the output written there) is rejected.
+        let retained = child.join("image.cosi");
+        std::fs::File::create(&retained).unwrap();
+        assert!(matches!(
+            ensure_safe_scratch_dir(&child, &base, &[retained.as_path()]).unwrap_err(),
+            ExecError::UnsafeDir { .. }
+        ));
+
+        // A retained path outside the scratch dir is fine.
+        let outside = base.join("other");
+        std::fs::create_dir_all(&outside).unwrap();
+        ensure_safe_scratch_dir(&child, &base, &[outside.as_path()]).unwrap();
     }
 
     #[test]

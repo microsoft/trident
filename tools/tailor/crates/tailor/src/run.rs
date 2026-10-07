@@ -1278,12 +1278,14 @@ async fn convert(args: &ConvertArgs, engine: &EngineOverride) -> Result<(), AppE
         .clone()
         .map(|dir| tailor_config::absolutize(dir, &cwd));
 
-    // The per-cell scratch dir is `<build_dir_base>/<slug>`; reject a slug equal to the reserved
-    // scratch-lock subdir, so a convert can't reap (and thus unlink) the lock that guards its own run.
-    // Build cell slugs always carry an arch/format suffix, so only a convert output stem can hit this.
-    if build_dir_base.is_some() && slug == SCRATCH_LOCK_SUBDIR {
+    // The per-cell scratch dir is `<build_dir_base>/<slug>`, where the convert slug is the output
+    // stem. Reject stems that would make scratch escape the base (`.`/`..`) or collide with the
+    // scratch-lock subdir, which the recursive reap would otherwise delete. (The executor re-checks
+    // the resolved dir as a safety backstop; this gives a clear CLI error.) Build cell slugs always
+    // carry an arch/format suffix, so only a convert output stem can hit this.
+    if build_dir_base.is_some() && (slug == "." || slug == ".." || slug == SCRATCH_LOCK_SUBDIR) {
         return Err(AppError::Message(format!(
-            "output name `{SCRATCH_LOCK_SUBDIR}` is reserved when `--build-dir-base` is set; \
+            "output name `{slug}` is reserved when `--build-dir-base` is set; \
              choose a different output file name"
         )));
     }
