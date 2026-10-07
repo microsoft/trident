@@ -1768,12 +1768,20 @@ fn clean_paths(
     Ok((artifacts, scratch))
 }
 
+/// Subdirectory under `buildDirBase` that holds the scratch coordination lock. Keeping it in a
+/// dedicated subdir (not at the base itself) makes the scratch lock file distinct from the output
+/// lock (`<output>/.tailor/build.lock`) even when `--build-dir-base` points at `<output>/.tailor`,
+/// so a command can never deadlock against its own output lock. It is a sibling of the per-cell
+/// `<base>/<slug>` dirs, so clean never removes it.
+const SCRATCH_LOCK_SUBDIR: &str = ".tailor-lock";
+
 /// Acquire the single-writer lock keyed to the effective scratch base (`buildDirBase`). The lock file
-/// sits at the base, outside the per-cell `<base>/<slug>` directories that get removed, so it is safe
-/// across a clean. Shared by `build` and `clean` with a consistent acquire order (output lock first,
-/// then scratch) to avoid deadlock.
+/// sits in a dedicated subdir of the base, outside the per-cell `<base>/<slug>` directories that get
+/// removed and distinct from the output lock, so it is safe across a clean. Shared by `build` and
+/// `clean` with a consistent acquire order (output lock first, then scratch) to avoid deadlock.
 fn acquire_scratch_lock(base: &Path) -> Result<WorktreeLock, AppError> {
-    match WorktreeLock::acquire(base) {
+    let lock_dir = base.join(SCRATCH_LOCK_SUBDIR);
+    match WorktreeLock::acquire(&lock_dir) {
         Ok(Some(lock)) => Ok(lock),
         Ok(None) => Err(AppError::Message(format!(
             "another tailor build or clean is using the scratch base `{}`; wait for it to finish",
@@ -1781,7 +1789,7 @@ fn acquire_scratch_lock(base: &Path) -> Result<WorktreeLock, AppError> {
         ))),
         Err(source) => Err(AppError::Message(format!(
             "failed to acquire the scratch lock under `{}`: {source}",
-            base.display()
+            lock_dir.display()
         ))),
     }
 }
