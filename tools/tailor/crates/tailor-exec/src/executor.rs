@@ -176,7 +176,9 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
 
         // Run IC: the single-pass `customize`, or the signed three-pass (`customize` → sign →
         // `inject-files`, `meta/docs/2026-06-29-signing.md` §5). Both remove the working copy and reclaim the
-        // staging tree before propagating any failure.
+        // staging tree before propagating any failure. Cleanup errors are collected (not `?`-returned)
+        // so none of them can short-circuit before the build-dir reap below and leave its scratch.
+        let mut cleanup_err: Option<ExecError> = None;
         let result = if let Some(signer) = context.signer.clone() {
             self.run_signed_passes(
                 cell,
@@ -212,33 +214,31 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
 
             // Reclaim IC's root-owned staging tree. On success: chown so the caller can read the
             // outputs, then remove if the policy is scratch. On an IC failure: reclaim best-effort,
-            // subordinate to the IC error (§3.4, ACL shakeout #2).
+            // subordinate to the IC error (§3.4, ACL shakeout #2). Collect the error rather than
+            // `?`-returning, so a staging-cleanup failure can't skip the build-dir reap below.
             if let Some(plan) = &staging {
-                if ic_run_failed(&result) {
-                    self.reclaim_subordinate(
-                        slice::from_ref(&plan.dir),
-                        &context.runtime,
-                        cancel.clone(),
-                        true,
-                    )
-                    .await?;
+                let dir = slice::from_ref(&plan.dir);
+                let reclaimed = if ic_run_failed(&result) {
+                    self.reclaim_subordinate(dir, &context.runtime, cancel.clone(), true)
+                        .await
                 } else {
-                    janitor::chown_paths(
-                        &self.runtime,
-                        slice::from_ref(&plan.dir),
-                        &context.runtime,
-                        cancel.clone(),
-                    )
-                    .await?;
-                    if plan.reclaim {
-                        janitor::remove_paths(
-                            &self.runtime,
-                            slice::from_ref(&plan.dir),
-                            &context.runtime,
-                            cancel.clone(),
-                        )
-                        .await?;
+                    match janitor::chown_paths(&self.runtime, dir, &context.runtime, cancel.clone())
+                        .await
+                    {
+                        Ok(()) if plan.reclaim => {
+                            janitor::remove_paths(
+                                &self.runtime,
+                                dir,
+                                &context.runtime,
+                                cancel.clone(),
+                            )
+                            .await
+                        }
+                        other => other,
                     }
+                };
+                if let Err(err) = reclaimed {
+                    cleanup_err.get_or_insert(err);
                 }
             }
             result
@@ -255,7 +255,6 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
         // its root-owned scratch behind. Keep the first cleanup error; an IC failure still takes
         // precedence below (`result?`), and the per-step subordination still swallows errors when IC
         // failed so a cleanup hiccup never buries the real IC failure.
-        let mut cleanup_err: Option<ExecError> = None;
         if let Some(copy) = &prepared_tools_dir.rw_copy
             && let Err(err) = self
                 .reclaim_subordinate(
