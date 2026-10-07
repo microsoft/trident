@@ -14,7 +14,7 @@
 Summary:        Declarative, security-first OS lifecycle agent designed primarily for Azure Linux
 Name:           trident
 # Use hard-coded versions for distro build
-Version:        0.29.0
+Version:        0.30.0
 Release:        1%{?dist}
 License:        MIT
 Vendor:         Microsoft Corporation
