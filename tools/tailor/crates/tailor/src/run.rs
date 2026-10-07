@@ -180,6 +180,7 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<(), AppError> {
                 &selector(&args.select, &[])?,
                 args.output_dir.as_deref(),
                 args.build_dir_base.as_deref(),
+                &logging,
                 &engine,
             )
             .await
@@ -1689,17 +1690,21 @@ async fn clean(
     selector: &Selector,
     output_dir_override: Option<&Path>,
     build_dir_base_override: Option<&Path>,
+    logging: &LogOverrides,
     engine: &EngineOverride,
 ) -> Result<(), AppError> {
     let mut tool = tool_config(workspace);
     let targets = build_targets(workspace, names)?;
     // Resolve the scratch locations with the SAME precedence as `build` so clean targets the right
-    // paths when a build overrode them: `--output-dir` (default `<workspace>/artifacts`), and the
-    // `--build-dir-base` override applied over `runtime.buildDirBase`.
+    // paths when a build overrode them: `--output-dir` (default `<workspace>/artifacts`), the
+    // `--build-dir-base` override over `runtime.buildDirBase`, and the cache/log dirs (resolved the
+    // same way, so the retained-path guard below protects where build actually wrote them).
     let output_dir = tailor_config::absolutize(
         output_dir_override.map_or_else(|| workspace.root.join(ARTIFACTS_DIR), Path::to_path_buf),
         &env::current_dir().map_err(|e| AppError::Message(format!("current dir: {e}")))?,
     );
+    resolve_image_cache_dir(&mut tool, &workspace.root);
+    apply_log_overrides(&mut tool, logging, &workspace.root)?;
     apply_build_dir_base_override(&mut tool, build_dir_base_override)?;
     let lock = Lockfile::read(&workspace.root.join(LOCK_FILE))?;
     let rt_config = runtime_config(&tool, &lock, &workspace.root);
