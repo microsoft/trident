@@ -1293,7 +1293,7 @@ async fn convert(args: &ConvertArgs, engine: &EngineOverride) -> Result<(), AppE
     // The reap removes `<base>/<slug>` recursively, so the scratch base must not contain the input's
     // directory (bound read-only) or the output directory.
     if let Some(base) = &build_dir_base {
-        ensure_build_dir_base_isolated(base, &[&input_parent, &output_parent])?;
+        ensure_build_dir_base_isolated(base, &input_parent, &output_parent)?;
     }
 
     let container = args
@@ -1602,7 +1602,7 @@ async fn build(
     // dirs that default under it). `--build-dir-base` is contracted to be a dedicated directory;
     // out-of-workspace inputs parked under it are the user's responsibility.
     if let Some(base) = &scratch_base {
-        ensure_build_dir_base_isolated(base, &[&workspace.root, &output_dir])?;
+        ensure_build_dir_base_isolated(base, &workspace.root, &output_dir)?;
     }
 
     // Wire Ctrl+C / SIGTERM to a cancellation token so an interrupted build tears down its running
@@ -1747,7 +1747,7 @@ async fn clean(
     let _scratch_lock = acquire_scratch_lock(&build_dir_base)?;
     // The reap removes `<base>/<slug>` recursively, so the base must not contain the workspace or the
     // output directory (see build()).
-    ensure_build_dir_base_isolated(&build_dir_base, &[&workspace.root, &output_dir])?;
+    ensure_build_dir_base_isolated(&build_dir_base, &workspace.root, &output_dir)?;
 
     let (artifacts, scratch) =
         clean_paths(&targets, &tool, selector, &output_dir, &build_dir_base)?;

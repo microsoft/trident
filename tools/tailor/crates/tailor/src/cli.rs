@@ -373,8 +373,9 @@ pub(crate) struct BuildArgs {
 
     /// Override `runtime.buildDirBase`: place each cell's build scratch under this directory. Lets CI
     /// point scratch at a pool-specific filesystem without editing the committed `tailor.yaml`. Must
-    /// be a dedicated directory: it may not contain the workspace or the output directory (cleanup
-    /// removes `<base>/<cell-slug>`), and should not be nested inside another concurrent build's base.
+    /// be a dedicated directory outside the workspace (or under the output dir), must not contain the
+    /// workspace or output (cleanup removes `<base>/<cell-slug>`), and should not be nested inside
+    /// another concurrent build's base.
     #[arg(long, value_name = "PATH")]
     pub(crate) build_dir_base: Option<PathBuf>,
 
