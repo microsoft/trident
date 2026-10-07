@@ -109,7 +109,10 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
                 .build_dir_base
                 .as_deref()
                 .expect("build_dir_path returns Some only when build_dir_base is set");
-            let mut retained: Vec<&Path> = vec![context.output_dir.as_path()];
+            let mut retained: Vec<&Path> = vec![
+                context.output_dir.as_path(),
+                context.runtime.workspace_root.as_path(),
+            ];
             if let Some(cache) = &context.runtime.image_cache_dir {
                 retained.push(cache);
             }
@@ -508,18 +511,20 @@ impl<R: ContainerRuntime> IcExecutor<R> {
         }
     }
 
-    /// Remove per-cell scratch directories (`<buildDirBase>/<slug>`), validating each against the
-    /// build-directory safety guard **before** removing anything — so a stray `--build-dir-base`
-    /// cannot direct the janitor at `/`, a system directory, `$HOME`, or a directory containing the
-    /// current working directory (the janitor's own bind guard only rejects the filesystem root).
+    /// Remove per-cell scratch directories (`<buildDirBase>/<slug>`), validating each with
+    /// [`guard::ensure_safe_scratch_dir`] **before** removing anything — so a stray
+    /// `--build-dir-base`/`--output-dir` can't direct the janitor at the output directory, a retained
+    /// cache/log/workspace path, or (via a `.`/`..` slug) the scratch base or its parent.
     pub async fn clean_scratch(
         &self,
         scratch_dirs: &[PathBuf],
+        base: &Path,
+        retained: &[&Path],
         runtime: &RuntimeConfig,
         cancel: CancellationToken,
     ) -> Result<(), ExecError> {
         for dir in scratch_dirs {
-            guard::ensure_safe_build_dir(dir)?;
+            guard::ensure_safe_scratch_dir(dir, base, retained)?;
         }
         janitor::remove_paths(&self.runtime, scratch_dirs, runtime, cancel).await
     }

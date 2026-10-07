@@ -1737,10 +1737,24 @@ async fn clean(
         clean_paths(&targets, &tool, selector, &output_dir, &build_dir_base)?;
 
     let executor = IcExecutor::new(establish_runtime(engine, &tool).await?);
-    // Scratch goes through the guarded path (each target validated against the build-dir guard before
-    // any removal); artifacts are plain output files under the output directory.
+    // Scratch goes through the guarded path: each target must be a strict descendant of the scratch
+    // base and must not contain the retained output/cache/log/workspace paths, validated before any
+    // removal. Artifacts are plain output files under the output directory.
+    let mut retained: Vec<&Path> = vec![output_dir.as_path(), workspace.root.as_path()];
+    if let Some(cache) = &rt_config.image_cache_dir {
+        retained.push(cache);
+    }
+    if let Some(log) = &rt_config.log_dir {
+        retained.push(log);
+    }
     executor
-        .clean_scratch(&scratch, &rt_config, CancellationToken::new())
+        .clean_scratch(
+            &scratch,
+            &build_dir_base,
+            &retained,
+            &rt_config,
+            CancellationToken::new(),
+        )
         .await?;
     executor
         .clean(&artifacts, &rt_config, CancellationToken::new())
