@@ -1320,6 +1320,15 @@ async fn convert(args: &ConvertArgs, engine: &EngineOverride) -> Result<(), AppE
         "Converting",
         &format!("{} → {}", input.display(), args.to.as_str()),
     );
+    // convert's execute path reaps its own `--build-dir-base` scratch, so hold the same scratch lock
+    // build()/clean() take — otherwise a concurrent build/clean/convert sharing the base could remove
+    // each other's per-cell scratch. Held through execution and the staging cleanup below.
+    let _scratch_lock = context
+        .runtime
+        .build_dir_base
+        .as_deref()
+        .map(acquire_scratch_lock)
+        .transpose()?;
     let cancel = cancel_on_signal();
     let executor = IcExecutor::new(
         establish_runtime(engine, &tailor_config::defaults::default_tool_config()).await?,
