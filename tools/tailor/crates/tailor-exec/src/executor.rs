@@ -119,6 +119,9 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
             if let Some(log) = &context.runtime.log_dir {
                 retained.push(log);
             }
+            for mount in &context.runtime.extra_paths {
+                retained.push(mount.path.as_path());
+            }
             guard::ensure_safe_scratch_dir(&build_dir, base, &retained)?;
             fs::create_dir_all(&build_dir).map_err(|source| ExecError::Io {
                 context: format!("failed to create build directory `{}`", build_dir.display()),

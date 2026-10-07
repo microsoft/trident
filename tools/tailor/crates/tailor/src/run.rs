@@ -1752,6 +1752,9 @@ async fn clean(
     if let Some(log) = &rt_config.log_dir {
         retained.push(log);
     }
+    for mount in &rt_config.extra_paths {
+        retained.push(mount.path.as_path());
+    }
     executor
         .clean_scratch(
             &scratch,
