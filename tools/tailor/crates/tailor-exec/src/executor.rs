@@ -250,40 +250,59 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
         // `proc`/`sys`/`dev` mounts under the copy — then a cleanup error must not bury the IC
         // failure (ACL shakeout #2).
         let ic_failed = ic_run_failed(&result);
-        if let Some(copy) = &prepared_tools_dir.rw_copy {
-            self.reclaim_subordinate(
-                slice::from_ref(copy),
-                &context.runtime,
-                cancel.clone(),
-                ic_failed,
-            )
-            .await?;
+        // Run every reclaim even if an earlier one fails, so a cleanup error (e.g. a janitor the
+        // original token cancelled on Ctrl+C) can't short-circuit before the build-dir reap and leave
+        // its root-owned scratch behind. Keep the first cleanup error; an IC failure still takes
+        // precedence below (`result?`), and the per-step subordination still swallows errors when IC
+        // failed so a cleanup hiccup never buries the real IC failure.
+        let mut cleanup_err: Option<ExecError> = None;
+        if let Some(copy) = &prepared_tools_dir.rw_copy
+            && let Err(err) = self
+                .reclaim_subordinate(
+                    slice::from_ref(copy),
+                    &context.runtime,
+                    cancel.clone(),
+                    ic_failed,
+                )
+                .await
+        {
+            cleanup_err.get_or_insert(err);
         }
         // Reclaim the disposable RPM farms (root-owned `repodata/` created by IC's createrepo).
         // Removing the whole farm — not just chowning its repodata — leaves no `.tailor-farm-*`
         // clutter next to the user's RPMs, and runs on the error path too (best-effort when IC failed).
-        if !writable_farms.is_empty() {
-            self.reclaim_subordinate(&writable_farms, &context.runtime, cancel.clone(), ic_failed)
-                .await?;
+        if !writable_farms.is_empty()
+            && let Err(err) = self
+                .reclaim_subordinate(&writable_farms, &context.runtime, cancel.clone(), ic_failed)
+                .await
+        {
+            cleanup_err.get_or_insert(err);
         }
         // Reclaim the per-cell IC `--build-dir` scratch (`<buildDirBase>/<slug>`). IC writes it
         // root-owned and does not remove it, so without this it accumulates across builds (undeletable
         // without sudo) and a crashed cell can leave mounts/loop-backed state under it that collide
         // with the next cell. Best-effort on IC failure, like the tools-dir/farm reclaims above; the
         // janitor binds the parent and removes the slug dir as a child, so an own mountpoint is fine.
-        // Use a fresh cancellation token so a Ctrl+C/SIGTERM that cancelled the build still lets this
-        // cleanup finish (otherwise the janitor container is force-removed and the root-owned scratch
-        // survives); `reclaim_subordinate` still preserves the original IC/cancellation error.
-        if let Some(build_dir) = arg_builder::build_dir_path(cell, context) {
-            self.reclaim_subordinate(
-                slice::from_ref(&build_dir),
-                &context.runtime,
-                CancellationToken::new(),
-                ic_failed,
-            )
-            .await?;
+        // A fresh cancellation token lets a Ctrl+C/SIGTERM that cancelled the build still finish this
+        // cleanup (otherwise the janitor container is force-removed and the root-owned scratch
+        // survives); the reap always runs even if an earlier reclaim above failed.
+        if let Some(build_dir) = arg_builder::build_dir_path(cell, context)
+            && let Err(err) = self
+                .reclaim_subordinate(
+                    slice::from_ref(&build_dir),
+                    &context.runtime,
+                    CancellationToken::new(),
+                    ic_failed,
+                )
+                .await
+        {
+            cleanup_err.get_or_insert(err);
         }
+        // IC's own failure is the headline; otherwise surface the first cleanup error.
         let result = result?;
+        if let Some(err) = cleanup_err {
+            return Err(err);
+        }
 
         if result.exit_code != 0 {
             return Err(ExecError::IcFailed {
