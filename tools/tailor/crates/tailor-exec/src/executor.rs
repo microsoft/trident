@@ -100,29 +100,15 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
             })?;
         }
         if let Some(build_dir) = arg_builder::build_dir_path(cell, context) {
-            // The reap removes `build_dir` recursively, so guard the exact directory that gets
-            // deleted: it must be a strict descendant of the scratch base (no `.`/`..` escape) and
-            // must not contain the retained output/cache/log dirs (else success deletes its own
-            // artifact or shared state).
+            // The reap removes `build_dir` recursively, so it must be a strict descendant of the
+            // scratch base (no `.`/`..` escape). Overlap with inputs/outputs is prevented at the base
+            // level by `ensure_build_dir_base_isolated` in the build/convert drivers.
             let base = context
                 .runtime
                 .build_dir_base
                 .as_deref()
                 .expect("build_dir_path returns Some only when build_dir_base is set");
-            let mut retained: Vec<&Path> = vec![
-                context.output_dir.as_path(),
-                context.runtime.workspace_root.as_path(),
-            ];
-            if let Some(cache) = &context.runtime.image_cache_dir {
-                retained.push(cache);
-            }
-            if let Some(log) = &context.runtime.log_dir {
-                retained.push(log);
-            }
-            for mount in &context.runtime.extra_paths {
-                retained.push(mount.path.as_path());
-            }
-            guard::ensure_safe_scratch_dir(&build_dir, base, &retained)?;
+            guard::ensure_safe_scratch_dir(&build_dir, base)?;
             fs::create_dir_all(&build_dir).map_err(|source| ExecError::Io {
                 context: format!("failed to create build directory `{}`", build_dir.display()),
                 source,
@@ -515,19 +501,18 @@ impl<R: ContainerRuntime> IcExecutor<R> {
     }
 
     /// Remove per-cell scratch directories (`<buildDirBase>/<slug>`), validating each with
-    /// [`guard::ensure_safe_scratch_dir`] **before** removing anything — so a stray
-    /// `--build-dir-base`/`--output-dir` can't direct the janitor at the output directory, a retained
-    /// cache/log/workspace path, or (via a `.`/`..` slug) the scratch base or its parent.
+    /// [`guard::ensure_safe_scratch_dir`] **before** removing anything — so a `.`/`..` slug can't
+    /// escape the scratch base. The base is kept clear of inputs/outputs by the caller via
+    /// [`crate::ensure_build_dir_base_isolated`].
     pub async fn clean_scratch(
         &self,
         scratch_dirs: &[PathBuf],
         base: &Path,
-        retained: &[&Path],
         runtime: &RuntimeConfig,
         cancel: CancellationToken,
     ) -> Result<(), ExecError> {
         for dir in scratch_dirs {
-            guard::ensure_safe_scratch_dir(dir, base, retained)?;
+            guard::ensure_safe_scratch_dir(dir, base)?;
         }
         janitor::remove_paths(&self.runtime, scratch_dirs, runtime, cancel).await
     }

@@ -29,7 +29,8 @@ use tailor_core::{
     verify,
 };
 use tailor_exec::{
-    BollardRuntime, IcExecutor, NoopRuntime, ResolveInputs, WorktreeLock, ca_cert_name, resolve,
+    BollardRuntime, IcExecutor, NoopRuntime, ResolveInputs, WorktreeLock, ca_cert_name,
+    ensure_build_dir_base_isolated, resolve,
 };
 use tailor_resolve::{OciFetcher, OciResolver};
 use tokio_util::sync::CancellationToken;
@@ -180,7 +181,6 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<(), AppError> {
                 &selector(&args.select, &[])?,
                 args.output_dir.as_deref(),
                 args.build_dir_base.as_deref(),
-                &logging,
                 &engine,
             )
             .await
@@ -1290,6 +1290,11 @@ async fn convert(args: &ConvertArgs, engine: &EngineOverride) -> Result<(), AppE
              choose a different output file name"
         )));
     }
+    // The reap removes `<base>/<slug>` recursively, so the scratch base must not contain the input's
+    // directory (bound read-only) or the output directory.
+    if let Some(base) = &build_dir_base {
+        ensure_build_dir_base_isolated(base, &[&input_parent, &output_parent])?;
+    }
 
     let container = args
         .container
@@ -1592,6 +1597,13 @@ async fn build(
         .as_deref()
         .map(acquire_scratch_lock)
         .transpose()?;
+    // The reap removes `<base>/<slug>` recursively, so the scratch base must not contain the
+    // workspace (every in-workspace input) or the output directory (artifacts, plus the cache/log
+    // dirs that default under it). `--build-dir-base` is contracted to be a dedicated directory;
+    // out-of-workspace inputs parked under it are the user's responsibility.
+    if let Some(base) = &scratch_base {
+        ensure_build_dir_base_isolated(base, &[&workspace.root, &output_dir])?;
+    }
 
     // Wire Ctrl+C / SIGTERM to a cancellation token so an interrupted build tears down its running
     // container instead of orphaning it in the daemon (the container runtime removes the container on
@@ -1690,21 +1702,17 @@ async fn clean(
     selector: &Selector,
     output_dir_override: Option<&Path>,
     build_dir_base_override: Option<&Path>,
-    logging: &LogOverrides,
     engine: &EngineOverride,
 ) -> Result<(), AppError> {
     let mut tool = tool_config(workspace);
     let targets = build_targets(workspace, names)?;
     // Resolve the scratch locations with the SAME precedence as `build` so clean targets the right
-    // paths when a build overrode them: `--output-dir` (default `<workspace>/artifacts`), the
-    // `--build-dir-base` override over `runtime.buildDirBase`, and the cache/log dirs (resolved the
-    // same way, so the retained-path guard below protects where build actually wrote them).
+    // paths when a build overrode them: `--output-dir` (default `<workspace>/artifacts`) and the
+    // `--build-dir-base` override over `runtime.buildDirBase`.
     let output_dir = tailor_config::absolutize(
         output_dir_override.map_or_else(|| workspace.root.join(ARTIFACTS_DIR), Path::to_path_buf),
         &env::current_dir().map_err(|e| AppError::Message(format!("current dir: {e}")))?,
     );
-    resolve_image_cache_dir(&mut tool, &workspace.root);
-    apply_log_overrides(&mut tool, logging, &workspace.root)?;
     apply_build_dir_base_override(&mut tool, build_dir_base_override)?;
     let lock = Lockfile::read(&workspace.root.join(LOCK_FILE))?;
     let rt_config = runtime_config(&tool, &lock, &workspace.root);
@@ -1737,29 +1745,20 @@ async fn clean(
     // the same `<base>/<slug>` dirs even when their output directories differ, so the output lock
     // alone can't stop clean from deleting a running build's scratch. Same acquire order as build.
     let _scratch_lock = acquire_scratch_lock(&build_dir_base)?;
+    // The reap removes `<base>/<slug>` recursively, so the base must not contain the workspace or the
+    // output directory (see build()).
+    ensure_build_dir_base_isolated(&build_dir_base, &[&workspace.root, &output_dir])?;
 
     let (artifacts, scratch) =
         clean_paths(&targets, &tool, selector, &output_dir, &build_dir_base)?;
 
     let executor = IcExecutor::new(establish_runtime(engine, &tool).await?);
-    // Scratch goes through the guarded path: each target must be a strict descendant of the scratch
-    // base and must not contain the retained output/cache/log/workspace paths, validated before any
-    // removal. Artifacts are plain output files under the output directory.
-    let mut retained: Vec<&Path> = vec![output_dir.as_path(), workspace.root.as_path()];
-    if let Some(cache) = &rt_config.image_cache_dir {
-        retained.push(cache);
-    }
-    if let Some(log) = &rt_config.log_dir {
-        retained.push(log);
-    }
-    for mount in &rt_config.extra_paths {
-        retained.push(mount.path.as_path());
-    }
+    // Scratch goes through the guarded path (each target validated as a strict descendant of the base
+    // before any removal); artifacts are plain output files under the output directory.
     executor
         .clean_scratch(
             &scratch,
             &build_dir_base,
-            &retained,
             &rt_config,
             CancellationToken::new(),
         )

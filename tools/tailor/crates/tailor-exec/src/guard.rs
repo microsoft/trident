@@ -94,17 +94,12 @@ fn unsafe_dir(path: PathBuf, reason: String) -> ExecError {
     ExecError::UnsafeDir { path, reason }
 }
 
-/// Guard a per-cell scratch directory that the build-dir reap removes **recursively**. On top of the
-/// generic [`ensure_safe_build_dir`] checks it enforces, for the exact directory that gets deleted:
-/// (a) it is a *strict* descendant of its scratch `base`, so a `.`/`..` slug cannot normalize to the
-/// base or its parent and delete unrelated files; and (b) it does not *contain* any `retained` path
-/// (the output, cache, or log directory), so a successful build cannot delete its own artifact or
-/// shared state. Symlinks are resolved throughout (same as [`ensure_safe_build_dir`]).
-pub(crate) fn ensure_safe_scratch_dir(
-    scratch: &Path,
-    base: &Path,
-    retained: &[&Path],
-) -> Result<(), ExecError> {
+/// Guard a per-cell scratch directory that the build-dir reap removes **recursively**: on top of the
+/// generic [`ensure_safe_build_dir`] checks, it must be a *strict* descendant of its scratch `base`,
+/// so a `.`/`..` slug cannot normalize to the base or its parent and delete unrelated files. Symlinks
+/// are resolved throughout. Overlap with inputs/outputs is prevented at the base level by
+/// [`ensure_build_dir_base_isolated`].
+pub(crate) fn ensure_safe_scratch_dir(scratch: &Path, base: &Path) -> Result<(), ExecError> {
     ensure_safe_build_dir(scratch)?;
     let scratch = resolve_path(scratch)?;
     let base = resolve_path(base)?;
@@ -117,12 +112,24 @@ pub(crate) fn ensure_safe_scratch_dir(
             ),
         ));
     }
-    for path in retained {
+    Ok(())
+}
+
+/// Validate a `--build-dir-base` against the obvious footgun: because the reap removes
+/// `<base>/<slug>` recursively, the base must not *contain* a `protected` directory — the workspace
+/// root (every in-workspace input) or the output directory (artifacts, and the cache/log dirs that
+/// default under it). Rejecting a base that is an ancestor of (or equal to) either keeps the reap
+/// from deleting inputs or outputs. `--build-dir-base` is an advanced flag: inputs supplied as
+/// absolute paths *outside* the workspace that a user parks under the base are deliberately not
+/// covered — the base is contracted to be a dedicated scratch directory. Symlinks are resolved.
+pub fn ensure_build_dir_base_isolated(base: &Path, protected: &[&Path]) -> Result<(), ExecError> {
+    let base = resolve_path(base)?;
+    for path in protected {
         let path = resolve_path(path)?;
-        if path.starts_with(&scratch) {
+        if path.starts_with(&base) {
             return Err(unsafe_dir(
-                scratch,
-                format!("must not contain the retained path `{}`", path.display()),
+                base,
+                format!("the build-dir base must not contain `{}`", path.display()),
             ));
         }
     }
@@ -202,37 +209,53 @@ mod tests {
     }
 
     #[test]
-    fn scratch_dir_enforces_strict_descent_and_retained_containment() {
+    fn scratch_dir_enforces_strict_descent() {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("scratch");
         let child = base.join("cell");
         std::fs::create_dir_all(&child).unwrap();
 
-        // A strict child of the base, containing no retained path, is fine.
-        ensure_safe_scratch_dir(&child, &base, &[]).unwrap();
+        // A strict child of the base is fine.
+        ensure_safe_scratch_dir(&child, &base).unwrap();
 
         // The base itself (a `.` slug) and its parent (a `..` slug) are not strict descendants.
         assert!(matches!(
-            ensure_safe_scratch_dir(&base, &base, &[]).unwrap_err(),
+            ensure_safe_scratch_dir(&base, &base).unwrap_err(),
             ExecError::UnsafeDir { .. }
         ));
         assert!(matches!(
-            ensure_safe_scratch_dir(tmp.path(), &base, &[]).unwrap_err(),
+            ensure_safe_scratch_dir(tmp.path(), &base).unwrap_err(),
             ExecError::UnsafeDir { .. }
         ));
+    }
 
-        // A retained path inside the scratch dir (e.g. the output written there) is rejected.
-        let retained = child.join("image.cosi");
-        std::fs::File::create(&retained).unwrap();
+    #[test]
+    fn build_dir_base_rejects_containing_protected_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("scratch");
+        std::fs::create_dir_all(&base).unwrap();
+
+        // A base that contains the output dir (output nested under the base) is rejected.
+        let output = base.join("out");
+        std::fs::create_dir_all(&output).unwrap();
         assert!(matches!(
-            ensure_safe_scratch_dir(&child, &base, &[retained.as_path()]).unwrap_err(),
+            ensure_build_dir_base_isolated(&base, &[output.as_path()]).unwrap_err(),
+            ExecError::UnsafeDir { .. }
+        ));
+        // The base itself as a protected dir (base == output) is rejected.
+        assert!(matches!(
+            ensure_build_dir_base_isolated(&base, &[base.as_path()]).unwrap_err(),
             ExecError::UnsafeDir { .. }
         ));
 
-        // A retained path outside the scratch dir is fine.
-        let outside = base.join("other");
-        std::fs::create_dir_all(&outside).unwrap();
-        ensure_safe_scratch_dir(&child, &base, &[outside.as_path()]).unwrap();
+        // A base that is disjoint from (or nested under) the protected dirs is fine — this is the
+        // default layout, where the scratch base sits *under* the output dir.
+        let workspace = tmp.path().join("ws");
+        let output = workspace.join("artifacts");
+        let default_base = output.join(".tailor").join("build");
+        std::fs::create_dir_all(&default_base).unwrap();
+        ensure_build_dir_base_isolated(&default_base, &[workspace.as_path(), output.as_path()])
+            .unwrap();
     }
 
     #[test]
