@@ -51,10 +51,12 @@ func CleanupVM(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllV
 // readVmProductUUID reads the VM's hardware product UUID
 // (/sys/class/dmi/id/product_uuid). Every fake Node seeded for
 // trident-acl-agent (stormproxies.NewSeedNode) must carry this exact value
-// as its status.nodeInfo.systemUUID: trident-acl-agent's
-// NodeClient::get_node (crates/trident-acl-agent/src/annotations/k8s.rs)
-// compares the two and treats any mismatch as the Node not existing, so an
-// unset or wrong systemUUID here would make the agent never find its Node.
+// as its status.nodeInfo.systemUUID: when TRIDENT_ACL_AGENT_VALIDATE_NODE_UUID
+// is set, trident-acl-agent's NodeClient::get_node/watch_node
+// (crates/trident-acl-agent/src/annotations/k8s.rs) compare the two and
+// treat a non-empty mismatch as the Node not existing. An empty
+// systemUUID is NOT treated as a mismatch (verification is skipped), so
+// only a WRONG systemUUID here would make the agent never find its Node.
 func readVmProductUUID(cfg stormvmconfig.VMConfig, vmIP string) (string, error) {
 	out, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo cat /sys/class/dmi/id/product_uuid")
 	if err != nil {
