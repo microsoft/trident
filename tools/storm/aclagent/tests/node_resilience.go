@@ -57,7 +57,10 @@ const aclAgentService = "trident-acl-agent.service"
 // whose status.nodeInfo.systemUUID doesn't match this VM's own
 // /sys/class/dmi/id/product_uuid must be logged and then treated exactly
 // like NodeGone (not acted on, not crashed on) by the very same startup
-// Node read phase 1 exercises.
+// Node read phase 1 exercises. NodeClient::watch_node performs the
+// identical check on each Node delivered by the long-lived watch stream,
+// but that path is NOT exercised by this test - see the note on phase 3
+// below for why.
 func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	vmIP, err := stormvm.GetVmIP(vmConfig)
 	if err != nil {
@@ -269,9 +272,18 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	// k8s.rs). This proves that mismatch is (a) logged distinctly from a
 	// plain 404, and (b) still funneled into the exact same NodeGone /
 	// await_node_recreation path as phases 1-2, rather than being acted on
-	// or crashing the agent. Reuses phase 1's restart-based trigger since
-	// the mismatch can only be observed on an explicit GET
-	// (get_node_with_retry at startup), not on the long-lived watch.
+	// or crashing the agent. Reuses phase 1's restart-based trigger to
+	// exercise the explicit-GET path (get_node_with_retry at startup).
+	//
+	// NodeClient::watch_node applies the identical verify_node_identity
+	// check to each Node delivered by the long-lived watch stream (see
+	// k8s.rs), so the same mismatch handling should also be reachable there
+	// without an agent restart - but that path is NOT exercised by this
+	// test: it would require this fake apiserver to deliver a MODIFIED
+	// watch event with a mismatched systemUUID while the agent is already
+	// watching, which SetSystemUUID's broadcast (see its doc comment in
+	// proxies/apiserver.go) is capable of triggering, but doing so has not
+	// been validated end-to-end here yet.
 	nodeStore.SetSystemUUID("00000000-0000-0000-0000-000000000000")
 	if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo systemctl restart %s", aclAgentService)); err != nil {
 		return fmt.Errorf("phase 3: failed to restart %s: %w", aclAgentService, err)

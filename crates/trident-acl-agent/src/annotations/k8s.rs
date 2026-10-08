@@ -35,7 +35,7 @@ use reqwest::StatusCode;
 use serde_json::json;
 use thiserror::Error;
 
-use osutils::{dmi::PRODUCT_UUID_PATH, files::read_file_trim};
+use osutils::dmi::{read_product_uuid_from, PRODUCT_UUID_PATH};
 
 use crate::core::config::KubernetesConfig;
 
@@ -220,7 +220,7 @@ fn verify_node_identity(
     name: &str,
     product_uuid_path: &Path,
 ) -> Result<(), K8sClientError> {
-    let local_uuid = match read_file_trim(&product_uuid_path) {
+    let local_uuid = match read_product_uuid_from(product_uuid_path) {
         Ok(uuid) => uuid,
         Err(err) => {
             warn!(
