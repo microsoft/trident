@@ -185,6 +185,15 @@ fn is_not_found(err: &KubeError) -> bool {
 /// If the local product UUID can't be read, the check is skipped (logged at
 /// warn) rather than failing closed, so a host without DMI data (e.g. some
 /// VM/container test environments) doesn't lose all Node access.
+///
+/// Likewise, if the Node's reported `systemUUID` is empty, the check is
+/// skipped. kubelet populates this field via cadvisor reading the same
+/// `product_uuid` file; if that read ever fails on the kubelet's side,
+/// cadvisor logs an error but still lets node registration proceed with an
+/// empty `systemUUID` rather than surfacing the error. An empty value is
+/// therefore evidence kubelet couldn't determine the UUID - not evidence the
+/// node is a different machine - so treating it as a mismatch would risk a
+/// false positive that locks us out of an otherwise-healthy node forever.
 fn verify_node_identity(
     node: &Node,
     name: &str,
@@ -207,6 +216,13 @@ fn verify_node_identity(
         .and_then(|status| status.node_info.as_ref())
         .map(|node_info| node_info.system_uuid.as_str())
         .unwrap_or_default();
+
+    if node_uuid.is_empty() {
+        warn!(
+            "Node {name:?} status.nodeInfo.systemUUID is empty, skipping identity verification"
+        );
+        return Ok(());
+    }
 
     if !node_uuid.eq_ignore_ascii_case(&local_uuid) {
         warn!(
@@ -382,14 +398,19 @@ mod tests {
     }
 
     #[test]
-    fn missing_node_system_info_is_node_gone() {
+    fn missing_node_system_info_skips_verification() {
         let uuid_file = write_uuid_file("1234-ABCD");
         let node = Node::default();
 
-        assert!(matches!(
-            verify_node_identity(&node, "n", uuid_file.path()),
-            Err(K8sClientError::NodeGone)
-        ));
+        assert!(verify_node_identity(&node, "n", uuid_file.path()).is_ok());
+    }
+
+    #[test]
+    fn empty_node_system_uuid_skips_verification() {
+        let uuid_file = write_uuid_file("1234-ABCD");
+        let node = node_with_system_uuid("");
+
+        assert!(verify_node_identity(&node, "n", uuid_file.path()).is_ok());
     }
 
     #[test]
