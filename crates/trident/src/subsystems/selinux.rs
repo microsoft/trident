@@ -18,7 +18,7 @@ use trident_api::{
     status::ServicingType,
 };
 
-use crate::engine::{EngineContext, Subsystem};
+use crate::engine::{filesystem::FileSystemData, EngineContext, Subsystem};
 
 /// List of filesystems that support SELinux. Based on
 /// https://wiki.gentoo.org/wiki/SELinux/FAQ#Can_I_use_SELinux_with_any_file_system.3F
@@ -262,6 +262,10 @@ fn filesystems_to_relabel(ctx: &EngineContext) -> Result<Vec<PathBuf>, TridentEr
     let mut out = Vec::new();
 
     for filesystem in &ctx.filesystems {
+        if !is_relabel_candidate_for_servicing_type(ctx, filesystem) {
+            continue;
+        }
+
         // Filter to only Real filesystems
         let Some(KernelFilesystemType::Real(fs_type)) = &filesystem.fs_type() else {
             continue;
@@ -288,6 +292,30 @@ fn filesystems_to_relabel(ctx: &EngineContext) -> Result<Vec<PathBuf>, TridentEr
     Ok(out)
 }
 
+fn is_relabel_candidate_for_servicing_type(
+    ctx: &EngineContext,
+    filesystem: &FileSystemData,
+) -> bool {
+    if ctx.servicing_type != ServicingType::AbUpdate {
+        return true;
+    }
+
+    let Some(device_id) = filesystem.device_id() else {
+        return false;
+    };
+
+    ctx.spec
+        .storage
+        .ab_update
+        .as_ref()
+        .is_some_and(|ab_update| {
+            ab_update
+                .volume_pairs
+                .iter()
+                .any(|pair| &pair.id == device_id)
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,8 +331,8 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, Extension, FileSystem, FileSystemSource, MountOptions, MountPoint,
-            NewFileSystemType, Partition, PartitionSize, PartitionType, Storage,
+            AbUpdate, AbVolumePair, Disk, Extension, FileSystem, FileSystemSource, MountOptions,
+            MountPoint, NewFileSystemType, Partition, PartitionSize, PartitionType, Storage,
             VerityCorruptionOption, VerityDevice,
         },
         constants::MOUNT_OPTION_READ_ONLY,
@@ -405,6 +433,67 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(filesystems_to_relabel(&ctx).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_filesystems_to_relabel_ab_update_skips_shared_filesystems() {
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            ..Default::default()
+        };
+        ctx.spec.storage.ab_update = Some(AbUpdate {
+            volume_pairs: vec![AbVolumePair {
+                id: "root".into(),
+                volume_a_id: "root-a".into(),
+                volume_b_id: "root-b".into(),
+            }],
+        });
+        ctx.filesystems = vec![
+            FileSystemData::Image(FileSystemDataImage {
+                mount_point: MountPoint::from_str("/").unwrap(),
+                fs_type: Some(RealFilesystemType::Ext4),
+                device_id: "root".into(),
+            }),
+            FileSystemData::Image(FileSystemDataImage {
+                mount_point: MountPoint::from_str("/var/lib/containerd").unwrap(),
+                fs_type: Some(RealFilesystemType::Ext4),
+                device_id: "containerd".into(),
+            }),
+        ];
+
+        assert_eq!(filesystems_to_relabel(&ctx).unwrap(), vec![Path::new("/")]);
+    }
+
+    #[test]
+    fn test_filesystems_to_relabel_clean_install_keeps_shared_filesystems() {
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::CleanInstall,
+            ..Default::default()
+        };
+        ctx.spec.storage.ab_update = Some(AbUpdate {
+            volume_pairs: vec![AbVolumePair {
+                id: "root".into(),
+                volume_a_id: "root-a".into(),
+                volume_b_id: "root-b".into(),
+            }],
+        });
+        ctx.filesystems = vec![
+            FileSystemData::Image(FileSystemDataImage {
+                mount_point: MountPoint::from_str("/").unwrap(),
+                fs_type: Some(RealFilesystemType::Ext4),
+                device_id: "root".into(),
+            }),
+            FileSystemData::Image(FileSystemDataImage {
+                mount_point: MountPoint::from_str("/var/lib/containerd").unwrap(),
+                fs_type: Some(RealFilesystemType::Ext4),
+                device_id: "containerd".into(),
+            }),
+        ];
+
+        assert_eq!(
+            filesystems_to_relabel(&ctx).unwrap(),
+            vec![Path::new("/"), Path::new("/var/lib/containerd")]
+        );
     }
 
     #[test]
