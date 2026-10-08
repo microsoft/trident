@@ -54,6 +54,17 @@ const WATCH_TIMEOUT_SECS: u32 = 290;
 /// existing at all.
 const PRODUCT_UUID_PATH: &str = "/sys/class/dmi/id/product_uuid";
 
+/// Environment variable that enables [`verify_node_identity`]'s
+/// `systemUUID`-vs-local-hardware check in [`NodeClient::get_node`]. Value is
+/// not important - only presence is checked, matching
+/// `osutils::container::DOCKER_ENVIRONMENT`'s convention. Unset by default:
+/// the check's assumptions (kubelet's `systemUUID` always traces back to this
+/// same machine's `product_uuid`) hold for the environments this was
+/// validated against, but haven't been confirmed across every deployment
+/// trident-acl-agent runs in, so it starts opt-in rather than risking
+/// false-positive `NodeGone` loops on a healthy cluster.
+pub const ENV_VALIDATE_NODE_UUID: &str = "TRIDENT_ACL_AGENT_VALIDATE_NODE_UUID";
+
 #[derive(Debug, Error)]
 pub enum K8sClientError {
     #[error("failed to build Kubernetes client config: {0}")]
@@ -91,7 +102,9 @@ impl NodeClient {
 
     pub async fn get_node(&self, name: &str) -> Result<Node, K8sClientError> {
         let node = self.api.get(name).await.map_err(map_kube_error)?;
-        verify_node_identity(&node, name, Path::new(PRODUCT_UUID_PATH))?;
+        if std::env::var(ENV_VALIDATE_NODE_UUID).is_ok() {
+            verify_node_identity(&node, name, Path::new(PRODUCT_UUID_PATH))?;
+        }
         Ok(node)
     }
 
