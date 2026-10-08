@@ -108,12 +108,35 @@ A COSI writer that emits the section.
 [Image Customizer](https://github.com/microsoft/azure-linux-image-tools) is the
 reference writer.
 
-[Extension-Only Updates](#extension-only-updates) additionally require a writer
-mode that copies an existing COSI's region images verbatim while replacing its
-extension set. Without it, bundled extensions still work, but every extension
-change is an A/B update.
+[Extension-Only Updates](#extension-only-updates) additionally require:
 
-No incomplete Trident features are required.
+- A writer mode that copies an existing COSI's region images verbatim while
+  replacing its extension set. Without it, bundled extensions still work, but
+  every extension change is an A/B update.
+- A surface for requesting a servicing type. None exists today;
+  `forceAbUpdate` is the nearest precedent. This is a prerequisite, not an
+  optional refinement, because the path is never inferred.
+
+Three defects in the existing extensions subsystem must be fixed first. All are
+reachable today with Host Configuration extensions; bundling makes the first two
+the common case rather than the exception.
+
+1. **In-place replacement deletes the new image.** When an extension keeps its
+   ID and destination but changes content, `set_up_extensions` schedules the ID
+   for both addition and removal. The addition renames the new image over the
+   destination; the removal then deletes that same path, because the old
+   entry's `temp_path` is its destination. The guard assumes the two paths
+   differ. A bundled extension updated in place hits this on every Runtime
+   Update.
+2. **Staged payloads do not survive the operation.** Runtime finalize and
+   rollback construct their `EngineContext` with `image: None`, so the COSI is
+   unavailable after stage. Bundled payloads must be staged durably, and the
+   superseded image must be retained until the operation completes.
+3. **Extension placement is validated against the Host Configuration only, and
+   before the COSI is read.** `validate_extension_images_locations` is static
+   validation over `os.sysexts` and `os.confexts`. Bundled destinations need
+   the same check after the COSI is loaded. See
+   [Destination Validation](#destination-validation).
 
 ## Implementation
 
@@ -317,9 +340,15 @@ For integrity this is equivalent to partition images: Trident hashes the
 compressed stream as it decompresses, and a match proves the payload is intact.
 A second hash of the uncompressed DDI would add nothing.
 
-One consequence should be recorded. `ExtensionData.sha384` is also used as a
-change detector: for an extension whose ID is present in both the old and new
-configuration, a differing hash means the content changed. Compressed hashes are
+One consequence must be handled. `ExtensionData.sha384` is a single field used
+both as the change detector and as the key matching a processed extension back
+to its Host Configuration entry. It cannot hold two different meanings at once,
+so the effective entry must record the hash together with its source, and
+comparisons must only be made between hashes of the same kind. Comparing a
+compressed hash against a raw-file hash is always unequal and would report
+every extension as changed.
+
+Within one source the comparison is sound but imprecise: compressed hashes are
 not stable across recompressions, so two COSIs built from identical DDIs at
 different ZSTD levels appear to differ. The result is a redundant copy of an
 identical file, never a missed update.
@@ -351,6 +380,13 @@ field is a field they are required to ignore. Three partial mitigations:
    asserting the extension is merged, so an A/B update onto a too-old Trident
    fails its gate and rolls back.
 
+The omission does not self-heal. An old reader records the new COSI's URL and
+hash as deployed, so after Trident is upgraded the same Host Configuration no
+longer represents an image change and the skipped extensions are never
+installed. Recovery requires a forced redeployment or a republished COSI. This
+is the strongest argument for the health check above rather than a documented
+caveat alone.
+
 ### Trident-Side Consumption
 
 The extensions subsystem gains a second source. Trident computes an **effective
@@ -367,6 +403,10 @@ flowchart LR
     Eff --> Sel["selinux subsystem<br/>enforcing-mode rejection"]
 ```
 
+Each effective entry carries its source, Host Configuration or COSI. The source
+determines where a resolved path is written back and whether the entry is
+subject to Host Configuration validation.
+
 There are three consumers:
 
 - **`ExtensionsSubsystem`.** `populate_extensions` currently downloads each
@@ -375,23 +415,57 @@ There are three consumers:
   bundled entry only the source changes: the image streaming pipeline
   decompresses the tar member into the same staging directory and verifies
   `ImageFile.sha384` over the compressed stream. The `extension-release` read,
-  the `{name}.raw` check, default-path resolution, directory creation and
-  `set_up_extensions` are unchanged.
+  the `{name}.raw` check and default-path resolution are unchanged.
+  `update_host_configuration` currently fails if a processed extension has no
+  Host Configuration entry matching by hash, so it must write back resolved
+  paths for Host-Configuration-sourced entries only.
 - **`osconfig`.** `systemd-sysext.service` and `systemd-confext.service` are
   enabled only when `ctx.spec.os.sysexts` or `confexts` are non-empty. A host
   whose extensions come only from the COSI would never have the merge units
   enabled, and the extensions would remain on disk unused. This check must read
   the effective set.
 - **`selinux`.** The dynamic validation raising
-  `ExtensionImagesAndSelinuxUnsupported` has the same problem. Without the
-  change, a COSI carrying extensions combined with an enforcing-mode Host
-  Configuration passes validation and produces a host with a mislabelled `/usr`,
-  `/opt` or `/etc`.
+  `ExtensionImagesAndSelinuxUnsupported` must also read the effective set, or a
+  COSI carrying extensions combined with an enforcing-mode Host Configuration
+  passes validation and produces a host with a mislabelled `/usr`, `/opt` or
+  `/etc`. Reading the effective set is not sufficient on its own: the check runs
+  inside `configure`, which returns early for Runtime Updates, and
+  `SelinuxSubsystem` inherits `runs_on = REQUIRES_REBOOT`. It must move to a
+  validation hook that runs on every servicing type, otherwise
+  [Extension-Only Updates](#extension-only-updates) bypass it.
 
 `derive_host_configuration`, used by
 [disk streaming](../../Explanation/Disk-Streaming.md), does not need to
 synthesise extension entries; the effective set is computed from the COSI
 directly.
+
+#### Deployed Extension Inventory
+
+The Host Configuration records the extensions an operator asked for. It cannot
+record bundled ones, so `ctx.spec_old.os.sysexts` and `confexts` do not describe
+what is actually deployed. Without a second record, Trident cannot determine
+which bundled extensions to remove, detect collisions against the deployed set,
+compare extension sets for servicing selection, or reconstruct its state when
+finalize runs separately from stage.
+
+Trident therefore records a deployed extension inventory in the Host Status,
+alongside the [deployed image summary](#deployed-image-summary). Per entry:
+kind, extension ID, name, resolved destination, source, and the hash under that
+source's semantics. The subsystem populates `extensions_old` from the inventory
+rather than from `ctx.spec_old` alone.
+
+#### Destination Validation
+
+`validate_extension_images_locations` rejects extension destinations that are
+not on an A/B volume when A/B is configured. It is static validation over the
+Host Configuration lists, and runs before the COSI is read, so it cannot see
+bundled destinations.
+
+The equivalent check for the effective set must run after the COSI is loaded, as
+dynamic validation against the storage graph. It must reject a destination that
+is shared when A/B is configured, and should additionally reject a destination
+that is read-only or verity-protected — a case the existing check does not
+cover for Host Configuration entries either.
 
 #### Where Images Are Written
 
@@ -406,15 +480,19 @@ directly.
 
 #### Rollback
 
-Extension images are files in the slot's own filesystem, and Trident already
-requires every extension destination to be on an A/B volume, not shared and not
-read-only, when A/B volumes are configured. The previous slot therefore retains
-the previous extension set after an update. An A/B rollback boots the previous
-root volume, `systemd-sysext` merges what it finds there, and the extension set
-reverts with the OS. No additional bookkeeping is required.
+Extension images are files in the slot's own filesystem. When every destination
+is on an A/B volume, the previous slot retains the previous extension set after
+an update, an A/B rollback boots the previous root volume, `systemd-sysext`
+merges what it finds there, and the extension set reverts with the OS. No
+additional bookkeeping is required.
 
-This applies to the A/B path. Rollback of an extension-only Runtime Update is
-weaker; see [Extension-Only Updates](#extension-only-updates).
+That guarantee is conditional on the placement check covering bundled
+destinations; see [Destination Validation](#destination-validation). A bundled
+extension written to a shared volume changes the running slot immediately and
+cannot be rolled back.
+
+Rollback of an extension-only Runtime Update is weaker; see
+[Extension-Only Updates](#extension-only-updates).
 
 #### Extension-Only Updates
 
@@ -519,21 +597,33 @@ operation to an A/B update, and must not apply the extension change while
 leaving other changes unapplied. Refusal is the only acceptable failure.
 
 There is no surface for requesting a servicing type today; `forceAbUpdate` is
-the nearest precedent. The surface is an [open question](#open-questions).
+the nearest precedent. See [Dependencies](#dependencies).
+
+A no-op must still record the accepted image and summary in the Host Status.
+`select_servicing_type` returning `NoActiveServicing` causes `update` to return
+immediately without persisting anything, so without a metadata-only status
+transition every subsequent invocation would repeat the comparison.
 
 ##### Rollback on This Path
 
 An A/B extension update is rolled back by booting the other slot. A Runtime
 Update replaces files in the running slot, because `set_up_extensions` skips
 removal of the superseded image only on Clean Install and A/B Update. Rollback
-therefore re-runs the subsystem with the specs reversed and re-acquires the
-previous extension image from its source. For a bundled extension that source is
-the previous COSI, so a runtime rollback requires the previous COSI to remain
-reachable; an A/B rollback requires nothing.
+re-runs the subsystem with the specs reversed and must restore the previous
+image.
 
-This is the reason the path is not automatic. Selecting it trades a rollback
-guarantee for the absence of a reboot, and that trade should be made by the
-operator rather than inferred from a property of two images.
+It cannot re-fetch it. Runtime finalize and rollback build their
+`EngineContext` with `image: None`, so the COSI is not available after stage,
+and auto-rollback runs unconditionally after a finalize failure. The superseded
+image must therefore be retained in the staging directory for the duration of
+the operation, and removed only once it completes. This is the second
+prerequisite in [Dependencies](#dependencies).
+
+Rollback is consequently bounded by the staging directory surviving, rather than
+by booting a slot that was never touched. This is the reason the path is not
+automatic: selecting it trades a rollback guarantee for the absence of a reboot,
+and that trade should be made by the operator rather than inferred from a
+property of two images.
 
 #### Interaction With Host Configuration `sysexts` and `confexts`
 
@@ -571,27 +661,36 @@ Host Configuration side as an opt-in. See [Open Questions](#open-questions).
 
 #### COSI Metadata Validation
 
-New `CosiMetadataErrorKind` variants, following the existing `V1_<minor>`
-prefix:
+Checks that need only the metadata. New `CosiMetadataErrorKind` variants,
+following the existing `V1_<minor>` prefix:
 
 | Variant                                           | Condition                                                                                       |
 | ------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `V1_3ExtensionDestinationPathNotAbsolute`          | `path` is present and not absolute.                                                              |
 | `V1_3ExtensionDestinationPathInvalidFileExtension` | `path` is present and does not end in `.raw`.                                                    |
 | `V1_3ExtensionDestinationPathInvalidDirectory`     | `path`'s parent is not in `VALID_SYSEXT_DIRECTORIES` or `VALID_CONFEXT_DIRECTORIES` for the kind. |
-| `V1_3DuplicateExtensionDestinationPath`            | Two entries resolve to the same destination path.                                                |
+| `V1_3DuplicateExtensionDestinationPath`            | Two entries both specify `path` and specify the same one.                                        |
 | `V1_3DuplicateExtensionImagePath`                  | Two entries reference the same tar member.                                                       |
 | `V1_3ExtensionImagePathCollidesWithRegionImage`    | An entry's `image.path` is also referenced by `images[]` or `disk.gptRegions[]`.                  |
-
-The existing check that every image referenced by the metadata is present in the
-tar must also walk `extensions.sysexts[]` and `extensions.confexts[]`, so a
-missing tar member fails at load rather than mid-provision.
 
 Directory and file-extension rules reuse the constants and logic behind
 `Extension::validate_sysext` and `validate_confext` rather than reimplementing
 them.
 
+Destination collisions are only partly detectable here. An entry that omits
+`path` resolves to `{default directory}/{name}.raw`, and `{name}` comes from the
+`extension-release` file inside the DDI, so two omitted paths may collide
+without the metadata showing it. That case is caught after mounting.
+
+Member existence is not checked at load. `Cosi::new` scans tar entries only as
+far as `metadata.json` and discovers the rest on demand, so a reference to a
+missing member surfaces when the member is read. Changing this would require
+scanning the whole archive up front, which conflicts with sparse reads. The
+`extensions` section inherits the existing behaviour.
+
 #### Deploy-Time Validation
+
+Checks that require the payload, performed after the DDI is mounted.
 
 - **File name matches the `extension-release` suffix.** Already enforced by
   `read_extension_release`; applies unchanged.
@@ -600,14 +699,20 @@ them.
 - **SHA-384 agreement.** `ImageFile.sha384` is verified over the compressed
   stream as the payload is decompressed into the staging directory, using the
   hashing reader used for partition images. A mismatch aborts servicing.
-- **Extension ID uniqueness across the merged set**, per kind. New check.
+- **Resolved destination collisions** across the effective set, covering the
+  omitted-`path` cases the metadata check cannot see. New check.
+- **Extension ID uniqueness** across the effective set, per kind. New check.
+- **Destination placement** against the storage graph. See
+  [Destination Validation](#destination-validation).
 - **`extension-release` OS compatibility.** Warn, do not fail, when a bundled
-  extension declares `ID=<distro>` and that `ID` or `VERSION_ID` does not match
-  the COSI's own `osRelease`. This is a build error worth surfacing early, since
-  systemd will refuse to merge the extension at boot and the host will come up
-  without it. systemd remains the authority: its matching rules
-  (`SYSEXT_LEVEL`, `CONFEXT_LEVEL`, `ARCHITECTURE`, `_any`) are intricate enough
-  that Trident should not reimplement them.
+  extension declares `ID=<distro>` and that `ID` does not match the COSI's own
+  `osRelease`. This is a build error worth surfacing early, since systemd will
+  refuse to merge the extension at boot and the host will come up without it.
+
+  The warning is on `ID` alone. systemd accepts a `VERSION_ID` mismatch when the
+  applicable `SYSEXT_LEVEL` or `CONFEXT_LEVEL` matches instead, so warning on
+  version would flag valid extensions. Trident should not reproduce that
+  precedence; systemd remains the authority.
 
 #### `ID=_any`
 
@@ -628,10 +733,12 @@ Unchanged. Extensions remain incompatible with SELinux in enforcing mode on
 systemd 255, because merging the overlays mislabels `/usr`, `/opt` and `/etc`.
 Carrying the image in a COSI does not affect labelling.
 
-What must change is where the check looks. The dynamic validation raising
-`ExtensionImagesAndSelinuxUnsupported` inspects the Host Configuration lists
-only, and must inspect the effective set; otherwise a COSI-only extension
-configuration bypasses it.
+What must change is where the check looks and when it runs. The validation
+raising `ExtensionImagesAndSelinuxUnsupported` inspects the Host Configuration
+lists only, and runs inside `configure`, which returns early for anything other
+than Clean Install and A/B Update. It must read the effective set and run on
+every servicing type, or both a COSI-only configuration and an
+[extension-only Runtime Update](#extension-only-updates) bypass it.
 
 ## Public API Design
 
@@ -654,8 +761,9 @@ is now an error rather than a duplicate.
   `images/`, a non-absolute destination, a destination not ending in `.raw`, a
   destination in a disallowed directory, and a duplicated destination path.
 - **Unit.** Metadata parse and validation for each new error variant; effective
-  set computation, including collisions; default-path resolution for an entry
-  with no `path`.
+  set computation, including collisions and the source discriminator;
+  default-path resolution for an entry with no `path`; replacement of an
+  extension that keeps its ID and destination but changes content.
 - **Functional.** Build a COSI carrying a sysext and a confext; assert Clean
   Install places both, enables the merge units, and that both merge after boot.
 - **Servicing.** A/B update from a COSI with extension set A to one with set B;
@@ -663,10 +771,15 @@ is now an error rather than a duplicate.
   A without additional servicing. Separately, an extension-only Runtime Update
   between a COSI and a copy of it with a different extension set; assert
   partitions are untouched and the extension set changes without a reboot.
+  Separately again, finalize and rollback of an extension-only Runtime Update
+  invoked as distinct processes, asserting the previous image is restored
+  without access to either COSI.
 - **Negative.** The same extension in both the Host Configuration and the COSI
   produces the structured error; a bundled extension with SELinux `enforcing` is
-  rejected; a Runtime Update requested between two COSIs with differing image
-  summaries is refused rather than promoted or partially applied.
+  rejected on A/B update and on extension-only Runtime Update; a bundled
+  destination on a shared volume is rejected when A/B is configured; a Runtime
+  Update requested between two COSIs with differing image summaries is refused
+  rather than promoted or partially applied.
 
 ## Servicing
 
@@ -685,14 +798,20 @@ The change is additive at every layer.
 
 ## Implementation Plan
 
+0. Prerequisites from [Dependencies](#dependencies): the in-place replacement
+   fix, durable staged payloads, and the request surface. The first is a
+   standalone bug fix and should land independently.
 1. Specification: COSI revision 1.3, the `extensions` section, the v1.3 JSON
    schema and samples.
 2. Trident reader: parse `extensions`, metadata validation and the new error
    variants, and the minor-version warning.
-3. Effective extension set, plumbed into the extensions, `osconfig` and
-   `selinux` subsystems, including the collision errors.
+3. Effective extension set with its source discriminator, and the deployed
+   extension inventory in the Host Status; plumbed into the extensions,
+   `osconfig` and `selinux` subsystems, including the collision errors and the
+   move of the SELinux check to a hook that runs on every servicing type.
 4. Stream a tar member into the extension staging directory, replacing the URL
-   fetch for bundled entries.
+   fetch for bundled entries. Dynamic destination validation against the storage
+   graph.
 5. Deployed image summary recorded in the Host Status, and the extension-only
    Runtime Update path with its verification and refusal behaviour.
 6. Tests, then documentation updates to
@@ -702,7 +821,8 @@ The change is additive at every layer.
 
 Steps 1 and 2 are independently useful: a reader that parses and validates the
 section but ignores it is a safe intermediate state and makes the minor-version
-warning available sooner.
+warning available sooner. Steps 3 and 4 deliver bundled extensions on Clean
+Install and A/B Update; step 5 is separable and could be deferred.
 
 ## Counter-Arguments
 
@@ -766,7 +886,9 @@ at the cost of cadence. The `extension-release` fields, `ID=_any` against
 
 - **What surface requests an extension-only Runtime Update?** A `trident update`
   flag, an internal parameter alongside `forceAbUpdate`, or a Host Configuration
-  field. This RFC requires the request to be explicit but does not choose.
+  field. The request must be explicit; the surface is undecided. It must also
+  define precedence against `forceAbUpdate` and whether the request persists
+  across separate stage and finalize invocations.
 - **What does the deployed image summary cover?** The proposal includes the
   region and filesystem image hashes and identities, `disk` geometry,
   `bootloader`, `osArch` and `osRelease`, and excludes `extensions`,
@@ -777,9 +899,14 @@ at the cost of cadence. The `extension-release` fields, `ID=_any` against
 - **Should the summary be a structured record or a digest?** A record is
   proposed, so that Trident can report which partition differs. A digest is
   smaller and simpler, at the cost of the diagnosis.
-- **Is the no-op outcome desirable?** Recognising a materially identical image
-  and doing nothing is a behavioural change independent of extensions, and
-  arguably belongs in its own RFC.
+- **Does the no-op outcome belong in this RFC?** It requires a metadata-only
+  status transition that records an accepted image without creating a
+  rollbackable operation. That is a behavioural change independent of
+  extensions and may deserve its own RFC.
+- **Is retaining the superseded image in the staging directory sufficient for
+  runtime rollback,** or should the extension subsystem keep a durable
+  per-extension backup outside the staging directory? The former is simpler; the
+  latter survives a staging-directory cleanup.
 - **Should an override escape hatch exist?** This RFC makes a collision between
   the Host Configuration and the COSI an error. The alternative is an explicit
   opt-in on the Host Configuration side meaning "the image ships this, use mine
