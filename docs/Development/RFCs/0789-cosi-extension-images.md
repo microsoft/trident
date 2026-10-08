@@ -99,6 +99,9 @@ COSI is built. This works in some configurations, but:
 - Trident deploys a COSI carrying a sysext and a confext on Clean Install and on
   A/B Update, and both are merged after reboot.
 - A/B rollback restores the previous extension set with no additional servicing.
+- An extension-only change between a COSI and a copy of it with a different
+  extension set is applied as a Runtime Update, without rewriting partitions or
+  rebooting, and is refused when anything else differs.
 - Conflicts between bundled and Host Configuration extensions produce a
   structured error.
 
@@ -888,7 +891,10 @@ The change is additive at every layer.
 Steps 1 and 2 are independently useful: a reader that parses and validates the
 section but ignores it is a safe intermediate state and makes the minor-version
 warning available sooner. Steps 3 and 4 deliver bundled extensions on Clean
-Install and A/B Update; step 5 is separable and could be deferred.
+Install and A/B Update, and are shippable without step 5. Step 5 may land
+separately but is required for this RFC to be complete, since without it every
+extension change is an A/B update and the cadence cost the proposal sets out to
+bound is not bounded.
 
 ## Counter-Arguments
 
