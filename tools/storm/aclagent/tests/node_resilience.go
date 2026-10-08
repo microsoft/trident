@@ -63,6 +63,11 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	productUUID, err := readVmProductUUID(vmConfig.VMConfig, vmIP)
+	if err != nil {
+		return err
+	}
+
 	// Only the fake apiserver is needed for phase 1. Phase 2 patches in a
 	// "stage" request to reach handle_stage's first publish_status call,
 	// but is deleted before the agent would ever actually dial the
@@ -70,7 +75,7 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	// image-server mock is needed either. trident-acl-agent never gets a
 	// config file at all (see prepareVmForAclAgent's doc comment in
 	// update.go).
-	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}))
+	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}, productUUID))
 	apiServer := stormproxies.NewAPIServer(testConfig.NodeName, nodeStore)
 	_, apiServerStop, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort))
 	if err != nil {

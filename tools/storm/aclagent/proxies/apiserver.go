@@ -39,13 +39,26 @@ type NodeStore struct {
 	deleteOnNextPatch bool
 }
 
-func NewSeedNode(name string, labels map[string]string) *corev1.Node {
+// NewSeedNode builds the fake apiserver's initial Node object. systemUUID
+// must be the real VM's hardware product UUID
+// (/sys/class/dmi/id/product_uuid) - trident-acl-agent's NodeClient::get_node
+// (crates/trident-acl-agent/src/annotations/k8s.rs) compares a fetched
+// Node's status.nodeInfo.systemUUID against that local file and treats any
+// mismatch (including an empty systemUUID) the same as the Node not existing
+// at all, so leaving this unset here would make every get_node call against
+// the fake apiserver fail as NodeGone.
+func NewSeedNode(name string, labels map[string]string, systemUUID string) *corev1.Node {
 	seed := &corev1.Node{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Node"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Labels:      map[string]string{},
 			Annotations: map[string]string{},
+		},
+		Status: corev1.NodeStatus{
+			NodeInfo: corev1.NodeSystemInfo{
+				SystemUUID: systemUUID,
+			},
 		},
 	}
 	for key, value := range labels {
