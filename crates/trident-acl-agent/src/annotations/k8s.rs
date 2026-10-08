@@ -45,18 +45,6 @@ use crate::core::config::KubernetesConfig;
 /// reconnect churn on an otherwise-healthy watch.
 const WATCH_TIMEOUT_SECS: u32 = 290;
 
-/// Environment variable that enables [`verify_node_identity`]'s
-/// `systemUUID`-vs-local-hardware check in [`NodeClient::get_node`] and
-/// [`NodeClient::watch_node`]. Value is
-/// not important - only presence is checked, matching
-/// `osutils::container::DOCKER_ENVIRONMENT`'s convention. Unset by default:
-/// the check's assumptions (kubelet's `systemUUID` always traces back to this
-/// same machine's `product_uuid`) hold for the environments this was
-/// validated against, but haven't been confirmed across every deployment
-/// trident-acl-agent runs in, so it starts opt-in rather than risking
-/// false-positive `NodeGone` loops on a healthy cluster.
-pub const ENV_VALIDATE_NODE_UUID: &str = "TRIDENT_ACL_AGENT_VALIDATE_NODE_UUID";
-
 #[derive(Debug, Error)]
 pub enum K8sClientError {
     #[error("failed to build Kubernetes client config: {0}")]
@@ -74,6 +62,10 @@ pub struct NodeClient {
     api: Api<Node>,
     poll_interval: Duration,
     cluster_url: String,
+    /// Mirrors [`KubernetesConfig::validate_node_uuid`]: enables
+    /// [`verify_node_identity`]'s `systemUUID`-vs-local-hardware check in
+    /// both [`NodeClient::get_node`] and [`NodeClient::watch_node`].
+    validate_identity: bool,
 }
 
 impl NodeClient {
@@ -85,6 +77,7 @@ impl NodeClient {
             api: Api::all(client),
             poll_interval: config.watch_poll_interval,
             cluster_url,
+            validate_identity: config.validate_node_uuid,
         })
     }
 
@@ -94,7 +87,7 @@ impl NodeClient {
 
     pub async fn get_node(&self, name: &str) -> Result<Node, K8sClientError> {
         let node = self.api.get(name).await.map_err(map_kube_error)?;
-        if std::env::var(ENV_VALIDATE_NODE_UUID).is_ok() {
+        if self.validate_identity {
             verify_node_identity(&node, name, Path::new(PRODUCT_UUID_PATH))?;
         }
         Ok(node)
@@ -167,7 +160,7 @@ impl NodeClient {
         // as stale/wrong as one returned by a direct get, and must be routed
         // into the same NodeGone handling rather than silently reconciling
         // against the wrong node.
-        let validate_identity = std::env::var(ENV_VALIDATE_NODE_UUID).is_ok();
+        let validate_identity = self.validate_identity;
 
         watcher::watcher(self.api.clone(), watcher_config)
             .default_backoff()
