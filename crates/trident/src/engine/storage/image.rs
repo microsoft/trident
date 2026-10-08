@@ -125,13 +125,13 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
             // it to the partition declared for it in the Host Configuration.
             match (
                 image_file_verity.signature_image_file.as_ref(),
-                verity_device.signature_device_id.as_ref(),
+                verity_device.hash_signature_device_id.as_ref(),
             ) {
-                (Some(signature_image_file), Some(signature_device_id)) => {
+                (Some(signature_image_file), Some(hash_signature_device_id)) => {
                     combined_images.insert(
                         signature_image_file.path.clone(),
                         (
-                            signature_device_id.clone(),
+                            hash_signature_device_id.clone(),
                             metric_label,
                             signature_image_file,
                             FileSystemResize::NoResize,
@@ -145,7 +145,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
                     )))
                     .message(format!(
                         "Verity device '{id}' has a signature in the OS image but no \
-                        signature_device_id in the Host Configuration"
+                        hash_signature_device_id in the Host Configuration"
                     ));
                 }
                 (None, Some(_)) => {
@@ -154,7 +154,7 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
                         the OS image has no corresponding signature",
                     )))
                     .message(format!(
-                        "Verity device '{id}' has a signature_device_id in the Host \
+                        "Verity device '{id}' has a hash_signature_device_id in the Host \
                         Configuration but no signature in the OS image"
                     ));
                 }

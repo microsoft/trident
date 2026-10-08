@@ -31,7 +31,6 @@ pub enum SpecialReferenceKind {
     VerityHashDevice,
 
     /// A reference to a Verity device's root hash signature device.
-    #[allow(dead_code)]
     VerityHashSignatureDevice,
 }
 
