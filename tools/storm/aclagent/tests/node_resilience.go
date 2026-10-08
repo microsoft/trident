@@ -12,6 +12,8 @@ import (
 	stormssh "tridenttools/storm/utils/ssh"
 	stormvm "tridenttools/storm/utils/vm"
 	stormvmconfig "tridenttools/storm/utils/vm/config"
+
+	"github.com/sirupsen/logrus"
 )
 
 // aclAgentService is the systemd unit trident-acl-agent runs as, factored
@@ -49,6 +51,13 @@ const aclAgentService = "trident-acl-agent.service"
 //     watch loop (is_node_gone_error on a raw stream error) exists purely
 //     as defense in depth for an error shape the real API server's
 //     documented semantics don't actually produce.
+//
+// Phase 3 below additionally proves NodeClient::get_node's systemUUID
+// verification (also in k8s.rs): a Node object that GETs successfully but
+// whose status.nodeInfo.systemUUID doesn't match this VM's own
+// /sys/class/dmi/id/product_uuid must be logged and then treated exactly
+// like NodeGone (not acted on, not crashed on) by the very same startup
+// Node read phase 1 exercises.
 func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	vmIP, err := stormvm.GetVmIP(vmConfig)
 	if err != nil {
@@ -104,6 +113,7 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 
 	const nodeGoneLogSubstring = "no longer exists; waiting for it to reappear"
 	const nodeReappearedLogSubstring = "reappeared after"
+	const nodeUUIDMismatchLogSubstring = "does not match local product uuid"
 
 	// --- Phase 1: NodeGone from the startup Node read ---
 	//
@@ -235,7 +245,7 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	nodeStore.PatchAnnotations(map[string]string{stormproxies.UpdateRequestAnnotation: ""})
 	nodeStore.RestoreNode()
 
-	if _, err := waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeReappearedLogSubstring, reappearedCount, 60*time.Second, journalSince); err != nil {
+	if reappearedCount, err = waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeReappearedLogSubstring, reappearedCount, 60*time.Second, journalSince); err != nil {
 		return fmt.Errorf("phase 2: agent did not log resuming after the Node reappeared: %w", err)
 	}
 	if err := assertServiceMainPIDUnchanged(vmConfig.VMConfig, vmIP, aclAgentService, pid, 15*time.Second); err != nil {
@@ -247,6 +257,54 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	// own logs) agrees the Node is back and reachable.
 	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", true, nil); err != nil {
 		return fmt.Errorf("phase 2: post-recovery validate-connection check failed: %w", err)
+	}
+
+	// --- Phase 3: NodeGone from a systemUUID mismatch on the startup Node read ---
+	//
+	// Unlike phases 1-2 (the Node is literally absent, a 404), here the GET
+	// itself succeeds - the Node object comes back, but its
+	// status.nodeInfo.systemUUID doesn't match this VM's own
+	// /sys/class/dmi/id/product_uuid (see NodeClient::get_node and
+	// verify_node_identity in crates/trident-acl-agent/src/annotations/
+	// k8s.rs). This proves that mismatch is (a) logged distinctly from a
+	// plain 404, and (b) still funneled into the exact same NodeGone /
+	// await_node_recreation path as phases 1-2, rather than being acted on
+	// or crashing the agent. Reuses phase 1's restart-based trigger since
+	// the mismatch can only be observed on an explicit GET
+	// (get_node_with_retry at startup), not on the long-lived watch.
+	nodeStore.SetSystemUUID("00000000-0000-0000-0000-000000000000")
+	if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo systemctl restart %s", aclAgentService)); err != nil {
+		return fmt.Errorf("phase 3: failed to restart %s: %w", aclAgentService, err)
+	}
+
+	mismatchCount, err := waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeUUIDMismatchLogSubstring, 0, 30*time.Second, journalSince)
+	if err != nil {
+		return fmt.Errorf("phase 3: agent did not log the systemUUID mismatch: %w", err)
+	}
+	logrus.Infof("phase 3: observed %d systemUUID mismatch log line(s)", mismatchCount)
+	if nodeGoneCount, err = waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeGoneLogSubstring, nodeGoneCount, 30*time.Second, journalSince); err != nil {
+		return fmt.Errorf("phase 3: agent did not treat the systemUUID mismatch as the node-gone resilience path: %w", err)
+	}
+
+	pid, err = readServiceMainPID(vmConfig.VMConfig, vmIP, aclAgentService)
+	if err != nil {
+		return fmt.Errorf("phase 3: failed to read MainPID while the Node's systemUUID is mismatched: %w", err)
+	}
+	if err := assertServiceMainPIDUnchanged(vmConfig.VMConfig, vmIP, aclAgentService, pid, 20*time.Second); err != nil {
+		return fmt.Errorf("phase 3: %s did not survive the systemUUID mismatch: %w", aclAgentService, err)
+	}
+
+	// Restore the real systemUUID and confirm the agent notices and
+	// resumes, exactly as phase 1 does after RestoreNode.
+	nodeStore.SetSystemUUID(productUUID)
+	if reappearedCount, err = waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeReappearedLogSubstring, reappearedCount, 60*time.Second, journalSince); err != nil {
+		return fmt.Errorf("phase 3: agent did not log resuming after the systemUUID started matching again: %w", err)
+	}
+	if err := assertServiceMainPIDUnchanged(vmConfig.VMConfig, vmIP, aclAgentService, pid, 15*time.Second); err != nil {
+		return fmt.Errorf("phase 3: %s did not remain stable after the systemUUID started matching again: %w", aclAgentService, err)
+	}
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", true, nil); err != nil {
+		return fmt.Errorf("phase 3: post-recovery validate-connection check failed: %w", err)
 	}
 
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
