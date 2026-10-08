@@ -113,9 +113,12 @@ reference writer.
 - A writer mode that copies an existing COSI's region images verbatim while
   replacing its extension set. Without it, bundled extensions still work, but
   every extension change is an A/B update.
-- A surface for requesting a servicing type. None exists today;
-  `forceAbUpdate` is the nearest precedent. This is a prerequisite, not an
-  optional refinement, because the path is never inferred.
+- A surface for requesting a servicing type: a `trident update` flag, an
+  internal parameter alongside `forceAbUpdate`, or a Host Configuration field.
+  None exists today. This is a prerequisite rather than an optional refinement,
+  because the path is never inferred, and it must define precedence against
+  `forceAbUpdate` and whether the request persists across separate stage and
+  finalize invocations.
 
 Three defects in the existing extensions subsystem must be fixed first. All are
 reachable today with Host Configuration extensions; bundling makes the first two
@@ -437,7 +440,11 @@ There are three consumers:
 `derive_host_configuration`, used by
 [disk streaming](../../Explanation/Disk-Streaming.md), does not need to
 synthesise extension entries; the effective set is computed from the COSI
-directly.
+directly. Streaming is not complete on its own, however: `osconfig` returns
+early when `is_stream_image` is set, so the merge units are never enabled and
+the extensions would be placed but not merged. Either streaming must enable the
+units specifically, or a streamed image must ship with them enabled and the
+proposal must say so.
 
 #### Deployed Extension Inventory
 
@@ -454,6 +461,13 @@ kind, extension ID, name, resolved destination, source, and the hash under that
 source's semantics. The subsystem populates `extensions_old` from the inventory
 rather than from `ctx.spec_old` alone.
 
+Both the inventory and the image summary follow the discipline already applied
+to `spec` and `spec_old`: a staged operation records a pending record while the
+deployed one is retained, finalize promotes it, rollback discards it, and
+`update` resetting a previously staged operation reverts to the deployed one.
+Without that, finalize cannot reconstruct the target set, since it runs with
+`image: None`, and rollback cannot reconstruct the previous one.
+
 #### Destination Validation
 
 `validate_extension_images_locations` rejects extension destinations that are
@@ -463,17 +477,30 @@ bundled destinations.
 
 The equivalent check for the effective set must run after the COSI is loaded, as
 dynamic validation against the storage graph. It must reject a destination that
-is shared when A/B is configured, and should additionally reject a destination
-that is read-only or verity-protected — a case the existing check does not
-cover for Host Configuration entries either.
+is shared when A/B is configured.
+
+It must validate the filesystem that actually backs the destination for the
+servicing type in question, not the image's nominal layout. Under root-verity
+the engine mounts a writable `/etc` overlay during provision, backed by
+`/var/lib/trident-overlay`, which is expected to be on an A/B volume, so
+`/etc/extensions/` is writable and rolls back with the slot on Clean Install and
+A/B Update. Rejecting verity-backed destinations outright would reject that
+supported case. The same destination has no such backing on a Runtime Update and
+must be rejected there.
 
 #### Where Images Are Written
 
 - **Clean Install and A/B Update.** `provision()` runs with the target root
-  mounted at `mount_path`. Extensions are staged under
-  `{mount_path}/var/lib/extensions/.staging` and moved to their destination
-  inside the target root, as today. For A/B the destination is on the inactive
-  slot, so the running system is untouched until reboot.
+  mounted at `mount_path`. Extensions are staged and then moved to their
+  destination inside the target root. For A/B the destination is on the
+  inactive slot, so the running system is untouched until reboot.
+
+  Staging currently uses a fixed `/var/lib/extensions/.staging`, with a
+  non-atomic copy as fallback when the rename crosses a filesystem boundary.
+  That assumes `/var` is writable and makes placement non-atomic for
+  destinations such as `/etc/extensions/` or `/usr/lib/confexts/`. Staging
+  should instead use a temporary file on the destination's own filesystem, so
+  the rename is always atomic and no unrelated volume is required.
 - **Runtime Update.** `provision()` is not called, so partitions are never
   touched. Extensions are staged and placed in the running root. See
   [Extension-Only Updates](#extension-only-updates).
@@ -541,18 +568,24 @@ existing hosts and the escape hatch if the summary's definition changes.
 
 Comparing the summary against the new COSI's metadata gives three outcomes:
 
-| Summary  | Extension set | Result                                             |
-| -------- | ------------- | -------------------------------------------------- |
-| Equal    | Equal         | No-op.                                             |
-| Equal    | Differs       | Extension-only change; a Runtime Update suffices.  |
-| Differs  | Any           | A/B update.                                        |
+| Summary | Extension set | Image requires                          |
+| ------- | ------------- | --------------------------------------- |
+| Equal   | Equal         | Nothing.                                |
+| Equal   | Differs       | A Runtime Update.                       |
+| Differs | Any           | An A/B update.                          |
+
+This replaces `ab_update_required()`'s contribution only. It is the image's
+requirement, not the outcome: `select_servicing_type` still takes the maximum
+across subsystems, so a concurrent change to users, modules or the kernel
+command line can independently require an A/B update. An extension-only Runtime
+Update additionally requires that no other subsystem asks for more; where one
+does, the request is refused rather than silently widened.
 
 The no-op case is new. `os.image.sha384` changes whenever any part of the
 metadata changes, including `id` and the ordering of `osPackages`, so a
 materially identical image currently forces an A/B update.
 
-This modifies `ab_update_required()`, which governs a core decision. The
-fallback above confines the change to hosts that have a recorded summary, so
+The fallback above confines the change to hosts that have a recorded summary, so
 behaviour for existing hosts is unaltered until they are next deployed.
 
 ##### Constructing an Extension-Only Update
@@ -590,9 +623,10 @@ An extension-only update proceeds when all of the following hold:
 2. The recorded summary equals the summary computed from the new COSI.
 3. The recorded image is the deployed one: servicing completed, no A/B update
    pending, and the active volume matches the Host Status.
+4. No other subsystem requires an A/B update.
 
-If a Runtime Update is requested and condition 2 or 3 does not hold, Trident
-fails with a structured error naming what differs. It must not promote the
+If a Runtime Update is requested and any of conditions 2 to 4 does not hold,
+Trident fails with a structured error naming what differs. It must not promote the
 operation to an A/B update, and must not apply the extension change while
 leaving other changes unapplied. Refusal is the only acceptable failure.
 
@@ -757,9 +791,14 @@ is now an error rather than a duplicate.
 - **Schema.** Add `cosi-metadata-v1.3.schema.json` and samples under
   `tests/cosi/metadata_samples/v1.3/{valid,invalid}/`. The existing
   schema-validation workflow picks up a new revision given the schema file and a
-  matching samples directory. Invalid samples should cover `image.path` outside
-  `images/`, a non-absolute destination, a destination not ending in `.raw`, a
-  destination in a disallowed directory, and a duplicated destination path.
+  matching samples directory. Invalid samples cover what the schema can express:
+  `image.path` outside `images/`, a non-absolute destination, and a destination
+  not ending in `.raw`.
+
+  The permitted-directory allow-list is Trident policy rather than a property of
+  the format — systemd searches directories Trident does not accept — so it is
+  deliberately absent from the schema, and the kind-specific directory and
+  duplicate-destination rules are covered by Rust validation tests instead.
 - **Unit.** Metadata parse and validation for each new error variant; effective
   set computation, including collisions and the source discriminator;
   default-path resolution for an entry with no `path`; replacement of an
@@ -884,11 +923,6 @@ at the cost of cadence. The `extension-release` fields, `ID=_any` against
 
 ## Open Questions
 
-- **What surface requests an extension-only Runtime Update?** A `trident update`
-  flag, an internal parameter alongside `forceAbUpdate`, or a Host Configuration
-  field. The request must be explicit; the surface is undecided. It must also
-  define precedence against `forceAbUpdate` and whether the request persists
-  across separate stage and finalize invocations.
 - **What does the deployed image summary cover?** The proposal includes the
   region and filesystem image hashes and identities, `disk` geometry,
   `bootloader`, `osArch` and `osRelease`, and excludes `extensions`,
@@ -903,10 +937,9 @@ at the cost of cadence. The `extension-release` fields, `ID=_any` against
   status transition that records an accepted image without creating a
   rollbackable operation. That is a behavioural change independent of
   extensions and may deserve its own RFC.
-- **Is retaining the superseded image in the staging directory sufficient for
-  runtime rollback,** or should the extension subsystem keep a durable
-  per-extension backup outside the staging directory? The former is simpler; the
-  latter survives a staging-directory cleanup.
+- **Where does the retained superseded image live** for runtime rollback? The
+  staging directory is simplest; a separately validated persistent location
+  survives a staging cleanup and does not assume `/var` is writable.
 - **Should an override escape hatch exist?** This RFC makes a collision between
   the Host Configuration and the COSI an error. The alternative is an explicit
   opt-in on the Host Configuration side meaning "the image ships this, use mine
