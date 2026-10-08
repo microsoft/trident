@@ -145,7 +145,7 @@ pub(crate) enum Command {
         field: Option<String>,
     },
     /// Remove generated artifacts and build stamps (sudo-free via the janitor).
-    Clean(ImagesArgs),
+    Clean(CleanArgs),
     /// Resolve digests/hashes without building.
     Resolve(ImagesArgs),
     /// Freeze `tailor.lock`: pin any new inputs, keeping already-locked digests unchanged.
@@ -261,6 +261,26 @@ pub(crate) struct ImagesArgs {
     pub(crate) select: SelectArgs,
 }
 
+/// Args for `tailor clean`. Mirrors the build directory overrides so cleanup can target the scratch
+/// a build left under `--output-dir`/`--build-dir-base` (resolved with the same precedence as build).
+#[derive(Debug, Args)]
+pub(crate) struct CleanArgs {
+    /// Image names to clean (default: all in the workspace).
+    pub(crate) images: Vec<String>,
+
+    #[command(flatten)]
+    pub(crate) select: SelectArgs,
+
+    /// Where the build wrote artifacts (default: `<workspace>/artifacts`). Must match the build.
+    #[arg(long)]
+    pub(crate) output_dir: Option<PathBuf>,
+
+    /// The `runtime.buildDirBase` override the build used, so clean removes the per-cell build
+    /// scratch from the same location.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) build_dir_base: Option<PathBuf>,
+}
+
 /// Args for `tailor export`. With an `export:` block in `tailor.yaml`, all fields are optional, so
 /// `tailor export` and `tailor export --check` run with no arguments (ideal for a pre-commit/CI gate).
 #[derive(Debug, Args)]
@@ -351,9 +371,11 @@ pub(crate) struct BuildArgs {
     #[arg(long)]
     pub(crate) output_dir: Option<PathBuf>,
 
-    /// Override `runtime.buildDirBase`: place each cell's build scratch under this directory (which
-    /// must not be `/` or on the same filesystem as `/`). Lets CI point scratch at a pool-specific
-    /// filesystem without editing the committed `tailor.yaml`.
+    /// Override `runtime.buildDirBase`: place each cell's build scratch under this directory. Lets CI
+    /// point scratch at a pool-specific filesystem without editing the committed `tailor.yaml`. Must
+    /// be a dedicated directory outside the workspace (or under the output dir), must not contain the
+    /// workspace or output (cleanup removes `<base>/<cell-slug>`), and should not be nested inside
+    /// another concurrent build's base.
     #[arg(long, value_name = "PATH")]
     pub(crate) build_dir_base: Option<PathBuf>,
 

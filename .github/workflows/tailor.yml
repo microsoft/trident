@@ -241,9 +241,13 @@ jobs:
           fi
           echo "ok: iso embeds appliance_net_amd64_cosi.cosi (resolved offline)"
 
-      - name: Build the images (real Image Customizer run)
+      - name: Build the images (real Image Customizer run, custom scratch base)
         working-directory: tools/tailor/e2e
-        run: '"$TAILOR_BIN" build'
+        env:
+          # A dedicated scratch base OUTSIDE the workspace: exercises the host-bound per-cell
+          # `--build-dir-base` path and the base-isolation guard (reaped and asserted below).
+          SCRATCH: ${{ runner.temp }}/tailor-scratch
+        run: '"$TAILOR_BIN" build --build-dir-base "$SCRATCH"'
 
       - name: Assert the artifacts were produced and owned by the runner (janitor worked)
         working-directory: tools/tailor/e2e
@@ -281,6 +285,31 @@ jobs:
           zstd -t "$zst"
           echo "ok: $zst ($(stat -c '%s' "$zst") bytes, owner $owner, zstd frame verified)"
 
+      - name: Assert the per-cell build scratch was reaped (nothing left, nothing root-owned)
+        working-directory: tools/tailor/e2e
+        env:
+          SCRATCH: ${{ runner.temp }}/tailor-scratch
+        run: |
+          set -euxo pipefail
+          # tailor reaps `<build-dir-base>/<slug>` after each cell. The base and its `.tailor-lock`
+          # coordination subdir may remain, but no per-cell scratch should survive the build, and
+          # nothing under the base may be root-owned (the sudo-free janitor removed IC's scratch).
+          if [ -d "$SCRATCH" ]; then
+            leftover=$(find "$SCRATCH" -mindepth 1 -maxdepth 1 ! -name '.tailor-lock')
+            if [ -n "$leftover" ]; then
+              echo "per-cell build scratch was not reaped:" >&2
+              ls -laR "$SCRATCH" >&2
+              exit 1
+            fi
+            root_owned=$(find "$SCRATCH" ! -user "$(id -un)" 2>/dev/null)
+            if [ -n "$root_owned" ]; then
+              echo "root-owned leftovers survive under the scratch base:" >&2
+              echo "$root_owned" >&2
+              exit 1
+            fi
+          fi
+          echo "ok: per-cell build scratch reaped under $SCRATCH"
+
       - name: Build the inter-image base-of chain (base-os → derived)
         working-directory: tools/tailor/e2e
         run: |
@@ -310,3 +339,20 @@ jobs:
             echo "consumer $consumer is older than producer $producer — wrong build order" >&2
             exit 1
           fi
+
+      - name: Clean runs sudo-free and honors the custom scratch base
+        working-directory: tools/tailor/e2e
+        env:
+          SCRATCH: ${{ runner.temp }}/tailor-scratch
+        run: |
+          set -euxo pipefail
+          # `clean` must accept the same --build-dir-base the build used and remove the produced
+          # artifacts (the uncompressed cosi here) without needing sudo.
+          cosi="artifacts/appliance_net_amd64_cosi.cosi"
+          test -s "$cosi"
+          "$TAILOR_BIN" clean --build-dir-base "$SCRATCH"
+          if [ -e "$cosi" ]; then
+            echo "clean did not remove the artifact $cosi" >&2
+            exit 1
+          fi
+          echo "ok: clean removed the artifacts (custom scratch base honored)"
