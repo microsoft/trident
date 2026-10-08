@@ -57,10 +57,9 @@ const aclAgentService = "trident-acl-agent.service"
 // whose status.nodeInfo.systemUUID doesn't match this VM's own
 // /sys/class/dmi/id/product_uuid must be logged and then treated exactly
 // like NodeGone (not acted on, not crashed on) by the very same startup
-// Node read phase 1 exercises. NodeClient::watch_node performs the
-// identical check on each Node delivered by the long-lived watch stream,
-// but that path is NOT exercised by this test - see the note on phase 3
-// below for why.
+// Node read phase 1 exercises. Phase 4 proves NodeClient::watch_node
+// performs the identical check on each Node delivered by the long-lived
+// watch stream, without ever restarting the agent.
 func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	vmIP, err := stormvm.GetVmIP(vmConfig)
 	if err != nil {
@@ -274,16 +273,7 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	// await_node_recreation path as phases 1-2, rather than being acted on
 	// or crashing the agent. Reuses phase 1's restart-based trigger to
 	// exercise the explicit-GET path (get_node_with_retry at startup).
-	//
-	// NodeClient::watch_node applies the identical verify_node_identity
-	// check to each Node delivered by the long-lived watch stream (see
-	// k8s.rs), so the same mismatch handling should also be reachable there
-	// without an agent restart - but that path is NOT exercised by this
-	// test: it would require this fake apiserver to deliver a MODIFIED
-	// watch event with a mismatched systemUUID while the agent is already
-	// watching, which SetSystemUUID's broadcast (see its doc comment in
-	// proxies/apiserver.go) is capable of triggering, but doing so has not
-	// been validated end-to-end here yet.
+	// Phase 4 below covers the long-lived watch stream's identical check.
 	nodeStore.SetSystemUUID("00000000-0000-0000-0000-000000000000")
 	if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo systemctl restart %s", aclAgentService)); err != nil {
 		return fmt.Errorf("phase 3: failed to restart %s: %w", aclAgentService, err)
@@ -317,6 +307,45 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	}
 	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", true, nil); err != nil {
 		return fmt.Errorf("phase 3: post-recovery validate-connection check failed: %w", err)
+	}
+
+	// --- Phase 4: NodeGone from a systemUUID mismatch delivered via the watch stream, no restart ---
+	//
+	// Same underlying check as phase 3 (verify_node_identity), but this
+	// time triggered purely through the already-open watch connection
+	// (NodeClient::watch_node in k8s.rs), with no agent restart at all -
+	// mirroring how phase 2 proves the PATCH-triggered NodeGone path
+	// without a restart. SetSystemUUID broadcasts a MODIFIED event to
+	// every active watcher (see its doc comment in proxies/apiserver.go),
+	// which the agent's long-lived watch picks up directly; reusing phase
+	// 3's pid baseline (captured after its one restart, used unchanged
+	// since) means a stable PID here proves this mismatch was caught by
+	// the existing watch loop, not by some other restart this test isn't
+	// aware of.
+	nodeStore.SetSystemUUID("11111111-1111-1111-1111-111111111111")
+
+	if mismatchCount, err = waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeUUIDMismatchLogSubstring, mismatchCount, 30*time.Second, journalSince); err != nil {
+		return fmt.Errorf("phase 4: agent did not log the systemUUID mismatch delivered via the watch stream: %w", err)
+	}
+	logrus.Infof("phase 4: observed %d systemUUID mismatch log line(s)", mismatchCount)
+	if nodeGoneCount, err = waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeGoneLogSubstring, nodeGoneCount, 30*time.Second, journalSince); err != nil {
+		return fmt.Errorf("phase 4: agent did not treat the watch-delivered systemUUID mismatch as the node-gone resilience path: %w", err)
+	}
+	if err := assertServiceMainPIDUnchanged(vmConfig.VMConfig, vmIP, aclAgentService, pid, 20*time.Second); err != nil {
+		return fmt.Errorf("phase 4: %s did not survive the watch-delivered systemUUID mismatch without a restart: %w", aclAgentService, err)
+	}
+
+	// Restore the real systemUUID; the watch stream should deliver the fix
+	// the same way it delivered the mismatch, with no restart either.
+	nodeStore.SetSystemUUID(productUUID)
+	if reappearedCount, err = waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeReappearedLogSubstring, reappearedCount, 60*time.Second, journalSince); err != nil {
+		return fmt.Errorf("phase 4: agent did not log resuming after the watch-delivered systemUUID started matching again: %w", err)
+	}
+	if err := assertServiceMainPIDUnchanged(vmConfig.VMConfig, vmIP, aclAgentService, pid, 15*time.Second); err != nil {
+		return fmt.Errorf("phase 4: %s did not remain stable after the systemUUID started matching again: %w", aclAgentService, err)
+	}
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", true, nil); err != nil {
+		return fmt.Errorf("phase 4: post-recovery validate-connection check failed: %w", err)
 	}
 
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
