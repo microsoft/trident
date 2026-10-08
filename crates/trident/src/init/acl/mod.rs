@@ -278,6 +278,7 @@ fn inner_initial_host_status(
                     name: "usr".to_string(),
                     data_device_id: "usr-data".to_string(),
                     hash_device_id: "usr-hash".to_string(),
+                    signature_device_id: None,
                     ..Default::default()
                 }],
                 ab_update: Some(AbUpdate {

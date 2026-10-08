@@ -595,6 +595,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         id: "root".into(),
                         data_device_id: "root-data".into(),
                         hash_device_id: "root-hash".into(),
+                        signature_device_id: None,
                         name: "root".into(),
                         ..Default::default()
                     }],
@@ -1069,6 +1070,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                         id: "root".into(),
                         data_device_id: "root-data".into(),
                         hash_device_id: "root-hash".into(),
+                        signature_device_id: None,
                         name: "root".into(),
                         ..Default::default()
                     }],
