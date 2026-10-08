@@ -475,10 +475,23 @@ boots from the expected root; the pending record must survive that reboot and be
 promoted at commit, and be discarded when the boot check fails and `spec_old` is
 restored.
 
+A successful `ManualRollbackRuntime` promotes its pending record on completion,
+in the same way as a Runtime Update; it transitions straight to `Provisioned`
+and never reboots.
+
 `ManualRollbackChainItem` carries only the kind, `spec`, active volume and
 install index, so a historical inventory and summary cannot be recovered from
 it. It must carry both, or a manual rollback cannot restore the bundled
 extension set — particularly a runtime rollback, where no slot reconstructs it.
+
+Metadata alone is not enough for a manual runtime rollback. The target COSI is
+not available, since the rollback context is built with `image: None`, and the
+superseded payload is retained only for the duration of the operation that
+replaced it. Either superseded bundled payloads are kept in a content-addressed
+store for as long as the rollback chain references them, with the inventory
+holding the reference, or a manual runtime rollback across a bundled extension
+change must be refused. Refusing is the safe default; restoring nothing silently
+is not acceptable.
 
 #### Destination Validation
 
@@ -951,9 +964,11 @@ at the cost of cadence. The `extension-release` fields, `ID=_any` against
   status transition that records an accepted image without creating a
   rollbackable operation. That is a behavioural change independent of
   extensions and may deserve its own RFC.
-- **Where does the retained superseded image live** for runtime rollback? The
-  staging directory is simplest; a separately validated persistent location
-  survives a staging cleanup and does not assume `/var` is writable.
+- **Where does the retained superseded image live** for runtime rollback, and
+  for how long? The staging directory is simplest but only covers the operation
+  itself; a content-addressed store bounded by the rollback chain also covers
+  manual runtime rollback, at the cost of disk. The alternative is to refuse
+  manual runtime rollback across a bundled extension change.
 - **Should an override escape hatch exist?** This RFC makes a collision between
   the Host Configuration and the COSI an error. The alternative is an explicit
   opt-in on the Host Configuration side meaning "the image ships this, use mine
