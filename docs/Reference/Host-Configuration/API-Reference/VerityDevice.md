@@ -58,3 +58,14 @@ The value must be "root" for root partition "/".
 | Default        | `"io-error"`                                          |
 | Link           | [VerityCorruptionOption](./VerityCorruptionOption.md) |
 
+### `hashSignatureDeviceId` (optional)
+
+The ID of the partition holding the dm-verity root hash signature, if any.
+
+When set, Trident reads the PKCS#7/DER root hash signature directly from this partition and uses it to open the verity device with `veritysetup open --root-hash-signature=...`, enabling kernel-enforced signature verification of the verity root hash. The certificate matching the signature must exist in the kernel keyring.
+
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
+
