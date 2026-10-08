@@ -152,10 +152,15 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		}
 	}
 
+	productUUID, err := readVmProductUUID(vmConfig.VMConfig, vmIP)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}))
+	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}, productUUID))
 	apiServer := stormproxies.NewAPIServer(testConfig.NodeName, nodeStore)
 	// Bind on HostEndpointIP (not 127.0.0.1) so the VM can reach the fake
 	// apiserver directly over the libvirt NAT network, instead of relying
