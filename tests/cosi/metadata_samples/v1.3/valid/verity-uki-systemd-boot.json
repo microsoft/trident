@@ -66,7 +66,7 @@
         }
     ],
     "disk": {
-        "size": 1073741824,
+        "size": 2147483648,
         "type": "gpt",
         "lbaSize": 512,
         "gptRegions": [
