@@ -218,9 +218,7 @@ fn verify_node_identity(
         .unwrap_or_default();
 
     if node_uuid.is_empty() {
-        warn!(
-            "Node {name:?} status.nodeInfo.systemUUID is empty, skipping identity verification"
-        );
+        warn!("Node {name:?} status.nodeInfo.systemUUID is empty, skipping identity verification");
         return Ok(());
     }
 
