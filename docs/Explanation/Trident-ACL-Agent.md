@@ -297,9 +297,9 @@ fire instead) can opt into a bound via
 
 ### Node identity verification
 
-When `TRIDENT_ACL_AGENT_VALIDATE_NODE_UUID` is set, every explicit Node GET
-(the startup/recovery read and `--validate-connection`; the long-lived
-watch stream is not covered) additionally checks that the fetched Node's
+When `TRIDENT_ACL_AGENT_VALIDATE_NODE_UUID` is set, every Node read - the
+startup/recovery GET, `--validate-connection`, and each Node delivered by
+the long-lived watch stream - additionally checks that the fetched Node's
 `status.nodeInfo.systemUUID` matches this machine's own
 `/sys/class/dmi/id/product_uuid`. kubelet populates `systemUUID` by reading
 that same file, so on a healthy, correctly-identified node the two values

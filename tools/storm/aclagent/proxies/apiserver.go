@@ -41,12 +41,14 @@ type NodeStore struct {
 
 // NewSeedNode builds the fake apiserver's initial Node object. systemUUID
 // must be the real VM's hardware product UUID
-// (/sys/class/dmi/id/product_uuid) - trident-acl-agent's NodeClient::get_node
-// (crates/trident-acl-agent/src/annotations/k8s.rs) compares a fetched
-// Node's status.nodeInfo.systemUUID against that local file and treats any
-// mismatch (including an empty systemUUID) the same as the Node not existing
-// at all, so leaving this unset here would make every get_node call against
-// the fake apiserver fail as NodeGone.
+// (/sys/class/dmi/id/product_uuid) - when TRIDENT_ACL_AGENT_VALIDATE_NODE_UUID
+// is set, trident-acl-agent's NodeClient::get_node/watch_node
+// (crates/trident-acl-agent/src/annotations/k8s.rs) compare a fetched Node's
+// status.nodeInfo.systemUUID against that local file and treat a non-empty
+// mismatch the same as the Node not existing at all (an empty systemUUID is
+// NOT treated as a mismatch; verification is skipped instead), so leaving
+// this unset here would make every get_node/watch_node call against the
+// fake apiserver fail as NodeGone once verification is enabled.
 func NewSeedNode(name string, labels map[string]string, systemUUID string) *corev1.Node {
 	seed := &corev1.Node{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Node"},
@@ -218,12 +220,13 @@ func (s *NodeStore) SetReadyCondition(ready bool) *corev1.Node {
 
 // SetSystemUUID overwrites the Node's status.nodeInfo.systemUUID. Used by
 // run-node-resilience to exercise trident-acl-agent's systemUUID
-// verification (NodeClient::get_node in
-// crates/trident-acl-agent/src/annotations/k8s.rs): setting a value that
-// doesn't match the VM's real /sys/class/dmi/id/product_uuid makes the next
-// get_node call treat the Node as not found, exactly like DeleteNode does,
-// while setting it back to the real value lets the agent "find" the Node
-// again without an actual DeleteNode/RestoreNode cycle.
+// verification (NodeClient::get_node/watch_node in
+// crates/trident-acl-agent/src/annotations/k8s.rs): when
+// TRIDENT_ACL_AGENT_VALIDATE_NODE_UUID is set, setting a non-empty value
+// that doesn't match the VM's real /sys/class/dmi/id/product_uuid makes the
+// next get_node/watch_node call treat the Node as not found, exactly like
+// DeleteNode does, while setting it back to the real value lets the agent
+// "find" the Node again without an actual DeleteNode/RestoreNode cycle.
 func (s *NodeStore) SetSystemUUID(uuid string) *corev1.Node {
 	s.mu.Lock()
 	defer s.mu.Unlock()
