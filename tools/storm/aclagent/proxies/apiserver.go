@@ -41,7 +41,7 @@ type NodeStore struct {
 
 // NewSeedNode builds the fake apiserver's initial Node object. systemUUID
 // must be the real VM's hardware product UUID
-// (/sys/class/dmi/id/product_uuid) - when TRIDENT_ACL_AGENT_VALIDATE_NODE_UUID
+// (/sys/class/dmi/id/product_uuid) - when TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID
 // is set, trident-acl-agent's NodeClient::get_node/watch_node
 // (crates/trident-acl-agent/src/annotations/k8s.rs) compare a fetched Node's
 // status.nodeInfo.systemUUID against that local file and treat a non-empty
@@ -222,7 +222,7 @@ func (s *NodeStore) SetReadyCondition(ready bool) *corev1.Node {
 // run-node-resilience to exercise trident-acl-agent's systemUUID
 // verification (NodeClient::get_node/watch_node in
 // crates/trident-acl-agent/src/annotations/k8s.rs): when
-// TRIDENT_ACL_AGENT_VALIDATE_NODE_UUID is set, setting a non-empty value
+// TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID is set, setting a non-empty value
 // that doesn't match the VM's real /sys/class/dmi/id/product_uuid makes the
 // next get_node/watch_node call treat the Node as not found, exactly like
 // DeleteNode does, while setting it back to the real value lets the agent
