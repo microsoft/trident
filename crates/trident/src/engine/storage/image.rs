@@ -120,6 +120,46 @@ pub(super) fn deploy_images(ctx: &EngineContext) -> Result<(), TridentError> {
                     FileSystemResize::NoResize,
                 ),
             );
+
+            // If the OS image carries a detached root hash signature, deploy
+            // it to the partition declared for it in the Host Configuration.
+            match (
+                image_file_verity.signature_image_file.as_ref(),
+                verity_device.signature_device_id.as_ref(),
+            ) {
+                (Some(signature_image_file), Some(signature_device_id)) => {
+                    combined_images.insert(
+                        signature_image_file.path.clone(),
+                        (
+                            signature_device_id.clone(),
+                            metric_label,
+                            signature_image_file,
+                            FileSystemResize::NoResize,
+                        ),
+                    );
+                }
+                (Some(_), None) => {
+                    return Err(TridentError::new(InternalError::Internal(
+                        "OS image has a verity root hash signature, but no signature device is \
+                        declared in the Host Configuration",
+                    )))
+                    .message(format!(
+                        "Verity device '{id}' has a signature in the OS image but no \
+                        signature_device_id in the Host Configuration"
+                    ));
+                }
+                (None, Some(_)) => {
+                    return Err(TridentError::new(InternalError::Internal(
+                        "Host Configuration declares a verity root hash signature device, but \
+                        the OS image has no corresponding signature",
+                    )))
+                    .message(format!(
+                        "Verity device '{id}' has a signature_device_id in the Host \
+                        Configuration but no signature in the OS image"
+                    ));
+                }
+                (None, None) => {}
+            }
         } else {
             // For non-verity devices, we can deploy the image directly.
 

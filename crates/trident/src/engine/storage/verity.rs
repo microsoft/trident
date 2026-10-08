@@ -113,6 +113,23 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
     // Create the internal representation of the verity device.
     let verity_dev = VerityDeviceUtils::new(update_name, data_dev, hash_dev, root_hash);
 
+    // Prefer the declarative signature partition approach, if a signature
+    // device is configured on the verity device.
+    if let Some(signature_device_id) = verity_device.signature_device_id.as_ref() {
+        return open_verity_device_with_signature_partition(
+            ctx,
+            &verity_device.id,
+            verity_dev,
+            signature_device_id,
+        )
+        .with_context(|| {
+            format!(
+                "Failed to open verity device '{}' with signature partition '{}'",
+                verity_device.id, signature_device_id
+            )
+        });
+    }
+
     // Check internal parameters for verity signatures.
     if let Some(signature_file_map) = ctx
         .spec
@@ -298,6 +315,89 @@ fn open_verity_device_with_signature(
             "Failed to open verity device '{}' with signature file '{}'",
             verity_device_id,
             temp_signature_file_path.display()
+        ))
+}
+
+/// Open a verity device using a root hash signature read directly from a
+/// dedicated signature partition.
+///
+/// This is the declarative counterpart to [`open_verity_device_with_signature`]:
+/// instead of locating a signature file inside a mounted filesystem, the
+/// signature bytes are read directly from the raw block device declared via
+/// `VerityDevice.signature_device_id`. No mount is required. The PKCS#7/DER
+/// encoding is self-delimiting, so trailing zero-padding in a partition
+/// larger than the signature blob itself is harmless.
+///
+/// The certificate matching the signature MUST exist in the kernel keyring,
+/// otherwise the operation WILL fail.
+fn open_verity_device_with_signature_partition(
+    ctx: &EngineContext,
+    verity_device_id: &BlockDeviceId,
+    verity_device: VerityDeviceUtils,
+    signature_device_id: &BlockDeviceId,
+) -> Result<(), Error> {
+    let signature_block_device_path = ctx
+        .get_block_device_path(signature_device_id)
+        .with_context(|| {
+            format!("Failed to find path for block device '{signature_device_id}'")
+        })?;
+
+    debug!(
+        "Reading root hash signature for verity device '{}' from partition '{}' [{}]",
+        verity_device_id,
+        signature_device_id,
+        signature_block_device_path.display()
+    );
+
+    let signature_bytes = fs::read(&signature_block_device_path).with_context(|| {
+        format!(
+            "Failed to read signature partition '{}' [{}]",
+            signature_device_id,
+            signature_block_device_path.display()
+        )
+    })?;
+
+    // Create a temporary file to hold a copy of the signature, since
+    // veritysetup expects a path to a file containing the signature.
+    let temp_signature_file_path = NamedTempFile::new()
+        .context("Failed to create temporary file for verity signature")?
+        .into_temp_path();
+
+    fs::write(&temp_signature_file_path, &signature_bytes).with_context(|| {
+        format!(
+            "Failed to write signature to temporary file '{}'",
+            temp_signature_file_path.display()
+        )
+    })?;
+
+    // Try to print signature info
+    match veritysetup::get_verity_signature_info(&temp_signature_file_path) {
+        Ok(signature_info) => {
+            debug!(
+                "Signature partition '{}' for verity device '{}' info:\n{}",
+                signature_device_id, verity_device_id, signature_info
+            );
+        }
+        Err(e) => {
+            warn!(
+                "Failed to get signature info from partition '{}': {e:?}",
+                signature_device_id,
+            );
+        }
+    }
+
+    debug!(
+        "Opening verity device '{}' with signature from partition '{}' [{}]",
+        verity_device_id,
+        signature_device_id,
+        temp_signature_file_path.display(),
+    );
+
+    verity_device
+        .open_with_signature(&temp_signature_file_path)
+        .context(format!(
+            "Failed to open verity device '{}' with signature from partition '{}'",
+            verity_device_id, signature_device_id
         ))
 }
 
