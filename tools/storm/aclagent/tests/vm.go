@@ -56,7 +56,7 @@ func CleanupVM(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllV
 // compares the two and treats any mismatch as the Node not existing, so an
 // unset or wrong systemUUID here would make the agent never find its Node.
 func readVmProductUUID(cfg stormvmconfig.VMConfig, vmIP string) (string, error) {
-	out, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "cat /sys/class/dmi/id/product_uuid")
+	out, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo cat /sys/class/dmi/id/product_uuid")
 	if err != nil {
 		return "", fmt.Errorf("failed to read VM product uuid: %w", err)
 	}
