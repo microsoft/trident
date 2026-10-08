@@ -144,7 +144,7 @@ impl StorageGraphNode {
                     vec![StorageReference::new_regular(&encrypted_volume.device_id)]
                 }
                 HostConfigBlockDevice::VerityDevice(verity_device) => {
-                    vec![
+                    let mut refs = vec![
                         StorageReference::new_special(
                             SpecialReferenceKind::VerityDataDevice,
                             &verity_device.data_device_id,
@@ -153,7 +153,16 @@ impl StorageGraphNode {
                             SpecialReferenceKind::VerityHashDevice,
                             &verity_device.hash_device_id,
                         ),
-                    ]
+                    ];
+
+                    if let Some(signature_device_id) = &verity_device.signature_device_id {
+                        refs.push(StorageReference::new_special(
+                            SpecialReferenceKind::VerityRootHashSignatureDevice,
+                            signature_device_id,
+                        ));
+                    }
+
+                    refs
                 }
             },
             Self::FileSystem(fs) => fs
