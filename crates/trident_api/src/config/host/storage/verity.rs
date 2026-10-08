@@ -31,13 +31,7 @@ pub struct VerityDevice {
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub hash_device_id: BlockDeviceId,
 
-    /// The ID of the partition holding the dm-verity root hash signature, if any.
-    ///
-    /// When set, Trident reads the PKCS#7/DER root hash signature directly
-    /// from this partition and uses it to open the verity device with
-    /// `veritysetup open --root-hash-signature=...`, enabling kernel-enforced
-    /// signature verification of the verity root hash. The certificate
-    /// matching the signature must exist in the kernel keyring.
+    /// The ID of the partition to use as the verity hash signature partition.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
     pub hash_signature_device_id: Option<BlockDeviceId>,
