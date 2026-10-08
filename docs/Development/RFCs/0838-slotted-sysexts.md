@@ -40,82 +40,71 @@ Non-goals: changing systemd matching semantics; ESP-based extensions.
 
 ### Today
 
-```rust
-pub struct Extension {
-    pub url: Url,
-    pub sha384: Sha384Hash,
-    pub path: Option<PathBuf>,  // absolute, allow-listed dir, *.raw
-}
+```yaml
+os:
+  sysexts:
+    - url: https://example.com/tooling.raw   # http(s) | file | oci
+      sha384: <hash>
+      path: /var/lib/extensions/tooling.raw  # optional; allow-listed dir, *.raw
 ```
 
-`path` conflates *where the file is stored* with *what scope it is active in*.
+`path` defaults to `/var/lib/extensions/`, and is restricted to
+`/etc/extensions`, `/var/lib/extensions` or `/.extra/sysext`.
+
+It conflates *where the file is stored* with *what scope it is active in*.
 Slotting separates them: storage becomes Trident-owned and derived from the
 target volume.
 
 ### Proposed
 
-```rust
-pub struct Extension {
-    pub url: Url,
-    pub sha384: Sha384Hash,
-
-    /// Absolute path in the target OS. Only valid when `scope` is `shared`.
-    pub path: Option<PathBuf>,
-
-    #[serde(default)]
-    pub scope: ExtensionScope,
-}
-
-pub enum ExtensionScope {
-    /// Stored at `path`, active on both volumes. For `ID=_any` extensions.
-    #[default]
-    Shared,
-    /// Stored per-volume in the extension store, active only on the volume it
-    /// was installed to. For OS-version-pinned extensions.
-    Slotted,
-}
-```
-
-Plus one optional field on `os`:
-
-```rust
-/// Root of the per-volume extension store. Default `/var/trident/sysexts`.
-/// Must be on storage not replaced by an A/B update, and must not be a
-/// systemd-sysext search path.
-pub extension_store: Option<PathBuf>,
-```
-
-Configurable because slotting doubles storage, and large extensions (GPU
-drivers, ML runtimes) may need a dedicated volume. Confexts use a sibling
-`confexts/` under the same root.
+Two new optional fields.
 
 ```yaml
 os:
-  extensionStore: /mnt/bigdisk/trident/sysexts   # optional
+  # Root of the per-volume extension store.
+  # Default /var/trident/sysexts. Must be on storage an A/B update does not
+  # replace, and must not be a systemd-sysext search path.
+  extensionStore: /mnt/bigdisk/trident/sysexts
+
   sysexts:
-    - url: https://example.com/tooling.raw       # unchanged, still default
+    # unchanged, and still the default
+    - url: https://example.com/tooling.raw
       sha384: <hash>
+
+    # new
     - url: https://example.com/platform.raw
       sha384: <hash>
       scope: slotted
 ```
+
+`scope`:
+
+| Value | Meaning |
+|---|---|
+| `shared` (default) | Stored at `path`, active on both volumes. For `ID=_any` extensions. Today's behaviour. |
+| `slotted` | Stored per-volume under `extensionStore`, active only on the volume it was installed to. For OS-version-pinned extensions. |
+
+`extensionStore` is configurable because slotting doubles storage, and large
+extensions (GPU drivers, ML runtimes) may need a dedicated volume. Confexts use
+a sibling `confexts/` under the same root.
 
 ### Validation
 
 | Condition | Result |
 |---|---|
 | `scope` absent | `shared`. Identical to today. |
-| `scope: shared` + `path` | Existing allow-list check. |
-| `scope: slotted` + `path` | Reject. Path is Trident-owned; accepting it would silently ignore it. |
-| `scope: slotted`, no `path` | Filename from `url` basename, as today's default. |
-| `scope: slotted`, no A/B volumes | Reject at validation, not at provision. |
+| `scope: shared` with `path` | Existing allow-list check. |
+| `scope: slotted` with `path` | Reject. The path is Trident-owned; accepting it would silently ignore it. |
+| `scope: slotted`, no `path` | Filename from the `url` basename, as today's default. |
+| `scope: slotted`, no A/B volumes configured | Reject at validation, not at provision. |
 | `extensionStore` set, no `slotted` entries | Accept, unused. |
-| `extensionStore` inside a sysext search path | Reject: both copies would be discovered. |
+| `extensionStore` inside a sysext search path | Reject: both slots' copies would be discovered. |
 
 ### Backward compatibility
 
-Both fields are `#[serde(default)]`. Existing configs parse and behave
-identically. Schema gains two optional properties.
+Both fields default, so existing Host Configurations parse and behave
+identically. The schema gains two optional properties and no field changes
+meaning.
 
 ### Alternatives rejected
 
@@ -123,9 +112,9 @@ identically. Schema gains two optional properties.
   layout, invites a literal `a`/`b`.
 - **Separate `os.slottedSysexts` list**: duplicates the type and its
   duplicate-hash/path validation.
-- **Infer from `extension-release`**: metadata is inside the image, unavailable
-  at static validation, and removes the operator's choice to slot an `_any`
-  extension deliberately.
+- **Infer from `extension-release`**: the metadata is inside the image, so it is
+  unavailable at static validation, and it removes the operator's choice to slot
+  an `_any` extension deliberately.
 
 ## Implementation
 
