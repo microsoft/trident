@@ -12,7 +12,7 @@ import (
 func newTestAPIServer(t *testing.T) (*httptest.Server, *NodeStore) {
 	t.Helper()
 	const nodeName = "test-node"
-	store := NewNodeStore(NewSeedNode(nodeName, map[string]string{}))
+	store := NewNodeStore(NewSeedNode(nodeName, map[string]string{}, "test-system-uuid"))
 	server := NewAPIServer(nodeName, store)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
