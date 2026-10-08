@@ -88,3 +88,64 @@ impl VerityDevice {
         Path::new(DEV_MAPPER_PATH).join(format!("{}_new", self.name))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base_verity_device() -> VerityDevice {
+        VerityDevice {
+            id: "verity".into(),
+            name: "root".into(),
+            data_device_id: "data".into(),
+            hash_device_id: "hash".into(),
+            hash_signature_device_id: None,
+            corruption_option: VerityCorruptionOption::default(),
+        }
+    }
+
+    #[test]
+    fn test_verity_device_serde_roundtrip_without_signature() {
+        let device = base_verity_device();
+
+        let serialized = serde_json::to_string(&device).unwrap();
+        assert!(!serialized.contains("hashSignatureDeviceId"));
+
+        let deserialized: VerityDevice = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, device);
+        assert_eq!(deserialized.hash_signature_device_id, None);
+    }
+
+    #[test]
+    fn test_verity_device_serde_roundtrip_with_signature() {
+        let mut device = base_verity_device();
+        device.hash_signature_device_id = Some("hash-signature".into());
+
+        let serialized = serde_json::to_string(&device).unwrap();
+        assert!(serialized.contains("\"hashSignatureDeviceId\":\"hash-signature\""));
+
+        let deserialized: VerityDevice = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, device);
+        assert_eq!(
+            deserialized.hash_signature_device_id,
+            Some("hash-signature".into())
+        );
+    }
+
+    #[test]
+    fn test_verity_device_deserialize_signature_from_json() {
+        let json = serde_json::json!({
+            "id": "verity",
+            "name": "root",
+            "dataDeviceId": "data",
+            "hashDeviceId": "hash",
+            "hashSignatureDeviceId": "hash-signature",
+        });
+
+        let device: VerityDevice = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            device.hash_signature_device_id,
+            Some("hash-signature".into())
+        );
+    }
+}
