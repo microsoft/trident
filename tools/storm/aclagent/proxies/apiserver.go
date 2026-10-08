@@ -216,6 +216,23 @@ func (s *NodeStore) SetReadyCondition(ready bool) *corev1.Node {
 	return s.node.DeepCopy()
 }
 
+// SetSystemUUID overwrites the Node's status.nodeInfo.systemUUID. Used by
+// run-node-resilience to exercise trident-acl-agent's systemUUID
+// verification (NodeClient::get_node in
+// crates/trident-acl-agent/src/annotations/k8s.rs): setting a value that
+// doesn't match the VM's real /sys/class/dmi/id/product_uuid makes the next
+// get_node call treat the Node as not found, exactly like DeleteNode does,
+// while setting it back to the real value lets the agent "find" the Node
+// again without an actual DeleteNode/RestoreNode cycle.
+func (s *NodeStore) SetSystemUUID(uuid string) *corev1.Node {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.node.Status.NodeInfo.SystemUUID = uuid
+	s.bumpLocked()
+	s.broadcastLocked()
+	return s.node.DeepCopy()
+}
+
 // DeleteNode simulates the Node object being deleted from the API server:
 // subsequent GET/PATCH requests for it return HTTP 404, and LIST requests
 // return an empty NodeList - used by run-node-resilience to exercise
