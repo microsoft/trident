@@ -35,7 +35,7 @@ use reqwest::StatusCode;
 use serde_json::json;
 use thiserror::Error;
 
-use osutils::files::read_file_trim;
+use osutils::{dmi::PRODUCT_UUID_PATH, files::read_file_trim};
 
 use crate::core::config::KubernetesConfig;
 
@@ -45,17 +45,9 @@ use crate::core::config::KubernetesConfig;
 /// reconnect churn on an otherwise-healthy watch.
 const WATCH_TIMEOUT_SECS: u32 = 290;
 
-/// Path to the hardware product UUID exposed by the kernel. kubelet
-/// populates a Node's `status.nodeInfo.systemUUID` from this same file, so
-/// on a healthy, correctly-identified node the two values always match.
-/// A mismatch means the Node object fetched from the API server does not
-/// actually describe the machine this agent is running on (e.g. a stale or
-/// recycled Node name), so it must be treated the same as the Node not
-/// existing at all.
-const PRODUCT_UUID_PATH: &str = "/sys/class/dmi/id/product_uuid";
-
 /// Environment variable that enables [`verify_node_identity`]'s
-/// `systemUUID`-vs-local-hardware check in [`NodeClient::get_node`]. Value is
+/// `systemUUID`-vs-local-hardware check in [`NodeClient::get_node`] and
+/// [`NodeClient::watch_node`]. Value is
 /// not important - only presence is checked, matching
 /// `osutils::container::DOCKER_ENVIRONMENT`'s convention. Unset by default:
 /// the check's assumptions (kubelet's `systemUUID` always traces back to this
@@ -170,10 +162,26 @@ impl NodeClient {
             .fields(&format!("metadata.name={name}"))
             .timeout(timeout_secs);
 
+        // Applied per watch event below, mirroring get_node: a Node emitted
+        // by the watch whose systemUUID doesn't match this machine is just
+        // as stale/wrong as one returned by a direct get, and must be routed
+        // into the same NodeGone handling rather than silently reconciling
+        // against the wrong node.
+        let validate_identity = std::env::var(ENV_VALIDATE_NODE_UUID).is_ok();
+
         watcher::watcher(self.api.clone(), watcher_config)
             .default_backoff()
             .touched_objects()
             .map_err(map_watch_error)
+            .and_then(move |node| {
+                let name = name.clone();
+                async move {
+                    if validate_identity {
+                        verify_node_identity(&node, &name, Path::new(PRODUCT_UUID_PATH))?;
+                    }
+                    Ok(node)
+                }
+            })
             .boxed()
     }
 }
