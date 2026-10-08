@@ -15,7 +15,7 @@
 //! after a dropped or failed watch; that is governed entirely by
 //! `kube::runtime::watcher`'s built-in `default_backoff()`.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, path::Path, time::Duration};
 
 use anyhow::{Context, Error};
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
@@ -30,9 +30,12 @@ use kube::{
     },
     Api, Client, Config, Error as KubeError,
 };
+use log::warn;
 use reqwest::StatusCode;
 use serde_json::json;
 use thiserror::Error;
+
+use osutils::files::read_file_trim;
 
 use crate::core::config::KubernetesConfig;
 
@@ -41,6 +44,15 @@ use crate::core::config::KubernetesConfig;
 /// typical apiserver request-timeout defaults (~300s) while avoiding
 /// reconnect churn on an otherwise-healthy watch.
 const WATCH_TIMEOUT_SECS: u32 = 290;
+
+/// Path to the hardware product UUID exposed by the kernel. kubelet
+/// populates a Node's `status.nodeInfo.systemUUID` from this same file, so
+/// on a healthy, correctly-identified node the two values always match.
+/// A mismatch means the Node object fetched from the API server does not
+/// actually describe the machine this agent is running on (e.g. a stale or
+/// recycled Node name), so it must be treated the same as the Node not
+/// existing at all.
+const PRODUCT_UUID_PATH: &str = "/sys/class/dmi/id/product_uuid";
 
 #[derive(Debug, Error)]
 pub enum K8sClientError {
@@ -78,7 +90,9 @@ impl NodeClient {
     }
 
     pub async fn get_node(&self, name: &str) -> Result<Node, K8sClientError> {
-        self.api.get(name).await.map_err(map_kube_error)
+        let node = self.api.get(name).await.map_err(map_kube_error)?;
+        verify_node_identity(&node, name, Path::new(PRODUCT_UUID_PATH))?;
+        Ok(node)
     }
 
     pub async fn patch_node_labels(
@@ -159,6 +173,49 @@ fn is_not_found_response(resp: &ErrorResponse) -> bool {
 /// True if `err` is a Kubernetes API error wrapping a 404 (Not Found).
 fn is_not_found(err: &KubeError) -> bool {
     matches!(err, KubeError::Api(resp) if is_not_found_response(resp))
+}
+
+/// Confirms `node`'s reported `status.nodeInfo.systemUUID` matches this
+/// machine's own hardware product UUID (read from `product_uuid_path`,
+/// normally [`PRODUCT_UUID_PATH`]). A mismatch means the Node object we
+/// fetched by name does not describe this machine - e.g. the Node name was
+/// recycled onto different hardware - so it's treated identically to the
+/// Node not existing ([`K8sClientError::NodeGone`]).
+///
+/// If the local product UUID can't be read, the check is skipped (logged at
+/// warn) rather than failing closed, so a host without DMI data (e.g. some
+/// VM/container test environments) doesn't lose all Node access.
+fn verify_node_identity(
+    node: &Node,
+    name: &str,
+    product_uuid_path: &Path,
+) -> Result<(), K8sClientError> {
+    let local_uuid = match read_file_trim(&product_uuid_path) {
+        Ok(uuid) => uuid,
+        Err(err) => {
+            warn!(
+                "failed to read local product uuid from {}, skipping Node {name:?} identity verification: {err:#}",
+                product_uuid_path.display()
+            );
+            return Ok(());
+        }
+    };
+
+    let node_uuid = node
+        .status
+        .as_ref()
+        .and_then(|status| status.node_info.as_ref())
+        .map(|node_info| node_info.system_uuid.as_str())
+        .unwrap_or_default();
+
+    if !node_uuid.eq_ignore_ascii_case(&local_uuid) {
+        warn!(
+            "Node {name:?} status.nodeInfo.systemUUID {node_uuid:?} does not match local product uuid {local_uuid:?}; treating node as not found"
+        );
+        return Err(K8sClientError::NodeGone);
+    }
+
+    Ok(())
 }
 
 fn map_kube_error(err: KubeError) -> K8sClientError {
@@ -272,5 +329,73 @@ mod tests {
         let err = WatchError::WatchFailed(KubeError::Api(error_response(403)));
 
         assert!(matches!(map_watch_error(err), K8sClientError::Watch(_)));
+    }
+
+    fn node_with_system_uuid(uuid: &str) -> Node {
+        use k8s_openapi::api::core::v1::{NodeStatus, NodeSystemInfo};
+
+        Node {
+            status: Some(NodeStatus {
+                node_info: Some(NodeSystemInfo {
+                    system_uuid: uuid.to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn write_uuid_file(uuid: &str) -> tempfile::NamedTempFile {
+        use std::io::Write;
+
+        let mut file = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        writeln!(file, "{uuid}").expect("failed to write temp file");
+        file
+    }
+
+    #[test]
+    fn matching_system_uuid_is_ok() {
+        let uuid_file = write_uuid_file("1234-ABCD");
+        let node = node_with_system_uuid("1234-ABCD");
+
+        assert!(verify_node_identity(&node, "n", uuid_file.path()).is_ok());
+    }
+
+    #[test]
+    fn matching_system_uuid_is_case_insensitive() {
+        let uuid_file = write_uuid_file("1234-abcd");
+        let node = node_with_system_uuid("1234-ABCD");
+
+        assert!(verify_node_identity(&node, "n", uuid_file.path()).is_ok());
+    }
+
+    #[test]
+    fn mismatched_system_uuid_is_node_gone() {
+        let uuid_file = write_uuid_file("1234-ABCD");
+        let node = node_with_system_uuid("5678-EFGH");
+
+        assert!(matches!(
+            verify_node_identity(&node, "n", uuid_file.path()),
+            Err(K8sClientError::NodeGone)
+        ));
+    }
+
+    #[test]
+    fn missing_node_system_info_is_node_gone() {
+        let uuid_file = write_uuid_file("1234-ABCD");
+        let node = Node::default();
+
+        assert!(matches!(
+            verify_node_identity(&node, "n", uuid_file.path()),
+            Err(K8sClientError::NodeGone)
+        ));
+    }
+
+    #[test]
+    fn unreadable_local_uuid_skips_verification() {
+        let node = node_with_system_uuid("5678-EFGH");
+
+        assert!(verify_node_identity(&node, "n", Path::new("/does/not/exist")).is_ok());
     }
 }
