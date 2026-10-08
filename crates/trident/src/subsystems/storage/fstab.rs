@@ -505,7 +505,7 @@ mod tests {
                     name: "root".to_owned(),
                     data_device_id: "root-data".to_owned(),
                     hash_device_id: "root-hash".to_owned(),
-                    signature_device_id: None,
+                    hash_signature_device_id: None,
                     ..Default::default()
                 }],
                 filesystems: vec![
@@ -664,7 +664,7 @@ mod tests {
                         name: "usr".to_owned(),
                         data_device_id: "usr-data".to_owned(),
                         hash_device_id: "usr-hash".to_owned(),
-                        signature_device_id: None,
+                        hash_signature_device_id: None,
                         ..Default::default()
                     }],
                     filesystems: vec![

@@ -39,7 +39,7 @@ impl SpecialReferenceKind {
             // The verity root hash signature device should NOT pass through
             // partition attributes either, as it is entirely consumed by the
             // verity device.
-            SpecialReferenceKind::VerityRootHashSignatureDevice => false,
+            SpecialReferenceKind::VerityHashSignatureDevice => false,
         }
     }
 }

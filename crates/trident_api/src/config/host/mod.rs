@@ -798,7 +798,7 @@ mod tests {
                     id: "root".into(),
                     data_device_id: "root-data".into(),
                     hash_device_id: "root-hash".into(),
-                    signature_device_id: None,
+                    hash_signature_device_id: None,
                     name: "root".into(),
                     ..Default::default()
                 }],
@@ -932,7 +932,7 @@ mod tests {
                         name: "usr".to_string(),
                         data_device_id: "usr-data".into(),
                         hash_device_id: "usr-hash".into(),
-                        signature_device_id: None,
+                        hash_signature_device_id: None,
                         ..Default::default()
                     },
                     VerityDevice {
@@ -940,7 +940,7 @@ mod tests {
                         name: "root".to_string(),
                         data_device_id: "root-data".into(),
                         hash_device_id: "root-hash".into(),
-                        signature_device_id: None,
+                        hash_signature_device_id: None,
                         ..Default::default()
                     },
                 ],

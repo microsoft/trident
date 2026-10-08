@@ -57,7 +57,7 @@ impl Display for SpecialReferenceKind {
         match self {
             Self::VerityDataDevice => write!(f, "verity-data-device"),
             Self::VerityHashDevice => write!(f, "verity-hash-device"),
-            Self::VerityRootHashSignatureDevice => write!(f, "verity-root-hash-signature-device"),
+            Self::VerityHashSignatureDevice => write!(f, "verity-hash-signature-device"),
         }
     }
 }

@@ -155,10 +155,10 @@ impl StorageGraphNode {
                         ),
                     ];
 
-                    if let Some(signature_device_id) = &verity_device.signature_device_id {
+                    if let Some(hash_signature_device_id) = &verity_device.hash_signature_device_id {
                         refs.push(StorageReference::new_special(
-                            SpecialReferenceKind::VerityRootHashSignatureDevice,
-                            signature_device_id,
+                            SpecialReferenceKind::VerityHashSignatureDevice,
+                            hash_signature_device_id,
                         ));
                     }
 

@@ -902,7 +902,7 @@ mod verity {
             id: "verity_dev".into(),
             data_device_id: "part1".into(),
             hash_device_id: "part2".into(),
-            signature_device_id: None,
+            hash_signature_device_id: None,
             name: "verity".into(),
             ..Default::default()
         };
@@ -954,7 +954,7 @@ mod verity {
             id: "verity_dev".into(),
             data_device_id: "raid".into(),
             hash_device_id: "part3".into(),
-            signature_device_id: None,
+            hash_signature_device_id: None,
             name: "verity".into(),
             ..Default::default()
         };
@@ -995,7 +995,7 @@ mod verity {
             id: "verity_dev".into(),
             data_device_id: "part1".into(),
             hash_device_id: "part2".into(),
-            signature_device_id: None,
+            hash_signature_device_id: None,
             name: "verity".into(),
             ..Default::default()
         };
@@ -1043,7 +1043,7 @@ mod verity {
             id: "verity_dev".into(),
             data_device_id: "part1".into(),
             hash_device_id: "part2".into(),
-            signature_device_id: None,
+            hash_signature_device_id: None,
             name: "verity".into(),
             ..Default::default()
         };
@@ -1091,7 +1091,7 @@ mod verity {
             id: "verity1".into(),
             data_device_id: "part1".into(),
             hash_device_id: "part2".into(),
-            signature_device_id: None,
+            hash_signature_device_id: None,
             name: "verity".into(),
             ..Default::default()
         };
@@ -1120,7 +1120,7 @@ mod verity {
             id: "verity2".into(),
             data_device_id: "part3".into(),
             hash_device_id: "part4".into(),
-            signature_device_id: None,
+            hash_signature_device_id: None,
             name: "verity".into(),
             ..Default::default()
         };
@@ -1150,7 +1150,7 @@ mod verity {
             id: "verity".into(),
             data_device_id: "partition".into(),
             hash_device_id: "nonexistent-hash-partition".into(),
-            signature_device_id: None,
+            hash_signature_device_id: None,
             name: "verity".into(),
             ..Default::default()
         };
@@ -1195,7 +1195,7 @@ mod verity {
             id: "verity_dev".into(),
             data_device_id: "part1".into(),
             hash_device_id: "part2".into(),
-            signature_device_id: None,
+            hash_signature_device_id: None,
             name: "verity".into(),
             ..Default::default()
         };

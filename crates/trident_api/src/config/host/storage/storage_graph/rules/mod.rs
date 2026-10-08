@@ -220,7 +220,7 @@ impl SpecialReferenceKind {
 
             // The signature device does not impose any additional
             // restrictions beyond its allowed partition types.
-            Self::VerityRootHashSignatureDevice => None,
+            Self::VerityHashSignatureDevice => None,
         }
     }
 }
@@ -434,7 +434,7 @@ impl SpecialReferenceKind {
         match self {
             Self::VerityDataDevice => Some(true),
             Self::VerityHashDevice => Some(true),
-            Self::VerityRootHashSignatureDevice => Some(true),
+            Self::VerityHashSignatureDevice => Some(true),
         }
     }
 }
@@ -507,7 +507,7 @@ impl SpecialReferenceKind {
             // There is no standard discoverable partition type GUID for a
             // verity root hash signature partition, so only a generic Linux
             // partition type is allowed.
-            Self::VerityRootHashSignatureDevice => {
+            Self::VerityHashSignatureDevice => {
                 Some(AllowBlockList::Allow(vec![PartitionType::LinuxGeneric]))
             }
         }

@@ -40,7 +40,7 @@ pub struct VerityDevice {
     /// matching the signature must exist in the kernel keyring.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "schemars", schemars(schema_with = "block_device_id_schema"))]
-    pub signature_device_id: Option<BlockDeviceId>,
+    pub hash_signature_device_id: Option<BlockDeviceId>,
 
     // Specifies how a mismatch between the hash and the data partition is handled.
     #[serde(default)]

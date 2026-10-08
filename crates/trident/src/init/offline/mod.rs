@@ -226,7 +226,7 @@ fn generate_host_status(
             name: prism_verity.name.clone(),
             data_device_id,
             hash_device_id,
-            signature_device_id: None,
+            hash_signature_device_id: None,
             corruption_option: match prism_verity.corruption_option.as_deref() {
                 None => VerityCorruptionOption::default(),
                 Some("io-error") => VerityCorruptionOption::IoError,

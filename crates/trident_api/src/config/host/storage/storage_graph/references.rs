@@ -31,7 +31,7 @@ pub enum SpecialReferenceKind {
     VerityHashDevice,
 
     /// A reference to a Verity device's root hash signature device.
-    VerityRootHashSignatureDevice,
+    VerityHashSignatureDevice,
 }
 
 /// A reference to a block device in the configuration.

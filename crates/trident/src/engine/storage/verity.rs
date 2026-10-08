@@ -640,7 +640,7 @@ mod functional_test {
                     name: "root".into(),
                     data_device_id: "root-data".into(),
                     hash_device_id: "root-hash".into(),
-                    signature_device_id: None,
+                    hash_signature_device_id: None,
                     ..Default::default()
                 }],
                 filesystems: vec![
@@ -772,7 +772,7 @@ mod functional_test {
                         name: "root".into(),
                         data_device_id: "root".into(),
                         hash_device_id: "root-hash".into(),
-                        signature_device_id: None,
+                        hash_signature_device_id: None,
                         ..Default::default()
                     }],
                     ..Default::default()
