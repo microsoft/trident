@@ -86,6 +86,9 @@ COSI is built. This works in some configurations, but:
 - Changes to the Host Configuration `Extension` object.
 - Extension-only COSI files, meaning a COSI carrying extensions and no partition
   images. See [Extension-Only Updates](#extension-only-updates).
+- Bundled extensions under [disk streaming](../../Explanation/Disk-Streaming.md),
+  which cannot enable the merge units. Streaming a COSI that carries extensions
+  is refused.
 - Signing or attestation beyond the SHA-384 chain COSI already provides.
 - SELinux compatibility. That limitation is unchanged; see [SELinux](#selinux).
 - Producing the DDIs. This RFC specifies how a COSI carries an extension image,
@@ -97,7 +100,8 @@ COSI is built. This works in some configurations, but:
   `cosi-metadata-v1.3.schema.json`, and samples under
   `tests/cosi/metadata_samples/v1.3/`.
 - Trident deploys a COSI carrying a sysext and a confext on Clean Install and on
-  A/B Update, and both are merged after reboot.
+  A/B Update, and both are merged after reboot. Streaming such a COSI is
+  refused.
 - A/B rollback restores the previous extension set with no additional servicing.
 - An extension-only change between a COSI and a copy of it with a different
   extension set is applied as a Runtime Update, without rewriting partitions or
@@ -440,14 +444,13 @@ There are three consumers:
   validation hook that runs on every servicing type, otherwise
   [Extension-Only Updates](#extension-only-updates) bypass it.
 
-`derive_host_configuration`, used by
-[disk streaming](../../Explanation/Disk-Streaming.md), does not need to
-synthesise extension entries; the effective set is computed from the COSI
-directly. Streaming is not complete on its own, however: `osconfig` returns
-early when `is_stream_image` is set, so the merge units are never enabled and
-the extensions would be placed but not merged. Either streaming must enable the
-units specifically, or a streamed image must ship with them enabled and the
-proposal must say so.
+[Disk streaming](../../Explanation/Disk-Streaming.md) is excluded. The effective
+set would be computed from the COSI without `derive_host_configuration` needing
+to synthesise anything, but `osconfig` returns early when `is_stream_image` is
+set, so the merge units are never enabled and the extensions would be placed and
+never merged. Trident refuses to stream a COSI that carries extensions rather
+than producing that state. Lifting the exclusion means giving streaming a way to
+enable the two units, which is separable work.
 
 #### Deployed Extension Inventory
 
@@ -843,7 +846,8 @@ is now an error rather than a duplicate.
   without access to either COSI. Assert that a pending inventory survives the
   reboot of an A/B update and is promoted at commit, and discarded when the
   boot check fails.
-- **Negative.** The same extension in both the Host Configuration and the COSI
+- **Negative.** Streaming a COSI that carries extensions is refused; the same
+  extension in both the Host Configuration and the COSI
   produces the structured error; a bundled extension with SELinux `enforcing` is
   rejected on A/B update and on extension-only Runtime Update; a bundled
   destination on a shared volume is rejected when A/B is configured; a Runtime
@@ -1008,6 +1012,9 @@ at the cost of cadence. The `extension-release` fields, `ID=_any` against
 - **Initrd-scoped extensions.** `SYSEXT_SCOPE=initrd` is parsed by
   `ExtensionRelease` but not acted on. A bundled extension suits initrd scope,
   since the payload is available before the root filesystem is.
+- **Bundled extensions under disk streaming.** Requires a way to enable
+  `systemd-sysext.service` and `systemd-confext.service` on a streamed install,
+  which `osconfig` currently skips entirely.
 - **Reporting the extension inventory.** The
   [deployed extension inventory](#deployed-extension-inventory) is internal
   state. Surfacing it through the CLI and the gRPC API would make the set of
