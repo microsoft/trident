@@ -325,6 +325,9 @@ pub(super) struct Package {
     /// The package hash as sent by Nebraska: base64-encoded SHA-1 of the package
     /// *file*. Optional because Nebraska omits the attribute when a package has
     /// no hash.
+    ///
+    /// This is the fallback (tier 3) source for the COSI metadata SHA-384: see
+    /// [`Package::cosi_sha384_base64`].
     #[serde(default, rename = "@hash")]
     pub(super) hash: Option<String>,
 
@@ -340,6 +343,77 @@ pub(super) struct Package {
     /// when the attribute is absent.
     #[serde(default, rename = "@required")]
     pub(super) required: bool,
+
+    /// Tier 2 source for the COSI metadata SHA-384: a `labels` attribute on
+    /// the `<package>` element holding a JSON object string, e.g.
+    /// `{"cosi.metadata.sha384":"..."}`. See
+    /// [`Package::cosi_sha384_base64`].
+    #[serde(default, rename = "@labels")]
+    pub(super) labels_json: Option<String>,
+
+    /// Tier 1 source for the COSI metadata SHA-384: a `<labels>` child
+    /// element holding one or more `<label key="..." value="..."/>`
+    /// children. See [`Package::cosi_sha384_base64`].
+    #[serde(default, rename = "labels")]
+    pub(super) labels: Option<Labels>,
+}
+
+impl Package {
+    /// The label key under which the COSI metadata SHA-384 is reported, for
+    /// both the `<labels>` child element (tier 1) and the `labels` JSON
+    /// attribute (tier 2).
+    const COSI_SHA384_LABEL_KEY: &'static str = "cosi.metadata.sha384";
+
+    /// Resolves this package's base64-encoded COSI metadata SHA-384 using a
+    /// 3-tier precedence, each one a fallback for the next:
+    ///
+    /// 1. The `cosi.metadata.sha384` key in the `<labels>` child element.
+    /// 2. The `cosi.metadata.sha384` key in the `labels` JSON attribute.
+    /// 3. The legacy `@hash` attribute (Nebraska's `sha1` field, repurposed
+    ///    by our deployment to carry this same base64 SHA-384 value).
+    ///
+    /// Returns `None` only when none of the three sources is present; a
+    /// malformed `labels` JSON attribute (tier 2) is treated as absent rather
+    /// than an error, so parsing falls through to the next tier.
+    pub(super) fn cosi_sha384_base64(&self) -> Option<String> {
+        if let Some(value) = self.labels.as_ref().and_then(|labels| {
+            labels
+                .labels
+                .iter()
+                .find(|label| label.key == Self::COSI_SHA384_LABEL_KEY)
+                .map(|label| label.value.clone())
+        }) {
+            return Some(value);
+        }
+
+        if let Some(value) = self.labels_json.as_ref().and_then(|json| {
+            serde_json::from_str::<std::collections::HashMap<String, String>>(json)
+                .ok()
+                .and_then(|map| map.get(Self::COSI_SHA384_LABEL_KEY).cloned())
+        }) {
+            return Some(value);
+        }
+
+        self.hash.clone()
+    }
+}
+
+/// A `<labels>` child element of a `<package>`, holding key/value `<label>`
+/// children (tier 1 COSI metadata SHA-384 source).
+#[derive(Debug, Deserialize)]
+pub(super) struct Labels {
+    #[serde(default, rename = "label")]
+    pub(super) labels: Vec<Label>,
+}
+
+/// A single `<label key="..." value="..."/>` child of `<labels>`.
+#[derive(Debug, Deserialize)]
+pub(super) struct Label {
+    #[serde(rename = "@key")]
+    pub(super) key: String,
+
+    #[serde(rename = "@value")]
+    pub(super) value: String,
 }
 
 /// Parses a Nebraska response body.

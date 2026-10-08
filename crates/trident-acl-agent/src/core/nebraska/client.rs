@@ -101,12 +101,16 @@ pub struct PackageFile {
 /// registered with one.
 ///
 /// **Our Nebraska deployment does not follow that naming.** By internal
-/// convention, our server puts a base64-encoded **SHA-384** of the COSI
-/// image's metadata section into the `sha1` field instead of a real SHA-1 -
-/// the same value Trident itself computes and validates as `image.sha384`
-/// (see `crates/trident/src/osimage/cosi/mod.rs`). So despite the field's
-/// Omaha-inherited name, treat [`sha1`](PackageHash::sha1) as "the value our
-/// Nebraska calls `hash`", not as an actual SHA-1 digest - use
+/// convention, our server reports a base64-encoded **SHA-384** of the COSI
+/// image's metadata section (the same value Trident itself computes and
+/// validates as `image.sha384`, see `crates/trident/src/osimage/cosi/mod.rs`)
+/// in [`sha1`](PackageHash::sha1), via a 3-tier precedence (see
+/// `wire::Package::cosi_sha384_base64`): a `<labels>` child element on the
+/// package, a `labels` JSON attribute on the package, and, as a fallback for
+/// older manifests, the legacy `hash` attribute (Omaha's `sha1` field). So
+/// despite the field's Omaha-inherited name, treat
+/// [`sha1`](PackageHash::sha1) as "the value our Nebraska calls `hash`", not
+/// as an actual SHA-1 digest; use
 /// [`to_cosi_sha384`](PackageHash::to_cosi_sha384) to get the value in the
 /// form Trident's gRPC API expects, rather than forwarding this field as-is.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -822,8 +826,8 @@ impl<T: Transport> Client<T> {
             )));
         }
 
-        let hash = package.hash.as_ref().map(|sha1| PackageHash {
-            sha1: sha1.clone(),
+        let hash = package.cosi_sha384_base64().map(|sha1| PackageHash {
+            sha1,
             sha256: package.hash_sha256.clone(),
         });
 
@@ -1080,6 +1084,135 @@ mod tests {
                 let notes = &offer.extra_files[1];
                 assert_eq!(notes.name, "notes.txt");
                 assert_eq!(notes.hash, None);
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_prefers_labels_child_element_over_legacy_hash() {
+        // Tier 1 (<labels> child element) takes precedence over the tier 3
+        // fallback (the legacy `hash` attribute), even when both are present,
+        // and resolves to the correct SHA-384 once decoded.
+        //
+        // Digest generated with:
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384
+        const BASE64_DIGEST: &str =
+            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
+        const HEX_DIGEST: &str =
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
+        let client = client_with(&format!(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true">
+                <labels>
+                  <label key="cosi.metadata.sha384" value="{BASE64_DIGEST}"/>
+                </labels>
+              </package>
+            </packages></manifest></updatecheck></app></response>"#
+        ));
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(
+                    offer.primary.hash,
+                    Some(PackageHash {
+                        sha1: BASE64_DIGEST.to_string(),
+                        sha256: None,
+                    })
+                );
+                assert_eq!(
+                    offer.primary.hash.unwrap().to_cosi_sha384().unwrap(),
+                    HEX_DIGEST
+                );
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_prefers_labels_json_attribute_over_legacy_hash() {
+        // Tier 2 (labels JSON attribute) is used when no <labels> child
+        // element is present, taking precedence over the tier 3 fallback,
+        // and resolves to the correct SHA-384 once decoded (same digest as
+        // used in the tier-1 test above).
+        const BASE64_DIGEST: &str =
+            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
+        const HEX_DIGEST: &str =
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
+        let client = client_with(&format!(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true" labels="{{&quot;cosi.metadata.sha384&quot;:&quot;{BASE64_DIGEST}&quot;}}"/>
+            </packages></manifest></updatecheck></app></response>"#
+        ));
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(
+                    offer.primary.hash,
+                    Some(PackageHash {
+                        sha1: BASE64_DIGEST.to_string(),
+                        sha256: None,
+                    })
+                );
+                assert_eq!(
+                    offer.primary.hash.unwrap().to_cosi_sha384().unwrap(),
+                    HEX_DIGEST
+                );
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_falls_back_to_legacy_hash_when_no_labels_present() {
+        // Tier 3: with neither labels source present, the legacy `hash`
+        // attribute (current/historical behavior) is used unchanged, and
+        // resolves to the correct SHA-384 once decoded (same digest as used
+        // in the tier-1/tier-2 tests above).
+        const BASE64_DIGEST: &str =
+            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
+        const HEX_DIGEST: &str =
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
+        let client = client_with(&format!(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="{BASE64_DIGEST}" size="10" required="true"/>
+            </packages></manifest></updatecheck></app></response>"#
+        ));
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(
+                    offer.primary.hash,
+                    Some(PackageHash {
+                        sha1: BASE64_DIGEST.to_string(),
+                        sha256: None,
+                    })
+                );
+                assert_eq!(
+                    offer.primary.hash.unwrap().to_cosi_sha384().unwrap(),
+                    HEX_DIGEST
+                );
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_falls_back_to_legacy_hash_when_labels_json_is_malformed() {
+        // A malformed labels JSON attribute (tier 2) must not be a hard
+        // error; it falls through to the tier 3 fallback.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true" labels="not-json"/>
+            </packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(
+                    offer.primary.hash,
+                    Some(PackageHash {
+                        sha1: "LEGACY".to_string(),
+                        sha256: None,
+                    })
+                );
             }
             other => panic!("expected an offer, got {other:?}"),
         }
