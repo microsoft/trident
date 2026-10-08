@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -318,6 +319,44 @@ fn open_verity_device_with_signature(
         ))
 }
 
+/// Upper bound, in bytes, on data read from a dedicated verity root hash
+/// signature partition. A detached PKCS#7 signature (including an embedded
+/// certificate chain) is at most a few tens of KiB; this generous cap keeps
+/// memory and temporary-file usage bounded regardless of the signature
+/// partition's declared size (which, like the hash partition, MAY use
+/// `PartitionSize::Grow` and consume the remainder of the disk).
+const MAX_VERITY_SIGNATURE_PARTITION_SIZE: u64 = 1024 * 1024; // 1 MiB
+
+/// Reads up to [`MAX_VERITY_SIGNATURE_PARTITION_SIZE`] bytes from `path`,
+/// returning an error if the file/device holds more than that. This bounds
+/// memory usage when reading a signature partition whose declared size may be
+/// much larger than the actual PKCS#7 signature blob it holds (e.g. a
+/// `PartitionSize::Grow` signature partition).
+fn read_signature_partition_bytes(path: &Path) -> Result<Vec<u8>, Error> {
+    let mut file = fs::File::open(path)
+        .with_context(|| format!("Failed to open signature partition '{}'", path.display()))?;
+
+    // Read at most MAX_VERITY_SIGNATURE_PARTITION_SIZE + 1 bytes: if we get
+    // back more than the cap, the partition holds more than a plausible
+    // signature and we reject it below, rather than silently truncating it.
+    let mut bytes = Vec::new();
+    let bytes_read = file
+        .by_ref()
+        .take(MAX_VERITY_SIGNATURE_PARTITION_SIZE + 1)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("Failed to read signature partition '{}'", path.display()))?;
+
+    ensure!(
+        bytes_read as u64 <= MAX_VERITY_SIGNATURE_PARTITION_SIZE,
+        "Signature partition '{}' exceeds the maximum expected size of {} bytes for a verity \
+        root hash signature",
+        path.display(),
+        MAX_VERITY_SIGNATURE_PARTITION_SIZE
+    );
+
+    Ok(bytes)
+}
+
 /// Open a verity device using a root hash signature read directly from a
 /// dedicated signature partition.
 ///
@@ -326,7 +365,10 @@ fn open_verity_device_with_signature(
 /// signature bytes are read directly from the raw block device declared via
 /// `VerityDevice.hash_signature_device_id`. No mount is required. The PKCS#7/DER
 /// encoding is self-delimiting, so trailing zero-padding in a partition
-/// larger than the signature blob itself is harmless.
+/// larger than the signature blob itself is harmless. The read itself is
+/// bounded (see [`read_signature_partition_bytes`]) so that an oversized
+/// (e.g. `Grow`-sized) signature partition cannot be read entirely into
+/// memory.
 ///
 /// The certificate matching the signature MUST exist in the kernel keyring,
 /// otherwise the operation WILL fail.
@@ -349,13 +391,13 @@ fn open_verity_device_with_signature_partition(
         signature_block_device_path.display()
     );
 
-    let signature_bytes = fs::read(&signature_block_device_path).with_context(|| {
-        format!(
-            "Failed to read signature partition '{}' [{}]",
-            hash_signature_device_id,
-            signature_block_device_path.display()
-        )
-    })?;
+    let signature_bytes = read_signature_partition_bytes(&signature_block_device_path)
+        .with_context(|| {
+            format!(
+                "Failed to read signature partition '{hash_signature_device_id}' [{}]",
+                signature_block_device_path.display()
+            )
+        })?;
 
     // Create a temporary file to hold a copy of the signature, since
     // veritysetup expects a path to a file containing the signature.
@@ -543,7 +585,13 @@ mod tests {
     use super::*;
 
     use sysdefs::partition_types::DiscoverablePartitionType;
-    use trident_api::constants::ROOT_MOUNT_POINT_PATH;
+    use trident_api::{
+        config::{
+            Disk, FileSystem, FileSystemSource, HostConfiguration, Partition, PartitionType,
+            Storage, VerityDevice,
+        },
+        constants::ROOT_MOUNT_POINT_PATH,
+    };
 
     use crate::osimage::{
         mock::{MockImage, MockOsImage},
@@ -637,6 +685,125 @@ mod tests {
                 .to_string(),
             "Failed to get root filesystem from OS image",
             "Got unexpected error"
+        );
+    }
+
+    /// Tests [`read_signature_partition_bytes`] bounds the number of bytes
+    /// read from a signature partition.
+    #[test]
+    fn test_read_signature_partition_bytes() {
+        use std::io::Write;
+
+        // A small file within the cap is read back in full.
+        let mut small_file = NamedTempFile::new().unwrap();
+        small_file.write_all(b"a small pkcs7 signature").unwrap();
+        let bytes = read_signature_partition_bytes(small_file.path()).unwrap();
+        assert_eq!(bytes, b"a small pkcs7 signature");
+
+        // A file larger than MAX_VERITY_SIGNATURE_PARTITION_SIZE is rejected,
+        // instead of being silently read into memory in full (this is what a
+        // `PartitionSize::Grow` signature partition would look like).
+        let mut big_file = NamedTempFile::new().unwrap();
+        let oversized = vec![0u8; (MAX_VERITY_SIGNATURE_PARTITION_SIZE + 1) as usize];
+        big_file.write_all(&oversized).unwrap();
+        let err = read_signature_partition_bytes(big_file.path()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("exceeds the maximum expected size"),
+            "Got unexpected error: {err}"
+        );
+    }
+
+    /// Tests that [`setup_verity_devices`] prefers the declarative
+    /// `hash_signature_device_id` signature partition over the legacy
+    /// `veritySignaturePaths` internal parameter when both are present on the
+    /// same verity device.
+    #[test]
+    fn test_setup_verity_devices_signature_partition_takes_precedence() {
+        let mut hc = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "sdb".to_string(),
+                    device: PathBuf::from("/dev/sdb"),
+                    partitions: vec![
+                        Partition {
+                            id: "root-hash".to_string(),
+                            partition_type: PartitionType::RootVerity,
+                            size: 4096.into(),
+                            uuid: None,
+                            label: None,
+                        },
+                        Partition {
+                            id: "root-data".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: 4096.into(),
+                            uuid: None,
+                            label: None,
+                        },
+                        Partition {
+                            id: "root-hash-sig".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: 4096.into(),
+                            uuid: None,
+                            label: None,
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                verity: vec![VerityDevice {
+                    id: "root".into(),
+                    name: "root".into(),
+                    data_device_id: "root-data".into(),
+                    hash_device_id: "root-hash".into(),
+                    hash_signature_device_id: Some("root-hash-sig".into()),
+                    ..Default::default()
+                }],
+                filesystems: vec![FileSystem {
+                    device_id: Some("root".to_string()),
+                    mount_point: Some(ROOT_MOUNT_POINT_PATH.into()),
+                    source: FileSystemSource::Image,
+                    is_esp: false,
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Also configure the legacy signature-file mechanism for the same
+        // verity device, to prove it is NOT consulted while
+        // hash_signature_device_id is set.
+        hc.internal_params = serde_yaml::from_str(&format!(
+            "{}:\n  root: /mnt/some/signature/file",
+            VERITY_SIGNATURE_PATHS
+        ))
+        .unwrap();
+
+        let ctx = EngineContext::default()
+            .with_spec(hc)
+            .with_image(MockOsImage::new().with_image(MockImage::new(
+                ROOT_MOUNT_POINT_PATH,
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::Root,
+                Some("deadbeef".to_string()),
+            )))
+            .with_partition_paths(
+                [
+                    ("sdb", PathBuf::from("/dev/sdb")),
+                    ("root-hash", PathBuf::from("/dev/sdb1")),
+                    ("root-data", PathBuf::from("/dev/sdb2")),
+                    // Deliberately do NOT register "root-hash-sig": if the
+                    // declarative signature-partition path is taken (as it
+                    // should be), setup fails here with a specific error
+                    // naming that partition, before any device is opened.
+                ]
+                .into_iter(),
+            );
+
+        let err = setup_verity_devices(&ctx).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("signature partition 'root-hash-sig'"),
+            "Expected the declarative signature partition to be tried first, got: {message}"
         );
     }
 }
