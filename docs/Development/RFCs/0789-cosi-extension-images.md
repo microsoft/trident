@@ -463,10 +463,22 @@ rather than from `ctx.spec_old` alone.
 
 Both the inventory and the image summary follow the discipline already applied
 to `spec` and `spec_old`: a staged operation records a pending record while the
-deployed one is retained, finalize promotes it, rollback discards it, and
-`update` resetting a previously staged operation reverts to the deployed one.
-Without that, finalize cannot reconstruct the target set, since it runs with
-`image: None`, and rollback cannot reconstruct the previous one.
+deployed one is retained, and `update` resetting a previously staged operation
+reverts to the deployed one. Without that, finalize cannot reconstruct the
+target set, since it runs with `image: None`, and rollback cannot reconstruct
+the previous one.
+
+Promotion follows the servicing type, not the finalize step. A Runtime Update
+promotes on completion. Clean Install, A/B Update and manual A/B rollback only
+reach a `*Finalized` state before rebooting, and are committed after the host
+boots from the expected root; the pending record must survive that reboot and be
+promoted at commit, and be discarded when the boot check fails and `spec_old` is
+restored.
+
+`ManualRollbackChainItem` carries only the kind, `spec`, active volume and
+install index, so a historical inventory and summary cannot be recovered from
+it. It must carry both, or a manual rollback cannot restore the bundled
+extension set — particularly a runtime rollback, where no slot reconstructs it.
 
 #### Destination Validation
 
@@ -548,8 +560,8 @@ therefore record what it deployed.
 Trident records a summary of the deployed image's metadata in the Host Status:
 for each entry in `images[]` and `disk.gptRegions[]`, the `image.sha384`,
 `uncompressedSize` and the entry's identity (partition number, mount point,
-`fsUuid`, `partType`, verity root hash); plus `osArch`, `osRelease`, the `disk`
-geometry and `bootloader`. Excluded:
+`fsType`, `fsUuid`, `partType`, verity root hash); plus `osArch`, `osRelease`,
+the `disk` geometry and `bootloader`. Excluded:
 
 - `extensions`, which is the subject of the comparison.
 - `osPackages`, which Trident validates but never acts on.
@@ -812,7 +824,9 @@ is now an error rather than a duplicate.
   partitions are untouched and the extension set changes without a reboot.
   Separately again, finalize and rollback of an extension-only Runtime Update
   invoked as distinct processes, asserting the previous image is restored
-  without access to either COSI.
+  without access to either COSI. Assert that a pending inventory survives the
+  reboot of an A/B update and is promoted at commit, and discarded when the
+  boot check fails.
 - **Negative.** The same extension in both the Host Configuration and the COSI
   produces the structured error; a bundled extension with SELinux `enforcing` is
   rejected on A/B update and on extension-only Runtime Update; a bundled
@@ -924,8 +938,8 @@ at the cost of cadence. The `extension-release` fields, `ID=_any` against
 ## Open Questions
 
 - **What does the deployed image summary cover?** The proposal includes the
-  region and filesystem image hashes and identities, `disk` geometry,
-  `bootloader`, `osArch` and `osRelease`, and excludes `extensions`,
+  region and filesystem image hashes and identities including `fsType`, `disk`
+  geometry, `bootloader`, `osArch` and `osRelease`, and excludes `extensions`,
   `osPackages`, `compression` and `id`. Excluding too much permits a Runtime
   Update between images differing in ways Trident does not model; including too
   much rejects legitimate cases. `version` is currently excluded, on the basis
@@ -973,6 +987,7 @@ at the cost of cadence. The `extension-release` fields, `ID=_any` against
 - **Initrd-scoped extensions.** `SYSEXT_SCOPE=initrd` is parsed by
   `ExtensionRelease` but not acted on. A bundled extension suits initrd scope,
   since the payload is available before the root filesystem is.
-- **Extension inventory in Host Status.** Reporting the merged set, with IDs and
-  hashes, would make the set of running extensions answerable without inspecting
-  the filesystem.
+- **Reporting the extension inventory.** The
+  [deployed extension inventory](#deployed-extension-inventory) is internal
+  state. Surfacing it through the CLI and the gRPC API would make the set of
+  running extensions answerable without inspecting the filesystem.
