@@ -98,6 +98,26 @@
                 },
                 "type": "partition",
                 "number": 2
+            },
+            {
+                "image": {
+                    "path": "images/root-verity.rawzst",
+                    "compressedSize": 26214400,
+                    "uncompressedSize": 524288000,
+                    "sha384": "51356c53fbdd5c196395ccd389116f2e7769443cb4e945bc9b6bc3c805cf857c375df010469f8f45ef0c5b07456b023d"
+                },
+                "type": "partition",
+                "number": 3
+            },
+            {
+                "image": {
+                    "path": "images/root-verity-sig.rawzst",
+                    "compressedSize": 512,
+                    "uncompressedSize": 1024,
+                    "sha384": "9ad73493dd99156f81ace36e0974ca30ad636215e044b3db6a549aaee5ea602d093d83b787bf41ddac21fd4e95e30425"
+                },
+                "type": "partition",
+                "number": 4
             }
         ]
     },
