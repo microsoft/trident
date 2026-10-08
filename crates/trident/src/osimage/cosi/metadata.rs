@@ -32,6 +32,12 @@ pub(super) enum KnownMetadataVersion {
     ///
     /// Introduces partition metadata.
     V1_2,
+
+    /// COSI metadata specification version 1.3.
+    ///
+    /// Introduces an optional dm-verity root hash signature partition.
+    #[allow(dead_code)]
+    V1_3,
 }
 
 impl KnownMetadataVersion {
@@ -40,6 +46,7 @@ impl KnownMetadataVersion {
             Self::V1_0 => MetadataVersion { major: 1, minor: 0 },
             Self::V1_1 => MetadataVersion { major: 1, minor: 1 },
             Self::V1_2 => MetadataVersion { major: 1, minor: 2 },
+            Self::V1_3 => MetadataVersion { major: 1, minor: 3 },
         }
     }
 }
@@ -167,7 +174,11 @@ impl CosiMetadata {
             // Get a flattened iterator over the image files and their verity files
             // (if any)
             .flat_map(|fs| {
-                iter::once(&fs.file).chain(fs.verity.as_ref().map(|verity| &verity.file))
+                iter::once(&fs.file).chain(
+                    fs.verity.as_ref().into_iter().flat_map(|verity| {
+                        iter::once(&verity.file).chain(verity.signature.as_ref())
+                    }),
+                )
             })
     }
 }
@@ -266,6 +277,13 @@ pub(crate) struct VerityMetadata {
     pub file: ImageFile,
 
     pub roothash: String,
+
+    /// An optional detached PKCS#7 signature of the root hash, stored in its
+    /// own dedicated partition.
+    ///
+    /// Introduced in COSI metadata specification version 1.3.
+    #[serde(default)]
+    pub signature: Option<ImageFile>,
 }
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
@@ -479,6 +497,15 @@ mod tests {
         assert_invalid_version(r#""1.0.0""#);
         assert_invalid_version(r#""abcd.efgh""#);
         assert_invalid_version(r#""hello there""#);
+    }
+
+    #[test]
+    fn test_known_metadata_version_as_version() {
+        assert_eq!(
+            KnownMetadataVersion::V1_3.as_version(),
+            MetadataVersion { major: 1, minor: 3 }
+        );
+        assert!(KnownMetadataVersion::V1_3.as_version() > KnownMetadataVersion::V1_2.as_version());
     }
 
     fn mock_image_file() -> ImageFile {

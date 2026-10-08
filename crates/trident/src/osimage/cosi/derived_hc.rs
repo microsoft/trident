@@ -110,12 +110,29 @@ pub(super) fn derive_host_configuration_inner(
                 ),
             };
 
+            // Optionally, get the id of the signature partition, if present.
+            let hash_signature_device_id = verity_device
+                .signature
+                .as_ref()
+                .map(|signature| {
+                    partition_ids_by_file
+                        .get(signature.path.as_path())
+                        .cloned()
+                        .with_context(|| {
+                            format!(
+                                "Failed to find signature partition for verity device: {}",
+                                signature.path.display()
+                            )
+                        })
+                })
+                .transpose()?;
+
             verity.push(VerityDevice {
                 id: verity_id.clone(),
                 name: verity_name,
                 data_device_id: partition_id.clone(),
                 hash_device_id: hash_partition_id.clone(),
-                hash_signature_device_id: None,
+                hash_signature_device_id,
                 corruption_option: Default::default(),
             });
 
@@ -727,6 +744,7 @@ mod tests {
             verity: Some(VerityMetadata {
                 file: sample_image_file("images/root-hash.img.zst"),
                 roothash: "abcd1234".to_string(),
+                signature: None,
             }),
         };
 
@@ -740,6 +758,7 @@ mod tests {
             verity: Some(VerityMetadata {
                 file: sample_image_file("images/usr-hash.img.zst"),
                 roothash: "efgh5678".to_string(),
+                signature: None,
             }),
         };
 
@@ -876,6 +895,7 @@ mod tests {
             verity: Some(VerityMetadata {
                 file: sample_image_file("images/var-hash.img.zst"),
                 roothash: "badhash".to_string(),
+                signature: None,
             }),
         };
 
