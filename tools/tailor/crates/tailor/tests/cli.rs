@@ -463,6 +463,49 @@ fn explain_prints_the_merge_order_with_reasons() {
 }
 
 #[test]
+fn explain_accepts_a_cell_slug_as_a_positional() {
+    in_dir("matrix")
+        .args(["explain", "gizmo_pro_arm64_edge_raw"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("cell  gizmo_pro_arm64_edge_raw")
+                .and(predicate::str::contains("by-edition+arch/pro+arm64.yaml"))
+                .and(predicate::str::contains("cell  gizmo_pro_arm64_edge_cosi").not()),
+        );
+}
+
+#[test]
+fn explain_slug_preserves_select_and_with_config() {
+    in_dir("matrix")
+        .args([
+            "explain",
+            "gizmo_pro_arm64_edge_raw",
+            "--with-config",
+            "-s",
+            "arch=arm64",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("cell  gizmo_pro_arm64_edge_raw")
+                .and(predicate::str::contains("cell  gizmo_pro_arm64_edge_cosi").not())
+                .and(predicate::str::contains("composite-only-pkg")),
+        );
+}
+
+#[test]
+fn explain_rejects_an_unknown_positional() {
+    in_dir("matrix")
+        .args(["explain", "not-a-real-slug"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "no matching image or cell slug: `not-a-real-slug`",
+        ));
+}
+
+#[test]
 fn composite_fragment_applies_only_to_its_axis_pair() {
     // by-edition+arch/pro+arm64.yaml adds `composite-only-pkg` to the (pro, arm64) cells only.
     in_dir("matrix")
