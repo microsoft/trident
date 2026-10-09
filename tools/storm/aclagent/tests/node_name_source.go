@@ -26,15 +26,18 @@ import (
 const kubeletClientCertPath = "/var/lib/kubelet/pki/kubelet-client-current.pem"
 
 // certDerivedNodeName is the Node name this test's fake kubelet client cert
-// claims via its Subject CN (system:node:<name>), deliberately different
-// from testConfig.NodeName (the VM's real, lowercased hostname). The fake
-// apiserver (see proxies.NewAPIServer) only ever serves a single Node name -
-// whatever its own nodeName argument is - so seeding it with
-// certDerivedNodeName instead of testConfig.NodeName makes the two
-// node_name sources mutually exclusive: resolving to the wrong one always
-// 404s against this fake, there is no overlap that could make this test
-// pass vacuously.
+// claims via its Subject CN (system:node:<name>). Deliberately distinct from
+// both the VM's real hostname and explicitOverrideNodeName below, so each
+// phase's assertion is a genuine positive match on a specific value, never
+// a coincidental overlap between two phases.
 const certDerivedNodeName = "node-name-source-test-cert-node"
+
+// explicitOverrideNodeName is a third literal, distinct from both
+// certDerivedNodeName and the VM's real hostname, used only for the
+// explicit TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME override check - so that
+// check's success can only be explained by the override actually being
+// honored, never by it happening to match another phase's expected value.
+const explicitOverrideNodeName = "node-name-source-hostname-override-node"
 
 // RunNodeNameSource proves TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE
 // (microsoft/trident#839) actually switches which identity
@@ -44,6 +47,15 @@ const certDerivedNodeName = "node-name-source-test-cert-node"
 // standalone CLI invocation of the same binary, not a call into the
 // long-running trident-acl-agent.service. That keeps this test fast
 // relative to the rest of this VM-based scenario.
+//
+// The fake apiserver (see proxies.NewAPIServer) only ever serves a single
+// Node name - whatever its own nodeName argument is - so this test runs
+// three sequential phases, each with its own single-node apiserver
+// instance seeded with the one specific identity that phase expects to
+// resolve to. Every check then asserts the *exact* Node name
+// validate-connection's own success output reports fetching, not just
+// pass/fail - so a phase can only pass by actually resolving to the value
+// it claims, never by vacuously matching a different phase's answer.
 func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
 	vmIP, err := stormvm.GetVmIP(vmConfig)
 	if err != nil {
@@ -58,105 +70,120 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Only the fake apiserver is needed - no Nebraska/image-server mock,
-	// exactly like RunNodeResilience (see its own doc comment for why).
-	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(certDerivedNodeName, map[string]string{}))
-	apiServer := stormproxies.NewAPIServer(certDerivedNodeName, nodeStore)
-	_, apiServerStop, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort))
-	if err != nil {
-		return fmt.Errorf("failed to start fake apiserver: %w", err)
-	}
-	// Deferred instead of relying on ctx cancellation alone - the next test
-	// case binds the same HostEndpointIP:APIServerPort and must not race
-	// this apiserver's teardown, same reasoning as RunABUpdate/
-	// RunNodeResilience's own apiServerStop defer.
-	defer apiServerStop()
-	nodeStore.SetReadyCondition(true)
-
-	// Only need the fake kubeconfig this writes, so the agent binary's own
-	// compiled-in default kubeconfig path resolves to the fake apiserver
-	// above - trident-acl-agent.service itself is never touched by this
-	// test, since every check below is a direct one-shot CLI invocation.
+	// Delivers the fake kubeconfig pointing trident-acl-agent's compiled-in
+	// default kubeconfig path at HostEndpointIP:APIServerPort. That address
+	// stays constant across every phase below - only which single Node the
+	// fake apiserver bound there currently serves changes - so this only
+	// needs to happen once, up front. trident-acl-agent.service itself is
+	// never touched by this test, since every check is a direct one-shot
+	// CLI invocation.
 	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nil); err != nil {
 		return err
 	}
 
-	certPEM, err := generateFakeKubeletClientCertPEM(certDerivedNodeName)
-	if err != nil {
-		return fmt.Errorf("failed to generate fake kubelet client cert: %w", err)
+	// --- Phase 1: kubelet-cert source resolves to the cert's Subject CN ---
+	if err := withNodeNameSourceApiServer(ctx, testConfig, certDerivedNodeName, func() error {
+		certPEM, err := generateFakeKubeletClientCertPEM(certDerivedNodeName)
+		if err != nil {
+			return fmt.Errorf("failed to generate fake kubelet client cert: %w", err)
+		}
+		if err := uploadKubeletClientCert(vmConfig.VMConfig, vmIP, certPEM); err != nil {
+			return err
+		}
+		return expectValidateConnectionOutput(vmConfig.VMConfig, vmIP, map[string]string{
+			"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "kubelet-cert",
+		}, fmt.Sprintf("fetched Node %q", certDerivedNodeName))
+	}); err != nil {
+		return fmt.Errorf("phase kubelet-cert: %w", err)
 	}
-	if err := uploadKubeletClientCert(vmConfig.VMConfig, vmIP, certPEM); err != nil {
+
+	// --- Phase 2: hostname source (explicit and default) resolves to the
+	//     VM's own real hostname, and a missing/unreadable cert degrades
+	//     kubelet-cert source to that exact same resolution ---
+	realHostname, err := readVmHostname(vmConfig.VMConfig, vmIP)
+	if err != nil {
 		return err
 	}
-
-	// 1. kubelet-cert source resolves node_name from the cert's Subject CN,
-	//    which IS this fake apiserver's one known Node - must succeed.
-	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", true, map[string]string{
-		"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "kubelet-cert",
-	}); err != nil {
-		return fmt.Errorf("kubelet-cert source: %w", err)
-	}
-
-	// 2. hostname source (explicit, and separately the compiled-in default
-	//    below) resolves to the VM's real hostname, which this fake
-	//    apiserver does NOT serve - must fail. Proves the two sources are
-	//    genuinely different code paths, not just hostname silently used
-	//    both times.
-	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", false, map[string]string{
-		"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "hostname",
-	}); err != nil {
-		return fmt.Errorf("hostname source: %w", err)
-	}
-	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", false, nil); err != nil {
-		return fmt.Errorf("default (unset NODE_NAME_SOURCE) source: %w", err)
-	}
-
-	// 3. An explicit TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME must still win
-	//    outright regardless of NODE_NAME_SOURCE - proves override
-	//    precedence over source selection.
-	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", true, map[string]string{
-		"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME":        certDerivedNodeName,
-		"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "hostname",
-	}); err != nil {
-		return fmt.Errorf("explicit node_name override: %w", err)
-	}
-
-	// 4. An unreadable/missing cert must make kubelet-cert source degrade
-	//    to the hostname behavior (logging a warning), not error out
-	//    outright - confirmed two ways: the CLI invocation fails with
-	//    exactly the same (hostname-not-served) shape as case 2 above, and
-	//    the fallback warning is actually logged (trident-acl-agent's
-	//    default --verbosity is Debug, so a Warn-level log is never
-	//    filtered out here).
-	if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo mv %s %s.bak", kubeletClientCertPath, kubeletClientCertPath)); err != nil {
-		return fmt.Errorf("failed to hide kubelet client cert: %w", err)
-	}
-	// Deferred (not a plain call at the end) so the cert is restored
-	// regardless of which return path below is taken, leaving the VM in
-	// the same state this test case found it in for anyone re-running
-	// just this test case in isolation.
-	defer func() {
-		if err := restoreKubeletClientCert(vmConfig.VMConfig, vmIP); err != nil {
-			fmt.Fprintf(os.Stderr, "run-node-name-source: %v\n", err)
+	if err := withNodeNameSourceApiServer(ctx, testConfig, realHostname, func() error {
+		if err := expectValidateConnectionOutput(vmConfig.VMConfig, vmIP, map[string]string{
+			"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "hostname",
+		}, fmt.Sprintf("fetched Node %q", realHostname)); err != nil {
+			return fmt.Errorf("explicit hostname source: %w", err)
 		}
-	}()
+		if err := expectValidateConnectionOutput(vmConfig.VMConfig, vmIP, nil,
+			fmt.Sprintf("fetched Node %q", realHostname)); err != nil {
+			return fmt.Errorf("default (unset NODE_NAME_SOURCE) source: %w", err)
+		}
 
-	_, err = runValidateConnectionKubernetes(vmConfig.VMConfig, vmIP, map[string]string{
-		"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "kubelet-cert",
-	})
-	if err == nil {
-		return fmt.Errorf("kubelet-cert source with missing cert: expected failure (falls back to hostname, which this fake apiserver doesn't serve), got success")
+		// An unreadable/missing cert must make kubelet-cert source degrade
+		// to the hostname behavior (logging a warning), not error out
+		// outright - confirmed by asserting the very same successful
+		// resolution to realHostname as above, plus the fallback warning
+		// actually being logged (trident-acl-agent's default --verbosity
+		// is Debug, so a Warn-level log is never filtered out here).
+		if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo mv %s %s.bak", kubeletClientCertPath, kubeletClientCertPath)); err != nil {
+			return fmt.Errorf("failed to hide kubelet client cert: %w", err)
+		}
+		defer func() {
+			if err := restoreKubeletClientCert(vmConfig.VMConfig, vmIP); err != nil {
+				fmt.Fprintf(os.Stderr, "run-node-name-source: %v\n", err)
+			}
+		}()
+		return expectValidateConnectionOutput(vmConfig.VMConfig, vmIP, map[string]string{
+			"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "kubelet-cert",
+		}, "falling back to hostname", fmt.Sprintf("fetched Node %q", realHostname))
+	}); err != nil {
+		return fmt.Errorf("phase hostname/missing-cert-fallback: %w", err)
 	}
-	// On failure, stormssh.SshCommandCombinedOutput returns an empty string
-	// (see innerSshCommand) - the actual remote stdout/stderr is only ever
-	// present inside the wrapped error's own message ("...\nOutput: ..."),
-	// so the fallback warning must be looked for there instead of in the
-	// (always-empty-on-error) first return value.
-	if !strings.Contains(err.Error(), "falling back to hostname") {
-		return fmt.Errorf("kubelet-cert source with missing cert: expected a 'falling back to hostname' warning in output, got: %w", err)
+
+	// --- Phase 3: an explicit TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME must
+	//     win outright regardless of NODE_NAME_SOURCE. Uses a third literal
+	//     distinct from both phases above, so success here can only be
+	//     explained by the override itself, not by coincidentally matching
+	//     the cert-derived name or the real hostname. ---
+	if err := withNodeNameSourceApiServer(ctx, testConfig, explicitOverrideNodeName, func() error {
+		return expectValidateConnectionOutput(vmConfig.VMConfig, vmIP, map[string]string{
+			"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME":        explicitOverrideNodeName,
+			"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "hostname",
+		}, fmt.Sprintf("fetched Node %q", explicitOverrideNodeName))
+	}); err != nil {
+		return fmt.Errorf("phase explicit node_name override: %w", err)
 	}
 
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+}
+
+// withNodeNameSourceApiServer starts a fresh single-node fake apiserver
+// bound to testConfig.HostEndpointIP:APIServerPort, seeded with exactly one
+// Node named nodeName, runs body, then synchronously stops that apiserver
+// before returning - so each of RunNodeNameSource's phases gets a clean
+// apiserver instance serving only the one identity that phase expects,
+// with no overlap or leftover state from a previous phase, and the next
+// phase (or the next test case entirely) never races this one's teardown
+// for the same bind address.
+func withNodeNameSourceApiServer(ctx context.Context, testConfig stormaclconfig.TestConfig, nodeName string, body func() error) error {
+	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(nodeName, map[string]string{}))
+	apiServer := stormproxies.NewAPIServer(nodeName, nodeStore)
+	_, stop, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort))
+	if err != nil {
+		return fmt.Errorf("failed to start fake apiserver for node %q: %w", nodeName, err)
+	}
+	defer stop()
+	nodeStore.SetReadyCondition(true)
+	return body()
+}
+
+// readVmHostname reads the VM's real hostname (the same OS-level value
+// trident-acl-agent's own hostname-source fallback reads via hostname::get()
+// - see hostname_node_name() in crates/trident-acl-agent/src/core/
+// config.rs), lowercased the same way that function lowercases it before
+// using it as a Kubernetes Node name.
+func readVmHostname(cfg stormvmconfig.VMConfig, vmIP string) (string, error) {
+	out, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "hostname")
+	if err != nil {
+		return "", fmt.Errorf("failed to read VM hostname: %w", err)
+	}
+	return strings.ToLower(strings.TrimSpace(out)), nil
 }
 
 // uploadKubeletClientCert writes certPEM to kubeletClientCertPath on the VM,
@@ -183,10 +210,10 @@ func uploadKubeletClientCert(cfg stormvmconfig.VMConfig, vmIP string, certPEM []
 	return nil
 }
 
-// restoreKubeletClientCert undoes the "hide the cert" step in case 4 above,
-// so this test case leaves the VM in the same state it found it in (a
-// valid cert present) regardless of pass/fail, for anyone re-running just
-// this test case in isolation.
+// restoreKubeletClientCert undoes the "hide the cert" step in phase 2
+// above, so this test case leaves the VM in the same state it found it in
+// (a valid cert present) regardless of pass/fail, for anyone re-running
+// just this test case in isolation.
 func restoreKubeletClientCert(cfg stormvmconfig.VMConfig, vmIP string) error {
 	if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, fmt.Sprintf("sudo mv %s.bak %s", kubeletClientCertPath, kubeletClientCertPath)); err != nil {
 		return fmt.Errorf("failed to restore kubelet client cert: %w", err)
@@ -223,10 +250,33 @@ func generateFakeKubeletClientCertPEM(nodeName string) ([]byte, error) {
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
 }
 
-// runValidateConnectionKubernetes is like expectValidateConnection (see
-// update.go) but returns the combined output too, for the one case in this
-// file (kubelet-cert source with an unreadable cert) that needs to assert
-// on a specific log message, not just the exit status.
+// expectValidateConnectionOutput runs `trident-acl-agent --validate-connection
+// kubernetes` with envVars, asserts it succeeds, and asserts its combined
+// output contains every string in wantSubstrings - used wherever this test
+// needs to confirm not just that resolution succeeded, but which specific
+// Node name it resolved to (e.g. "fetched Node \"<name>\"", the exact
+// phrase connection_check.rs's validate_connection logs on success).
+func expectValidateConnectionOutput(cfg stormvmconfig.VMConfig, vmIP string, envVars map[string]string, wantSubstrings ...string) error {
+	out, err := runValidateConnectionKubernetes(cfg, vmIP, envVars)
+	if err != nil {
+		return fmt.Errorf("expected success (envVars=%v): %w", envVars, err)
+	}
+	for _, want := range wantSubstrings {
+		if !strings.Contains(out, want) {
+			return fmt.Errorf("expected output to contain %q (envVars=%v), got: %s", want, envVars, out)
+		}
+	}
+	return nil
+}
+
+// runValidateConnectionKubernetes runs `trident-acl-agent --validate-connection
+// kubernetes` with envVars and returns its combined output. Note:
+// stormssh.SshCommandCombinedOutput (see ssh.go's innerSshCommand) discards
+// the captured remote output on a non-zero exit, returning ("", err)
+// instead - the real stdout/stderr only survives inside the wrapped
+// error's own message ("...\nOutput: ..."). Callers that need to inspect
+// output from an *expected failure* must check err.Error(), not the first
+// return value.
 func runValidateConnectionKubernetes(cfg stormvmconfig.VMConfig, vmIP string, envVars map[string]string) (string, error) {
 	var prefix strings.Builder
 	prefix.WriteString("sudo")
