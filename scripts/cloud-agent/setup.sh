@@ -2,7 +2,7 @@
 
 set -euxo pipefail
 
-readonly RUST_TOOLCHAIN="1.98.1"
+readonly RUST_TOOLCHAIN="1.93.1"
 readonly PROTOC_GEN_GO_VERSION="v1.36.11"
 readonly PROTOC_GEN_GO_GRPC_VERSION="v1.6.2"
 readonly DATA_DISK_MOUNT="/mnt/storage"
@@ -23,7 +23,10 @@ sudo apt-get install -y --no-install-recommends \
     libclang-dev \
     libssl-dev \
     pkg-config \
+    python3-pip \
     unzip
+
+python3 -m pip install --user --disable-pip-version-check "black==24.1.0"
 
 make install-protoc
 

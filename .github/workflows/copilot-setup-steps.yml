@@ -14,6 +14,7 @@ on:
       - .github/workflows/copilot-setup-steps.yml
       - scripts/cloud-agent/ado-cargo-token.sh
       - scripts/cloud-agent/setup.sh
+      - scripts/cloud-agent/validate.sh
 
 jobs:
   # This job name is required by GitHub Copilot coding agent.

@@ -448,3 +448,17 @@ These rules apply to agents writing code:
 - Delete **Follow-ups** and **Notes** when they would otherwise be empty. Link
   tracked issues for real follow-up work; never leave `TODO`, `None`, or
   placeholder issue numbers in the pull request description.
+
+## Cloud agent validation
+
+These rules apply to agents writing code:
+
+- Before completing a code change, run `scripts/cloud-agent/validate.sh`. It
+  performs source-only validation and does not require VM image artifacts.
+- If validation fails, fix the failure and rerun the failed group
+  (`format`, `rust`, or `go`) before rerunning the default full suite.
+- Documentation-only changes may skip the suite when it is not applicable,
+  but the pull request **Validation** section must record that it was not run
+  and explain why.
+- Record the exact validation command and result in the pull request
+  description. Do not treat this agent-run command as independent CI.
