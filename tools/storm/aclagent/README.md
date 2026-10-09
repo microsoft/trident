@@ -24,6 +24,11 @@ There is intentionally no fake `tridentd`.
   reappears, both via a restart-triggered startup read and via an
   already-running agent's in-flight status PATCH; runs before
   `run-ab-update` so it exercises a clean, no-pending-state agent
+- `run-node-name-source` — proves `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE`
+  (`hostname` vs `kubelet-cert`) actually switches which identity
+  `node_name` resolves from, via one-shot `--validate-connection
+  kubernetes` CLI invocations against a fake kubelet client cert - no
+  service restart/reboot needed, so it stays fast
 - `run-ab-update`
 - `run-rollback`
 - `collect-logs`
@@ -140,6 +145,27 @@ came back up). The fake apiserver/Nebraska/image-server endpoints are bound
 to `HostEndpointIP` (the libvirt NAT gateway address), which the VM can
 reach directly — this avoids relying on reverse SSH tunnels, which don't
 survive the VM actually going down for a real reboot.
+
+## `run-node-name-source`
+
+Proves `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` (microsoft/trident#839)
+actually switches which identity `node_name` resolves from, entirely via
+one-shot `trident-acl-agent --validate-connection kubernetes` CLI
+invocations — it never touches `trident-acl-agent.service` (no restart, no
+reboot), so it runs fast relative to the rest of this scenario. It seeds the
+fake apiserver with a single Node whose name matches a self-signed fake
+kubelet client cert's Subject CN (`system:node:<name>`), uploaded to
+`/var/lib/kubelet/pki/kubelet-client-current.pem`, and checks:
+
+- `kubelet-cert` source resolves to that cert's CN and succeeds
+- `hostname` source (and the unset/default case) resolves to the VM's real
+  hostname instead, which this fake apiserver doesn't serve, and fails
+- an explicit `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` still wins outright
+  regardless of `NODE_NAME_SOURCE`
+- with the cert hidden, `kubelet-cert` source degrades to the hostname
+  behavior (same failure shape as above) and logs a "falling back to
+  hostname" warning, rather than erroring out some other way
+
 
 ## `run-rollback`
 
