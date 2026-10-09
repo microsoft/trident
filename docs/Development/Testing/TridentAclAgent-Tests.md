@@ -280,9 +280,16 @@ The scenario runs these test cases in order:
    `kubelet-cert` resolves to the cert's Subject CN; `hostname` (and the
    unset default) resolves to the VM's real hostname; an explicit
    `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` wins regardless of source; and
-   an unreadable cert with `kubelet-cert` source is a **fatal config
-   error** (deliberately no fallback to hostname — resolving to the wrong
-   Node silently would be worse than refusing to start)
+   an unreadable cert with `kubelet-cert` source makes this one-shot
+   diagnostic fail immediately (fail-fast, no fallback to hostname — see
+   [Trident ACL Agent](../../Explanation/Trident-ACL-Agent.md)). The
+   long-running agent's different behavior for that same condition -
+   retrying indefinitely with capped exponential backoff instead of
+   crashing, the same way it already waits out its own Node object not
+   existing yet - is covered by Rust unit tests
+   (`resolve_node_name_with_retry` in `orchestrator.rs`) rather than this
+   VM scenario, since proving an indefinite retry loop needs a controllable
+   cert path, not a real filesystem race
 5. **run-ab-update** — Starts the fake apiserver and fake Nebraska/Omaha
    endpoints in-process (the latter over HTTPS — see [Nebraska/Image Server
    TLS](#nebraskaimage-server-tls)), delivers a fake kubeconfig and restarts
