@@ -32,7 +32,6 @@ use std::{
 
 use anyhow::{anyhow, Context, Error};
 use const_format::formatcp;
-use log::warn;
 use openssl::{nid::Nid, x509::X509};
 use serde::{de::Error as _, Deserialize, Deserializer};
 use trident_proto::TRIDENT_DEFAULT_SOCKET_URI;
@@ -122,14 +121,22 @@ impl AgentConfig {
             },
             kubernetes: {
                 let node_name_source = kubernetes.node_name_source.unwrap_or_default();
+                let node_name = match kubernetes.node_name {
+                    Some(name) => name,
+                    None => default_node_name(node_name_source).with_context(|| {
+                        format!(
+                            "failed to determine node_name for \
+                             {ENV_PREFIX_KUBERNETES}NODE_NAME_SOURCE={node_name_source:?}; set \
+                             {ENV_PREFIX_KUBERNETES}NODE_NAME explicitly to override"
+                        )
+                    })?,
+                };
                 KubernetesConfig {
                     api_server: kubernetes.api_server,
                     kubeconfig: kubernetes
                         .kubeconfig
                         .unwrap_or_else(|| PathBuf::from(DEFAULT_KUBELET_KUBECONFIG)),
-                    node_name: kubernetes
-                        .node_name
-                        .unwrap_or_else(|| default_node_name(node_name_source)),
+                    node_name,
                     node_name_source,
                     watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
                     annotation_prefix: kubernetes
@@ -333,12 +340,17 @@ pub struct KubernetesConfig {
 
 impl Default for KubernetesConfig {
     fn default() -> Self {
-        let node_name_source = NodeNameSource::default();
+        // Calls hostname_node_name() directly rather than going through
+        // the now-fallible default_node_name(): NodeNameSource::default()
+        // is always Hostname, which hostname_node_name() can always
+        // satisfy (it has its own internal fallback to DEFAULT_NODE_NAME
+        // on a hostname-read failure), so this Default impl never needs
+        // the KubeletCert branch that can actually return Err.
         Self {
             api_server: None,
             kubeconfig: PathBuf::from(DEFAULT_KUBELET_KUBECONFIG),
-            node_name: default_node_name(node_name_source),
-            node_name_source,
+            node_name: hostname_node_name(),
+            node_name_source: NodeNameSource::default(),
             watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
             annotation_prefix: DEFAULT_ANNOTATION_PREFIX.to_string(),
         }
@@ -414,8 +426,12 @@ pub enum NodeNameSource {
     /// authenticates to the API server with, so it is guaranteed to match
     /// the real Node name regardless of hostname conventions. Opt in with
     /// `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE=kubelet-cert`. If the
-    /// cert can't be read or parsed, falls back to `Hostname` (logging a
-    /// warning) rather than failing startup outright.
+    /// cert can't be read or parsed, config loading fails outright (same
+    /// severity as any other malformed/unsatisfiable config) - deliberately
+    /// no fallback to `Hostname`: an operator who opted into this source
+    /// did so because hostname is *not* a trustworthy Node identity on
+    /// their platform, so silently substituting it back in on cert failure
+    /// would risk the agent reconciling against the wrong Node entirely.
     KubeletCert,
 }
 
@@ -477,19 +493,18 @@ fn default_nebraska_endpoint() -> Url {
         .expect("invariant: DEFAULT_NEBRASKA_ENDPOINT is a compile-time-valid URL")
 }
 
-fn default_node_name(source: NodeNameSource) -> String {
+fn default_node_name(source: NodeNameSource) -> Result<String, Error> {
     match source {
-        NodeNameSource::Hostname => hostname_node_name(),
-        NodeNameSource::KubeletCert => node_name_from_kubelet_cert(Path::new(
-            DEFAULT_KUBELET_CLIENT_CERT,
-        ))
-        .unwrap_or_else(|err| {
-            warn!(
-                "failed to derive node_name from kubelet client cert at \
-                         {DEFAULT_KUBELET_CLIENT_CERT} ({err:#}); falling back to hostname"
-            );
-            hostname_node_name()
-        }),
+        NodeNameSource::Hostname => Ok(hostname_node_name()),
+        // No fallback to Hostname on failure here, by design - see
+        // NodeNameSource::KubeletCert's own doc comment for why resolving
+        // to the *wrong* Node silently is worse than refusing to start.
+        // The caller (AgentConfig::from_vars) propagates this as a fatal
+        // config error, the same severity as any other unsatisfiable
+        // TRIDENT_ACL_AGENT_* setting.
+        NodeNameSource::KubeletCert => {
+            node_name_from_kubelet_cert(Path::new(DEFAULT_KUBELET_CLIENT_CERT))
+        }
     }
 }
 
@@ -825,13 +840,35 @@ gf0TbLqnNti3MeMftKcEa8VQ2rE6Np02EETxr94lsiNK
     }
 
     #[test]
-    fn default_node_name_falls_back_to_hostname_when_cert_source_requested_but_unreadable() {
+    fn default_node_name_errors_when_cert_source_requested_but_unreadable() {
         // DEFAULT_KUBELET_CLIENT_CERT won't exist on a dev/test machine, so
-        // requesting KubeletCert must degrade to the same value Hostname
-        // would produce, rather than erroring or returning an empty string.
-        assert_eq!(
-            default_node_name(NodeNameSource::KubeletCert),
-            default_node_name(NodeNameSource::Hostname)
+        // requesting KubeletCert must error out - no silent fallback to
+        // Hostname (see NodeNameSource::KubeletCert's doc comment for why).
+        let err = default_node_name(NodeNameSource::KubeletCert).unwrap_err();
+        assert!(format!("{err:#}").contains("failed to read"), "{err:#}");
+    }
+
+    #[test]
+    fn default_node_name_hostname_source_always_succeeds() {
+        assert!(!default_node_name(NodeNameSource::Hostname)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn missing_cert_with_kubelet_cert_source_is_a_fatal_config_error() {
+        let err = AgentConfig::from_vars(vars(&[(
+            "TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE",
+            "kubelet-cert",
+        )]))
+        .unwrap_err();
+        // No TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME override set, and
+        // DEFAULT_KUBELET_CLIENT_CERT won't exist on a dev/test machine -
+        // from_vars must propagate node_name resolution failure as a fatal
+        // config error, not silently fall back to hostname.
+        assert!(
+            format!("{err:#}").contains("failed to determine node_name"),
+            "{err:#}"
         );
     }
 }

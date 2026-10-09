@@ -274,12 +274,15 @@ The scenario runs these test cases in order:
    `kubelet-cert`) actually switches which identity `node_name` resolves
    from, via one-shot `trident-acl-agent --validate-connection kubernetes`
    CLI invocations against a self-signed fake kubelet client cert — no
-   service restart or reboot is involved, so this stays fast. Checks that
-   `kubelet-cert` resolves to the cert's Subject CN, that `hostname` (and
-   the unset default) instead resolves to the VM's real hostname, that an
-   explicit `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` still wins regardless
-   of source, and that an unreadable cert degrades `kubelet-cert` to the
-   hostname behavior with a logged warning rather than erroring out
+   service restart or reboot is involved, so this stays fast. Runs as three
+   phases, each with its own single-node fake apiserver seeded with the
+   identity that phase expects, asserting the *exact* resolved Node name:
+   `kubelet-cert` resolves to the cert's Subject CN; `hostname` (and the
+   unset default) resolves to the VM's real hostname; an explicit
+   `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` wins regardless of source; and
+   an unreadable cert with `kubelet-cert` source is a **fatal config
+   error** (deliberately no fallback to hostname — resolving to the wrong
+   Node silently would be worse than refusing to start)
 5. **run-ab-update** — Starts the fake apiserver and fake Nebraska/Omaha
    endpoints in-process (the latter over HTTPS — see [Nebraska/Image Server
    TLS](#nebraskaimage-server-tls)), delivers a fake kubeconfig and restarts

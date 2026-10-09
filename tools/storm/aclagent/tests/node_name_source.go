@@ -98,8 +98,11 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	}
 
 	// --- Phase 2: hostname source (explicit and default) resolves to the
-	//     VM's own real hostname, and a missing/unreadable cert degrades
-	//     kubelet-cert source to that exact same resolution ---
+	//     VM's own real hostname. kubelet-cert source with a
+	//     missing/unreadable cert is a separate, fatal config error - NOT
+	//     a fallback to hostname (see NodeNameSource::KubeletCert's own doc
+	//     comment in config.rs) - checked in the same phase since it needs
+	//     the same cert-hide/restore plumbing. ---
 	realHostname, err := readVmHostname(vmConfig.VMConfig, vmIP)
 	if err != nil {
 		return err
@@ -115,12 +118,12 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 			return fmt.Errorf("default (unset NODE_NAME_SOURCE) source: %w", err)
 		}
 
-		// An unreadable/missing cert must make kubelet-cert source degrade
-		// to the hostname behavior (logging a warning), not error out
-		// outright - confirmed by asserting the very same successful
-		// resolution to realHostname as above, plus the fallback warning
-		// actually being logged (trident-acl-agent's default --verbosity
-		// is Debug, so a Warn-level log is never filtered out here).
+		// An unreadable/missing cert with kubelet-cert source explicitly
+		// requested must be a fatal config error - deliberately NO
+		// fallback to hostname (see NodeNameSource::KubeletCert's doc
+		// comment in config.rs: resolving to the *wrong* Node silently is
+		// worse than refusing to start, the same reasoning the agent
+		// already applies to its own Node disappearing/NodeGone).
 		if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo mv %s %s.bak", kubeletClientCertPath, kubeletClientCertPath)); err != nil {
 			return fmt.Errorf("failed to hide kubelet client cert: %w", err)
 		}
@@ -129,11 +132,22 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 				fmt.Fprintf(os.Stderr, "run-node-name-source: %v\n", err)
 			}
 		}()
-		return expectValidateConnectionOutput(vmConfig.VMConfig, vmIP, map[string]string{
+		_, err := runValidateConnectionKubernetes(vmConfig.VMConfig, vmIP, map[string]string{
 			"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "kubelet-cert",
-		}, "falling back to hostname", fmt.Sprintf("fetched Node %q", realHostname))
+		})
+		if err == nil {
+			return fmt.Errorf("kubelet-cert source with missing cert: expected a fatal config error, got success")
+		}
+		// stormssh.SshCommandCombinedOutput discards the captured remote
+		// output on a non-zero exit - see runValidateConnectionKubernetes's
+		// own doc comment - so the actual stderr only survives inside
+		// err.Error().
+		if !strings.Contains(err.Error(), "failed to determine node_name") {
+			return fmt.Errorf("kubelet-cert source with missing cert: expected a 'failed to determine node_name' config error, got: %w", err)
+		}
+		return nil
 	}); err != nil {
-		return fmt.Errorf("phase hostname/missing-cert-fallback: %w", err)
+		return fmt.Errorf("phase hostname/missing-cert-is-fatal: %w", err)
 	}
 
 	// --- Phase 3: an explicit TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME must

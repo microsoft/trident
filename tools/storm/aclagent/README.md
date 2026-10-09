@@ -152,19 +152,25 @@ Proves `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` (microsoft/trident#839)
 actually switches which identity `node_name` resolves from, entirely via
 one-shot `trident-acl-agent --validate-connection kubernetes` CLI
 invocations — it never touches `trident-acl-agent.service` (no restart, no
-reboot), so it runs fast relative to the rest of this scenario. It seeds the
-fake apiserver with a single Node whose name matches a self-signed fake
-kubelet client cert's Subject CN (`system:node:<name>`), uploaded to
-`/var/lib/kubelet/pki/kubelet-client-current.pem`, and checks:
+reboot), so it runs fast relative to the rest of this scenario. The fake
+apiserver only ever serves a single Node name at a time, so this runs as
+three sequential phases, each with its own apiserver instance seeded with
+exactly the one identity that phase expects, and asserts the *exact*
+resolved Node name reported in `--validate-connection`'s own success output
+(not just pass/fail):
 
-- `kubelet-cert` source resolves to that cert's CN and succeeds
-- `hostname` source (and the unset/default case) resolves to the VM's real
-  hostname instead, which this fake apiserver doesn't serve, and fails
-- an explicit `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` still wins outright
-  regardless of `NODE_NAME_SOURCE`
-- with the cert hidden, `kubelet-cert` source degrades to the hostname
-  behavior (same failure shape as above) and logs a "falling back to
-  hostname" warning, rather than erroring out some other way
+- **kubelet-cert phase**: a self-signed fake kubelet client cert (Subject CN
+  `system:node:<name>`) is uploaded to
+  `/var/lib/kubelet/pki/kubelet-client-current.pem`; `kubelet-cert` source
+  resolves to that cert's CN
+- **hostname phase**: the VM's real hostname is read live via SSH; both
+  `hostname` source (explicit) and the unset/default case resolve to it.
+  With the cert hidden, `kubelet-cert` source is a **fatal config error**
+  (not a fallback to hostname — resolving to the wrong Node silently would
+  be worse than refusing to start)
+- **explicit override phase**: `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` set
+  to a third, unrelated literal still wins outright regardless of
+  `NODE_NAME_SOURCE`
 
 
 ## `run-rollback`
