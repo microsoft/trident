@@ -20,6 +20,7 @@ hex = { workspace = true }
 k8s-openapi = { workspace = true }
 kube = { workspace = true }
 log = { workspace = true }
+openssl = { workspace = true }
 quick-xml = { workspace = true, features = ["serialize"] }
 reqwest = { workspace = true }
 semver = { workspace = true }

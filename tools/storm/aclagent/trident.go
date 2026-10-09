@@ -45,6 +45,7 @@ func (s *TridentAclAgentScenario) RegisterTestCases(r storm.TestRegistrar) error
 	r.RegisterTestCase("deploy-vm", s.deployVm)
 	r.RegisterTestCase("check-deployment", s.checkDeployment)
 	r.RegisterTestCase("run-node-resilience", s.runNodeResilience)
+	r.RegisterTestCase("run-node-name-source", s.runNodeNameSource)
 	r.RegisterTestCase("run-ab-update", s.runABUpdate)
 	r.RegisterTestCase("run-rollback", s.runRollback)
 	r.RegisterTestCase("collect-logs", s.collectLogs)
@@ -83,6 +84,9 @@ func (s *TridentAclAgentScenario) checkDeployment(tc storm.TestCase) error {
 }
 func (s *TridentAclAgentScenario) runNodeResilience(tc storm.TestCase) error {
 	return s.runTestCase(tc, stormtests.RunNodeResilience)
+}
+func (s *TridentAclAgentScenario) runNodeNameSource(tc storm.TestCase) error {
+	return s.runTestCase(tc, stormtests.RunNodeNameSource)
 }
 func (s *TridentAclAgentScenario) runABUpdate(tc storm.TestCase) error {
 	return s.runTestCase(tc, stormtests.RunABUpdate)

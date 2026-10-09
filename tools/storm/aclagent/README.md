@@ -24,6 +24,11 @@ There is intentionally no fake `tridentd`.
   reappears, both via a restart-triggered startup read and via an
   already-running agent's in-flight status PATCH; runs before
   `run-ab-update` so it exercises a clean, no-pending-state agent
+- `run-node-name-source` — proves `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE`
+  (`hostname` vs `kubelet-cert`) actually switches which identity
+  `node_name` resolves from, via one-shot `--validate-connection
+  kubernetes` CLI invocations against a fake kubelet client cert - no
+  service restart/reboot needed, so it stays fast
 - `run-ab-update`
 - `run-rollback`
 - `collect-logs`
@@ -140,6 +145,38 @@ came back up). The fake apiserver/Nebraska/image-server endpoints are bound
 to `HostEndpointIP` (the libvirt NAT gateway address), which the VM can
 reach directly — this avoids relying on reverse SSH tunnels, which don't
 survive the VM actually going down for a real reboot.
+
+## `run-node-name-source`
+
+Proves `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` (microsoft/trident#839)
+actually switches which identity `node_name` resolves from, entirely via
+one-shot `trident-acl-agent --validate-connection kubernetes` CLI
+invocations — it never touches `trident-acl-agent.service` (no restart, no
+reboot), so it runs fast relative to the rest of this scenario. The fake
+apiserver only ever serves a single Node name at a time, so this runs as
+three sequential phases, each with its own apiserver instance seeded with
+exactly the one identity that phase expects, and asserts the *exact*
+resolved Node name reported in `--validate-connection`'s own success output
+(not just pass/fail):
+
+- **kubelet-cert phase**: a self-signed fake kubelet client cert (Subject CN
+  `system:node:<name>`) is uploaded to
+  `/var/lib/kubelet/pki/kubelet-client-current.pem`; `kubelet-cert` source
+  resolves to that cert's CN
+- **hostname phase**: the VM's real hostname is read live via SSH; both
+  `hostname` source (explicit) and the unset/default case resolve to it.
+  With the cert hidden, `kubelet-cert` source makes
+  `--validate-connection kubernetes` fail immediately (fail-fast is correct
+  for this one-shot CLI diagnostic — see the Rust-level
+  `resolve_node_name_with_retry` unit tests in `orchestrator.rs` for
+  coverage of the long-running agent's different behavior: it retries this
+  same condition indefinitely with capped exponential backoff instead of
+  crashing, since an unreadable cert at startup is typically just kubelet's
+  own TLS bootstrapping not having finished yet)
+- **explicit override phase**: `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` set
+  to a third, unrelated literal still wins outright regardless of
+  `NODE_NAME_SOURCE`
+
 
 ## `run-rollback`
 
