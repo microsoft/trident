@@ -141,14 +141,19 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 		}
 	}()
 
-	out, err := runValidateConnectionKubernetes(vmConfig.VMConfig, vmIP, map[string]string{
+	_, err = runValidateConnectionKubernetes(vmConfig.VMConfig, vmIP, map[string]string{
 		"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "kubelet-cert",
 	})
 	if err == nil {
 		return fmt.Errorf("kubelet-cert source with missing cert: expected failure (falls back to hostname, which this fake apiserver doesn't serve), got success")
 	}
-	if !strings.Contains(out, "falling back to hostname") {
-		return fmt.Errorf("kubelet-cert source with missing cert: expected a 'falling back to hostname' warning in output, got: %s", out)
+	// On failure, stormssh.SshCommandCombinedOutput returns an empty string
+	// (see innerSshCommand) - the actual remote stdout/stderr is only ever
+	// present inside the wrapped error's own message ("...\nOutput: ..."),
+	// so the fallback warning must be looked for there instead of in the
+	// (always-empty-on-error) first return value.
+	if !strings.Contains(err.Error(), "falling back to hostname") {
+		return fmt.Errorf("kubelet-cert source with missing cert: expected a 'falling back to hostname' warning in output, got: %w", err)
 	}
 
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
