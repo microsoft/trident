@@ -280,11 +280,9 @@ steps:
         export MIC_CONTAINER_IMAGE="imagecustomizer:dev"
       fi
 
-      # Allow cross-platform (i.e. amd64 pipeline creating arm64 images)
-      if [[ "${{ parameters.micArchitecture }}" != "${{ parameters.pipelineArchitecture }}" ]]; then
-        # Export variable to tell Makefile and testimages to use `docker --platform`
-        export MIC_ARCHITECTURE="linux/${{ parameters.micArchitecture }}"
-      fi
+      # The Makefile's tailor-backed legacy target helper resolves the cell arch
+      # from the historical image name, so no extra MIC_ARCHITECTURE export is
+      # needed here for cross-arch direct-streaming builds.
 
       # Compress the full image & delete the uncompressed image
       make ${{ parameters.target }}
