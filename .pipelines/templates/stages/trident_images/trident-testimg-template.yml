@@ -135,7 +135,7 @@ steps:
         displayName: Copy SSH Keys
 
   - script: |
-      echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING testimages.py TO BUILD TEST IMAGES."
+      echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING the tailor workspace under tests/images."
       cat /etc/os-release
     displayName: "Report Host Info"
 

@@ -105,7 +105,7 @@ step, so the base image's pre-installed package set does not matter.
 :::tip Internal shortcut
 If you have access to the internal Azure DevOps artifacts feed, the Makefile
 downloads `qemu_guest` automatically (requires `az login`). You can also
-download it directly: `./tests/images/testimages.py download-image qemu_guest`
+download it directly: `cargo run --manifest-path tools/tailor/Cargo.toml -- --manifest tests/images/tailor.yaml bases download qemu_guest`
 :::
 
 ### 5. Build the VM Image
@@ -131,15 +131,12 @@ the same filename in each directory (the update loop picks the filename from
 ```bash
 mkdir -p artifacts/update-a artifacts/update-b
 
-# Build two clones of the COSI image (produces _0 and _1 suffixed files)
-sudo ./tests/images/testimages.py build trident-vm-grub-verity-testimage \
-    --output-dir ./artifacts --clones 2
+# Build two clones of the COSI image
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/images/tailor.yaml     build trident-vm-testimage -s arch=amd64 -s scenario=grub-verity     --output-dir ./artifacts --clones 2
 
 # Move the clones into the update directories with the same filename
-mv artifacts/trident-vm-grub-verity-testimage_0.cosi \
-    artifacts/update-a/trident-vm-grub-verity-testimage.cosi
-mv artifacts/trident-vm-grub-verity-testimage_1.cosi \
-    artifacts/update-b/trident-vm-grub-verity-testimage.cosi
+mv artifacts/trident-vm-testimage_amd64_grub-verity_cosi_clone0.cosi     artifacts/update-a/trident-vm-grub-verity-testimage.cosi
+mv artifacts/trident-vm-testimage_amd64_grub-verity_cosi_clone1.cosi     artifacts/update-b/trident-vm-grub-verity-testimage.cosi
 ```
 
 :::note

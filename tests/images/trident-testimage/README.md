@@ -17,8 +17,10 @@ It also includes openssh-server to allow for remote access.
 From the repo root, run:
 
 ```bash
-python3 tests/images/testimages.py build trident-testimage
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   build trident-testimage -s arch=amd64 --output-dir ./artifacts
 ```
+
+Use `-s arch=arm64` for the ARM64 variant.
 
 Output is written to `artifacts/trident-testimage.cosi` by default. Use
 `--output-dir <path>` to change the output location.

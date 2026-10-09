@@ -1,0 +1,4 @@
+config:
+  $set:
+    $include: ./tailor/usr-container.yaml
+signing: true

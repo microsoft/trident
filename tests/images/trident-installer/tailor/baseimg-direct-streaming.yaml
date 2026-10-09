@@ -1,0 +1,90 @@
+storage:
+  bootType: efi
+  disks:
+  - partitionTableType: gpt
+    maxSize: 4G
+    partitions:
+    - id: esp
+      type: esp
+      size: 8M
+    - id: rootfs
+      size: grow
+  filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: rootfs
+    type: ext4
+    mountPoint:
+      path: /
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-direct-streaming-mos-testimage
+  packages:
+    update:
+    - systemd
+    install:
+    - binutils
+    - curl
+    - device-mapper
+    - dnf
+    - dosfstools
+    - efibootmgr
+    - iproute
+    - iptables
+    - lsof
+    - mdadm
+    - netplan
+    - ntfs-3g
+    - ntfsprogs
+    - openssh-server
+    - squashfs-tools
+    - tar
+    - tpm2-tools
+    - veritysetup
+    - vim
+    - selinux-policy-devel
+    - setools-console
+    - trident
+    - trident-selinux
+    - trident-install-service
+  services:
+    enable:
+    - sshd
+    - rcp-agent
+    - tridentd.socket
+    disable:
+    - trident-install
+  additionalFiles:
+  - source: base/files/getty@.service
+    destination: /usr/lib/systemd/system/getty@.service
+  - source: base/files/serial-getty@.service
+    destination: /usr/lib/systemd/system/serial-getty@.service
+  - source: base/files/root.profile
+    destination: /root/.profile
+  - source: base/../../../../bin/rcp-agent
+    destination: /usr/bin/rcp-agent
+  - source: base/../../../../tools/cmd/rcp-agent/rcp-agent.service
+    destination: /usr/lib/systemd/system/rcp-agent.service
+  selinux:
+    mode: enforcing
+scripts:
+  postCustomization:
+  - path: base/post-install.sh
+    arguments:
+    - stream-image-test
+iso:
+  additionalFiles:
+  - source: base/files/pre-trident-script.sh
+    destination: /pre-trident-script.sh
+  - source: base/files/rcp-agent.yaml
+    destination: /rcp-agent.yaml
+  kernelCommandLine:
+    extraCommandLine:
+    - console=tty0
+    - console=ttyS0
+    - rd.luks=0
+    - selinux=1

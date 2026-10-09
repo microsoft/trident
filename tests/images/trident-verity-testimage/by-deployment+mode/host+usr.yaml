@@ -1,0 +1,6 @@
+rpmSources:
+  - ../../../bin/RPMS
+config:
+  $set:
+    $include: ./tailor/usr-host.yaml
+signing: true

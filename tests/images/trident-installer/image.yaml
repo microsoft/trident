@@ -1,0 +1,26 @@
+name: trident-installer
+
+matrix:
+  arch: [amd64, arm64]
+  variant: [default, split, direct-streaming]
+
+selectors:
+  exclude:
+    - { arch: arm64, variant: split }
+
+base:
+  ref: baremetal
+
+outputs:
+  - format: iso
+
+rpmSources:
+  - ../../../bin/RPMS
+
+extraDependencies:
+  - ./base
+  - ../../../bin/rcp-agent
+  - ../../../tools/cmd/rcp-agent/rcp-agent.service
+
+config:
+  $include: ./tailor/baseimg.yaml

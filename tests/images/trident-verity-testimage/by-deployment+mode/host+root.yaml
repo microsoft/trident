@@ -1,0 +1,5 @@
+rpmSources:
+  - ../../../bin/RPMS
+config:
+  $set:
+    $include: ./tailor/baseimg.yaml

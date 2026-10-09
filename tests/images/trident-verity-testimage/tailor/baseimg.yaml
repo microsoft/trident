@@ -1,0 +1,110 @@
+storage:
+  disks:
+  - partitionTableType: gpt
+    maxSize: 5G
+    partitions:
+    - id: esp
+      type: esp
+      size: 8M
+    - id: boot
+      size: 1G
+    - label: root
+      id: root
+      size: 2G
+    - label: root-hash
+      id: verityhash
+      size: 128M
+    - id: sysexts
+      size: 1G
+    - id: confexts
+      size: 200M
+    - id: var
+      size: grow
+  bootType: efi
+  verity:
+  - id: rootverity
+    name: root
+    dataDeviceId: root
+    hashDeviceId: verityhash
+    dataDeviceMountIdType: part-label
+    hashDeviceMountIdType: part-label
+  filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: boot
+    type: ext4
+    mountPoint:
+      path: /boot
+  - deviceId: rootverity
+    type: ext4
+    mountPoint:
+      path: /
+      options: defaults,ro
+  - deviceId: sysexts
+    type: ext4
+    mountPoint:
+      path: /var/lib/extensions
+  - deviceId: confexts
+    type: ext4
+    mountPoint:
+      path: /var/lib/confexts
+  - deviceId: var
+    type: ext4
+    mountPoint:
+      path: /var
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-verity-testimg
+  selinux:
+    mode: disabled
+  kernelCommandLine:
+    extraCommandLine:
+    - console=tty0
+    - console=ttyS0
+    - rd.info
+    - log_buf_len=1M
+  packages:
+    remove:
+    - grub2-efi-binary
+    install:
+    - grub2-efi-binary-noprefix
+    - curl
+    - device-mapper
+    - dosfstools
+    - dracut-overlayfs
+    - efibootmgr
+    - iproute
+    - iptables
+    - lsof
+    - lvm2
+    - mdadm
+    - netplan
+    - openssh-server
+    - systemd-udev
+    - tpm2-tools
+    - trident-service
+    - veritysetup
+    - vim
+  additionalFiles:
+  - source: base/etc-mount.service
+    destination: /etc/systemd/system/etc-mount.service
+  - source: base/etc-mount.sh
+    destination: /usr/local/bin/etc-mount.sh
+  - source: base/sudoers-wheel
+    destination: /etc/sudoers.d/wheel
+  - source: base/files/use-grpc-client-commit.conf
+    destination: /etc/systemd/system/trident.service.d/override.conf
+  services:
+    enable:
+    - etc-mount
+    - sshd
+    - trident
+    - tridentd.socket
+scripts:
+  postCustomization:
+  - path: base/trident-debug-log.sh
+  - path: base/create-web-dir.sh

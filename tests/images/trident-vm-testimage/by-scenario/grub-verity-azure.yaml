@@ -1,0 +1,6 @@
+base:
+  $set:
+    ref: core_selinux
+config:
+  $set:
+    $include: ./tailor/updateimg-grub-verity-azure.yaml

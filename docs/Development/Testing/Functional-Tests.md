@@ -47,18 +47,17 @@ and a base image also from MCR.
 1. **Download the base image:**
 
    ```bash
-   # Downloads baremetal.vhdx from mcr.microsoft.com/azurelinux/3.0/image/baremetal:latest
-   ./tests/images/testimages.py download-image baremetal
+   cargo run --manifest-path tools/tailor/Cargo.toml --      --manifest tests/images/tailor.yaml      bases download baremetal
    ```
 
 2. **Build the functional test image:**
 
    ```bash
-   sudo ./tests/images/testimages.py build trident-functest --output-dir ./artifacts
+   cargo run --manifest-path tools/tailor/Cargo.toml --      --manifest tests/images/tailor.yaml      build trident-functest --output-dir ./artifacts
    ```
 
-   This produces `artifacts/trident-functest.qcow2`. The image configuration is
-   defined in `tests/images/trident-functest/base/baseimg.yaml`.
+   This produces `artifacts/trident-functest.qcow2`. The image is selected from
+   the `trident-functest` family in `tests/images/tailor.yaml`.
 
 ## Building Test Dependencies
 

@@ -1,0 +1,19 @@
+name: azurelinux-direct-streaming-testimage
+
+matrix:
+  arch: [amd64, arm64]
+
+base:
+  ref: baremetal
+
+outputs:
+  - format: baremetal-image
+
+rpmSources:
+  - ../../../bin/RPMS
+
+extraDependencies:
+  - ./base
+
+config:
+  $include: ./tailor/baseimg.yaml
