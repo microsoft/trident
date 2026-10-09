@@ -165,9 +165,14 @@ resolved Node name reported in `--validate-connection`'s own success output
   resolves to that cert's CN
 - **hostname phase**: the VM's real hostname is read live via SSH; both
   `hostname` source (explicit) and the unset/default case resolve to it.
-  With the cert hidden, `kubelet-cert` source is a **fatal config error**
-  (not a fallback to hostname — resolving to the wrong Node silently would
-  be worse than refusing to start)
+  With the cert hidden, `kubelet-cert` source makes
+  `--validate-connection kubernetes` fail immediately (fail-fast is correct
+  for this one-shot CLI diagnostic — see the Rust-level
+  `resolve_node_name_with_retry` unit tests in `orchestrator.rs` for
+  coverage of the long-running agent's different behavior: it retries this
+  same condition indefinitely with capped exponential backoff instead of
+  crashing, since an unreadable cert at startup is typically just kubelet's
+  own TLS bootstrapping not having finished yet)
 - **explicit override phase**: `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` set
   to a third, unrelated literal still wins outright regardless of
   `NODE_NAME_SOURCE`

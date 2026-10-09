@@ -99,10 +99,10 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 
 	// --- Phase 2: hostname source (explicit and default) resolves to the
 	//     VM's own real hostname. kubelet-cert source with a
-	//     missing/unreadable cert is a separate, fatal config error - NOT
-	//     a fallback to hostname (see NodeNameSource::KubeletCert's own doc
-	//     comment in config.rs) - checked in the same phase since it needs
-	//     the same cert-hide/restore plumbing. ---
+	//     missing/unreadable cert fails --validate-connection immediately -
+	//     NOT a fallback to hostname (see NodeNameSource::KubeletCert's own
+	//     doc comment in config.rs) - checked in the same phase since it
+	//     needs the same cert-hide/restore plumbing. ---
 	realHostname, err := readVmHostname(vmConfig.VMConfig, vmIP)
 	if err != nil {
 		return err
@@ -119,11 +119,17 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 		}
 
 		// An unreadable/missing cert with kubelet-cert source explicitly
-		// requested must be a fatal config error - deliberately NO
-		// fallback to hostname (see NodeNameSource::KubeletCert's doc
-		// comment in config.rs: resolving to the *wrong* Node silently is
-		// worse than refusing to start, the same reasoning the agent
-		// already applies to its own Node disappearing/NodeGone).
+		// requested must fail --validate-connection immediately -
+		// deliberately NO fallback to hostname (see
+		// NodeNameSource::KubeletCert's doc comment in config.rs: resolving
+		// to the *wrong* Node silently is worse than refusing to start).
+		// Note this is specific to the one-shot --validate-connection CLI
+		// path (KubernetesConfig::resolve_node_name_once's single,
+		// fail-fast attempt) - the long-running orchestrator instead
+		// retries this same condition with exponential backoff, treating
+		// it like a startup race analogous to the Node object itself not
+		// existing yet (see Orchestrator::resolve_node_name_with_retry),
+		// which isn't exercised by this fast, non-service test case.
 		if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo mv %s %s.bak", kubeletClientCertPath, kubeletClientCertPath)); err != nil {
 			return fmt.Errorf("failed to hide kubelet client cert: %w", err)
 		}
@@ -136,18 +142,18 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 			"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "kubelet-cert",
 		})
 		if err == nil {
-			return fmt.Errorf("kubelet-cert source with missing cert: expected a fatal config error, got success")
+			return fmt.Errorf("kubelet-cert source with missing cert: expected validate-connection to fail, got success")
 		}
 		// stormssh.SshCommandCombinedOutput discards the captured remote
 		// output on a non-zero exit - see runValidateConnectionKubernetes's
 		// own doc comment - so the actual stderr only survives inside
 		// err.Error().
-		if !strings.Contains(err.Error(), "failed to determine node_name") {
-			return fmt.Errorf("kubelet-cert source with missing cert: expected a 'failed to determine node_name' config error, got: %w", err)
+		if !strings.Contains(err.Error(), "failed to resolve node_name") {
+			return fmt.Errorf("kubelet-cert source with missing cert: expected a 'failed to resolve node_name' error, got: %w", err)
 		}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("phase hostname/missing-cert-is-fatal: %w", err)
+		return fmt.Errorf("phase hostname/missing-cert-fails-fast: %w", err)
 	}
 
 	// --- Phase 3: an explicit TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME must

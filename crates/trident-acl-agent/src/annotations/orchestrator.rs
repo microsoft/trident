@@ -33,7 +33,7 @@ use crate::{
         SCHEMA_VERSION,
     },
     core::{
-        config::AgentConfig,
+        config::{AgentConfig, KubernetesConfig},
         nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
         trident::{CompletedResponse, TridentClient, TridentClientError},
         version::{current_active_version, FALLBACK_ALWAYS_VERSION},
@@ -106,21 +106,86 @@ impl NebraskaReport {
 
 pub struct Orchestrator {
     config: AgentConfig,
+    /// The agent's own Node name, resolved once at construction time (see
+    /// `from_config`'s retry-with-backoff resolution) and held fixed for
+    /// the orchestrator's whole lifetime - the identity this process
+    /// reconciles against doesn't change without a restart.
+    node_name: String,
     k8s: NodeClient,
     state: StateStore,
     annotation_keys: AnnotationKeys,
 }
 
 impl Orchestrator {
-    pub async fn from_config(config: AgentConfig) -> Result<Self, Error> {
+    /// Builds the orchestrator, including resolving `node_name` - retrying
+    /// indefinitely with the same capped-exponential-backoff-with-jitter
+    /// policy as `get_node_with_retry`/`await_node_recreation` if
+    /// `node_name_source` is `kubelet-cert` and the cert isn't readable yet
+    /// (see `resolve_node_name_with_retry`). Returns `Ok(None)` if
+    /// `shutdown` fires during that retry, mirroring
+    /// `recover_from_trident_state`/`await_node_recreation`'s own
+    /// `Ok(None)`/`Ok(false)` so `main.rs` can exit promptly instead of
+    /// blocking indefinitely.
+    pub async fn from_config(
+        config: AgentConfig,
+        shutdown: &CancellationToken,
+    ) -> Result<Option<Self>, Error> {
+        let Some(node_name) =
+            Self::resolve_node_name_with_retry(&config.kubernetes, shutdown).await?
+        else {
+            return Ok(None);
+        };
         let k8s = NodeClient::new(&config.kubernetes).await?;
         let annotation_keys = AnnotationKeys::new(&config.kubernetes.annotation_prefix);
-        Ok(Self {
+        Ok(Some(Self {
             state: StateStore::new(config.orchestration.state_path.clone()),
             config,
+            node_name,
             k8s,
             annotation_keys,
-        })
+        }))
+    }
+
+    /// Resolves `node_name` once, retrying indefinitely (capped exponential
+    /// backoff + jitter, same `NODE_READ_BACKOFF`/`NODE_READ_BACKOFF_MAX`
+    /// policy as `get_node_with_retry`) if resolution fails - e.g.
+    /// `node_name_source=kubelet-cert` and kubelet hasn't finished writing
+    /// its client cert yet. Treated the same way a missing Node object
+    /// (`NodeGone`) already is: a plausible, expected startup race to wait
+    /// out, not a reason to crash the process. Races every sleep against
+    /// `shutdown`, returning `Ok(None)` if it fires first.
+    async fn resolve_node_name_with_retry(
+        kubernetes: &KubernetesConfig,
+        shutdown: &CancellationToken,
+    ) -> Result<Option<String>, Error> {
+        let mut backoff = ExponentialBackoffBuilder::new()
+            .with_initial_interval(NODE_READ_BACKOFF)
+            .with_max_interval(NODE_READ_BACKOFF_MAX)
+            .with_multiplier(2.0)
+            .with_randomization_factor(1.0)
+            .with_max_elapsed_time(None)
+            .build();
+        loop {
+            match kubernetes.resolve_node_name_once() {
+                Ok(node_name) => return Ok(Some(node_name)),
+                Err(err) => {
+                    // `max_elapsed_time(None)` means `next_backoff()` never
+                    // returns `None` in practice, but fall back to the cap
+                    // instead of unwrapping, so this can't panic even if
+                    // that invariant ever changes.
+                    let delay = backoff.next_backoff().unwrap_or(NODE_READ_BACKOFF_MAX);
+                    warn!(
+                        "failed to resolve node_name (node_name_source={:?}), retrying in \
+                         {delay:?}: {err:#}",
+                        kubernetes.node_name_source
+                    );
+                    select! {
+                        _ = shutdown.cancelled() => return Ok(None),
+                        _ = time::sleep(delay) => {}
+                    }
+                }
+            }
+        }
     }
 
     /// Issues a real `systemctl reboot`. Routed through the repo's
@@ -187,9 +252,7 @@ impl Orchestrator {
                     return Err(err);
                 }
             }
-            let mut stream = self
-                .k8s
-                .watch_node(self.config.kubernetes.node_name.clone());
+            let mut stream = self.k8s.watch_node(self.node_name.clone());
             // Watch-stream errors are tolerated indefinitely, so a transient
             // reconnect hiccup doesn't abort the whole orchestrator the way a
             // bare `node?` would. No extra sleep here (unlike
@@ -220,7 +283,7 @@ impl Orchestrator {
                     _ = shutdown.cancelled() => {
                         info!(
                             "shutdown requested while watching node {}",
-                            self.config.kubernetes.node_name
+                            self.node_name
                         );
                         return Ok(());
                     }
@@ -243,7 +306,7 @@ impl Orchestrator {
                         errors_since_last_node_event += 1;
                         warn!(
                             "transient error watching node {} (errors since last node event: {errors_since_last_node_event}): {err:#}",
-                            self.config.kubernetes.node_name
+                            self.node_name
                         );
                         continue;
                     }
@@ -254,7 +317,7 @@ impl Orchestrator {
                             "shutdown requested while reconciling node {}; exiting (any \
                              in-flight stage/finalize/rollback/commit resumes from \
                              state.json on next start)",
-                            self.config.kubernetes.node_name
+                            self.node_name
                         );
                         return Ok(());
                     }
@@ -299,7 +362,7 @@ impl Orchestrator {
     /// `NODE_READ_BACKOFF_MAX`, an acceptable idle cost in exchange for not
     /// permanently killing the agent on a transient 404 or a delete+recreate.
     async fn await_node_recreation(&self, shutdown: &CancellationToken) -> Result<bool, Error> {
-        let node_name = &self.config.kubernetes.node_name;
+        let node_name = &self.node_name;
         info!("node {node_name} no longer exists; waiting for it to reappear");
         let started = time::Instant::now();
         let mut last_announced = started;
@@ -424,10 +487,7 @@ impl Orchestrator {
             return Ok(Some(LoopControl::Continue));
         }
 
-        let Some(node) = self
-            .get_node_with_retry(&self.config.kubernetes.node_name, shutdown)
-            .await?
-        else {
+        let Some(node) = self.get_node_with_retry(&self.node_name, shutdown).await? else {
             return Ok(None); // shutdown requested while retrying
         };
         let snapshot = Snapshot::from_node(&node, &self.annotation_keys);
@@ -1406,14 +1466,10 @@ impl Orchestrator {
         );
         info!(
             "sending {annotation_key} annotation to node {}: {status:?}",
-            self.config.kubernetes.node_name
+            self.node_name
         );
         self.k8s
-            .patch_node_metadata(
-                &self.config.kubernetes.node_name,
-                BTreeMap::new(),
-                annotations,
-            )
+            .patch_node_metadata(&self.node_name, BTreeMap::new(), annotations)
             .await?;
         Ok(())
     }
@@ -1425,7 +1481,7 @@ impl Orchestrator {
                 Err(err) if self.is_node_gone_error(&err) => {
                     info!(
                         "stopping terminal status publish because node {} no longer exists",
-                        self.config.kubernetes.node_name
+                        self.node_name
                     );
                     return;
                 }
@@ -1512,7 +1568,7 @@ impl Orchestrator {
                         if self.is_node_gone_error(&err) {
                             info!(
                                 "stopping heartbeats because node {} no longer exists",
-                                self.config.kubernetes.node_name
+                                self.node_name
                             );
                             stop_heartbeats = true;
                         } else {
@@ -2216,8 +2272,84 @@ mod tests {
     const MOCK_RPC_TIMEOUT: Duration = Duration::from_secs(5);
     use crate::{
         annotations::{RequestedOperation, SCHEMA_VERSION},
-        core::trident::mock::{connect_mock_client, MockTridentdConfig, Outcome},
+        core::{
+            config::NodeNameSource,
+            trident::mock::{connect_mock_client, MockTridentdConfig, Outcome},
+        },
     };
+
+    // --- node_name resolution retry (microsoft/trident#839 follow-up) ---
+
+    /// Proves resolve_node_name_with_retry actually *retries* (keeps
+    /// looping/sleeping) rather than bailing out with an error on the
+    /// first failed resolution attempt - the whole point of treating an
+    /// unreadable kubelet-cert as a transient startup race, analogous to
+    /// the Node object itself not existing yet, rather than a fatal
+    /// condition. DEFAULT_KUBELET_CLIENT_CERT won't exist on this test
+    /// machine, so KubeletCert source fails deterministically every
+    /// attempt; cancelling shutdown shortly after starting (well under
+    /// NODE_READ_BACKOFF's 2s initial interval) and asserting Ok(None) -
+    /// not an Err - proves the loop was still patiently retrying (parked
+    /// in its backoff sleep) rather than having already given up.
+    #[tokio::test]
+    async fn resolve_node_name_with_retry_keeps_retrying_instead_of_erroring() {
+        let kubernetes = KubernetesConfig {
+            node_name_source: NodeNameSource::KubeletCert,
+            ..Default::default()
+        };
+        let shutdown = CancellationToken::new();
+        let shutdown_clone = shutdown.clone();
+        tokio::spawn(async move {
+            time::sleep(Duration::from_millis(50)).await;
+            shutdown_clone.cancel();
+        });
+        let result = Orchestrator::resolve_node_name_with_retry(&kubernetes, &shutdown).await;
+        assert!(
+            matches!(result, Ok(None)),
+            "expected Ok(None) (shutdown interrupted an in-progress retry), got {result:?}"
+        );
+    }
+
+    /// Hostname source must resolve immediately on the very first attempt -
+    /// no retry loop, no backoff sleep - since hostname_node_name() always
+    /// succeeds (it has its own internal fallback). Bounds the whole call
+    /// well under NODE_READ_BACKOFF's 2s initial interval to prove no sleep
+    /// was entered at all.
+    #[tokio::test]
+    async fn resolve_node_name_with_retry_hostname_source_resolves_without_retrying() {
+        let kubernetes = KubernetesConfig::default(); // Hostname is the default source
+        let shutdown = CancellationToken::new();
+        let result = time::timeout(
+            Duration::from_millis(500),
+            Orchestrator::resolve_node_name_with_retry(&kubernetes, &shutdown),
+        )
+        .await
+        .expect("must resolve well under one NODE_READ_BACKOFF interval")
+        .unwrap();
+        assert!(matches!(result, Some(name) if !name.is_empty()));
+    }
+
+    /// An explicit override must resolve immediately too, regardless of
+    /// node_name_source - same "no retry needed" guarantee as the hostname
+    /// case above, via a different code path
+    /// (KubernetesConfig::resolve_node_name_once's override branch).
+    #[tokio::test]
+    async fn resolve_node_name_with_retry_explicit_override_resolves_without_retrying() {
+        let kubernetes = KubernetesConfig {
+            node_name_override: Some("node-42".to_string()),
+            node_name_source: NodeNameSource::KubeletCert,
+            ..Default::default()
+        };
+        let shutdown = CancellationToken::new();
+        let result = time::timeout(
+            Duration::from_millis(500),
+            Orchestrator::resolve_node_name_with_retry(&kubernetes, &shutdown),
+        )
+        .await
+        .expect("must resolve well under one NODE_READ_BACKOFF interval")
+        .unwrap();
+        assert_eq!(result, Some("node-42".to_string()));
+    }
 
     fn request(operation: RequestedOperation) -> UpdateRequest {
         UpdateRequest {

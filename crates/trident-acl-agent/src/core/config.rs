@@ -119,30 +119,17 @@ impl AgentConfig {
                     .track
                     .unwrap_or_else(|| DEFAULT_NEBRASKA_TRACK.to_string()),
             },
-            kubernetes: {
-                let node_name_source = kubernetes.node_name_source.unwrap_or_default();
-                let node_name = match kubernetes.node_name {
-                    Some(name) => name,
-                    None => default_node_name(node_name_source).with_context(|| {
-                        format!(
-                            "failed to determine node_name for \
-                             {ENV_PREFIX_KUBERNETES}NODE_NAME_SOURCE={node_name_source:?}; set \
-                             {ENV_PREFIX_KUBERNETES}NODE_NAME explicitly to override"
-                        )
-                    })?,
-                };
-                KubernetesConfig {
-                    api_server: kubernetes.api_server,
-                    kubeconfig: kubernetes
-                        .kubeconfig
-                        .unwrap_or_else(|| PathBuf::from(DEFAULT_KUBELET_KUBECONFIG)),
-                    node_name,
-                    node_name_source,
-                    watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
-                    annotation_prefix: kubernetes
-                        .annotation_prefix
-                        .unwrap_or_else(|| DEFAULT_ANNOTATION_PREFIX.to_string()),
-                }
+            kubernetes: KubernetesConfig {
+                api_server: kubernetes.api_server,
+                kubeconfig: kubernetes
+                    .kubeconfig
+                    .unwrap_or_else(|| PathBuf::from(DEFAULT_KUBELET_KUBECONFIG)),
+                node_name_override: kubernetes.node_name,
+                node_name_source: kubernetes.node_name_source.unwrap_or_default(),
+                watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
+                annotation_prefix: kubernetes
+                    .annotation_prefix
+                    .unwrap_or_else(|| DEFAULT_ANNOTATION_PREFIX.to_string()),
             },
             trident: TridentConfig {
                 socket: trident
@@ -322,11 +309,21 @@ pub struct KubernetesConfig {
     /// kubeconfig has no reason to contain.
     pub api_server: Option<Url>,
     pub kubeconfig: PathBuf,
-    pub node_name: String,
-    /// Which source `node_name` was (or would be) derived from when no
-    /// explicit `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` override is set.
-    /// See [`NodeNameSource`] for the two options and why hostname remains
-    /// the default despite not being AKS-guaranteed.
+    /// Explicit override for `node_name` (`TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME`).
+    /// When unset, [`Self::resolve_node_name_once`] derives it from
+    /// `node_name_source` instead. Deliberately *not* resolved eagerly at
+    /// config-load time: the long-running orchestrator needs to retry a
+    /// transient `kubelet-cert` resolution failure with backoff (treating
+    /// it like a startup race, analogous to the Node object itself not
+    /// existing yet) rather than fail the whole process outright, while
+    /// `--validate-connection kubernetes` wants the opposite - a single,
+    /// fail-fast attempt. Each caller decides which by how it drives
+    /// `resolve_node_name_once`, not by config loading itself.
+    pub node_name_override: Option<String>,
+    /// Which source `node_name` is derived from when
+    /// `node_name_override` is unset. See [`NodeNameSource`] for the two
+    /// options and why hostname remains the default despite not being
+    /// AKS-guaranteed.
     pub node_name_source: NodeNameSource,
     pub watch_poll_interval: Duration,
     /// Annotation-key prefix used for the request/status/commit-status
@@ -338,18 +335,31 @@ pub struct KubernetesConfig {
     pub annotation_prefix: String,
 }
 
+impl KubernetesConfig {
+    /// Resolves the effective `node_name`: `node_name_override` if set,
+    /// otherwise a single, non-retried attempt via `node_name_source`. This
+    /// is the fail-fast building block both callers share -
+    /// `--validate-connection kubernetes` uses this directly (a single bad
+    /// attempt should report failure immediately), while the long-running
+    /// orchestrator wraps repeated calls to this same method in its own
+    /// capped-exponential-backoff retry loop (see
+    /// `Orchestrator::resolve_node_name_with_retry`) so a transient
+    /// `kubelet-cert` failure - e.g. kubelet hasn't finished writing the
+    /// cert yet at boot - doesn't crash the whole agent.
+    pub fn resolve_node_name_once(&self) -> Result<String, Error> {
+        match &self.node_name_override {
+            Some(name) => Ok(name.clone()),
+            None => default_node_name(self.node_name_source),
+        }
+    }
+}
+
 impl Default for KubernetesConfig {
     fn default() -> Self {
-        // Calls hostname_node_name() directly rather than going through
-        // the now-fallible default_node_name(): NodeNameSource::default()
-        // is always Hostname, which hostname_node_name() can always
-        // satisfy (it has its own internal fallback to DEFAULT_NODE_NAME
-        // on a hostname-read failure), so this Default impl never needs
-        // the KubeletCert branch that can actually return Err.
         Self {
             api_server: None,
             kubeconfig: PathBuf::from(DEFAULT_KUBELET_KUBECONFIG),
-            node_name: hostname_node_name(),
+            node_name_override: None,
             node_name_source: NodeNameSource::default(),
             watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
             annotation_prefix: DEFAULT_ANNOTATION_PREFIX.to_string(),
@@ -425,13 +435,23 @@ pub enum NodeNameSource {
     /// `system:node:` prefix. This is the identity kubelet itself
     /// authenticates to the API server with, so it is guaranteed to match
     /// the real Node name regardless of hostname conventions. Opt in with
-    /// `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE=kubelet-cert`. If the
-    /// cert can't be read or parsed, config loading fails outright (same
-    /// severity as any other malformed/unsatisfiable config) - deliberately
-    /// no fallback to `Hostname`: an operator who opted into this source
-    /// did so because hostname is *not* a trustworthy Node identity on
-    /// their platform, so silently substituting it back in on cert failure
-    /// would risk the agent reconciling against the wrong Node entirely.
+    /// `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE=kubelet-cert`.
+    ///
+    /// Deliberately no fallback to `Hostname` if the cert can't be read or
+    /// parsed: an operator who opted into this source did so because
+    /// hostname is *not* a trustworthy Node identity on their platform, so
+    /// silently substituting it back in on cert failure would risk the
+    /// agent reconciling against the wrong Node entirely. Instead, the
+    /// long-running orchestrator treats an unreadable cert as a startup
+    /// race analogous to the Node object itself not existing yet - e.g.
+    /// kubelet hasn't finished its own TLS bootstrapping and written the
+    /// cert before this agent started - and retries resolution with the
+    /// same capped-exponential-backoff policy used for a missing Node (see
+    /// `Orchestrator::resolve_node_name_with_retry`), rather than crashing
+    /// the process. `--validate-connection kubernetes`, by contrast, makes
+    /// a single fail-fast attempt via
+    /// [`KubernetesConfig::resolve_node_name_once`] and reports failure
+    /// immediately - appropriate for a one-shot diagnostic.
     KubeletCert,
 }
 
@@ -659,7 +679,10 @@ mod tests {
             config.kubernetes.kubeconfig,
             PathBuf::from("/etc/trident-acl-agent/kubeconfig")
         );
-        assert_eq!(config.kubernetes.node_name, "node-42");
+        assert_eq!(
+            config.kubernetes.node_name_override.as_deref(),
+            Some("node-42")
+        );
         assert_eq!(
             config.kubernetes.node_name_source,
             NodeNameSource::KubeletCert
@@ -856,19 +879,55 @@ gf0TbLqnNti3MeMftKcEa8VQ2rE6Np02EETxr94lsiNK
     }
 
     #[test]
-    fn missing_cert_with_kubelet_cert_source_is_a_fatal_config_error() {
-        let err = AgentConfig::from_vars(vars(&[(
+    fn config_loading_succeeds_even_when_kubelet_cert_is_unreadable() {
+        // Unlike the old design, AgentConfig::from_vars must NOT fail just
+        // because node_name_source=kubelet-cert and the cert can't be read
+        // yet - resolution is deferred to resolve_node_name_once/
+        // resolve_node_name_with_retry (see KubernetesConfig's doc
+        // comments), so config loading itself stays infallible for this.
+        let config = AgentConfig::from_vars(vars(&[(
             "TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE",
             "kubelet-cert",
         )]))
-        .unwrap_err();
-        // No TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME override set, and
-        // DEFAULT_KUBELET_CLIENT_CERT won't exist on a dev/test machine -
-        // from_vars must propagate node_name resolution failure as a fatal
-        // config error, not silently fall back to hostname.
-        assert!(
-            format!("{err:#}").contains("failed to determine node_name"),
-            "{err:#}"
+        .unwrap();
+        assert_eq!(
+            config.kubernetes.node_name_source,
+            NodeNameSource::KubeletCert
+        );
+        assert_eq!(config.kubernetes.node_name_override, None);
+    }
+
+    #[test]
+    fn resolve_node_name_once_errors_when_kubelet_cert_is_unreadable() {
+        // DEFAULT_KUBELET_CLIENT_CERT won't exist on a dev/test machine, so
+        // requesting kubelet-cert source with no override must error out -
+        // no silent fallback to hostname (see NodeNameSource::KubeletCert's
+        // doc comment for why).
+        let config = AgentConfig::from_vars(vars(&[(
+            "TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE",
+            "kubelet-cert",
+        )]))
+        .unwrap();
+        let err = config.kubernetes.resolve_node_name_once().unwrap_err();
+        assert!(format!("{err:#}").contains("failed to read"), "{err:#}");
+    }
+
+    #[test]
+    fn resolve_node_name_once_prefers_explicit_override_over_source() {
+        // Even with node_name_source=kubelet-cert (which would otherwise
+        // read an unreadable cert and error), an explicit override must
+        // win outright and never even attempt source-based resolution.
+        let config = AgentConfig::from_vars(vars(&[
+            ("TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME", "node-42"),
+            (
+                "TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE",
+                "kubelet-cert",
+            ),
+        ]))
+        .unwrap();
+        assert_eq!(
+            config.kubernetes.resolve_node_name_once().unwrap(),
+            "node-42"
         );
     }
 }
