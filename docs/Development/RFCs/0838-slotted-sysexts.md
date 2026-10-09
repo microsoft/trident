@@ -1,4 +1,4 @@
-# 0838 Slotted system extensions
+# 0838 Slotted Extension Storage
 
 - Date: 2026-10-08
 - RFC PR: [microsoft/trident#838](https://github.com/microsoft/trident/pull/838)
@@ -6,35 +6,58 @@
 
 ## Summary
 
-Add a `slotted` scope for sysexts/confexts. Trident stores them per A/B volume
-under a configurable store (default `/var/trident/sysexts/{a,b}/`) and activates
-the correct slot at boot, before `systemd-sysext` merges.
+Trident requires every extension destination to sit on an A/B volume when A/B is
+configured. That is one way to make an extension follow the slot, and it costs a
+partition pair per extension directory.
 
-## Motivation
+This adds a second. An extension marked `scope: slotted` is stored per volume
+under a Trident-owned store, with a symlink at its normal destination.
+Slot-scoping becomes a property of the extension rather than of the partition
+table.
 
-`systemd-sysext(8)` merges an extension only if its `extension-release` matches
-the running OS: `ID=` must match unless `_any`, then `SYSEXT_LEVEL=` if defined,
-else `VERSION_ID=`.
+## Motivation and Goals
 
-All three directories Trident accepts today (`/etc/extensions`,
-`/var/lib/extensions`, `/.extra/sysext`) are outside the partitions an A/B
-update replaces. So an OS-pinned extension silently stops merging after the
-first update: no error, no failed unit, the content is just gone.
+`validate_extension_images_locations` (`config/host/mod.rs:218`) rejects any
+extension directory that does not resolve to a device with A/B capabilities,
+raising `ExtensionImageNotOnABVolume`. The reasoning is sound: extensions on
+shared storage change the running slot immediately and do not roll back.
 
-Azure Container Linux hits this. Its Azure platform extension (guest agent,
-Hyper-V daemons, chrony, `oras`) is `VERSION_ID`-pinned on a non-swapped
-partition. Losing `oras` also breaks the distro's extension download path.
+The cost is that the only way to satisfy it is a dedicated A/B volume pair.
+Trident's own reference configuration
+(`tests/e2e_tests/trident_configurations/root-verity/trident-config.yaml`)
+spends four partitions and 2.4 GB on it: `sysexts-a`/`sysexts-b` at 1 GB each
+mounted at `/var/lib/extensions`, and `confexts-a`/`confexts-b` at 200 MB each
+at `/var/lib/confexts`.
 
-The shape that works already exists in the same image: the container runtime
-ships as an extension inside `/usr`, so extension and `os-release` swap
-together. This proposal gives that property to anyone who cannot re-seal
-dm-verity and re-sign the UKI.
+That price buys only slot-scoping, and it is charged in the currency hardest to
+change:
 
-Goals: correct extension version per booted slot; rollback restores the previous
-set without a Trident servicing operation; no new partitions, no `/usr` change,
-no re-signing; existing configs unaffected.
+- **Partitions are fixed at install.** The 1 GB is a guess made before anyone
+  knows what the host will carry; growing it means repartitioning.
+- **Some layouts cannot pay it.** Where the partition table is published, signed
+  or attested, adding a pair is not a configuration change. A layout whose only
+  A/B volume is a verity-sealed `/usr` has none to offer on any terms.
+- **It is all-or-nothing per directory.** An extension that should follow the
+  slot and one that should persist cannot share a location.
 
-Non-goals: changing systemd matching semantics; ESP-based extensions.
+The check conflates *being slot-scoped*, the property that matters, with *being
+on an A/B block device*, one implementation of it. Trident can provide the same
+property with directories, on storage the host already has.
+
+**Goals.** Slot-scoped extensions without a dedicated volume pair; rollback
+restores the previous set; shared and slotted coexist in one directory; no new
+partitions, no sealed-`/usr` change, no re-signing; existing configurations
+unaffected.
+
+**Non-goals.** Changing `systemd-sysext` matching semantics, which still decides
+what merges. Removing the A/B volume route, which stays better where a pair is
+affordable, since the filesystem provides the isolation and Trident does
+nothing. Extensions on the ESP.
+
+## Scope
+
+Sysexts and confexts under `os.sysexts` and `os.confexts`, on clean install, A/B
+update and rollback. Runtime update does not change slot and is unaffected.
 
 ## Public API Design
 
@@ -48,23 +71,20 @@ os:
       path: /var/lib/extensions/tooling.raw  # optional; allow-listed dir, *.raw
 ```
 
-`path` defaults to `/var/lib/extensions/`, and is restricted to
-`/etc/extensions`, `/var/lib/extensions` or `/.extra/sysext`.
-
-It conflates *where the file is stored* with *what scope it is active in*.
-Slotting separates them: storage becomes Trident-owned and derived from the
-target volume.
+`path` is the destination, defaulting to `/var/lib/extensions/{name}.raw`. When
+`storage.abUpdate` is configured it must also resolve to an A/B volume.
 
 ### Proposed
 
-Two new optional fields.
+Two optional fields. `path` keeps one meaning in both cases: where the extension
+appears to systemd.
 
 ```yaml
 os:
   # Root of the per-volume extension store.
   # Default /var/trident/sysexts. Must be on storage an A/B update does not
   # replace, and must not be a systemd-sysext search path.
-  extensionStore: /mnt/bigdisk/trident/sysexts
+  extensionStore: /mnt/data/trident/sysexts
 
   sysexts:
     # unchanged, and still the default
@@ -77,162 +97,183 @@ os:
       scope: slotted
 ```
 
-`scope`:
-
-| Value | Meaning |
-|---|---|
-| `shared` (default) | Stored at `path`, active on both volumes. For `ID=_any` extensions. Today's behaviour. |
-| `slotted` | Stored per-volume under `extensionStore`, active only on the volume it was installed to. For OS-version-pinned extensions. |
+| `scope` | Where the bytes live | What `path` is |
+| --- | --- | --- |
+| `shared` (default) | At `path`. | The image itself. Today's behaviour. |
+| `slotted` | `<extensionStore>/{a,b}/{name}.raw` | A symlink to the booted slot's copy. |
 
 `extensionStore` is configurable because slotting doubles storage, and large
-extensions (GPU drivers, ML runtimes) may need a dedicated volume. Confexts use
-a sibling `confexts/` under the same root.
+extensions such as GPU drivers may warrant a dedicated volume. Confexts use a
+sibling `confexts/` under the same root.
+
+### The validation change
+
+`validate_extension_images_locations` is relaxed, not removed. Its requirement
+becomes *the destination is slot-scoped*, satisfied either way:
+
+| Configuration | Rule |
+| --- | --- |
+| No `abUpdate` | No check, as today. |
+| `abUpdate`, `scope: shared` | `path` must be on an A/B volume. Unchanged. |
+| `abUpdate`, `scope: slotted` | `path` need not be; the store provides the scoping. |
+
+This is the substantive behavioural change. Everything else follows from it.
 
 ### Validation
 
 | Condition | Result |
-|---|---|
+| --- | --- |
 | `scope` absent | `shared`. Identical to today. |
-| `scope: shared` with `path` | Existing allow-list check. |
-| `scope: slotted` with `path` | Reject. The path is Trident-owned; accepting it would silently ignore it. |
-| `scope: slotted`, no `path` | Filename from the `url` basename, as today's default. |
-| `scope: slotted`, no A/B volumes configured | Reject at validation, not at provision. |
+| `scope: slotted`, no `path` | Default destination, as today. |
+| `scope: slotted`, no `abUpdate` | Reject, naming the absent configuration. |
+| `extensionStore` inside a search path | Reject: both slots' copies would be discovered. |
+| `extensionStore` on an A/B volume | Reject: it must outlive the slot it describes. |
 | `extensionStore` set, no `slotted` entries | Accept, unused. |
-| `extensionStore` inside a sysext search path | Reject: both slots' copies would be discovered. |
 
 ### Backward compatibility
 
 Both fields default, so existing Host Configurations parse and behave
-identically. The schema gains two optional properties and no field changes
-meaning.
+identically and no field changes meaning. The relaxed check is strictly more
+permissive, so anything valid today stays valid. The schema gains two optional
+properties.
 
 ### Alternatives rejected
 
 - **Sentinel `path`** (`/var/trident/sysexts/<slot>/x.raw`): leaks internal
-  layout, invites a literal `a`/`b`.
-- **Separate `os.slottedSysexts` list**: duplicates the type and its
-  duplicate-hash/path validation.
-- **Infer from `extension-release`**: the metadata is inside the image, so it is
-  unavailable at static validation, and it removes the operator's choice to slot
-  an `_any` extension deliberately.
+  layout, invites a literal `a` or `b`.
+- **Separate `os.slottedSysexts` list**: duplicates the type and its duplicate
+  hash and path validation.
+- **Infer from `extension-release`**: inside the image, so unavailable at static
+  validation, and it removes the operator's choice to slot an `ID=_any`
+  extension deliberately.
 
 ## Implementation
 
 ```
 /var/trident/sysexts/
 ├── a/platform.raw
-├── b/platform.raw
-└── current -> a        # flipped at boot
+└── b/platform.raw
+
+/var/lib/extensions/
+├── platform.raw -> /var/trident/sysexts/a/platform.raw   # slotted
+└── tooling.raw                                           # shared, unchanged
 ```
 
-Both slot directories persist across an update, so a rollback needs no
-re-download. Confexts use a sibling `confexts/` under the same root.
+The store sits outside every search path, so only the symlink is discoverable
+and exactly one copy is ever a candidate. Both slot directories persist across
+an update, so rollback needs no re-download.
 
-### Activation is resolved at boot, not at servicing
+Symlinks are followed: `image_discover` opens each search path with
+`chase_and_opendir(path, root, CHASE_PREFIX_ROOT, ..)` and stats entries with
+`flags = 0` on a running system, with an upstream comment explicitly permitting
+symlinks into the search path (systemd `src/shared/discover-image.c`).
 
-`/etc` is shared between volumes, so an activating symlink written during
-servicing would still point at the new slot after a rollback. This cannot be
-corrected by an inverse servicing step, because **the A/B rollback path does not
-invoke subsystems**:
+### Servicing
 
-- Automatic rollback is firmware-driven. `rollback::validate_boot` only observes
-  which root actually booted and reconciles Host Status (`spec = spec_old`).
-- `manual_rollback::stage_rollback` touches only the pcrlock policy for
-  `ManualRollbackAbStaged`. Only the *runtime* path calls
-  `runtime_update::rollback(&mut subsystems, ..)`.
-
-Activation must therefore key off what booted, not what was staged:
-
-1. `/etc/extensions/<name>.raw` → `<store>/current/<name>.raw`. Written once at
-   clean install, never rewritten.
-2. `<store>/current` → `a` | `b`, flipped at boot by a Trident unit from the
-   booted volume.
-
-One atomic symlink flip activates the whole set, and it is correct after a
-rollback Trident never participated in.
-
-### Servicing flow
-
-The extensions subsystem already runs on `CleanInstall` and `AbUpdate` via
+The extensions subsystem already runs on clean install and A/B update via
 `provision()`, documented as "migrate state from A-partition to B-partition (or
-vice versa)".
+vice versa)". For a slotted entry it resolves the target volume with
+`EngineContext::get_ab_update_volume()`, already used to select the per-slot
+verity addon, writes into `<store>/<target>/`, and points the destination
+symlink at it.
 
-1. **prepare** — download, verify SHA-384. Unchanged.
-2. **provision** — resolve the target volume via
-   `EngineContext::get_ab_update_volume()` (already used for per-slot verity
-   addons); place into `<store>/<target>/`.
-3. **configure**, clean install only — write the `/etc/extensions` symlinks.
-   `/etc` writes are already supported via `Subsystem::writable_etc_overlay()`.
+### Rollback
 
-The symlink supplies the `extension-release.NAME`-matching filename; stored
-files may be named freely.
+`RUNS_ON_ALL` is `CleanInstall | AbUpdate | RuntimeUpdate` (`engine/mod.rs:63`);
+it excludes both rollback types despite the name. The extensions subsystem adds
+`ManualRollbackAb` to its `runs_on` and repoints the symlinks at the previous
+volume's directory. The files were never removed, so this is a symlink operation
+rather than a re-download. `finalize_rollback` already locks `SUBSYSTEMS` for
+the runtime path.
 
-### Boot unit
+**Automatic rollback is not a servicing operation.** When the firmware falls
+back on its own, Trident regains control only at `trident commit`, which is
+`WantedBy=multi-user.target` and so runs after `systemd-sysext` merges at
+`sysinit.target`.
 
-```
-After=local-fs.target        # /var mounted, store readable
-Before=systemd-sysext.service
-```
+The outcome is still safe, because the matching rules that motivate this RFC act
+as an interlock. The stale symlink resolves to the other slot's extension, which
+declares the other OS version, so systemd declines to merge it. The host comes
+up with the extension **absent, not wrong**. `commit` then detects the rollback
+through the existing `validate_boot` path, repoints the symlinks and runs
+`systemd-sysext refresh`, which is the unit's own `ExecStart` and needs no
+reboot.
 
-`systemd-sysext.service` is `After=local-fs.target Before=sysinit.target`, so
-this window exists. It is also gated on
-`ConditionDirectoryNotEmpty=|/etc/extensions`, which the install-time symlinks
-satisfy.
+Degraded for part of one boot, never serving content from the wrong OS version,
+and self-closing. Where that window is unacceptable, a
+[health check](../../Reference/Host-Configuration/API-Reference/Health.md)
+asserting the extension is merged gates the update before it reaches this state.
 
-This cannot be `trident.service`, which is `WantedBy=multi-user.target` and runs
-long after the merge.
+## Relationship to RFC 0789
 
-Slot discovery: compare the booted `/usr` (or root) PARTUUID against the volume
-mapping Trident recorded at install. Not the datastore, which is larger
-machinery than this needs. See Open Questions.
+[0789](https://github.com/microsoft/trident/pull/789) carries extension images in
+COSI files. The two are orthogonal: 0789 changes where the bytes come from, this
+changes where they land and how they follow the slot. Either is useful alone,
+and a bundled extension can be slotted.
+
+Both touch `validate_extension_images_locations`, in opposite directions: 0789
+tightens it into dynamic validation against the storage graph, this adds a
+second way to satisfy it. Whichever lands first should leave the check expressed
+as *is this destination slot-scoped*, so the other is an added arm rather than a
+rewrite. 0789's rollback argument, that extensions revert because the slot's
+filesystem reverts, is the A/B volume mechanism described here and holds
+unchanged for `scope: shared`.
 
 ## Testing
 
-- Clean install: file in the correct slot dir, `current` and `/etc/extensions`
-  symlinks correct, merged after boot.
-- A/B update: `current` flips and **merged content differs from the previous
-  slot**. A presence-only assertion passes in the inert case and must not be
-  used.
-- Rollback, both automatic and manual: `current` returns to the previous slot
-  and the previous content is merged, **with no Trident servicing operation in
-  between**. This is the case the design exists for.
-- Boot ordering: the flip lands before `systemd-sysext.service` merges, asserted
-  on first boot after an update rather than on a steady-state boot.
-- Validation: each reject row above.
-- Compat: a config with no `scope` places byte-identically to today.
-- Non-default `extensionStore` on a separate mount.
+- Clean install: file in the correct slot directory, symlink resolving, merged
+  after boot.
+- A/B update: the symlink repoints and **the merged content differs from the
+  previous slot**. A presence-only assertion passes in the inert case and must
+  not be used.
+- Manual rollback: symlinks and merged content return to the previous slot.
+- Automatic rollback: on the fallback boot the extension is absent rather than
+  stale, and merges after `commit` without a reboot. Both halves asserted; the
+  first distinguishes safe degradation from serving wrong content.
+- Coexistence: a shared and a slotted extension in `/var/lib/extensions`, both
+  merged, only the slotted one changing across an update.
+- Validation: each reject row, plus a shared extension off an A/B volume still
+  rejected.
+- Compatibility: a configuration with no `scope` places byte-identically to
+  today. A non-default `extensionStore` on a separate mount.
 
 ## Counter-arguments
 
-- **"Put it in `/usr`."** Strictly better where possible, but requires re-sealing
-  verity and re-signing the UKI. This targets that gap.
-- **"Use the ESP."** `<uki>.efi.extra.d/*.sysext.raw` is genuinely slot-scoped,
-  but ESPs are 128-256 MiB against payloads in the tens to hundreds of MB, and
-  `systemd-stub` places them in the initrd, not the running system.
-- **"Add A/B extension partitions."** Works, but layout changes are breaking
-  after the first A/B image ships. Directories achieve the same isolation.
-- **"Doubles storage."** Yes. Mitigated by `extensionStore`.
+- **"Just add the partitions."** Better where possible. This is for layouts that
+  cannot, and for sizing decided after install rather than before.
+- **"Put it in `/usr`."** Better still, and unavailable without re-sealing
+  dm-verity and re-signing the UKI. Upstream also forbids extension storage
+  under `/usr`: a `lowerdir=` that is a child of another fails with `-ELOOP`.
+- **"Use the ESP."** Genuinely slot-scoped via `<uki>.efi.extra.d/`, but ESPs
+  are 128 to 256 MiB against payloads in the tens to hundreds of megabytes, and
+  `systemd-stub` places them in the initrd.
+- **"Doubles storage."** It does. The A/B volume route doubles it too, with the
+  allocation fixed at install.
+- **"A symlink is weaker than a partition boundary."** Yes, though both are
+  reachable by anything that can already write the extension image.
+
+**Prior art.** systemd's versioned directories (`<name>.v/` holding
+`<name>_<version>.raw`, highest wins) are the same shape: a directory of
+candidates, one selected at discovery. They select by version rather than slot,
+so they do not serve this case, but the pattern is systemd's own.
 
 ## Open questions
 
-1. **Slot discovery in the boot unit.** Comparing the booted PARTUUID against a
-   small install-time mapping file is proposed, but the mapping must survive the
-   update that rewrites it. Reading the datastore this early is the alternative.
-2. **Does the flip need to be a Trident binary at all?** The operation is one
-   `readlink` and one `symlink`. A generator or a small shipped script may be a
-   better fit than adding a Trident invocation to early boot.
-3. **Retention.** Nothing prunes a slot directory when an entry is dropped from
-   the config. Should `provision()` reconcile, and does that break the rollback
-   guarantee that the previous slot's files are still present?
-4. **SELinux.** Extensions are already documented as unsupported with SELinux
-   enabled; Trident-created symlinks in `/etc` may additionally need a label.
-5. **Default path.** `/var/trident/sysexts` vs `/var/lib/trident/sysexts`; the
-   datastore already lives under `/var/lib/trident/`.
-6. **Host Status.** Should it report slotted extensions per volume? Derivable
-   from `ab_active_volume` plus the store, but not otherwise inspectable.
+1. **Retention.** Nothing prunes a slot directory when an entry leaves the
+   configuration. Should `provision()` reconcile, and does that conflict with
+   keeping the previous slot's files for rollback?
+2. **Default path.** `/var/trident/sysexts` against `/var/lib/trident/sysexts`;
+   the datastore already lives under `/var/lib/trident/` (`constants.rs:30`).
+3. **Should `commit` refresh unconditionally?** Refreshing only on a detected
+   rollback is narrower, but an unconditional refresh is cheap and removes a
+   branch.
+4. **Host Status.** Should it report the slotted set per volume?
+5. **SELinux.** Extensions are already unsupported with SELinux enforcing.
+   Slotting does not change that, but Trident-created symlinks may need
+   labelling, and 0789 proposes moving that check to every servicing type.
 
 ## Future possibilities
 
 - Per-volume scoping for other Trident-managed state that is shared today.
-- Changing an extension's scope between servicing operations, which currently
-  strands a copy in the old location.
+- Changing an extension's scope between operations, which would otherwise strand
+  a copy in the old location.
