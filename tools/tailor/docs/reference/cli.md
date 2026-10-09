@@ -92,12 +92,13 @@ JSON entries contain `image`, `slug`, `axes`, and `format`, plus `baseImage` whe
 
 Print one selected cell slug per line. Equivalent to `tailor matrix --format slugs`.
 
-## `tailor explain <image>`
+## `tailor explain <image|slug>`
 
 Print the **merge order** for each selected cell: the ordered list of fragment files that merge into it
 (base first, later files win), each annotated with why it applies and any `$include`d libraries. This makes
 the fragment precedence model legible. Add `--with-config` to also print the merged Image Customizer
-config. Accepts `-s/--select` and `--cell`; read-only and offline.
+config. Pass an image name to explain its selected cells, or a cell slug to explain that cell
+directly. Accepts `-s/--select` and `--cell`; read-only and offline.
 
 ```text
 $ tailor explain gizmo --cell gizmo_pro_arm64_stable_cosi

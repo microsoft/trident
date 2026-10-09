@@ -156,9 +156,10 @@ pub(crate) enum Command {
     Update,
     /// Validate image definitions (renders every cell) without building.
     Validate(ImagesArgs),
-    /// Show the merge order (the ordered fragment files) for a cell; `--with-config` also prints the
+    /// Show the merge order for an image's cells or one cell slug; `--with-config` also prints the
     /// merged IC config.
     Explain {
+        #[arg(value_name = "IMAGE_OR_SLUG")]
         image: String,
         #[command(flatten)]
         select: SelectArgs,

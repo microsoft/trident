@@ -37,7 +37,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     cli::{
         AddCommand, BasesCommand, BuildArgs, Cli, Command, ConvertArgs, ExportArgs, InitArgs,
-        InitTemplate, MatrixFormat, TimestampMode,
+        InitTemplate, MatrixFormat, SelectArgs, TimestampMode,
     },
     error::AppError,
     scaffold,
@@ -152,7 +152,7 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<(), AppError> {
             image,
             select,
             with_config,
-        } => explain(&workspace, &image, &selector(&select, &[])?, with_config),
+        } => explain(&workspace, &image, &select, with_config),
         Command::Matrix(args) => matrix(
             &workspace,
             &args.images,
@@ -520,14 +520,20 @@ fn stale_exports(
 fn explain(
     workspace: &Workspace,
     name: &str,
-    selector: &Selector,
+    select: &SelectArgs,
     with_config: bool,
 ) -> Result<(), AppError> {
-    let targets = build_targets(workspace, std::slice::from_ref(&name.to_owned()))?;
+    let all_members = all_member_targets(workspace)?;
+    let (image_names, positional_slugs) =
+        classify_build_positionals(&[name.to_owned()], &all_members)?;
+    let targets = build_targets(workspace, &image_names)?;
     let target = targets
         .first()
         .ok_or_else(|| AppError::Message(format!("unknown image `{name}`")))?;
-    let cells = cells_selected(target, selector)?;
+    let mut cell_slugs = select.cell.clone();
+    cell_slugs.extend(positional_slugs);
+    let selection = Selector::parse(&select.select, &cell_slugs, &[])?;
+    let cells = cells_selected(target, &selection)?;
 
     // One merge plan per axis-cell (outputs don't change fragment selection), in first-seen order.
     let mut seen: BTreeSet<BTreeMap<String, String>> = BTreeSet::new();
