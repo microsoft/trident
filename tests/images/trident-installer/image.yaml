@@ -23,4 +23,40 @@ extraDependencies:
   - ../../../tools/cmd/rcp-agent/rcp-agent.service
 
 config:
-  $include: ./tailor/baseimg.yaml
+  storage:
+    $include: ./include/storage.yaml
+  os:
+    bootloader:
+      resetType: hard-reset
+    hostname: trident-mos-testimage
+    packages:
+      install:
+        - $include: ./include/common-packages.yaml
+        - binutils
+        - trident-static-pcrlock-files
+        - selinux-policy
+        - selinux-policy-devel
+        - audit
+    services:
+      enable:
+        - sshd
+        - trident-install
+        - tridentd.socket
+    additionalFiles:
+      - $include: ./include/common-files.yaml
+      - source: base/files/trident-install.service
+        destination: /usr/lib/systemd/system/trident-install.service
+    selinux:
+      mode: enforcing
+  scripts:
+    postCustomization:
+      - path: base/post-install.sh
+  iso:
+    additionalFiles:
+      - source: base/files/config-placeholder.yaml
+        destination: /trident-config.yaml
+      - source: base/files/override-placeholder.conf
+        destination: /trident-override.conf
+    kernelCommandLine:
+      extraCommandLine:
+        - $include: ./include/kernel-args.yaml

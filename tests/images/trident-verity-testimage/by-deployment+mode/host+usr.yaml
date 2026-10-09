@@ -1,6 +1,17 @@
-rpmSources:
-  - ../../../bin/RPMS
 config:
-  $set:
-    $include: ./tailor/usr-host.yaml
-signing: true
+  os:
+    hostname: trident-usrverity-testimg
+    packages:
+      install:
+        - binutils
+        - trident-service
+        - trident-static-pcrlock-files
+        - audit
+        - selinux-policy-devel
+    additionalFiles:
+      - source: usr/files/use-grpc-client-commit.conf
+        destination: /etc/systemd/system/trident.service.d/override.conf
+    services:
+      enable:
+        - trident
+        - tridentd.socket

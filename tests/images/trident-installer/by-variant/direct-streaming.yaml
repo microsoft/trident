@@ -1,3 +1,48 @@
 config:
-  $set:
-    $include: ./tailor/baseimg-direct-streaming.yaml
+  os:
+    hostname:
+      $set: trident-direct-streaming-mos-testimage
+    packages:
+      update:
+        - systemd
+      install:
+        $remove:
+          - trident-static-pcrlock-files
+          - selinux-policy
+          - audit
+        $append:
+          - setools-console
+          - trident-selinux
+          - trident-install-service
+    services:
+      enable:
+        $remove:
+          - trident-install
+        $append:
+          - rcp-agent
+    additionalFiles:
+      $remove:
+        - source: base/files/trident-install.service
+          destination: /usr/lib/systemd/system/trident-install.service
+      $append:
+        - source: ../../../bin/rcp-agent
+          destination: /usr/bin/rcp-agent
+        - source: ../../../tools/cmd/rcp-agent/rcp-agent.service
+          destination: /usr/lib/systemd/system/rcp-agent.service
+  scripts:
+    postCustomization:
+      $replace:
+        - path: base/post-install.sh
+          arguments:
+            - stream-image-test
+  iso:
+    additionalFiles:
+      $replace:
+        - source: base/files/pre-trident-script.sh
+          destination: /pre-trident-script.sh
+        - source: base/files/rcp-agent.yaml
+          destination: /rcp-agent.yaml
+    kernelCommandLine:
+      extraCommandLine:
+        $append:
+          - selinux=1

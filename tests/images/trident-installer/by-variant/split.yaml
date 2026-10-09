@@ -1,3 +1,22 @@
 config:
-  $set:
-    $include: ./tailor/baseimg-split.yaml
+  os:
+    packages:
+      install:
+        $remove:
+          - binutils
+          - trident-static-pcrlock-files
+          - selinux-policy
+          - selinux-policy-devel
+          - audit
+    additionalFiles:
+      $remove:
+        - source: base/files/trident-install.service
+          destination: /usr/lib/systemd/system/trident-install.service
+      $append:
+        - source: base/files/trident-split-install.service
+          destination: /usr/lib/systemd/system/trident-install.service
+  iso:
+    additionalFiles:
+      $remove:
+        - source: base/files/override-placeholder.conf
+          destination: /trident-override.conf

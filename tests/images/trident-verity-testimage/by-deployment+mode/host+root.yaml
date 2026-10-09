@@ -1,5 +1,17 @@
-rpmSources:
-  - ../../../bin/RPMS
 config:
-  $set:
-    $include: ./tailor/baseimg.yaml
+  os:
+    hostname: trident-verity-testimg
+    packages:
+      install:
+        - trident-service
+    additionalFiles:
+      - source: base/files/use-grpc-client-commit.conf
+        destination: /etc/systemd/system/trident.service.d/override.conf
+    services:
+      enable:
+        - trident
+        - tridentd.socket
+  scripts:
+    postCustomization:
+      - path: base/trident-debug-log.sh
+      - path: base/create-web-dir.sh

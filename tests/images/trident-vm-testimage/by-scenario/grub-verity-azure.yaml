@@ -2,5 +2,22 @@ base:
   $set:
     ref: core_selinux
 config:
-  $set:
-    $include: ./tailor/updateimg-grub-verity-azure.yaml
+  storage:
+    $include: ./include/storage-grub-verity.yaml
+  os:
+    hostname: trident-vm-testimg
+    selinux:
+      mode:
+        $set: permissive
+    packages:
+      install:
+        $remove:
+          - netplan
+        $append:
+          - selinux-policy
+          - WALinuxAgent
+    users:
+      $replace:
+        - name: testuser
+          secondaryGroups:
+            - wheel
