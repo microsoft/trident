@@ -1,0 +1,17 @@
+[Unit]
+Description=/etc Mount Service
+DefaultDependencies=no
+Conflicts=umount.target
+Before=local-fs.target umount.target systemd-networkd.service
+Requires=etc.mount
+After=etc.mount
+Requires=var-lib-trident\x2doverlay.mount
+After=var-lib-trident\x2doverlay.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=etc-mount.sh
+
+[Install]
+WantedBy=local-fs.target
