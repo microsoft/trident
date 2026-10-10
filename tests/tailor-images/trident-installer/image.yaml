@@ -13,6 +13,7 @@ base:
 
 outputs:
   - format: iso
+    name: trident-installer
 
 rpmSources:
   - ../../../bin/RPMS

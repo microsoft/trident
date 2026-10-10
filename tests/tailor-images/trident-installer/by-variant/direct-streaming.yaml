@@ -1,3 +1,8 @@
+outputs:
+  $replace:
+    - format: iso
+      name: "trident-direct-streaming-installer-${arch}"
+
 config:
   os:
     hostname:

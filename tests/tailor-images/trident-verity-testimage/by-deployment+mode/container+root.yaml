@@ -1,3 +1,8 @@
+outputs:
+  $replace:
+    - format: cosi
+      name: trident-container-verity-testimage
+
 config:
   os:
     hostname: trident-container-verity-testimg
