@@ -1,0 +1,15 @@
+config:
+  os:
+    hostname: trident-container-usrverity-testimg
+    packages:
+      install:
+        - docker-cli
+        - moby-engine
+        - squashfs-tools
+        - tar
+    additionalFiles:
+      - source: usr/files/trident-container.service
+        destination: /usr/lib/systemd/system/trident-container.service
+    services:
+      enable:
+        - trident-container

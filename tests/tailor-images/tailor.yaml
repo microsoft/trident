@@ -1,0 +1,76 @@
+schemaVersion: 1
+
+previewFeatures:
+  - signing
+
+toolchains:
+  default: ic
+  entries:
+    - name: ic
+      container: mcr.microsoft.com/azurelinux/imagecustomizer
+      tag: latest
+
+signing:
+  default: test-ca
+  profiles:
+    test-ca:
+      backend: local-test-ca
+      publishCaCert: ./artifacts/ca_cert.pem
+
+baseImages:
+  - name: baremetal
+    path: ../../artifacts/baremetal.vhdx
+    arch: amd64
+    source:
+      oci:
+        uri: mcr.microsoft.com/azurelinux/3.0/image/baremetal:latest
+        platform: linux/amd64
+  - name: core_arm64
+    path: ../../artifacts/core_arm64.vhdx
+    arch: arm64
+    source:
+      oci:
+        uri: mcr.microsoft.com/azurelinux/3.0/image/core_arm64:latest
+        platform: linux/arm64
+  - name: core_selinux
+    path: ../../artifacts/core_selinux.vhdx
+    arch: amd64
+    source:
+      oci:
+        uri: mcr.microsoft.com/azurelinux/3.0/image/core_selinux:latest
+        platform: linux/amd64
+  - name: qemu_guest
+    path: ../../artifacts/qemu_guest.vhdx
+    arch: amd64
+    source:
+      oci:
+        uri: mcr.microsoft.com/azurelinux/3.0/image/qemu_guest:latest
+        platform: linux/amd64
+  - name: ubuntu_2204_amd64
+    path: ../../artifacts/ubuntu_2204_amd64.vhdx
+    arch: amd64
+  - name: ubuntu_2204_arm64
+    path: ../../artifacts/ubuntu_2204_arm64.vhdx
+    arch: arm64
+  - name: ubuntu_2404_amd64
+    path: ../../artifacts/ubuntu_2404_amd64.vhdx
+    arch: amd64
+  - name: ubuntu_2404_arm64
+    path: ../../artifacts/ubuntu_2404_arm64.vhdx
+    arch: arm64
+  - name: gb200_2404_arm64
+    path: ../../artifacts/gb200_2404_arm64.vhdx
+    arch: arm64
+
+images:
+  members:
+    - azl-installer
+    - azurelinux-direct-streaming-testimage
+    - foreign-direct-streaming-testimage
+    - trident-container-installer
+    - trident-container-testimage
+    - trident-functest
+    - trident-installer
+    - trident-testimage
+    - trident-verity-testimage
+    - trident-vm-testimage

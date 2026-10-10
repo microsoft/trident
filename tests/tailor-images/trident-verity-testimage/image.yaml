@@ -1,0 +1,17 @@
+name: trident-verity-testimage
+
+matrix:
+  deployment: [host, container]
+  mode: [root, usr]
+
+base:
+  ref: baremetal
+
+outputs:
+  - format: cosi
+
+extraDependencies:
+  - ./base
+  - ./usr
+
+config: {}
