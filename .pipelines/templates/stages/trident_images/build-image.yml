@@ -101,6 +101,15 @@ jobs:
       - template: ../common_tasks/checkout_trident.yml
       - template: ../common_tasks/avoid-pypi-usage.yml
 
+      # The Makefile's tailor-backed legacy image targets invoke
+      # `cargo run --manifest-path tools/tailor/Cargo.toml`, so a Rust
+      # toolchain and cargo registry auth are required here even though this
+      # job previously never needed cargo.
+      - template: ../common_tasks/rustup.yml
+      - template: ../common_tasks/cargo-auth.yml
+        parameters:
+          cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
+
       - ${{ if parameters.downloadGoTools }}:
         - task: DownloadPipelineArtifact@2
           displayName: "Download $(goToolsArtifactName)"
