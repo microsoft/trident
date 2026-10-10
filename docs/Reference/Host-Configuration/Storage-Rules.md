@@ -199,17 +199,17 @@ The following referrers require that all underlying partitions are of the same s
 
 Some referrers only support specific underlying partitions types.
 
-| Referrer type      | Allowed partition types                                                    |
-| ------------------ | -------------------------------------------------------------------------- |
-| raid-array         | any                                                                        |
-| ab-volume          | any                                                                        |
-| encrypted-volume   | any type except 'esp' or 'root' or 'root-verity' or 'usr-verity' or 'home' |
-| verity-device      | 'root' or 'root-verity' or 'usr' or 'usr-verity' or 'linux-generic'        |
-| swap-device        | 'swap'                                                                     |
-| filesystem-new     | any type except 'esp'                                                      |
-| filesystem-image   | any                                                                        |
-| filesystem-esp     | 'esp'                                                                      |
-| filesystem-adopted | any type except 'esp'                                                      |
+| Referrer type      | Allowed partition types                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| raid-array         | any                                                                                                          |
+| ab-volume          | any                                                                                                          |
+| encrypted-volume   | any type except 'esp' or 'root' or 'root-verity' or 'usr-verity' or 'home'                                   |
+| verity-device      | 'root' or 'root-verity' or 'root-verity-sig' or 'usr' or 'usr-verity' or 'usr-verity-sig' or 'linux-generic' |
+| swap-device        | 'swap'                                                                                                       |
+| filesystem-new     | any type except 'esp'                                                                                        |
+| filesystem-image   | any                                                                                                          |
+| filesystem-esp     | 'esp'                                                                                                        |
+| filesystem-adopted | any type except 'esp'                                                                                        |
 
 ## Allowed RAID Levels
 
@@ -239,22 +239,23 @@ The following table lists the expected mount points for each partition type, as
 defined in the [Discoverable Partition Specification
 (DPS)](https://uapi-group.org/specifications/specs/discoverable_partitions_specification/):
 
-| Partition Type | Valid Mount Paths                |
-| -------------- | -------------------------------- |
-| esp            | `/boot` or `/efi` or `/boot/efi` |
-| root           | `/`                              |
-| swap           | None                             |
-| root-verity    | None                             |
-| home           | `/home`                          |
-| var            | `/var`                           |
-| usr            | `/usr`                           |
-| usr-verity     | None                             |
-| usr-verity-sig | None                             |
-| tmp            | `/var/tmp`                       |
-| linux-generic  | Any path                         |
-| srv            | `/srv`                           |
-| xbootldr       | `/boot`                          |
-| unknown        | Any path                         |
+| Partition Type  | Valid Mount Paths                |
+| --------------- | -------------------------------- |
+| esp             | `/boot` or `/efi` or `/boot/efi` |
+| root            | `/`                              |
+| swap            | None                             |
+| root-verity     | None                             |
+| root-verity-sig | None                             |
+| home            | `/home`                          |
+| var             | `/var`                           |
+| usr             | `/usr`                           |
+| usr-verity      | None                             |
+| usr-verity-sig  | None                             |
+| tmp             | `/var/tmp`                       |
+| linux-generic   | Any path                         |
+| srv             | `/srv`                           |
+| xbootldr        | `/boot`                          |
+| unknown         | Any path                         |
 
 ## Partition Type Matching Hash Partition
 

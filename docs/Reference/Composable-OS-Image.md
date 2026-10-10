@@ -9,6 +9,7 @@ title: COSI Spec
 
 | Revision            | Spec Date  |
 | ------------------- | ---------- |
+| [1.3](#revision-13) | TBD        |
 | [1.2](#revision-12) | 2026-01-30 |
 | [1.1](#revision-11) | 2025-05-08 |
 | [1.0](#revision-10) | 2024-10-09 |
@@ -223,6 +224,7 @@ compatibility.
 
 Machine-readable JSON Schema:
 
+- [1.3](https://raw.githubusercontent.com/microsoft/trident/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.3.schema.json)
 - [1.2](https://raw.githubusercontent.com/microsoft/trident/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json)
 
 ##### Root Object
@@ -286,10 +288,11 @@ _Notes:_
 The `VerityConfig` object contains information required to set up a verity
 device on top of a data device.
 
-| Field      | Type                           | Added in | Required        | Description                                               |
-| ---------- | ------------------------------ | -------- | --------------- | --------------------------------------------------------- |
-| `image`    | [ImageFile](#imagefile-object) | 1.0      | Yes (since 1.0) | Details of the hash partition image file in the tar file. |
-| `roothash` | string                         | 1.0      | Yes (since 1.0) | Verity root hash.                                         |
+| Field       | Type                           | Added in | Required        | Description                                                                                                     |
+| ----------- | ------------------------------ | -------- | --------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `image`     | [ImageFile](#imagefile-object) | 1.0      | Yes (since 1.0) | Details of the hash partition image file in the tar file.                                                       |
+| `roothash`  | string                         | 1.0      | Yes (since 1.0) | Verity root hash.                                                                                                |
+| `signature` | [ImageFile](#imagefile-object) | 1.3      | No              | Details of the root hash signature file in the tar file, stored in its own dedicated partition. The signature MUST be DER-encoded detached PKCS#7. |
 
 ##### `ImageFile` Object
 
@@ -629,6 +632,10 @@ making them invalid JSON. They are provided for illustration purposes only.
 ```
 
 ## Changelog
+
+### Revision 1.3
+
+- Added optional `signature` field to the `VerityConfig` object.
 
 ### Revision 1.2
 
