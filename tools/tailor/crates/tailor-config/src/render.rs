@@ -18,7 +18,7 @@ use crate::{
     include, interpolate, matrix,
     matrix::AxisTuple,
     merge,
-    schema::{BaseSource, ExtraParam, ImageDefinition, OutputSpec},
+    schema::{BaseSource, ExtraParam, ImageDefinition, OutputSpec, SigningRef},
     types::{OutputFormat, ParamValue},
 };
 
@@ -65,6 +65,8 @@ pub struct RenderedCell {
     pub rpm_sources: Vec<PathBuf>,
     /// Extra IC command-line flags appended verbatim, concatenated across matched fragments.
     pub extra_params: Vec<ExtraParam>,
+    /// The resolved per-cell `signing:` opt-in after fragment merging.
+    pub signing: Option<SigningRef>,
     /// Resolved `skip` for this cell (merged from fragment `skip:` fields, last-wins). When `true`,
     /// the cell is dropped from bulk selection unless specifically requested
     /// (`meta/docs/2026-07-22-fragment-skip.md`).
@@ -190,7 +192,7 @@ fn render_cell(
     let mut ic_config = Value::Mapping(config);
     interpolate::interpolate_tree(&mut ic_config, &context)?;
 
-    let base = resolve_base(image, &tuple, &matched, &context)?;
+    let base = resolve_base(image, image_dir, &tuple, &matched, &context)?;
     let outputs = resolve_outputs(image, &tuple, &matched)?;
     for output in &outputs {
         validate_output_compression(image, &tuple, output)?;
@@ -203,6 +205,7 @@ fn render_cell(
         .iter()
         .flat_map(|f| f.doc.extra_params.clone())
         .collect();
+    let signing = resolve_signing_ref(image, &tuple, &matched)?;
 
     // Resolve `skip` last-wins over the matched fragments (base → most-specific). When the winning
     // value is `true`, remember that fragment's predicate coordinates as the pins that can override
@@ -223,6 +226,7 @@ fn render_cell(
         outputs,
         rpm_sources,
         extra_params,
+        signing,
         skip,
         skip_pins,
     })
@@ -252,13 +256,17 @@ fn merge_params(matched: &[&LoadedFragment]) -> Result<IndexMap<String, String>,
 
 fn resolve_base(
     image: &ImageDefinition,
+    image_dir: &Path,
     tuple: &AxisTuple,
     matched: &[&LoadedFragment],
     context: &interpolate::Context,
 ) -> Result<BaseSource, ConfigError> {
     let mut base: Option<Value> = None;
     for fragment in matched {
-        if let Some(value) = fragment.doc.base.clone() {
+        if let Some(mut value) = fragment.doc.base.clone() {
+            // Mirror config:'s $include handling (resolved before merge, see render_cell above) so a
+            // base: fragment can splice a shared snippet too, instead of only config: being able to.
+            include::resolve_includes(&mut value, image_dir)?;
             base = Some(merge::merge_field(
                 base,
                 value,
@@ -321,6 +329,20 @@ fn resolve_outputs(
         Some(value) => deserialize_field(value, image, tuple, OUTPUTS_FIELD),
         None => Ok(Vec::new()),
     }
+}
+
+fn resolve_signing_ref(
+    _image: &ImageDefinition,
+    _tuple: &AxisTuple,
+    matched: &[&LoadedFragment],
+) -> Result<Option<SigningRef>, ConfigError> {
+    let mut signing: Option<SigningRef> = None;
+    for fragment in matched {
+        if let Some(value) = fragment.doc.signing.clone() {
+            signing = Some(value);
+        }
+    }
+    Ok(signing)
 }
 
 /// Reject `compression:` on formats where it makes no sense: `cosi` (IC already compresses it),
@@ -693,6 +715,62 @@ mod tests {
         assert_eq!(pro.outputs[0].format, OutputFormat::Raw);
         // $remove drops `core`, leaving only the interpolated boot package.
         assert_eq!(install(pro), ["boot-pro"]);
+    }
+
+    #[test]
+    fn base_include_splices_a_shared_snippet_before_merge() {
+        // A by-arch fragment can $include a shared base snippet instead of inlining it, exactly
+        // like config: already could - regression test for the "must be resolved before merge"
+        // bug where base: never ran $include resolution.
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "image.yaml",
+            indoc! {"
+                name: shared-base
+                matrix:
+                  arch: [amd64, arm64]
+                outputs:
+                  - format: cosi
+                config: {}
+            "},
+        );
+        write(
+            tmp.path(),
+            "by-arch/amd64.yaml",
+            "base:
+  $include: common/base-amd64.yaml
+",
+        );
+        write(
+            tmp.path(),
+            "by-arch/arm64.yaml",
+            "base:
+  $include: common/base-arm64.yaml
+",
+        );
+        write(tmp.path(), "common/base-amd64.yaml", "path: ./amd64.img
+");
+        write(tmp.path(), "common/base-arm64.yaml", "path: ./arm64.img
+");
+
+        let image = load_image(tmp.path().join("image.yaml")).unwrap();
+        let cells = render_image(&image, tmp.path()).unwrap();
+        let by_arch = |arch: &str| -> &RenderedCell {
+            cells
+                .iter()
+                .find(|c| c.tuple.get("arch") == Some(arch))
+                .unwrap_or_else(|| panic!("no {arch} cell"))
+        };
+
+        match &by_arch("amd64").base {
+            BaseSource::Path { path, .. } => assert_eq!(path, Path::new("./amd64.img")),
+            other => panic!("expected a path base, got {other:?}"),
+        }
+        match &by_arch("arm64").base {
+            BaseSource::Path { path, .. } => assert_eq!(path, Path::new("./arm64.img")),
+            other => panic!("expected a path base, got {other:?}"),
+        }
     }
 
     #[test]
