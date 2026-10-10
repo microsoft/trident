@@ -58,3 +58,12 @@ The value must be "root" for root partition "/".
 | Default        | `"io-error"`                                          |
 | Link           | [VerityCorruptionOption](./VerityCorruptionOption.md) |
 
+### `hashSignatureDeviceId` (optional)
+
+The ID of the partition to use as the verity hash signature partition.
+
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Format         | `Block Device ID` |
+

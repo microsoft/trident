@@ -217,6 +217,10 @@ impl SpecialReferenceKind {
             // Verity data/hash do not impose any additional restrictions.
             Self::VerityDataDevice => None,
             Self::VerityHashDevice => None,
+
+            // The signature device does not impose any additional
+            // restrictions beyond its allowed partition types.
+            Self::VerityHashSignatureDevice => None,
         }
     }
 }
@@ -430,6 +434,7 @@ impl SpecialReferenceKind {
         match self {
             Self::VerityDataDevice => Some(true),
             Self::VerityHashDevice => Some(true),
+            Self::VerityHashSignatureDevice => Some(true),
         }
     }
 }
@@ -467,8 +472,10 @@ impl BlkDevReferrerKind {
             Self::VerityDevice => AllowBlockList::Allow(vec![
                 PartitionType::Root,
                 PartitionType::RootVerity,
+                PartitionType::RootVeritySig,
                 PartitionType::Usr,
                 PartitionType::UsrVerity,
+                PartitionType::UsrVeritySig,
                 PartitionType::LinuxGeneric,
                 // Special case for ACL.
                 PartitionType::acl_usr(),
@@ -498,6 +505,12 @@ impl SpecialReferenceKind {
                 PartitionType::UsrVerity,
                 PartitionType::LinuxGeneric,
             ])),
+
+            Self::VerityHashSignatureDevice => Some(AllowBlockList::Allow(vec![
+                PartitionType::RootVeritySig,
+                PartitionType::UsrVeritySig,
+                PartitionType::LinuxGeneric,
+            ])),
         }
     }
 }
@@ -523,6 +536,7 @@ impl PartitionType {
             Self::LinuxGeneric => AllowBlockList::Any,
             Self::Root => AllowBlockList::new_allow(["/"]),
             Self::RootVerity => AllowBlockList::None,
+            Self::RootVeritySig => AllowBlockList::None,
             Self::Srv => AllowBlockList::new_allow(["/srv"]),
             Self::Swap => AllowBlockList::None,
             Self::Tmp => AllowBlockList::new_allow(["/var/tmp"]),
@@ -588,5 +602,36 @@ impl BlkDevReferrerKind {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signature_partition_types_match_hash_policy() {
+        let signature_types = SpecialReferenceKind::VerityHashSignatureDevice
+            .allowed_partition_types()
+            .unwrap();
+        let verity_types = BlkDevReferrerKind::VerityDevice.allowed_partition_types();
+        for partition_type in [
+            PartitionType::RootVeritySig,
+            PartitionType::UsrVeritySig,
+            PartitionType::LinuxGeneric,
+        ] {
+            assert!(signature_types.contains(partition_type), "{partition_type}");
+            assert!(verity_types.contains(partition_type), "{partition_type}");
+        }
+        for partition_type in [
+            PartitionType::Esp,
+            PartitionType::RootVerity,
+            PartitionType::UsrVerity,
+        ] {
+            assert!(
+                !signature_types.contains(partition_type),
+                "{partition_type}"
+            );
+        }
     }
 }
