@@ -147,10 +147,17 @@ impl CosiMetadata {
             // Collect known filesystem image paths for validation. It is mutable so that
             // we can remove entries as we match them to partitions and check if
             // there are any leftovers.
-            let mut filesystem_paths = self
-                .filesystem_image_files()
-                .map(|img| (img.path.as_path(), img))
-                .collect::<HashMap<_, _>>();
+            let mut filesystem_paths = HashMap::new();
+            for image in self.filesystem_image_files() {
+                if filesystem_paths
+                    .insert(image.path.as_path(), image)
+                    .is_some()
+                {
+                    return mk_err(CosiMetadataErrorKind::V1_2DuplicateImageFilePath(
+                        image.path.display().to_string(),
+                    ));
+                }
+            }
 
             let mut partition_numbers = HashSet::new();
 
@@ -586,6 +593,36 @@ mod tests {
         // Sanity: base should validate.
         let metadata = parse_and_validate(base.clone()).unwrap();
         assert_eq!(metadata.version, KnownMetadataVersion::V1_2);
+
+        let mut signed = base.clone();
+        signed["version"] = json!("1.3");
+        let mut signature = base["images"][0]["verity"]["image"].clone();
+        signature["path"] = json!("path/to/image1.signature");
+        signed["images"][0]["verity"]["signature"] = signature.clone();
+        signed["disk"]["gptRegions"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "type": "partition",
+                "number": 4,
+                "image": signature,
+            }));
+        parse_and_validate(signed.clone()).unwrap();
+
+        for image in [
+            &base["images"][0]["image"],
+            &base["images"][0]["verity"]["image"],
+            &base["images"][1]["image"],
+        ] {
+            let mut aliased = signed.clone();
+            aliased["images"][0]["verity"]["signature"] = image.clone();
+            assert_validate_err_kind(
+                aliased,
+                CosiMetadataErrorKind::V1_2DuplicateImageFilePath(
+                    image["path"].as_str().unwrap().to_string(),
+                ),
+            );
+        }
 
         // v1.2 requires compression info.
         let mut no_compression = base.clone();

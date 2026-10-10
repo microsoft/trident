@@ -51,6 +51,9 @@ pub enum CosiMetadataErrorKind {
     #[error("Disk partition table type must be GPT, found '{0}'")]
     V1_2DiskPartitionTableNotGpt(String),
 
+    #[error("Duplicate filesystem or verity image file path: '{0}'")]
+    V1_2DuplicateImageFilePath(String),
+
     #[error("Duplicate partition number: {0}")]
     V1_2DuplicatePartitionNumber(u32),
 

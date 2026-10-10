@@ -292,7 +292,7 @@ device on top of a data device.
 | ----------- | ------------------------------ | -------- | --------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `image`     | [ImageFile](#imagefile-object) | 1.0      | Yes (since 1.0) | Details of the hash partition image file in the tar file.                                                       |
 | `roothash`  | string                         | 1.0      | Yes (since 1.0) | Verity root hash.                                                                                                |
-| `signature` | [ImageFile](#imagefile-object) | 1.3      | No              | Details of the detached PKCS#7 root hash signature file in the tar file, stored in its own dedicated partition. |
+| `signature` | [ImageFile](#imagefile-object) | 1.3      | No              | Details of the root hash signature file in the tar file, stored in its own dedicated partition. The signature MUST be DER-encoded detached PKCS#7. |
 
 ##### `ImageFile` Object
 
