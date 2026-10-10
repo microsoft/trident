@@ -1,0 +1,272 @@
+{
+  "trident-installer": {
+    "image": "trident-installer",
+    "selectors": {
+      "arch": "amd64",
+      "variant": "default"
+    },
+    "baseImage": "baremetal",
+    "ext": "iso"
+  },
+  "trident-split-installer": {
+    "image": "trident-installer",
+    "selectors": {
+      "arch": "amd64",
+      "variant": "split"
+    },
+    "baseImage": "baremetal",
+    "ext": "iso"
+  },
+  "trident-installer-arm64": {
+    "image": "trident-installer",
+    "selectors": {
+      "arch": "arm64",
+      "variant": "default"
+    },
+    "baseImage": "core_arm64",
+    "ext": "iso"
+  },
+  "trident-container-installer": {
+    "image": "trident-container-installer",
+    "selectors": {},
+    "baseImage": "baremetal",
+    "ext": "iso"
+  },
+  "trident-direct-streaming-installer-amd64": {
+    "image": "trident-installer",
+    "selectors": {
+      "arch": "amd64",
+      "variant": "direct-streaming"
+    },
+    "baseImage": "baremetal",
+    "ext": "iso"
+  },
+  "trident-direct-streaming-installer-arm64": {
+    "image": "trident-installer",
+    "selectors": {
+      "arch": "arm64",
+      "variant": "direct-streaming"
+    },
+    "baseImage": "core_arm64",
+    "ext": "iso"
+  },
+  "trident-functest": {
+    "image": "trident-functest",
+    "selectors": {},
+    "baseImage": "baremetal",
+    "ext": "qcow2"
+  },
+  "trident-testimage": {
+    "image": "trident-testimage",
+    "selectors": {
+      "arch": "amd64"
+    },
+    "baseImage": "baremetal",
+    "ext": "cosi"
+  },
+  "trident-testimage-arm64": {
+    "image": "trident-testimage",
+    "selectors": {
+      "arch": "arm64"
+    },
+    "baseImage": "core_arm64",
+    "ext": "cosi"
+  },
+  "trident-verity-testimage": {
+    "image": "trident-verity-testimage",
+    "selectors": {
+      "deployment": "host",
+      "mode": "root"
+    },
+    "baseImage": "baremetal",
+    "ext": "cosi"
+  },
+  "trident-usrverity-testimage": {
+    "image": "trident-verity-testimage",
+    "selectors": {
+      "deployment": "host",
+      "mode": "usr"
+    },
+    "baseImage": "baremetal",
+    "ext": "cosi"
+  },
+  "trident-container-verity-testimage": {
+    "image": "trident-verity-testimage",
+    "selectors": {
+      "deployment": "container",
+      "mode": "root"
+    },
+    "baseImage": "baremetal",
+    "ext": "cosi"
+  },
+  "trident-container-usrverity-testimage": {
+    "image": "trident-verity-testimage",
+    "selectors": {
+      "deployment": "container",
+      "mode": "usr"
+    },
+    "baseImage": "baremetal",
+    "ext": "cosi"
+  },
+  "trident-container-testimage": {
+    "image": "trident-container-testimage",
+    "selectors": {},
+    "baseImage": "baremetal",
+    "ext": "cosi"
+  },
+  "azurelinux-direct-streaming-testimage-amd64": {
+    "image": "azurelinux-direct-streaming-testimage",
+    "selectors": {
+      "arch": "amd64"
+    },
+    "baseImage": "baremetal",
+    "ext": "cosi",
+    "tailorExt": "raw"
+  },
+  "azurelinux-direct-streaming-testimage-arm64": {
+    "image": "azurelinux-direct-streaming-testimage",
+    "selectors": {
+      "arch": "arm64"
+    },
+    "baseImage": "core_arm64",
+    "ext": "cosi",
+    "tailorExt": "raw"
+  },
+  "azl-installer": {
+    "image": "azl-installer",
+    "selectors": {},
+    "baseImage": "baremetal",
+    "ext": "iso"
+  },
+  "trident-vm-grub-testimage": {
+    "image": "trident-vm-testimage",
+    "selectors": {
+      "arch": "amd64",
+      "scenario": "grub"
+    },
+    "baseImage": "qemu_guest",
+    "ext": "cosi"
+  },
+  "trident-vm-grub-verity-testimage": {
+    "image": "trident-vm-testimage",
+    "selectors": {
+      "arch": "amd64",
+      "scenario": "grub-verity"
+    },
+    "baseImage": "qemu_guest",
+    "ext": "cosi"
+  },
+  "trident-vm-root-verity-testimage": {
+    "image": "trident-vm-testimage",
+    "selectors": {
+      "arch": "amd64",
+      "scenario": "root-verity"
+    },
+    "baseImage": "qemu_guest",
+    "ext": "cosi"
+  },
+  "trident-vm-usr-verity-testimage": {
+    "image": "trident-vm-testimage",
+    "selectors": {
+      "arch": "amd64",
+      "scenario": "usr-verity"
+    },
+    "baseImage": "qemu_guest",
+    "ext": "cosi"
+  },
+  "trident-vm-acl-agent-update-testimage": {
+    "image": "trident-vm-testimage",
+    "selectors": {
+      "arch": "amd64",
+      "scenario": "acl-agent"
+    },
+    "baseImage": "qemu_guest",
+    "ext": "cosi"
+  },
+  "trident-vm-acl-agent-testimage": {
+    "image": "trident-vm-testimage",
+    "selectors": {
+      "arch": "amd64",
+      "scenario": "acl-agent"
+    },
+    "baseImage": "qemu_guest",
+    "ext": "cosi"
+  },
+  "trident-vm-grub-verity-azure-testimage": {
+    "image": "trident-vm-testimage",
+    "selectors": {
+      "arch": "amd64",
+      "scenario": "grub-verity-azure"
+    },
+    "baseImage": "core_selinux",
+    "ext": "cosi"
+  },
+  "trident-vm-grub-testimage-arm64": {
+    "image": "trident-vm-testimage",
+    "selectors": {
+      "arch": "arm64",
+      "scenario": "grub"
+    },
+    "baseImage": "core_arm64",
+    "ext": "cosi"
+  },
+  "trident-vm-grub-verity-testimage-arm64": {
+    "image": "trident-vm-testimage",
+    "selectors": {
+      "arch": "arm64",
+      "scenario": "grub-verity"
+    },
+    "baseImage": "core_arm64",
+    "ext": "cosi"
+  },
+  "ubuntu-direct-streaming-testimage-2204-amd64": {
+    "image": "foreign-direct-streaming-testimage",
+    "selectors": {
+      "arch": "amd64",
+      "source": "ubuntu-2204"
+    },
+    "baseImage": "ubuntu_2204_amd64",
+    "ext": "cosi",
+    "tailorExt": "raw"
+  },
+  "ubuntu-direct-streaming-testimage-2204-arm64": {
+    "image": "foreign-direct-streaming-testimage",
+    "selectors": {
+      "arch": "arm64",
+      "source": "ubuntu-2204"
+    },
+    "baseImage": "ubuntu_2204_arm64",
+    "ext": "cosi",
+    "tailorExt": "raw"
+  },
+  "ubuntu-direct-streaming-testimage-2404-amd64": {
+    "image": "foreign-direct-streaming-testimage",
+    "selectors": {
+      "arch": "amd64",
+      "source": "ubuntu-2404"
+    },
+    "baseImage": "ubuntu_2404_amd64",
+    "ext": "cosi",
+    "tailorExt": "raw"
+  },
+  "ubuntu-direct-streaming-testimage-2404-arm64": {
+    "image": "foreign-direct-streaming-testimage",
+    "selectors": {
+      "arch": "arm64",
+      "source": "ubuntu-2404"
+    },
+    "baseImage": "ubuntu_2404_arm64",
+    "ext": "cosi",
+    "tailorExt": "raw"
+  },
+  "gb200-direct-streaming-testimage-2404-arm64": {
+    "image": "foreign-direct-streaming-testimage",
+    "selectors": {
+      "arch": "arm64",
+      "source": "gb200-2404"
+    },
+    "baseImage": "gb200_2404_arm64",
+    "ext": "cosi",
+    "tailorExt": "raw"
+  }
+}
