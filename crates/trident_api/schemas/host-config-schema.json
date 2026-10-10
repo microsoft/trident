@@ -896,6 +896,14 @@
           ]
         },
         {
+          "title": "Root verity hash signature partition",
+          "description": "x64: `41092b05-9fc8-4523-994f-2def0408b176`",
+          "type": "string",
+          "enum": [
+            "root-verity-sig"
+          ]
+        },
+        {
           "title": "Home partition",
           "description": "`933ac7e1-2eb4-4f13-b844-0e14e2aef915`",
           "type": "string",
