@@ -1,9 +1,12 @@
 package proxies
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 // newTestAPIServer spins up an in-process httptest.Server backed by a fresh
@@ -12,7 +15,7 @@ import (
 func newTestAPIServer(t *testing.T) (*httptest.Server, *NodeStore) {
 	t.Helper()
 	const nodeName = "test-node"
-	store := NewNodeStore(NewSeedNode(nodeName, map[string]string{}))
+	store := NewNodeStore(NewSeedNode(nodeName, map[string]string{}, "test-system-uuid"))
 	server := NewAPIServer(nodeName, store)
 	ts := httptest.NewServer(server.Handler())
 	t.Cleanup(ts.Close)
@@ -108,5 +111,53 @@ func TestNodeStoreRestoreNodeUndoesDeleteNode(t *testing.T) {
 	snapshot := store.Snapshot()
 	if snapshot.Labels["example"] != "value" {
 		t.Fatalf("expected label set before DeleteNode to survive the delete/restore cycle, got %+v", snapshot.Labels)
+	}
+}
+
+// TestNodeStoreSeedsSystemUUID confirms a GET serves the seeded
+// status.nodeInfo.systemUUID verbatim - the field trident-acl-agent's
+// NodeClient::get_node (crates/trident-acl-agent/src/annotations/k8s.rs)
+// compares against the VM's own /sys/class/dmi/id/product_uuid.
+func TestNodeStoreSeedsSystemUUID(t *testing.T) {
+	ts, _ := newTestAPIServer(t)
+
+	resp, err := http.Get(ts.URL + "/api/v1/nodes/test-node")
+	if err != nil {
+		t.Fatalf("unexpected error on GET: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var node corev1.Node
+	if err := json.NewDecoder(resp.Body).Decode(&node); err != nil {
+		t.Fatalf("failed to decode Node response: %v", err)
+	}
+	if node.Status.NodeInfo.SystemUUID != "test-system-uuid" {
+		t.Fatalf("expected systemUUID %q, got %q", "test-system-uuid", node.Status.NodeInfo.SystemUUID)
+	}
+}
+
+// TestNodeStoreSetSystemUUID confirms SetSystemUUID is reflected on the
+// very next GET - run-node-resilience's phase 3 uses this to simulate a
+// Node that GETs successfully but whose systemUUID doesn't match the VM's
+// hardware, which NodeClient::get_node must treat the same as NodeGone.
+func TestNodeStoreSetSystemUUID(t *testing.T) {
+	ts, store := newTestAPIServer(t)
+	store.SetSystemUUID("mismatched-uuid")
+
+	resp, err := http.Get(ts.URL + "/api/v1/nodes/test-node")
+	if err != nil {
+		t.Fatalf("unexpected error on GET after SetSystemUUID: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 after SetSystemUUID (the Node itself is not gone), got %d", resp.StatusCode)
+	}
+
+	var node corev1.Node
+	if err := json.NewDecoder(resp.Body).Decode(&node); err != nil {
+		t.Fatalf("failed to decode Node response: %v", err)
+	}
+	if node.Status.NodeInfo.SystemUUID != "mismatched-uuid" {
+		t.Fatalf("expected systemUUID %q, got %q", "mismatched-uuid", node.Status.NodeInfo.SystemUUID)
 	}
 }

@@ -267,6 +267,7 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | How long a `finalize` is allowed to run before it's considered failed. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL` | `60s` | Refresh cadence for the `InProgress` status heartbeat. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT` | unset (wait forever) | How long the agent will keep waiting for its own Node object to reappear after a 404 before giving up and exiting (a [`humantime`](https://docs.rs/humantime) duration, e.g. `30m`, `1h`). Unset means the agent never gives up on its own — see below. |
+| `TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID` | `false` | When `true`, every Node read verifies `status.nodeInfo.systemUUID` against this machine's own `/sys/class/dmi/id/product_uuid`, treating a mismatch the same as the Node not existing (`NodeGone`) — see below. |
 
 Kubernetes API server connectivity (both the startup/recovery Node read
 and the long-lived watch loop) is retried indefinitely by default; there
@@ -293,6 +294,30 @@ than to guess wrong and exit. An operator that wants the old
 exit-on-Node-gone behavior back (e.g. to let an external supervisor/alert
 fire instead) can opt into a bound via
 `TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT`.
+
+### Node identity verification
+
+When `TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID` is set to `true`,
+every Node read - the
+startup/recovery GET, `--validate-connection`, and each Node delivered by
+the long-lived watch stream - additionally checks that the fetched Node's
+`status.nodeInfo.systemUUID` matches this machine's own
+`/sys/class/dmi/id/product_uuid`. kubelet populates `systemUUID` by reading
+that same file, so on a healthy, correctly-identified node the two values
+always match; a mismatch means the Node object fetched by name doesn't
+actually describe this machine (e.g. a stale or recycled Node name) and is
+treated identically to the Node not existing (`NodeGone`), including the
+same retry/backoff and `TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT`
+handling described above. An empty `systemUUID` on the Node, or an
+unreadable local `product_uuid` file, skips the check (logged at `warn`)
+rather than treating it as a mismatch, since either case only means the
+UUID couldn't be determined, not that the Node describes a different
+machine. The check is disabled (`false`) by default because, while
+kubelet is known to source `systemUUID` from this same file in general,
+this hasn't been confirmed as a hard guarantee across every environment
+this agent runs in — opt in once that's been validated for a given
+deployment.
+
 
 ### Setting env vars via a systemd drop-in
 
