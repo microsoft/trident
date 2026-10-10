@@ -1,0 +1,16 @@
+[Unit]
+Description=Trident Agent
+Requires=docker.service
+After=network.target network-online.target systemd-udev-settle.service docker.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/bash -c "set -e; if ! docker image ls | grep -q 'trident/trident'; then docker load --input /var/lib/trident/trident-container.tar.gz; fi"
+# TODO: Remove line to enable SELinux, when bug #9508 is fixed.
+ExecStartPre=/bin/bash -c "sudo setenforce 0" 
+ExecStart=docker run --name trident_container --pull=never --rm --privileged -v /etc/trident:/etc/trident -v /var/lib/trident:/var/lib/trident -v /var/log:/var/log -v /:/host -v /dev:/dev -v /run:/run -v /sys:/sys --pid host --ipc host trident/trident:latest commit --verbosity DEBUG
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,24 @@
+config:
+  storage:
+    $include: ./include/storage-acl-agent.yaml
+  os:
+    hostname: trident-acl-agent-testimg
+    packages:
+      install:
+        $append:
+          - trident-acl
+    additionalFiles:
+      - source: base/files/99-dhcp-eth0.network
+        destination: /etc/systemd/network/99-dhcp-eth0.network
+      - source: base/files/sudoers-wheel
+        destination: /etc/sudoers.d/wheel
+      - source: base/files/trident-acl-agent-override.conf
+        destination: /etc/systemd/system/trident-acl-agent.service.d/override.conf
+      - source: base/files/trident-acl-agent-cert-install.service
+        destination: /etc/systemd/system/trident-acl-agent-cert-install.service
+    services:
+      enable:
+        - kdump
+        - tridentd.socket
+        - trident-acl-agent-cert-install.service
+        - trident-acl-agent.service

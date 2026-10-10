@@ -1,0 +1,19 @@
+name: trident-testimage
+
+matrix:
+  arch: [amd64, arm64]
+
+base:
+  ref: baremetal
+
+outputs:
+  - format: cosi
+
+rpmSources:
+  - ../../../bin/RPMS
+
+extraDependencies:
+  - ./base
+
+config:
+  $include: ./tailor/baseimg.yaml

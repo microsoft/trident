@@ -1,0 +1,6 @@
+- source: base/files/getty@.service
+  destination: /usr/lib/systemd/system/getty@.service
+- source: base/files/serial-getty@.service
+  destination: /usr/lib/systemd/system/serial-getty@.service
+- source: base/files/root.profile
+  destination: /root/.profile
