@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -318,26 +319,11 @@ fn open_verity_device_with_signature(
         ))
 }
 
-/// Open a verity device using a root hash signature read directly from a
-/// dedicated signature partition.
+/// Open a verity device using a signature from a dedicated partition.
 ///
-/// This is the declarative counterpart to [`open_verity_device_with_signature`]:
-/// instead of locating a signature file inside a mounted filesystem, the
-/// signature partition's own block device path is passed straight to
-/// `veritysetup --root-hash-signature=<path>`, exactly like the data and hash
-/// devices are already passed by path - no mount, and no copy into a
-/// temporary file, is required. `veritysetup`/the kernel treat `FILE` as any
-/// path it can `open()`/`read()`, which a block device special file
-/// satisfies identically to a regular file; the PKCS#7/DER encoding is
-/// self-delimiting, so trailing zero-padding in a partition larger than the
-/// signature blob itself (e.g. a `PartitionSize::Grow` signature partition)
-/// is harmless to whatever parses it. Trident's own responsibility for this
-/// partition ends at deployment time, same as for the hash partition: get
-/// the right bytes onto the right partition (see `image.rs::deploy_images`),
-/// and nothing else.
-///
-/// The certificate matching the signature MUST exist in the kernel keyring,
-/// otherwise the operation WILL fail.
+/// cryptsetup requires a regular signature file. Extract only the bounded
+/// DER object, excluding partition padding, for diagnostics and activation.
+/// The matching certificate must exist in the kernel keyring.
 fn open_verity_device_with_signature_partition(
     ctx: &EngineContext,
     verity_device_id: &BlockDeviceId,
@@ -350,8 +336,18 @@ fn open_verity_device_with_signature_partition(
             format!("Failed to find path for block device '{hash_signature_device_id}'")
         })?;
 
+    let mut source = fs::File::open(&signature_block_device_path).with_context(|| {
+        format!(
+            "Failed to read signature partition '{}'",
+            signature_block_device_path.display()
+        )
+    })?;
+    let signature = extract_verity_signature(&mut source).with_context(|| {
+        format!("Failed to extract signature from partition '{hash_signature_device_id}'")
+    })?;
+
     // Try to print signature info
-    match veritysetup::get_verity_signature_info(&signature_block_device_path) {
+    match veritysetup::get_verity_signature_info(signature.path()) {
         Ok(signature_info) => {
             debug!(
                 "Signature partition '{}' for verity device '{}' info:\n{}",
@@ -374,11 +370,67 @@ fn open_verity_device_with_signature_partition(
     );
 
     verity_device
-        .open_with_signature(&signature_block_device_path)
+        .open_with_signature(signature.path())
         .context(format!(
             "Failed to open verity device '{}' with signature from partition '{}'",
             verity_device_id, hash_signature_device_id
         ))
+}
+
+const MAX_VERITY_SIGNATURE_SIZE: usize = 1024 * 1024;
+
+fn extract_verity_signature(reader: &mut impl Read) -> Result<NamedTempFile, Error> {
+    let mut header = [0u8; 2];
+    reader
+        .read_exact(&mut header)
+        .context("Failed to read DER signature header")?;
+    ensure!(header[0] == 0x30, "Signature must be a DER sequence");
+
+    let mut length_bytes = [0u8; 4];
+    let length_count = if header[1] & 0x80 != 0 {
+        usize::from(header[1] & 0x7f)
+    } else {
+        0
+    };
+    let content_length = if header[1] & 0x80 == 0 {
+        usize::from(header[1])
+    } else {
+        ensure!(
+            (1..=length_bytes.len()).contains(&length_count),
+            "Invalid DER length encoding"
+        );
+        reader
+            .read_exact(&mut length_bytes[..length_count])
+            .context("Failed to read DER signature length")?;
+        ensure!(length_bytes[0] != 0, "Non-minimal DER length encoding");
+        let length = length_bytes[..length_count]
+            .iter()
+            .fold(0usize, |length, byte| (length << 8) | usize::from(*byte));
+        ensure!(length >= 128, "Non-minimal DER length encoding");
+        length
+    };
+    ensure!(content_length > 0, "Signature DER sequence is empty");
+    let header_length = header.len() + length_count;
+    ensure!(
+        content_length <= MAX_VERITY_SIGNATURE_SIZE - header_length,
+        "Signature exceeds the {MAX_VERITY_SIGNATURE_SIZE}-byte limit"
+    );
+
+    let mut signature =
+        NamedTempFile::new().context("Failed to create signature temporary file")?;
+    signature
+        .write_all(&header)
+        .context("Failed to write DER signature header")?;
+    signature
+        .write_all(&length_bytes[..length_count])
+        .context("Failed to write DER signature length")?;
+    let copied = io::copy(&mut reader.take(content_length as u64), &mut signature)
+        .context("Failed to copy DER signature")?;
+    ensure!(copied == content_length as u64, "Truncated DER signature");
+    signature
+        .flush()
+        .context("Failed to flush signature temporary file")?;
+    Ok(signature)
 }
 
 /// Get the verity data and hash paths.
@@ -535,6 +587,47 @@ mod tests {
         mock::{MockImage, MockOsImage},
         OsImage, OsImageFileSystemType,
     };
+
+    #[test]
+    fn test_extract_verity_signature_excludes_partition_padding() {
+        for encoded in [
+            vec![0x30, 3, 2, 1, 0],
+            [vec![0x30, 0x81, 0x80], vec![0; 128]].concat(),
+            [
+                vec![0x30, 0x83, 0x0f, 0xff, 0xfb],
+                vec![0; MAX_VERITY_SIGNATURE_SIZE - 5],
+            ]
+            .concat(),
+        ] {
+            let partition = [encoded.clone(), vec![0; 4096]].concat();
+            let mut reader = io::Cursor::new(partition);
+            let signature = extract_verity_signature(&mut reader).unwrap();
+            assert_eq!(fs::read(signature.path()).unwrap(), encoded);
+            assert_eq!(reader.position(), encoded.len() as u64);
+            assert!(signature.as_file().metadata().unwrap().is_file());
+        }
+    }
+
+    #[test]
+    fn test_extract_verity_signature_rejects_invalid_der() {
+        for (encoded, expected) in [
+            (vec![], "header"),
+            (vec![0x30], "header"),
+            (vec![0x31, 1, 0], "DER sequence"),
+            (vec![0x30, 0], "empty"),
+            (vec![0x30, 0x80], "length encoding"),
+            (vec![0x30, 0x85], "length encoding"),
+            (vec![0x30, 0x82, 1], "signature length"),
+            (vec![0x30, 0x82, 0, 0x80], "Non-minimal"),
+            (vec![0x30, 0x81, 0x7f], "Non-minimal"),
+            (vec![0x30, 0x83, 0x10, 0, 0], "limit"),
+            (vec![0x30, 3, 0], "Truncated"),
+        ] {
+            let mut reader = io::Cursor::new(encoded);
+            let error = extract_verity_signature(&mut reader).unwrap_err();
+            assert!(error.to_string().contains(expected), "{error:#}");
+        }
+    }
 
     #[test]
     fn test_get_updated_device_name() {
