@@ -193,7 +193,7 @@ fn render_cell(
     interpolate::interpolate_tree(&mut ic_config, &context)?;
 
     let base = resolve_base(image, image_dir, &tuple, &matched, &context)?;
-    let outputs = resolve_outputs(image, &tuple, &matched)?;
+    let outputs = resolve_outputs(image, &tuple, &matched, &context)?;
     for output in &outputs {
         validate_output_compression(image, &tuple, output)?;
     }
@@ -313,6 +313,7 @@ fn resolve_outputs(
     image: &ImageDefinition,
     tuple: &AxisTuple,
     matched: &[&LoadedFragment],
+    context: &interpolate::Context,
 ) -> Result<Vec<OutputSpec>, ConfigError> {
     let mut outputs: Option<Value> = None;
     for fragment in matched {
@@ -326,7 +327,10 @@ fn resolve_outputs(
         }
     }
     match outputs {
-        Some(value) => deserialize_field(value, image, tuple, OUTPUTS_FIELD),
+        Some(mut value) => {
+            interpolate::interpolate_tree(&mut value, context)?;
+            deserialize_field(value, image, tuple, OUTPUTS_FIELD)
+        }
         None => Ok(Vec::new()),
     }
 }
@@ -502,6 +506,34 @@ mod tests {
             .iter()
             .filter_map(Value::as_str)
             .collect()
+    }
+
+    #[test]
+    fn output_name_parses_static_and_interpolated_values() {
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "image.yaml",
+            indoc! {"
+                name: named
+                matrix:
+                  arch: [amd64]
+                outputs:
+                  - format: cosi
+                    name: legacy-static
+                  - format: raw
+                    name: '${arch}-artifact'
+                base:
+                  path: ./b.img
+                config:
+                  os: { hostname: named }
+            "},
+        );
+        let image = load_image(tmp.path().join("image.yaml")).unwrap();
+        let cells = render_image(&image, tmp.path()).unwrap();
+        assert_eq!(cells[0].outputs.len(), 2);
+        assert_eq!(cells[0].outputs[0].name.as_deref(), Some("legacy-static"));
+        assert_eq!(cells[0].outputs[1].name.as_deref(), Some("amd64-artifact"));
     }
 
     #[test]

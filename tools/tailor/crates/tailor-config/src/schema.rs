@@ -804,6 +804,10 @@ pub struct AzureLinuxBase {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OutputSpec {
     pub format: OutputFormat,
+    /// Optional published artifact basename override. When omitted, tailor publishes `<slug>.<ext>`;
+    /// when set, it publishes `<name>.<ext>` (and still suffixes clones with `_cloneN`).
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default)]
     pub cosi_compression_level: Option<u8>,
     /// Post-build compression tailor applies to the artifact (e.g. `zstd` ⇒ `img.vhd.zst`). Invalid

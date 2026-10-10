@@ -604,6 +604,7 @@ mod tests {
             dir,
             default_outputs: vec![OutputSpec {
                 format: OutputFormat::Cosi,
+                name: None,
                 cosi_compression_level: None,
                 compression: None,
             }],
