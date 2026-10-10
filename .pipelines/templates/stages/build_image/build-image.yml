@@ -37,6 +37,10 @@ parameters:
     type: string
     default: ""
 
+  - name: requiresUbuntuPoolForSigning
+    type: boolean
+    default: false
+
 stages:
   - stage: TridentTestImg_${{ replace(parameters.imageName, '-', '_') }}
     displayName: Build ${{ parameters.imageName }}
@@ -55,6 +59,12 @@ stages:
         timeoutInMinutes: 20
         pool:
           type: linux
+          # tailor signing currently shells out to host `sbsign`; keep the
+          # signed usr-verity image builds on Ubuntu until signing is
+          # containerized.
+          ${{ if eq(parameters.requiresUbuntuPoolForSigning, true) }}:
+            name: trident-ubuntu-1es-pool-eastus2
+            hostArchitecture: amd64
 
         variables:
           ob_outputDirectory: /tmp/output
