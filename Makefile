@@ -1325,3 +1325,18 @@ artifacts/ubuntu_2404_arm64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img
 	qemu-img convert -O vhdx ubuntu-24.04-server-cloudimg-arm64.img artifacts/ubuntu_2404_arm64.vhdx
 	rm -f ubuntu-24.04-server-cloudimg-arm64.img
+
+# GB200 base image is staged from a private Azure Linux storage account (see
+# .pipelines/templates/stages/trident_images/trident-testimg-template.yml,
+# "Download Base Image - gb200_2404_arm64"), not a public URL, so this rule
+# mirrors the pipeline's az CLI download for local/dev builds that have
+# access to the azlinuxbmpstaging storage account.
+GB200_BLOB_NAME = gb200/arm64/20260318/image.vhdx
+artifacts/gb200_2404_arm64.vhdx:
+	mkdir -p artifacts
+	az storage blob download \
+		--auth-mode login \
+		--account-name azlinuxbmpstaging \
+		--container-name os-image-cache \
+		--name "$(GB200_BLOB_NAME)" \
+		--file artifacts/gb200_2404_arm64.vhdx

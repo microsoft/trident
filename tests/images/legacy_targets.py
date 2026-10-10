@@ -123,6 +123,7 @@ def dependencies(name: str):
         "ubuntu_2204_arm64": REPO_ROOT / "artifacts" / "ubuntu_2204_arm64.vhdx",
         "ubuntu_2404_amd64": REPO_ROOT / "artifacts" / "ubuntu_2404_amd64.vhdx",
         "ubuntu_2404_arm64": REPO_ROOT / "artifacts" / "ubuntu_2404_arm64.vhdx",
+        "gb200_2404_arm64": REPO_ROOT / "artifacts" / "gb200_2404_arm64.vhdx",
     }
     base_dep = base_dep_map.get(entry.get("baseImage"))
     if base_dep is not None:
