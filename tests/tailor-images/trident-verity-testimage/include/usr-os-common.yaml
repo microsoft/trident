@@ -34,7 +34,7 @@ packages:
 additionalFiles:
   - source: usr/files/dracut-nohostonly.conf
     destination: /usr/lib/dracut/dracut.conf.d/nohostonly.conf
-  - source: usr/files/sudoers-wheel
+  - source: ../common/files/sudoers-wheel
     destination: /etc/sudoers.d/wheel
 services:
   enable:

@@ -10,7 +10,7 @@ config:
     additionalFiles:
       - source: base/files/99-dhcp-eth0.network
         destination: /etc/systemd/network/99-dhcp-eth0.network
-      - source: base/files/sudoers-wheel
+      - source: ../common/files/sudoers-wheel
         destination: /etc/sudoers.d/wheel
       - source: base/files/trident-acl-agent-override.conf
         destination: /etc/systemd/system/trident-acl-agent.service.d/override.conf

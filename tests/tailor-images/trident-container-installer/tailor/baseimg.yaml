@@ -39,15 +39,15 @@ os:
     - tar
     - vim
   additionalFiles:
-  - source: base/files/getty@.service
+  - source: ../common/files/getty@.service
     destination: /usr/lib/systemd/system/getty@.service
-  - source: base/files/serial-getty@.service
+  - source: ../common/files/serial-getty@.service
     destination: /usr/lib/systemd/system/serial-getty@.service
   - source: base/files/root.profile
     destination: /root/.profile
   - source: base/files/trident-container.service
     destination: /usr/lib/systemd/system/trident-container.service
-  - source: base/files/containerd-mmap-fix.cil
+  - source: ../common/files/containerd-mmap-fix.cil
     destination: /usr/share/selinux/packages/containerd-mmap-fix.cil
   services:
     enable:
@@ -56,12 +56,12 @@ os:
 scripts:
   postCustomization:
   - path: base/scripts/post-install.sh
-  - path: base/scripts/load-containerd-selinux-fix.sh
+  - path: ../common/scripts/load-containerd-selinux-fix.sh
 iso:
   additionalFiles:
-  - source: base/files/config-placeholder.yaml
+  - source: ../common/files/config-placeholder.yaml
     destination: /trident-config.yaml
-  - source: base/files/override-placeholder.conf
+  - source: ../common/files/override-placeholder.conf
     destination: /trident-override.conf
   kernelCommandLine:
     extraCommandLine:

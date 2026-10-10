@@ -9,7 +9,7 @@ config:
         - audit
         - selinux-policy-devel
     additionalFiles:
-      - source: usr/files/use-grpc-client-commit.conf
+      - source: ../common/files/use-grpc-client-commit.conf
         destination: /etc/systemd/system/trident.service.d/override.conf
     services:
       enable:

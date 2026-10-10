@@ -65,9 +65,9 @@ os:
 
   additionalFiles:
     # Getty service files for root autologin
-  - source: mos/files/getty@.service
+  - source: ../common/files/getty@.service
     destination: /usr/lib/systemd/system/getty@.service
-  - source: mos/files/serial-getty@.service
+  - source: ../common/files/serial-getty@.service
     destination: /usr/lib/systemd/system/serial-getty@.service
   - source: mos/scripts/installation.sh
     destination: /root/installer/installation.sh 

@@ -8,7 +8,7 @@ config:
         - squashfs-tools
         - tar
     additionalFiles:
-      - source: usr/files/trident-container.service
+      - source: ../common/files/trident-container.service
         destination: /usr/lib/systemd/system/trident-container.service
     services:
       enable:

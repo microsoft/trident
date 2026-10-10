@@ -39,11 +39,11 @@ additionalFiles:
     destination: /etc/systemd/system/etc-mount.service
   - source: base/files/etc-mount.sh
     destination: /usr/local/bin/etc-mount.sh
-  - source: base/files/sudoers-wheel
+  - source: ../common/files/sudoers-wheel
     destination: /etc/sudoers.d/wheel
   - source: base/files/99-dhcp-eth0.network
     destination: /etc/systemd/network/99-dhcp-eth0.network
-  - source: base/files/use-grpc-client-commit.conf
+  - source: ../common/files/use-grpc-client-commit.conf
     destination: /etc/systemd/system/trident.service.d/override.conf
 services:
   enable:

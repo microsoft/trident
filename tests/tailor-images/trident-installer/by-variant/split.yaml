@@ -18,5 +18,5 @@ config:
   iso:
     additionalFiles:
       $remove:
-        - source: base/files/override-placeholder.conf
+        - source: ../common/files/override-placeholder.conf
           destination: /trident-override.conf

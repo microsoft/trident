@@ -34,7 +34,7 @@ additionalFiles:
     destination: /etc/systemd/system/etc-mount.service
   - source: base/etc-mount.sh
     destination: /usr/local/bin/etc-mount.sh
-  - source: base/sudoers-wheel
+  - source: ../common/files/sudoers-wheel
     destination: /etc/sudoers.d/wheel
 services:
   enable:
