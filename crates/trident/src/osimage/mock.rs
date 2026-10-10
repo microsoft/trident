@@ -172,6 +172,7 @@ impl MockOsImage {
                 verity: esp_img.verity.as_ref().map(|verity| OsImageVerityHash {
                     roothash: verity.roothash.clone(),
                     hash_image_file: mock_os_image_file(),
+                    signature_image_file: None,
                 }),
             })
         } else {
@@ -193,6 +194,7 @@ impl MockOsImage {
                 verity: image.verity.as_ref().map(|verity| OsImageVerityHash {
                     roothash: verity.roothash.clone(),
                     hash_image_file: mock_os_image_file(),
+                    signature_image_file: None,
                 }),
             })
     }

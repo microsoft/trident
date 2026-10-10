@@ -337,6 +337,7 @@ pub struct GptPartitionInfo {
 pub struct OsImageVerityHash {
     pub roothash: String,
     pub hash_image_file: OsImageFile,
+    pub signature_image_file: Option<OsImageFile>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]

@@ -532,6 +532,12 @@ fn cosi_image_to_os_image_filesystem(image: &metadata::Image) -> OsImageFileSyst
                 path: verity.file.path,
             },
             roothash: verity.roothash,
+            signature_image_file: verity.signature.map(|signature| OsImageFile {
+                compressed_size: signature.compressed_size,
+                sha384: signature.sha384,
+                uncompressed_size: signature.uncompressed_size,
+                path: signature.path,
+            }),
         }),
     }
 }
@@ -1164,6 +1170,7 @@ mod tests {
                 sha384: Sha384Hash::from(format!("{:x}", Sha384::digest(verity_data.as_bytes()))),
             },
             roothash: root_hash.to_string(),
+            signature: None,
         });
 
         let os_fs = cosi_image_to_os_image_filesystem(&cosi_img);

@@ -110,12 +110,29 @@ pub(super) fn derive_host_configuration_inner(
                 ),
             };
 
+            // Optionally, get the id of the signature partition, if present.
+            let hash_signature_device_id = verity_device
+                .signature
+                .as_ref()
+                .map(|signature| {
+                    partition_ids_by_file
+                        .get(signature.path.as_path())
+                        .cloned()
+                        .with_context(|| {
+                            format!(
+                                "Failed to find signature partition for verity device: {}",
+                                signature.path.display()
+                            )
+                        })
+                })
+                .transpose()?;
+
             verity.push(VerityDevice {
                 id: verity_id.clone(),
                 name: verity_name,
                 data_device_id: partition_id.clone(),
                 hash_device_id: hash_partition_id.clone(),
-                hash_signature_device_id: None,
+                hash_signature_device_id,
                 corruption_option: Default::default(),
             });
 
@@ -727,6 +744,7 @@ mod tests {
             verity: Some(VerityMetadata {
                 file: sample_image_file("images/root-hash.img.zst"),
                 roothash: "abcd1234".to_string(),
+                signature: None,
             }),
         };
 
@@ -740,6 +758,7 @@ mod tests {
             verity: Some(VerityMetadata {
                 file: sample_image_file("images/usr-hash.img.zst"),
                 roothash: "efgh5678".to_string(),
+                signature: None,
             }),
         };
 
@@ -838,6 +857,152 @@ mod tests {
         );
     }
 
+    /// Tests [`derive_host_configuration_inner`] with a verity device whose root
+    /// hash signature is stored on its own dedicated partition.
+    ///
+    /// Verifies that when the COSI metadata's verity entry carries a `signature`
+    /// image file, the derived `VerityDevice.hash_signature_device_id` correctly
+    /// resolves to the partition ID backing that signature image, while a
+    /// sibling verity device without a signature leaves the field unset.
+    #[test]
+    fn test_derive_host_configuration_inner_with_verity_signature() {
+        let (raw_gpt, disk_size, lba_size) = create_mock_gpt_disk_typed(&[
+            ("esp", 64 * 1024, gpt::partition_types::EFI),
+            ("root", 256 * 1024, gpt::partition_types::LINUX_FS),
+            ("root-hash", 32 * 1024, gpt::partition_types::LINUX_FS),
+            ("root-hash-sig", 8 * 1024, gpt::partition_types::LINUX_FS),
+            ("usr", 256 * 1024, gpt::partition_types::LINUX_FS),
+            ("usr-hash", 32 * 1024, gpt::partition_types::LINUX_FS),
+        ]);
+
+        let disk_info = DiskInfo {
+            size: disk_size,
+            lba_size,
+            partition_table_type: PartitionTableType::Gpt,
+            gpt_regions: vec![
+                GptDiskRegion {
+                    image: sample_image_file("gpt_primary.zst"),
+                    region_type: GptRegionType::PrimaryGpt,
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/esp.img.zst"),
+                    region_type: GptRegionType::Partition { number: 1 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/root.img.zst"),
+                    region_type: GptRegionType::Partition { number: 2 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/root-hash.img.zst"),
+                    region_type: GptRegionType::Partition { number: 3 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/root-hash-sig.img.zst"),
+                    region_type: GptRegionType::Partition { number: 4 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/usr.img.zst"),
+                    region_type: GptRegionType::Partition { number: 5 },
+                },
+                GptDiskRegion {
+                    image: sample_image_file("images/usr-hash.img.zst"),
+                    region_type: GptRegionType::Partition { number: 6 },
+                },
+            ],
+        };
+
+        // Root filesystem with verity pointing to the root-hash partition, and
+        // a detached signature backed by its own dedicated partition.
+        let root_image = Image {
+            file: sample_image_file("images/root.img.zst"),
+            mount_point: PathBuf::from("/"),
+            fs_type: OsImageFileSystemType::Ext4,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::LinuxGeneric,
+            verity: Some(VerityMetadata {
+                file: sample_image_file("images/root-hash.img.zst"),
+                roothash: "abcd1234".to_string(),
+                signature: Some(sample_image_file("images/root-hash-sig.img.zst")),
+            }),
+        };
+
+        // /usr filesystem with verity pointing to the usr-hash partition, with
+        // no signature partition configured.
+        let usr_image = Image {
+            file: sample_image_file("images/usr.img.zst"),
+            mount_point: PathBuf::from("/usr"),
+            fs_type: OsImageFileSystemType::Ext4,
+            fs_uuid: OsUuid::Uuid(Uuid::new_v4()),
+            part_type: DiscoverablePartitionType::LinuxGeneric,
+            verity: Some(VerityMetadata {
+                file: sample_image_file("images/usr-hash.img.zst"),
+                roothash: "efgh5678".to_string(),
+                signature: None,
+            }),
+        };
+
+        let metadata = CosiMetadata {
+            version: KnownMetadataVersion::V1_3.as_version(),
+            id: Some(Uuid::new_v4()),
+            os_arch: SystemArchitecture::Amd64,
+            os_release: OsRelease::default(),
+            os_packages: None,
+            images: vec![
+                sample_esp_image("images/esp.img.zst", "/boot/efi"),
+                root_image,
+                usr_image,
+            ],
+            bootloader: None,
+            disk: Some(disk_info),
+            compression: None,
+        };
+
+        let cosi = create_test_cosi(metadata, Some(raw_gpt));
+        let result = derive_host_configuration_inner(
+            &cosi.source,
+            &cosi.metadata_sha384,
+            "/dev/sda",
+            &cosi.metadata.images,
+            cosi.partitioning_info.as_ref().unwrap(),
+        );
+        assert!(
+            result.is_ok(),
+            "derive_host_configuration_inner with verity signature should succeed: {:?}",
+            result.unwrap_err()
+        );
+
+        let hc = result.unwrap();
+
+        // 6 partitions: esp, root, root-hash, root-hash-sig, usr, usr-hash.
+        assert_eq!(
+            hc.storage.disks[0].partitions.len(),
+            6,
+            "Should have 6 partitions"
+        );
+
+        assert_eq!(hc.storage.verity.len(), 2, "Should have 2 verity devices");
+
+        // Root verity device has a signature partition: root-hash-sig is
+        // partition-4.
+        assert_eq!(hc.storage.verity[0].name, "root");
+        assert_eq!(hc.storage.verity[0].data_device_id, "partition-2");
+        assert_eq!(hc.storage.verity[0].hash_device_id, "partition-3");
+        assert_eq!(
+            hc.storage.verity[0].hash_signature_device_id,
+            Some("partition-4".to_string()),
+            "Root verity device should resolve its signature partition"
+        );
+
+        // Usr verity device has no signature partition configured.
+        assert_eq!(hc.storage.verity[1].name, "usr");
+        assert_eq!(hc.storage.verity[1].data_device_id, "partition-5");
+        assert_eq!(hc.storage.verity[1].hash_device_id, "partition-6");
+        assert_eq!(
+            hc.storage.verity[1].hash_signature_device_id, None,
+            "Usr verity device without a signature should leave the field unset"
+        );
+    }
+
     /// Tests [`derive_host_configuration_inner`] with verity at unsupported mount point.
     ///
     /// Verifies that an error is returned when a verity-enabled filesystem has a
@@ -876,6 +1041,7 @@ mod tests {
             verity: Some(VerityMetadata {
                 file: sample_image_file("images/var-hash.img.zst"),
                 roothash: "badhash".to_string(),
+                signature: None,
             }),
         };
 
