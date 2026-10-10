@@ -15,7 +15,7 @@
 //! after a dropped or failed watch; that is governed entirely by
 //! `kube::runtime::watcher`'s built-in `default_backoff()`.
 
-use std::{collections::BTreeMap, path::Path, time::Duration};
+use std::{collections::BTreeMap, time::Duration};
 
 use anyhow::{Context, Error};
 use futures::{stream::BoxStream, StreamExt, TryStreamExt};
@@ -35,7 +35,8 @@ use reqwest::StatusCode;
 use serde_json::json;
 use thiserror::Error;
 
-use osutils::dmi::{read_product_uuid_from, PRODUCT_UUID_PATH};
+use osutils::dmi;
+use sysdefs::osuuid::OsUuid;
 
 use crate::core::config::KubernetesConfig;
 
@@ -88,7 +89,7 @@ impl NodeClient {
     pub async fn get_node(&self, name: &str) -> Result<Node, K8sClientError> {
         let node = self.api.get(name).await.map_err(map_kube_error)?;
         if self.validate_identity {
-            verify_node_identity(&node, name, Path::new(PRODUCT_UUID_PATH))?;
+            verify_node_identity(&node, name, dmi::read_product_uuid())?;
         }
         Ok(node)
     }
@@ -170,7 +171,7 @@ impl NodeClient {
                 let name = name.clone();
                 async move {
                     if validate_identity {
-                        verify_node_identity(&node, &name, Path::new(PRODUCT_UUID_PATH))?;
+                        verify_node_identity(&node, &name, dmi::read_product_uuid())?;
                     }
                     Ok(node)
                 }
@@ -190,8 +191,8 @@ fn is_not_found(err: &KubeError) -> bool {
 }
 
 /// Confirms `node`'s reported `status.nodeInfo.systemUUID` matches this
-/// machine's own hardware product UUID (read from `product_uuid_path`,
-/// normally [`PRODUCT_UUID_PATH`]). A mismatch means the Node object we
+/// machine's own hardware product UUID from [`dmi::read_product_uuid`].
+/// A mismatch means the Node object we
 /// fetched by name does not describe this machine - e.g. the Node name was
 /// recycled onto different hardware - so it's treated identically to the
 /// Node not existing ([`K8sClientError::NodeGone`]).
@@ -211,18 +212,23 @@ fn is_not_found(err: &KubeError) -> bool {
 fn verify_node_identity(
     node: &Node,
     name: &str,
-    product_uuid_path: &Path,
+    local_uuid: Result<OsUuid, Error>,
 ) -> Result<(), K8sClientError> {
-    let local_uuid = match read_product_uuid_from(product_uuid_path) {
+    let local_uuid = match local_uuid {
         Ok(uuid) => uuid,
         Err(err) => {
             warn!(
-                "failed to read local product uuid from {}, skipping Node {name:?} identity verification: {err:#}",
-                product_uuid_path.display()
+                "failed to read local product uuid, skipping Node {name:?} identity verification: {err:#}"
             );
             return Ok(());
         }
     };
+
+    let local_uuid = local_uuid.to_string();
+    if local_uuid.trim().is_empty() {
+        warn!("Local product uuid is empty, skipping Node {name:?} identity verification");
+        return Ok(());
+    }
 
     let node_uuid = node
         .status
@@ -236,7 +242,10 @@ fn verify_node_identity(
         return Ok(());
     }
 
-    if !node_uuid.eq_ignore_ascii_case(&local_uuid) {
+    if !OsUuid::from(node_uuid)
+        .to_string()
+        .eq_ignore_ascii_case(&local_uuid)
+    {
         warn!(
             "Node {name:?} status.nodeInfo.systemUUID {node_uuid:?} does not match local product uuid {local_uuid:?}; treating node as not found"
         );
@@ -374,61 +383,55 @@ mod tests {
         }
     }
 
-    fn write_uuid_file(uuid: &str) -> tempfile::NamedTempFile {
-        use std::io::Write;
-
-        let mut file = tempfile::NamedTempFile::new().expect("failed to create temp file");
-        writeln!(file, "{uuid}").expect("failed to write temp file");
-        file
-    }
-
     #[test]
     fn matching_system_uuid_is_ok() {
-        let uuid_file = write_uuid_file("1234-ABCD");
         let node = node_with_system_uuid("1234-ABCD");
-
-        assert!(verify_node_identity(&node, "n", uuid_file.path()).is_ok());
+        verify_node_identity(&node, "n", Ok(OsUuid::from("1234-ABCD"))).unwrap();
     }
 
     #[test]
     fn matching_system_uuid_is_case_insensitive() {
-        let uuid_file = write_uuid_file("1234-abcd");
-        let node = node_with_system_uuid("1234-ABCD");
-
-        assert!(verify_node_identity(&node, "n", uuid_file.path()).is_ok());
+        for (local, remote) in [
+            ("1234-abcd", "1234-ABCD"),
+            (
+                "6BA7B810-9DAD-11D1-80B4-00C04FD430C8",
+                "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+            ),
+        ] {
+            let node = node_with_system_uuid(remote);
+            verify_node_identity(&node, "n", Ok(OsUuid::from(local))).unwrap();
+        }
     }
 
     #[test]
     fn mismatched_system_uuid_is_node_gone() {
-        let uuid_file = write_uuid_file("1234-ABCD");
         let node = node_with_system_uuid("5678-EFGH");
-
-        assert!(matches!(
-            verify_node_identity(&node, "n", uuid_file.path()),
-            Err(K8sClientError::NodeGone)
-        ));
+        let error = verify_node_identity(&node, "n", Ok(OsUuid::from("1234-ABCD"))).unwrap_err();
+        assert!(matches!(error, K8sClientError::NodeGone), "got {error:?}");
     }
 
     #[test]
     fn missing_node_system_info_skips_verification() {
-        let uuid_file = write_uuid_file("1234-ABCD");
-        let node = Node::default();
-
-        assert!(verify_node_identity(&node, "n", uuid_file.path()).is_ok());
+        verify_node_identity(&Node::default(), "n", Ok(OsUuid::from("1234-ABCD"))).unwrap();
     }
 
     #[test]
     fn empty_node_system_uuid_skips_verification() {
-        let uuid_file = write_uuid_file("1234-ABCD");
         let node = node_with_system_uuid("");
-
-        assert!(verify_node_identity(&node, "n", uuid_file.path()).is_ok());
+        verify_node_identity(&node, "n", Ok(OsUuid::from("1234-ABCD"))).unwrap();
     }
 
     #[test]
     fn unreadable_local_uuid_skips_verification() {
         let node = node_with_system_uuid("5678-EFGH");
+        verify_node_identity(&node, "n", Err(Error::msg("UUID file unavailable"))).unwrap();
+    }
 
-        assert!(verify_node_identity(&node, "n", Path::new("/does/not/exist")).is_ok());
+    #[test]
+    fn empty_local_uuid_skips_verification() {
+        let node = node_with_system_uuid("1234-ABCD");
+        for local in ["", "  \n"] {
+            verify_node_identity(&node, "n", Ok(OsUuid::from(local))).unwrap();
+        }
     }
 }
