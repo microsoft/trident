@@ -13,7 +13,7 @@ container at boot.
 From the repo root, run:
 
 ```bash
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   build trident-container-installer --output-dir ./artifacts
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-container-installer --output-dir ./artifacts
 ```
 
 Output is written to `artifacts/trident-container-installer.iso` by default.
