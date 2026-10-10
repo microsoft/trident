@@ -130,6 +130,23 @@ steps:
       azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
       runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
+  - ${{ if eq(parameters.architecture, 'arm64') }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download go-tools for direct-streaming installer"
+      condition: or(eq('${{ parameters.imageName }}', 'trident-direct-streaming-installer-amd64'), eq('${{ parameters.imageName }}', 'trident-direct-streaming-installer-arm64'))
+      inputs:
+        buildType: current
+        artifactName: go-tools-arm64
+        targetPath: "$(Build.ArtifactStagingDirectory)/go-tools"
+  - ${{ if ne(parameters.architecture, 'arm64') }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download go-tools for direct-streaming installer"
+      condition: or(eq('${{ parameters.imageName }}', 'trident-direct-streaming-installer-amd64'), eq('${{ parameters.imageName }}', 'trident-direct-streaming-installer-arm64'))
+      inputs:
+        buildType: current
+        artifactName: go-tools
+        targetPath: "$(Build.ArtifactStagingDirectory)/go-tools"
+
   - bash: |
       set -ex
 
@@ -162,6 +179,19 @@ steps:
         mkdir -p bin/RPMS
         find "$(Build.ArtifactStagingDirectory)/trident" -name "*${DISTRO}*.rpm" -exec mv {} bin/RPMS/ \;
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
+      fi
+
+      if [[ "${{ parameters.imageName }}" == trident-direct-streaming-installer-* ]]; then
+        if [ -f "$(Build.ArtifactStagingDirectory)/go-tools/rcp-agent" ]; then
+          cp "$(Build.ArtifactStagingDirectory)/go-tools/rcp-agent" artifacts/rcp-agent
+        elif [ -f bin/rcp-agent ]; then
+          cp bin/rcp-agent artifacts/rcp-agent
+        else
+          echo "Missing rcp-agent for direct-streaming installer"
+          exit 1
+        fi
+        chmod +x artifacts/rcp-agent
+        cp tools/cmd/rcp-agent/rcp-agent.service artifacts/rcp-agent.service
       fi
     displayName: "Prepare and move requirements"
     workingDirectory: ${{ parameters.tridentSourceDirectory }}

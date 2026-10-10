@@ -152,13 +152,23 @@ def dependencies(name: str):
         if rpm_dir.exists():
             deps.append(rpm_dir)
             deps.extend(sorted(rpm_dir.rglob("*.rpm")))
-    if entry["image"] == "trident-installer":
+    if name in {
+        "trident-direct-streaming-installer-amd64",
+        "trident-direct-streaming-installer-arm64",
+    }:
         for extra in [
-            REPO_ROOT / "bin" / "rcp-agent",
-            REPO_ROOT / "tools" / "cmd" / "rcp-agent" / "rcp-agent.service",
+            REPO_ROOT / "artifacts" / "rcp-agent",
+            REPO_ROOT / "artifacts" / "rcp-agent.service",
         ]:
-            if extra.exists():
-                deps.append(extra)
+            deps.append(extra)
+    if entry["image"] == "trident-vm-testimage":
+        # IC configs under trident-vm-testimage/ reference base/files/id_rsa.pub
+        # directly; the Makefile's own rule (keyed off artifacts/id_rsa[.pub],
+        # staged by the pipeline or `make artifacts/id_rsa`) copies the staged
+        # key into place. Without this dependency, make never runs that rule
+        # and IC fails with "failed to find SSH public key file".
+        ssh_key = image_dir / "base" / "files" / "id_rsa.pub"
+        deps.append(ssh_key)
     if name == "azl-installer":
         for extra in [
             REPO_ROOT

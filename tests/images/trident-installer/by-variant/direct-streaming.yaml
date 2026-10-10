@@ -25,9 +25,9 @@ config:
         - source: base/files/trident-install.service
           destination: /usr/lib/systemd/system/trident-install.service
       $append:
-        - source: ../../../bin/rcp-agent
+        - source: ../../../artifacts/rcp-agent
           destination: /usr/bin/rcp-agent
-        - source: ../../../tools/cmd/rcp-agent/rcp-agent.service
+        - source: ../../../artifacts/rcp-agent.service
           destination: /usr/lib/systemd/system/rcp-agent.service
   scripts:
     postCustomization:
@@ -46,3 +46,7 @@ config:
       extraCommandLine:
         $append:
           - selinux=1
+
+extraDependencies:
+  - ../../../artifacts/rcp-agent
+  - ../../../artifacts/rcp-agent.service

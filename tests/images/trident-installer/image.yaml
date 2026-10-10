@@ -19,8 +19,6 @@ rpmSources:
 
 extraDependencies:
   - ./base
-  - ../../../bin/rcp-agent
-  - ../../../tools/cmd/rcp-agent/rcp-agent.service
 
 config:
   storage:

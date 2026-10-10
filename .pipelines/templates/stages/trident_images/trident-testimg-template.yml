@@ -264,6 +264,18 @@ steps:
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
 
+      if [[ "${{ parameters.target }}" == artifacts/trident-direct-streaming-installer-* ]]; then
+        mkdir -p '${{ parameters.tridentSourceDirectory }}/artifacts'
+        if [ -f "${{ parameters.tridentSourceDirectory }}/bin/rcp-agent" ]; then
+          cp "${{ parameters.tridentSourceDirectory }}/bin/rcp-agent" '${{ parameters.tridentSourceDirectory }}/artifacts/rcp-agent'
+          chmod +x '${{ parameters.tridentSourceDirectory }}/artifacts/rcp-agent'
+        else
+          echo "Missing rcp-agent in bin/ for direct-streaming installer"
+          exit 1
+        fi
+        cp '${{ parameters.tridentSourceDirectory }}/tools/cmd/rcp-agent/rcp-agent.service' '${{ parameters.tridentSourceDirectory }}/artifacts/rcp-agent.service'
+      fi
+
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Prepare and move requirements"
 

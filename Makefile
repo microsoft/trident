@@ -1109,11 +1109,21 @@ $(CORE_SELINUX_IMAGE):
 	@mkdir -p artifacts
 	@python3 ./tests/images/legacy_targets.py download-image core_selinux
 
+CORE_ARM64_IMAGE_NAME ?= core_vhdx-arm64-3.0-stable
+CORE_ARM64_IMAGE_VERSION ?= *
 CORE_ARM64_IMAGE = artifacts/core_arm64.vhdx
 $(CORE_ARM64_IMAGE):
 	@mkdir -p artifacts
-	@oras pull mcr.microsoft.com/azurelinux/3.0/image/core_arm64:latest --output artifacts --platform linux/amd64
-	@mv artifacts/image.vhdx $(CORE_ARM64_IMAGE)
+	@tempdir=$$(mktemp -d); 		result=$$(az artifacts universal download 			--organization "https://dev.azure.com/mariner-org/" 			--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" 			--scope project 			--feed "AzureLinuxArtifacts" 			--name '$(CORE_ARM64_IMAGE_NAME)' 			--version '$(CORE_ARM64_IMAGE_VERSION)' 			--path $$tempdir) && 		mv $$tempdir/*.vhdx $(CORE_ARM64_IMAGE) && 		rm -rf $$tempdir && 		echo $$result | jq > $(CORE_ARM64_IMAGE).metadata.json
+
+artifacts/rcp-agent: bin/rcp-agent
+	@mkdir -p artifacts
+	@cp bin/rcp-agent $@
+	@chmod +x $@
+
+artifacts/rcp-agent.service: tools/cmd/rcp-agent/rcp-agent.service
+	@mkdir -p artifacts
+	@cp tools/cmd/rcp-agent/rcp-agent.service $@
 
 MINIMAL_IMAGE = artifacts/minimal.vhdx
 $(MINIMAL_IMAGE):
