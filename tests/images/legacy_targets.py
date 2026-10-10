@@ -226,6 +226,8 @@ def build(name: str, output_path: str, container: str | None):
     manifest = tailor_manifest_for_container(container)
     try:
         slug = resolve_slug(entry, manifest)
+        cert_path = REPO_ROOT / "tests" / "images" / "artifacts" / "ca_cert.pem"
+        cert_path.unlink(missing_ok=True)
         call_tailor(
             "--manifest",
             str(manifest),
@@ -240,6 +242,8 @@ def build(name: str, output_path: str, container: str | None):
         if not built.exists():
             raise SystemExit(f"expected built artifact not found: {built}")
         built.replace(target)
+        if cert_path.exists():
+            shutil.copy2(cert_path, target.parent / "ca_cert.pem")
     finally:
         if manifest.name == ".tailor.make.yaml":
             manifest.unlink(missing_ok=True)

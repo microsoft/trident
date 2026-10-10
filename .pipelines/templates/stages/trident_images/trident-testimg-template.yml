@@ -297,6 +297,7 @@ steps:
       # needed here for cross-arch direct-streaming builds.
 
       # Compress the full image & delete the uncompressed image
+      rm -f tests/images/artifacts/ca_cert.pem
       make ${{ parameters.target }}
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Build Test Image"
@@ -311,6 +312,10 @@ steps:
       else
         # Everything else is a file
         sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
+      fi
+
+      if [ -f "tests/images/artifacts/ca_cert.pem" ]; then
+        sudo cp -v "tests/images/artifacts/ca_cert.pem" "${{ parameters.outputDirectory }}/ca_cert.pem"
       fi
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Copy artifacts to output directory"

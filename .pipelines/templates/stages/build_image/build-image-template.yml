@@ -267,6 +267,7 @@ steps:
       PY
       )
 
+      rm -f tests/images/artifacts/ca_cert.pem
       cargo run --manifest-path tools/tailor/Cargo.toml --quiet --         --manifest "$manifest_path"         build "$tailor_image"         "${selector_args[@]}"         --output-dir $(ob_outputDirectory)         --clones ${{ parameters.clones }}
 
       if [[ ${{ parameters.clones }} -eq 1 ]]; then
@@ -275,6 +276,10 @@ steps:
         for ((i=0; i<${{ parameters.clones }}; i++)); do
           mv "$(ob_outputDirectory)/${slug}_clone${i}.${source_ext}"              "$(ob_outputDirectory)/${legacy_name}_${i}.${artifact_ext}"
         done
+      fi
+
+      if [ -f tests/images/artifacts/ca_cert.pem ]; then
+        cp tests/images/artifacts/ca_cert.pem "$(ob_outputDirectory)/ca_cert.pem"
       fi
 
       rm -f tests/images/.tailor.pipeline.yaml
