@@ -1,0 +1,55 @@
+config:
+  storage:
+    $include: ./include/storage-grub.yaml
+  os:
+    bootloader:
+      resetType: hard-reset
+    hostname: trident-vm-testimg
+    selinux:
+      mode: disabled
+    kernelCommandLine:
+      extraCommandLine:
+        - console=tty0
+        - console=tty1
+        - console=ttyS0
+        - rd.debug
+        - loglevel=6
+        - log_buf_len=1M
+        - systemd.journald.forward_to_console=1
+    packages:
+      install:
+        - curl
+        - dnf
+        - efibootmgr
+        - grub2-efi-binary-noprefix
+        - iproute
+        - iptables
+        - jq
+        - lsof
+        - netplan
+        - openssh-server
+        - trident-service
+        - vim
+        - netplan
+      remove:
+        - grub2-efi-binary
+    services:
+      enable:
+        - trident
+        - tridentd.socket
+    users:
+      - name: testuser
+        sshPublicKeyPaths:
+          - base/files/id_rsa.pub
+        secondaryGroups:
+          - wheel
+    additionalFiles:
+      - source: base/files/sshd-keygen.service
+        destination: /usr/lib/systemd/system/sshd-keygen.service
+      - source: base/files/99-dhcp-eth0.network
+        destination: /etc/systemd/network/99-dhcp-eth0.network
+      - source: base/files/sudoers-wheel
+        destination: /etc/sudoers.d/wheel
+  scripts:
+    postCustomization:
+      - $include: ./include/grub-scripts.yaml

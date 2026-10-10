@@ -12,7 +12,7 @@ loaded at runtime.
 From the repo root, run:
 
 ```bash
-python3 tests/images/testimages.py build trident-container-testimage
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   build trident-container-testimage --output-dir ./artifacts
 ```
 
 Output is written to `artifacts/trident-container-testimage.cosi` by default.

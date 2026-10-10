@@ -18,8 +18,14 @@ dm-verity.
 From the repo root, run:
 
 ```bash
-python3 tests/images/testimages.py build trident-verity-testimage
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   build trident-verity-testimage -s deployment=host -s mode=root --output-dir ./artifacts
 ```
 
-Output is written to `artifacts/trident-verity-testimage.cosi` by default. Use
+Other legacy variants map to selectors on the same family:
+
+- `trident-usrverity-testimage` → `-s deployment=host -s mode=usr`
+- `trident-container-verity-testimage` → `-s deployment=container -s mode=root`
+- `trident-container-usrverity-testimage` → `-s deployment=container -s mode=usr`
+
+Output is written to `artifacts/` using the tailor cell slug by default. Use
 `--output-dir <path>` to change the output location.

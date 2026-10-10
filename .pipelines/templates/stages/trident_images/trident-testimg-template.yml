@@ -135,7 +135,7 @@ steps:
         displayName: Copy SSH Keys
 
   - script: |
-      echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING testimages.py TO BUILD TEST IMAGES."
+      echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING the tailor workspace under tests/images."
       cat /etc/os-release
     displayName: "Report Host Info"
 
@@ -264,6 +264,18 @@ steps:
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
 
+      if [[ "${{ parameters.target }}" == artifacts/trident-direct-streaming-installer-* ]]; then
+        mkdir -p '${{ parameters.tridentSourceDirectory }}/artifacts'
+        if [ -f "${{ parameters.tridentSourceDirectory }}/bin/rcp-agent" ]; then
+          cp "${{ parameters.tridentSourceDirectory }}/bin/rcp-agent" '${{ parameters.tridentSourceDirectory }}/artifacts/rcp-agent'
+          chmod +x '${{ parameters.tridentSourceDirectory }}/artifacts/rcp-agent'
+        else
+          echo "Missing rcp-agent in bin/ for direct-streaming installer"
+          exit 1
+        fi
+        cp '${{ parameters.tridentSourceDirectory }}/tools/cmd/rcp-agent/rcp-agent.service' '${{ parameters.tridentSourceDirectory }}/artifacts/rcp-agent.service'
+      fi
+
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Prepare and move requirements"
 
@@ -280,13 +292,12 @@ steps:
         export MIC_CONTAINER_IMAGE="imagecustomizer:dev"
       fi
 
-      # Allow cross-platform (i.e. amd64 pipeline creating arm64 images)
-      if [[ "${{ parameters.micArchitecture }}" != "${{ parameters.pipelineArchitecture }}" ]]; then
-        # Export variable to tell Makefile and testimages to use `docker --platform`
-        export MIC_ARCHITECTURE="linux/${{ parameters.micArchitecture }}"
-      fi
+      # The Makefile's tailor-backed legacy target helper resolves the cell arch
+      # from the historical image name, so no extra MIC_ARCHITECTURE export is
+      # needed here for cross-arch direct-streaming builds.
 
       # Compress the full image & delete the uncompressed image
+      rm -f tests/images/artifacts/ca_cert.pem
       make ${{ parameters.target }}
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Build Test Image"
@@ -301,6 +312,10 @@ steps:
       else
         # Everything else is a file
         sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
+      fi
+
+      if [ -f "tests/images/artifacts/ca_cert.pem" ]; then
+        sudo cp -v "tests/images/artifacts/ca_cert.pem" "${{ parameters.outputDirectory }}/ca_cert.pem"
       fi
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Copy artifacts to output directory"

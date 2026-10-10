@@ -82,9 +82,9 @@ os:
       destination: /root/.profile
 
     # Netlaunch RCP files
-    - source: ../../../../bin/rcp-agent
+    - source: ../../../artifacts/rcp-agent
       destination: /usr/bin/rcp-agent
-    - source: ../../../../tools/cmd/rcp-agent/rcp-agent.service
+    - source: ../../../artifacts/rcp-agent.service
       destination: /usr/lib/systemd/system/rcp-agent.service
 
   selinux:

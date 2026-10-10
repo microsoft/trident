@@ -128,7 +128,7 @@ TEST_IMAGE_NAME="trident-vm-usr-verity-testimage"
 sudo rm -f artifacts/trident-vm-*-testimage.qcow2 artifacts/trident-vm-*-testimage.cosi
 
 # Build the COSI and QCOW2
-sudo ./tests/images/testimages.py build $TEST_IMAGE_NAME --output-dir ./artifacts
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/images/tailor.yaml     build trident-vm-testimage -s arch=amd64 -s scenario=usr-verity --output-dir ./artifacts
 make artifacts/$TEST_IMAGE_NAME.qcow2
 ```
 
