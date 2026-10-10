@@ -1,0 +1,71 @@
+storage:
+  bootType: efi
+  disks:
+  - partitionTableType: gpt
+    maxSize: 4G
+    partitions:
+    - id: esp
+      type: esp
+      size: 8M
+    - id: rootfs
+      size: grow
+  filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: rootfs
+    type: ext4
+    mountPoint:
+      path: /
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-container-testimg
+  kernelCommandLine:
+    extraCommandLine:
+    - console=tty0
+    - console=ttyS0
+    - rd.info
+    - log_buf_len=1M
+  packages:
+    remove:
+    - grub2-efi-binary
+    install:
+    - grub2-efi-binary-noprefix
+    - curl
+    - dnf
+    - efibootmgr
+    - iproute
+    - iptables
+    - lsof
+    - mdadm
+    - netplan
+    - openssh-server
+    - tpm2-tools
+    - vim
+    - device-mapper
+    - dosfstools
+    - lvm2
+    - veritysetup
+    - ntfs-3g
+    - ntfsprogs
+    - docker-cli
+    - moby-engine
+    - selinux-policy
+    - squashfs-tools
+    - tar
+  additionalFiles:
+  - source: base/files/trident-container.service
+    destination: /usr/lib/systemd/system/trident-container.service
+  - source: base/files/containerd-mmap-fix.cil
+    destination: /usr/share/selinux/packages/containerd-mmap-fix.cil
+  services:
+    enable:
+    - trident-container
+    - sshd
+scripts:
+  postCustomization:
+  - path: base/scripts/post-install.sh
+  - path: base/scripts/load-containerd-selinux-fix.sh

@@ -1,0 +1,101 @@
+bootType: efi
+disks:
+  - partitionTableType: gpt
+    partitions:
+      - id: esp
+        type: esp
+        label: esp
+        size: 512M
+      - id: boot-a
+        size: 256M
+      - id: boot-b
+        size: 256M
+      - id: root-a
+        size: 4G
+      - id: root-b
+        size: 4G
+      - id: usr-a
+        size: 1G
+      - id: usr-b
+        size: 1G
+      - id: usr-hash-a
+        size: 128M
+      - id: usr-hash-b
+        size: 128M
+      - id: trident
+        label: trident
+        size: 512M
+      - id: trident-acl-agent
+        label: trident-acl-agent
+        size: 128M
+      - id: kubelet
+        label: kubelet
+        size: 128M
+      - id: etc-trident
+        label: etc-trident
+        size: 128M
+      - id: home
+        label: home
+        size: 1G
+      - id: srv
+        label: srv
+        size: 128M
+verity:
+  - id: usrverity
+    name: usr
+    dataDeviceId: usr-a
+    hashDeviceId: usr-hash-a
+    dataDeviceMountIdType: uuid
+    hashDeviceMountIdType: uuid
+filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      idType: part-label
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: boot-a
+    type: ext4
+    mountPoint:
+      idType: uuid
+      path: /boot
+  - deviceId: usrverity
+    type: ext4
+    mountPoint:
+      path: /usr
+      options: defaults,ro
+  - deviceId: root-a
+    type: ext4
+    mountPoint:
+      idType: uuid
+      path: /
+  - deviceId: trident
+    type: ext4
+    mountPoint:
+      idType: part-label
+      path: /var/lib/trident
+  - deviceId: trident-acl-agent
+    type: ext4
+    mountPoint:
+      idType: part-label
+      path: /var/lib/trident-acl-agent
+  - deviceId: kubelet
+    type: ext4
+    mountPoint:
+      idType: part-label
+      path: /var/lib/kubelet
+  - deviceId: etc-trident
+    type: ext4
+    mountPoint:
+      idType: part-label
+      path: /etc/trident
+  - deviceId: home
+    type: ext4
+    mountPoint:
+      idType: part-label
+      path: /home
+  - deviceId: srv
+    type: ext4
+    mountPoint:
+      idType: part-label
+      path: /srv

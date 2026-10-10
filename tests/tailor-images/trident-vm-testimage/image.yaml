@@ -1,0 +1,23 @@
+name: trident-vm-testimage
+
+matrix:
+  arch: [amd64, arm64]
+  scenario: [grub, grub-verity, root-verity, usr-verity, acl-agent, grub-verity-azure]
+
+selectors:
+  exclude:
+    - { arch: arm64, scenario: [root-verity, usr-verity, acl-agent, grub-verity-azure] }
+
+base:
+  ref: qemu_guest
+
+outputs:
+  - format: cosi
+
+rpmSources:
+  - ../../../bin/RPMS
+
+extraDependencies:
+  - ./base
+
+config: {}

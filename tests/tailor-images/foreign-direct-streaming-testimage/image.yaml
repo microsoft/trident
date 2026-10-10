@@ -1,0 +1,16 @@
+name: foreign-direct-streaming-testimage
+operation: convert
+
+matrix:
+  arch: [amd64, arm64]
+  source: [ubuntu-2204, ubuntu-2404, gb200-2404]
+
+selectors:
+  exclude:
+    - { arch: amd64, source: gb200-2404 }
+
+base:
+  ref: ubuntu_2204_amd64
+
+outputs:
+  - format: baremetal-image

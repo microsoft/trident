@@ -1,0 +1,19 @@
+config:
+  os:
+    hostname: trident-container-verity-testimg
+    packages:
+      install:
+        - dnf
+        - docker-cli
+        - moby-engine
+        - squashfs-tools
+        - tar
+    additionalFiles:
+      - source: base/files/trident-container.service
+        destination: /usr/lib/systemd/system/trident-container.service
+    services:
+      enable:
+        - trident-container
+  scripts:
+    postCustomization:
+      - path: base/create-web-dir.sh

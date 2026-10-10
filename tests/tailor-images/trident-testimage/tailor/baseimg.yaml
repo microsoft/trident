@@ -1,0 +1,66 @@
+storage:
+  bootType: efi
+  disks:
+  - partitionTableType: gpt
+    maxSize: 4G
+    partitions:
+    - id: esp
+      type: esp
+      size: 8M
+    - id: rootfs
+      size: grow
+  filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: rootfs
+    type: ext4
+    mountPoint:
+      path: /
+os:
+  bootloader:
+    resetType: hard-reset
+  hostname: trident-testimg
+  kernelCommandLine:
+    extraCommandLine:
+    - console=tty0
+    - console=ttyS0
+    - rd.info
+    - log_buf_len=1M
+  packages:
+    remove:
+    - grub2-efi-binary
+    install:
+    - grub2-efi-binary-noprefix
+    - curl
+    - dnf
+    - efibootmgr
+    - iproute
+    - iptables
+    - lsof
+    - mdadm
+    - netplan
+    - openssh-server
+    - tpm2-tools
+    - trident-service
+    - vim
+    - audit
+    - device-mapper
+    - dosfstools
+    - lvm2
+    - veritysetup
+    - ntfs-3g
+    - ntfsprogs
+  services:
+    enable:
+    - sshd
+    - trident
+    - tridentd.socket
+  additionalFiles:
+  - source: base/files/use-grpc-client-commit.conf
+    destination: /etc/systemd/system/trident.service.d/override.conf
+scripts:
+  postCustomization:
+  - path: base/post-install.sh
