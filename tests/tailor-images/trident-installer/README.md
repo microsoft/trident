@@ -8,7 +8,7 @@ startup and reads a configuration that can be patched into the ISO.
 From the repo root, run:
 
 ```bash
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   build trident-installer -s arch=amd64 -s variant=default --output-dir ./artifacts
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-installer -s arch=amd64 -s variant=default --output-dir ./artifacts
 ```
 
 Other legacy variants map to selectors on the same family:
