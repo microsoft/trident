@@ -19,6 +19,7 @@ use std::{
 use serde::Deserialize;
 use tempfile::TempDir;
 use tracing::debug;
+use xxhash_rust::xxh3::xxh3_64;
 
 use tailor_config::{SigningBackend, SigningProfile};
 use tailor_core::{MissingPrerequisite, SignError, Signer, SigningPlan, SigningResult};
@@ -355,8 +356,31 @@ fn mint_ca(ca_key: &Path, ca_cert: &Path) -> Result<(), SignError> {
     )
 }
 
+/// X.509 limits a `CommonName` attribute to 64 characters (RFC 5280 `ub-common-name`); OpenSSL's
+/// `ASN1_mbstring_ncopy` enforces this and aborts the whole `req` with "string too long" if we hand
+/// it anything longer. Cell slugs (image + every matrix axis + format, optionally `_cloneN`) easily
+/// exceed that once `leaf_id` is embedded verbatim in `/CN=tailor leaf {leaf_id}` (12 literal chars
+/// leave only 52 for `leaf_id`), so bound the CN to a safe length and disambiguate any truncation
+/// with a short content hash - the full `leaf_id` is still the one used for on-disk file naming
+/// elsewhere, this only affects the certificate's CN attribute.
+const CN_MAX_LEN: usize = 64;
+const CN_PREFIX: &str = "tailor leaf ";
+
+fn leaf_common_name(leaf_id: &str) -> String {
+    let budget = CN_MAX_LEN - CN_PREFIX.len();
+    if leaf_id.len() <= budget {
+        return format!("{CN_PREFIX}{leaf_id}");
+    }
+    // Keep a readable prefix and append a short hash of the *full* leaf_id so two different
+    // leaf_ids that share a truncated prefix never collide on CN alone.
+    let hash = format!("{:016x}", xxh3_64(leaf_id.as_bytes()));
+    let keep = budget.saturating_sub(hash.len() + 1); // +1 for the separator
+    format!("{CN_PREFIX}{}-{hash}", &leaf_id[..keep])
+}
+
 /// Mint a code-signing leaf (`extendedKeyUsage=codeSigning`) signed by the CA. The leaf CN embeds the
-/// per-cell `leaf_id` so parallel cells never share a leaf.
+/// per-cell `leaf_id` (bounded to fit X.509's 64-character CN limit, see [`leaf_common_name`]) so
+/// parallel cells never share a leaf.
 fn mint_leaf(
     ca_key: &Path,
     ca_cert: &Path,
@@ -378,7 +402,7 @@ fn mint_leaf(
             "-out",
             &lossy(&csr),
             "-subj",
-            &format!("/CN=tailor leaf {leaf_id}"),
+            &format!("/CN={}", leaf_common_name(leaf_id)),
         ],
     )?;
     // codeSigning EKU via an ext file (process substitution isn't available through `Command`).
@@ -657,6 +681,35 @@ mod tests {
 
     fn openssl_available() -> bool {
         tool_on_path(OPENSSL)
+    }
+
+    #[test]
+    fn leaf_common_name_fits_within_64_chars_for_short_ids() {
+        let cn = leaf_common_name("solo_amd64_cosi");
+        assert_eq!(cn, "tailor leaf solo_amd64_cosi");
+        assert!(cn.len() <= 64);
+    }
+
+    #[test]
+    fn leaf_common_name_truncates_and_hashes_long_ids() {
+        // Reproduces the exact real-world overflow: a `trident-verity-testimage` container/usr
+        // clone0 slug is 69 chars once prefixed with "tailor leaf ", which OpenSSL's
+        // ASN1_mbstring_ncopy (ub-common-name = 64) rejects outright.
+        let long_id = "trident-verity-testimage_container_usr_amd64_cosi_clone0";
+        assert!(format!("tailor leaf {long_id}").len() > 64);
+
+        let cn = leaf_common_name(long_id);
+        assert!(cn.len() <= 64, "CN still too long: {cn:?} ({} chars)", cn.len());
+        assert!(cn.starts_with("tailor leaf "));
+
+        // Two different long ids sharing the same truncated prefix must not collide.
+        let other_id = "trident-verity-testimage_container_usr_amd64_cosi_clone1";
+        let other_cn = leaf_common_name(other_id);
+        assert_ne!(cn, other_cn);
+        assert!(other_cn.len() <= 64);
+
+        // Deterministic: same input always yields the same CN.
+        assert_eq!(cn, leaf_common_name(long_id));
     }
 
     #[test]
