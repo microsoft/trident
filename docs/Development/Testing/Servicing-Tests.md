@@ -10,7 +10,7 @@ Servicing tests validate multi-update workflows on pre-built VM images using
 from a QCOW2 image that already has Trident and an OS installed, then run
 repeated A/B updates with optional rollback testing.
 
-The VM images are defined in `tests/tailor-images/trident-vm-testimage/` and built
+The VM images are defined in `tests/images/trident-vm-testimage/` and built
 with Image Customizer from a `qemu_guest` base image downloaded from MCR.
 
 ## VM Image Types
@@ -24,7 +24,7 @@ image types are:
 | `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | `updateimg-grub-verity.yaml` |
 | `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | `baseimg-usr-verity.yaml` |
 
-All image configs live under `tests/tailor-images/trident-vm-testimage/base/`. The
+All image configs live under `tests/images/trident-vm-testimage/base/`. The
 base image is `qemu_guest` (see [step 4](#4-download-the-qemu_guest-base-image)
 for how to obtain it).
 
@@ -105,7 +105,7 @@ step, so the base image's pre-installed package set does not matter.
 :::tip Internal shortcut
 If you have access to the internal Azure DevOps artifacts feed, the Makefile
 downloads `qemu_guest` automatically (requires `az login`). You can also
-download it directly: `cargo run --manifest-path tools/tailor/Cargo.toml -- --manifest tests/tailor-images/tailor.yaml bases download qemu_guest`
+download it directly: `cargo run --manifest-path tools/tailor/Cargo.toml -- --manifest tests/images/tailor.yaml bases download qemu_guest`
 :::
 
 ### 5. Build the VM Image
@@ -132,7 +132,7 @@ the same filename in each directory (the update loop picks the filename from
 mkdir -p artifacts/update-a artifacts/update-b
 
 # Build two clones of the COSI image
-cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-vm-testimage -s arch=amd64 -s scenario=grub-verity     --output-dir ./artifacts --clones 2
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/images/tailor.yaml     build trident-vm-testimage -s arch=amd64 -s scenario=grub-verity     --output-dir ./artifacts --clones 2
 
 # Move the clones into the update directories with the same filename
 mv artifacts/trident-vm-testimage_amd64_grub-verity_cosi_clone0.cosi     artifacts/update-a/trident-vm-grub-verity-testimage.cosi

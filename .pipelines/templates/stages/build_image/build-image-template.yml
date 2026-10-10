@@ -92,7 +92,7 @@ steps:
       import sys
       from pathlib import Path
 
-      legacy = json.loads(Path("tests/tailor-images/legacy-map.json").read_text())
+      legacy = json.loads(Path("tests/images/legacy-map.json").read_text())
       entry = legacy[sys.argv[1]]
       print(f"##vso[task.setvariable variable=baseImageType]{entry['baseImage']}")
       PY
@@ -208,7 +208,7 @@ steps:
       import sys
       from pathlib import Path
 
-      entry = json.loads(Path("tests/tailor-images/legacy-map.json").read_text())[sys.argv[1]]
+      entry = json.loads(Path("tests/images/legacy-map.json").read_text())[sys.argv[1]]
       print(entry["image"])
       print(entry["ext"])
       print(entry.get("tailorExt", entry["ext"]))
@@ -227,12 +227,12 @@ steps:
         done
       fi
 
-      manifest_path=tests/tailor-images/tailor.yaml
+      manifest_path=tests/images/tailor.yaml
       if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
-        manifest_path=tests/tailor-images/.tailor.pipeline.yaml
+        manifest_path=tests/images/.tailor.pipeline.yaml
         python3 - <<'PY'
       from pathlib import Path
-      text = Path("tests/tailor-images/tailor.yaml").read_text()
+      text = Path("tests/images/tailor.yaml").read_text()
       needle = """toolchains:
         default: ic
         entries:
@@ -251,7 +251,7 @@ steps:
             tag: dev
             pull: never
       """
-      Path("tests/tailor-images/.tailor.pipeline.yaml").write_text(text.replace(needle, replacement, 1))
+      Path("tests/images/.tailor.pipeline.yaml").write_text(text.replace(needle, replacement, 1))
       PY
       fi
 
@@ -267,7 +267,7 @@ steps:
       PY
       )
 
-      rm -f tests/tailor-images/artifacts/ca_cert.pem
+      rm -f tests/images/artifacts/ca_cert.pem
       cargo run --manifest-path tools/tailor/Cargo.toml --quiet --         --manifest "$manifest_path"         build "$tailor_image"         "${selector_args[@]}"         --output-dir $(ob_outputDirectory)         --clones ${{ parameters.clones }}
 
       if [[ ${{ parameters.clones }} -eq 1 ]]; then
@@ -278,10 +278,10 @@ steps:
         done
       fi
 
-      if [ -f tests/tailor-images/artifacts/ca_cert.pem ]; then
-        cp tests/tailor-images/artifacts/ca_cert.pem "$(ob_outputDirectory)/ca_cert.pem"
+      if [ -f tests/images/artifacts/ca_cert.pem ]; then
+        cp tests/images/artifacts/ca_cert.pem "$(ob_outputDirectory)/ca_cert.pem"
       fi
 
-      rm -f tests/tailor-images/.tailor.pipeline.yaml
+      rm -f tests/images/.tailor.pipeline.yaml
     displayName: "Build ${{ parameters.imageName }}"
     workingDirectory: ${{ parameters.tridentSourceDirectory }}

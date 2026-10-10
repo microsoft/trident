@@ -8,8 +8,8 @@ import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE = REPO_ROOT / "tests" / "tailor-images" / "tailor.yaml"
-LEGACY_MAP = REPO_ROOT / "tests" / "tailor-images" / "legacy-map.json"
+WORKSPACE = REPO_ROOT / "tests" / "images" / "tailor.yaml"
+LEGACY_MAP = REPO_ROOT / "tests" / "images" / "legacy-map.json"
 SELF = Path(__file__).resolve()
 
 
@@ -36,7 +36,7 @@ def default_container_full() -> str:
     idx = text.find(needle)
     if idx == -1:
         raise SystemExit(
-            "default toolchain not found in tests/tailor-images/tailor.yaml"
+            "default toolchain not found in tests/images/tailor.yaml"
         )
     rest = text[idx + len(needle) :].splitlines()
     container = rest[0].strip()
@@ -76,7 +76,7 @@ def tailor_manifest_for_container(container_ref: str | None) -> Path:
         "      pull: never\n"
     )
     rendered = text.replace(needle, replacement, 1)
-    tmp = REPO_ROOT / "tests" / "tailor-images" / ".tailor.make.yaml"
+    tmp = REPO_ROOT / "tests" / "images" / ".tailor.make.yaml"
     tmp.write_text(rendered)
     return tmp
 
@@ -114,7 +114,7 @@ def legacy_list(filter_type: str):
 def dependencies(name: str):
     mapping = load_map()
     entry = mapping[name]
-    image_dir = REPO_ROOT / "tests" / "tailor-images" / entry["image"]
+    image_dir = REPO_ROOT / "tests" / "images" / entry["image"]
     deps: list[Path] = [WORKSPACE, LEGACY_MAP, SELF]
     base_dep_map = {
         "baremetal": REPO_ROOT / "artifacts" / "baremetal.vhdx",
@@ -175,14 +175,14 @@ def dependencies(name: str):
         for extra in [
             REPO_ROOT
             / "tests"
-            / "tailor-images"
+            / "images"
             / "azl-installer"
             / "iso"
             / "bin"
             / "liveinstaller",
             REPO_ROOT
             / "tests"
-            / "tailor-images"
+            / "images"
             / "azl-installer"
             / "iso"
             / "images"

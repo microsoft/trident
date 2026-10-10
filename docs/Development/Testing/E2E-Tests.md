@@ -132,7 +132,7 @@ make bin/rcp-agent       # Remote control plane agent
 ### 4. Build Trident RPMs
 
 The **host** test images include Trident packages built from your local tree.
-This step builds the RPMs into `bin/RPMS/`, which the `tests/tailor-images` tailor
+This step builds the RPMs into `bin/RPMS/`, which the `tests/images` tailor
 workspace passes to Image Customizer via `rpmSources:`:
 
 ```bash
@@ -168,7 +168,7 @@ make artifacts/id_rsa
 ### 7. Download Base Image
 
 ```bash
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   bases download baremetal
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   bases download baremetal
 ```
 
 ### 8. Build COSI Images
@@ -185,7 +185,7 @@ mkdir -p artifacts/test-image
 
 # Build two clones (produces trident-testimage_amd64_cosi_clone0.cosi and
 # trident-testimage_amd64_cosi_clone1.cosi)
-cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-testimage -s arch=amd64     --output-dir ./artifacts/test-image --clones 2
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/images/tailor.yaml     build trident-testimage -s arch=amd64     --output-dir ./artifacts/test-image --clones 2
 
 # Rename clones to the filenames referenced by Host Configurations
 mv artifacts/test-image/trident-testimage_amd64_cosi_clone0.cosi artifacts/test-image/regular.cosi
@@ -196,12 +196,12 @@ Repeat for other image types as needed:
 
 ```bash
 # Verity image (for root-verity configuration)
-cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-verity-testimage -s deployment=host -s mode=root     --output-dir ./artifacts/test-image --clones 2
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/images/tailor.yaml     build trident-verity-testimage -s deployment=host -s mode=root     --output-dir ./artifacts/test-image --clones 2
 mv artifacts/test-image/trident-verity-testimage_host_root_amd64_cosi_clone0.cosi artifacts/test-image/verity.cosi
 mv artifacts/test-image/trident-verity-testimage_host_root_amd64_cosi_clone1.cosi artifacts/test-image/verity_v2.cosi
 
 # UKI/usr-verity image (for usr-verity, combined configurations)
-cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-verity-testimage -s deployment=host -s mode=usr     --output-dir ./artifacts/test-image --clones 2
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/images/tailor.yaml     build trident-verity-testimage -s deployment=host -s mode=usr     --output-dir ./artifacts/test-image --clones 2
 mv artifacts/test-image/trident-verity-testimage_host_usr_amd64_cosi_clone0.cosi artifacts/test-image/usrverity.cosi
 mv artifacts/test-image/trident-verity-testimage_host_usr_amd64_cosi_clone1.cosi artifacts/test-image/usrverity_v2.cosi
 ```
@@ -217,23 +217,23 @@ URLs work unchanged:
 mkdir -p artifacts/test-image
 
 # Regular container image
-cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-container-testimage     --output-dir ./artifacts/test-image --clones 2
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/images/tailor.yaml     build trident-container-testimage     --output-dir ./artifacts/test-image --clones 2
 mv artifacts/test-image/trident-container-testimage_amd64_cosi_clone0.cosi artifacts/test-image/regular.cosi
 mv artifacts/test-image/trident-container-testimage_amd64_cosi_clone1.cosi artifacts/test-image/regular_v2.cosi
 
 # Verity container image (for root-verity configuration)
-cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-verity-testimage -s deployment=container -s mode=root     --output-dir ./artifacts/test-image --clones 2
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/images/tailor.yaml     build trident-verity-testimage -s deployment=container -s mode=root     --output-dir ./artifacts/test-image --clones 2
 mv artifacts/test-image/trident-verity-testimage_container_root_amd64_cosi_clone0.cosi artifacts/test-image/verity.cosi
 mv artifacts/test-image/trident-verity-testimage_container_root_amd64_cosi_clone1.cosi artifacts/test-image/verity_v2.cosi
 
 # UKI/usr-verity container image (for usr-verity, combined configurations)
-cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-verity-testimage -s deployment=container -s mode=usr     --output-dir ./artifacts/test-image --clones 2
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/images/tailor.yaml     build trident-verity-testimage -s deployment=container -s mode=usr     --output-dir ./artifacts/test-image --clones 2
 mv artifacts/test-image/trident-verity-testimage_container_usr_amd64_cosi_clone0.cosi artifacts/test-image/usrverity.cosi
 mv artifacts/test-image/trident-verity-testimage_container_usr_amd64_cosi_clone1.cosi artifacts/test-image/usrverity_v2.cosi
 ```
 
 The workspace defaults to the Image Customizer container declared in
-`tests/tailor-images/tailor.yaml` (`mcr.microsoft.com/azurelinux/imagecustomizer:latest`).
+`tests/images/tailor.yaml` (`mcr.microsoft.com/azurelinux/imagecustomizer:latest`).
 
 ### 9. Build the Installer ISO
 
@@ -250,7 +250,7 @@ make bin/trident-mos.iso
 
 ```bash
 cargo run --manifest-path tools/tailor/Cargo.toml -- \
-    --manifest tests/tailor-images/tailor.yaml \
+    --manifest tests/images/tailor.yaml \
     build trident-container-installer --output-dir ./artifacts
 ```
 

@@ -135,7 +135,7 @@ steps:
         displayName: Copy SSH Keys
 
   - script: |
-      echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING the tailor workspace under tests/tailor-images."
+      echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING the tailor workspace under tests/images."
       cat /etc/os-release
     displayName: "Report Host Info"
 
@@ -297,7 +297,7 @@ steps:
       # needed here for cross-arch direct-streaming builds.
 
       # Compress the full image & delete the uncompressed image
-      rm -f tests/tailor-images/artifacts/ca_cert.pem
+      rm -f tests/images/artifacts/ca_cert.pem
       make ${{ parameters.target }}
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Build Test Image"
@@ -314,8 +314,8 @@ steps:
         sudo mv -v "${{ parameters.target }}" "${{ parameters.outputDirectory }}/"
       fi
 
-      if [ -f "tests/tailor-images/artifacts/ca_cert.pem" ]; then
-        sudo cp -v "tests/tailor-images/artifacts/ca_cert.pem" "${{ parameters.outputDirectory }}/ca_cert.pem"
+      if [ -f "tests/images/artifacts/ca_cert.pem" ]; then
+        sudo cp -v "tests/images/artifacts/ca_cert.pem" "${{ parameters.outputDirectory }}/ca_cert.pem"
       fi
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Copy artifacts to output directory"
