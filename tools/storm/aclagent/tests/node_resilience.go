@@ -274,7 +274,21 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	// or crashing the agent. Reuses phase 1's restart-based trigger to
 	// exercise the explicit-GET path (get_node_with_retry at startup).
 	// Phase 4 below covers the long-lived watch stream's identical check.
+	uuidCheckEnv := map[string]string{
+		"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME":          testConfig.NodeName,
+		"TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID": "true",
+	}
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", true, uuidCheckEnv); err != nil {
+		return fmt.Errorf("phase 3: matching-UUID GET check failed: %w", err)
+	}
 	nodeStore.SetSystemUUID("00000000-0000-0000-0000-000000000000")
+	// This process performs a GET, not a watch. Its own diagnostics must prove
+	// the UUID mismatch, so daemon journal messages cannot mask a missing check.
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", false, uuidCheckEnv,
+		nodeUUIDMismatchLogSubstring, "node object no longer exists"); err != nil {
+		return fmt.Errorf("phase 3: mismatched-UUID GET check failed: %w", err)
+	}
+	logrus.Info("phase 3: isolated GET rejected the mismatched systemUUID")
 	if _, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, fmt.Sprintf("sudo systemctl restart %s", aclAgentService)); err != nil {
 		return fmt.Errorf("phase 3: failed to restart %s: %w", aclAgentService, err)
 	}
@@ -305,7 +319,7 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	if err := assertServiceMainPIDUnchanged(vmConfig.VMConfig, vmIP, aclAgentService, pid, 15*time.Second); err != nil {
 		return fmt.Errorf("phase 3: %s did not remain stable after the systemUUID started matching again: %w", aclAgentService, err)
 	}
-	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", true, nil); err != nil {
+	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "kubernetes", true, uuidCheckEnv); err != nil {
 		return fmt.Errorf("phase 3: post-recovery validate-connection check failed: %w", err)
 	}
 
