@@ -538,7 +538,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: target/release/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/images|tests/azl-installer)'))
+	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/tailor-images|tests/azl-installer)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
@@ -627,7 +627,7 @@ run-attendedinstaller-simulator: bin/attendedinstaller-simulator
 
 # Test image paths
 ARTIFACTS_TEST_IMAGE_DIR := artifacts/test-image
-AZL_INSTALLER_DIR := tests/images/azl-installer
+AZL_INSTALLER_DIR := tests/tailor-images/azl-installer
 AZL_INSTALLER_ISO_DIR := $(AZL_INSTALLER_DIR)/iso
 
 # If regular.cosi is not present, download runtime images
@@ -651,7 +651,7 @@ $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
 	mkdir -p $(AZL_INSTALLER_ISO_DIR)/bin
 	cp bin/liveinstaller $(AZL_INSTALLER_ISO_DIR)/bin/
 	# Build ISO
-	./tests/images/testimages.py build azl-installer --output-dir $(ARTIFACTS_TEST_IMAGE_DIR)
+	python3 ./tests/tailor-images/legacy_targets.py build azl-installer --output-path $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso $(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) target/release/trident
@@ -885,9 +885,15 @@ download-trident-container-installer-iso:
 		--path artifacts/ \
 		--artifact-name 'trident-container-installer'
 
-artifacts/trident-container-installer.iso:
-	$(MAKE) download-trident-container-installer-iso; \
-	ls -l artifacts/trident-container-installer.iso
+artifacts/trident-container-installer.iso: $(shell python3 ./tests/tailor-images/legacy_targets.py dependencies trident-container-installer)
+	@echo "Building 'trident-container-installer' [$@] from $<"
+	@echo "Prerequisites:"
+	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
+	@echo "Building image..."
+	python3 ./tests/tailor-images/legacy_targets.py build \
+		trident-container-installer \
+		--output-path $@ \
+		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
 
 # Copies locally built runtime images from ../test-images/build to ./artifacts/test-image.
 # Expects that both the regular and verity Trident test images have been built.
@@ -932,9 +938,9 @@ starter-configuration:
 bin/trident-mos.iso: \
 	artifacts/baremetal.vhdx \
 	packaging/systemd/trident-install.service \
-	tests/images/trident-mos/iso.yaml \
-	tests/images/trident-mos/files/* \
-	tests/images/trident-mos/post-install.sh \
+	tests/tailor-images/trident-mos/iso.yaml \
+	tests/tailor-images/trident-mos/files/* \
+	tests/tailor-images/trident-mos/post-install.sh \
 	packaging/selinux-policy-trident/* \
 	tools/cmd/rcp-agent/rcp-agent.service \
 	bin/rcp-agent
@@ -949,7 +955,7 @@ bin/trident-mos.iso: \
 		--build-dir /build \
 		--image-file /repo/$< \
 		--output-image-file /repo/$@ \
-		--config-file /repo/tests/images/trident-mos/iso.yaml \
+		--config-file /repo/tests/tailor-images/trident-mos/iso.yaml \
 		--output-image-format iso
 
 .PHONY: recreate-verity-image
@@ -1015,7 +1021,7 @@ validate-pipeline-website-artifact:
 #
 # Generic COSI image build target pattern
 #
-COSI_TARGETS = $(shell ./tests/images/testimages.py list --filter-type cosi)
+COSI_TARGETS = $(shell python3 ./tests/tailor-images/legacy_targets.py list --filter-type cosi)
 
 .PHONY: $(COSI_TARGETS)
 $(COSI_TARGETS): %: artifacts/%.cosi
@@ -1026,7 +1032,7 @@ all-cosi: $(COSI_TARGETS)
 #
 # Generic ISO image build target pattern
 #
-ISO_TARGETS = $(shell ./tests/images/testimages.py list --filter-type iso)
+ISO_TARGETS = $(shell python3 ./tests/tailor-images/legacy_targets.py list --filter-type iso)
 
 .PHONY: $(ISO_TARGETS)
 $(ISO_TARGETS): %: artifacts/%.iso
@@ -1038,31 +1044,30 @@ all-iso: $(ISO_TARGETS)
 # prerequisites so that we can use find to get all the files in the directory.
 # https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
 .SECONDEXPANSION:
-artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testimages.py dependencies $$*)
+artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell python3 ./tests/tailor-images/legacy_targets.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
 	@echo "Building image..."
-	sudo ./tests/images/testimages.py build \
+	python3 ./tests/tailor-images/legacy_targets.py build \
 		$* \
-		--output-dir ./artifacts \
-		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE)) \
-		$(if $(strip $(MIC_ARCHITECTURE)),--image-architecture $(MIC_ARCHITECTURE))
+		--output-path $@ \
+		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
 
-MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
-artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
+MIC_CONTAINER_IMAGE ?= $(shell python3 ./tests/tailor-images/legacy_targets.py show-artifact customizer-container-full)
+artifacts/trident-functest.qcow2: $$(shell python3 ./tests/tailor-images/legacy_targets.py dependencies $$(basename $$(notdir $$@)))
 	@echo "Building '$*' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
 	@echo "Building image..."
-	sudo ./tests/images/testimages.py build \
+	python3 ./tests/tailor-images/legacy_targets.py build \
 		$(basename $(notdir $@)) \
-		--output-dir ./artifacts \
+		--output-path $@ \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
 
 # TRIDENT VM UPDATE IMAGES
 
-VM_IMAGE_PATH_PREFIX = tests/images/trident-vm-testimage/base
+VM_IMAGE_PATH_PREFIX = tests/tailor-images/trident-vm-testimage/base
 
 artifacts/rpm-overrides:
 	@mkdir -p artifacts/rpm-overrides
@@ -1097,23 +1102,38 @@ $(QEMU_GUEST_IMAGE):
 BAREMETAL_IMAGE = artifacts/baremetal.vhdx
 $(BAREMETAL_IMAGE):
 	@mkdir -p artifacts
-	@tests/images/testimages.py download-image baremetal
+	@python3 ./tests/tailor-images/legacy_targets.py download-image baremetal
 
 CORE_SELINUX_IMAGE = artifacts/core_selinux.vhdx
 $(CORE_SELINUX_IMAGE):
 	@mkdir -p artifacts
-	@tests/images/testimages.py download-image core_selinux
+	@python3 ./tests/tailor-images/legacy_targets.py download-image core_selinux
 
+CORE_ARM64_IMAGE_NAME ?= core_vhdx-arm64-3.0-stable
+CORE_ARM64_IMAGE_VERSION ?= *
+CORE_ARM64_IMAGE = artifacts/core_arm64.vhdx
+$(CORE_ARM64_IMAGE):
+	@mkdir -p artifacts
+	@tempdir=$$(mktemp -d); 		result=$$(az artifacts universal download 			--organization "https://dev.azure.com/mariner-org/" 			--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" 			--scope project 			--feed "AzureLinuxArtifacts" 			--name '$(CORE_ARM64_IMAGE_NAME)' 			--version '$(CORE_ARM64_IMAGE_VERSION)' 			--path $$tempdir) && 		mv $$tempdir/*.vhdx $(CORE_ARM64_IMAGE) && 		rm -rf $$tempdir && 		echo $$result | jq > $(CORE_ARM64_IMAGE).metadata.json
+
+artifacts/rcp-agent: bin/rcp-agent
+	@mkdir -p artifacts
+	@cp bin/rcp-agent $@
+	@chmod +x $@
+
+artifacts/rcp-agent.service: tools/cmd/rcp-agent/rcp-agent.service
+	@mkdir -p artifacts
+	@cp tools/cmd/rcp-agent/rcp-agent.service $@
 
 MINIMAL_IMAGE = artifacts/minimal.vhdx
 $(MINIMAL_IMAGE):
 	@mkdir -p artifacts
-	@tests/images/testimages.py download-image minimal
+	@python3 ./tests/tailor-images/legacy_targets.py download-image minimal
 
 MINIMAL_IMAGE_AARCH64 = artifacts/minimal_aarch64.vhdx
 $(MINIMAL_IMAGE_AARCH64):
 	@mkdir -p artifacts
-	@tests/images/testimages.py download-image minimal_aarch64
+	@python3 ./tests/tailor-images/legacy_targets.py download-image minimal_aarch64
 
 artifacts/trident-vm-grub-testimage.qcow2: \
 	$(QEMU_GUEST_IMAGE) \
@@ -1137,7 +1157,7 @@ artifacts/trident-vm-grub-testimage.qcow2: \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml
 
 artifacts/trident-vm-grub-testimage-arm64.qcow2: \
-	base/core_arm64.vhdx \
+	$(CORE_ARM64_IMAGE) \
 	$(TRIDENT_VM_DEPENDENCIES) \
 	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml \
 	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub
@@ -1200,7 +1220,7 @@ artifacts/trident-vm-root-verity-testimage.qcow2: \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-root-verity.yaml
 
 artifacts/trident-vm-verity-testimage-arm64.qcow2: \
-	base/core_arm64.vhdx \
+	$(CORE_ARM64_IMAGE) \
 	$(TRIDENT_VM_DEPENDENCIES) \
 	$(VM_IMAGE_PATH_PREFIX)/baseimg-verity.yaml \
 	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.service \
@@ -1315,3 +1335,18 @@ artifacts/ubuntu_2404_arm64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img
 	qemu-img convert -O vhdx ubuntu-24.04-server-cloudimg-arm64.img artifacts/ubuntu_2404_arm64.vhdx
 	rm -f ubuntu-24.04-server-cloudimg-arm64.img
+
+# GB200 base image is staged from a private Azure Linux storage account (see
+# .pipelines/templates/stages/trident_images/trident-testimg-template.yml,
+# "Download Base Image - gb200_2404_arm64"), not a public URL, so this rule
+# mirrors the pipeline's az CLI download for local/dev builds that have
+# access to the azlinuxbmpstaging storage account.
+GB200_BLOB_NAME = gb200/arm64/20260318/image.vhdx
+artifacts/gb200_2404_arm64.vhdx:
+	mkdir -p artifacts
+	az storage blob download \
+		--auth-mode login \
+		--account-name azlinuxbmpstaging \
+		--container-name os-image-cache \
+		--name "$(GB200_BLOB_NAME)" \
+		--file artifacts/gb200_2404_arm64.vhdx
