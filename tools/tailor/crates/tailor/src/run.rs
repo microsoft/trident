@@ -1429,6 +1429,7 @@ fn convert_cell(input: &Path, dir: &Path, arch: Arch, format: OutputFormat, slug
     };
     let output = OutputSpec {
         format,
+        name: None,
         cosi_compression_level: None,
         compression: None,
     };
@@ -2225,6 +2226,7 @@ pub(crate) fn init_timestamps(mode: TimestampMode) {
 fn default_cosi() -> Vec<OutputSpec> {
     vec![OutputSpec {
         format: OutputFormat::Cosi,
+        name: None,
         cosi_compression_level: None,
         compression: None,
     }]

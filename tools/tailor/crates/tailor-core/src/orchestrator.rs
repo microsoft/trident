@@ -181,9 +181,14 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     extra_params: &cell.extra_params,
                     compression: cell.output.compression,
                     cosi_compression_level: cell.output.cosi_compression_level,
+                    output_name: cell.output.name.as_deref(),
                 });
                 let artifact = output_dir.join(published_artifact_name(
-                    cell.slug.as_ref(),
+                    &output_name(
+                        cell.slug.as_ref(),
+                        cell.output.name.as_deref(),
+                        None,
+                    ),
                     cell.output.format,
                     cell.output.compression,
                 ));
@@ -901,9 +906,20 @@ pub fn output_slug(slug: &str, clone_index: Option<u32>) -> String {
     }
 }
 
-/// The artifact filename for a cell slug + format (a directory for `pxe-dir`). This is what Image
-/// Customizer writes — the **uncompressed** name; see [`published_artifact_name`] for the final
-/// artifact tailor publishes when `compression:` is set.
+/// The published artifact basename for a build run: either the explicit `outputs[].name` override
+/// or the cell slug, with the clone suffix applied when building `--clones`.
+#[must_use]
+pub fn output_name(slug: &str, override_name: Option<&str>, clone_index: Option<u32>) -> String {
+    let base = override_name.unwrap_or(slug);
+    match clone_index {
+        Some(clone) => format!("{base}_clone{clone}"),
+        None => base.to_owned(),
+    }
+}
+
+/// The artifact filename for a published basename + format (a directory for `pxe-dir`). This is
+/// what Image Customizer writes — the **uncompressed** name; see [`published_artifact_name`] for the
+/// final artifact tailor publishes when `compression:` is set.
 pub fn artifact_name(slug: &str, format: OutputFormat) -> String {
     let extension = match format {
         OutputFormat::Cosi => "cosi",
@@ -965,6 +981,24 @@ mod tests {
         assert_eq!(
             published_artifact_name(&output_slug("img", Some(1)), OutputFormat::Cosi, None),
             "img_clone1.cosi"
+        );
+    }
+
+    #[test]
+    fn output_name_prefers_explicit_names_and_suffixes_clones() {
+        assert_eq!(output_name("img_amd64_cosi", None, None), "img_amd64_cosi");
+        assert_eq!(output_name("img_amd64_cosi", Some("legacy-name"), None), "legacy-name");
+        assert_eq!(
+            output_name("img_amd64_cosi", Some("legacy-name"), Some(1)),
+            "legacy-name_clone1"
+        );
+        assert_eq!(
+            published_artifact_name(
+                &output_name("img_amd64_cosi", Some("legacy-name"), Some(1)),
+                OutputFormat::Cosi,
+                None,
+            ),
+            "legacy-name_clone1.cosi"
         );
     }
 
@@ -1348,6 +1382,7 @@ mod tests {
             dir: tmp.path().to_path_buf(),
             default_outputs: vec![OutputSpec {
                 format: OutputFormat::Cosi,
+                name: None,
                 cosi_compression_level: None,
                 compression: None,
             }],
@@ -1490,6 +1525,7 @@ mod tests {
             dir: tmp.path().to_path_buf(),
             default_outputs: vec![OutputSpec {
                 format: OutputFormat::Cosi,
+                name: None,
                 cosi_compression_level: None,
                 compression: None,
             }],
