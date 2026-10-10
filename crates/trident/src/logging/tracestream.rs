@@ -19,11 +19,11 @@ use tracing::{
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 
 use osutils::{
-    dmi::read_product_uuid_from,
-    files,
+    dmi, files,
     osrelease::{OsRelease, OS_RELEASE_PATH},
     uname,
 };
+use sysdefs::osuuid::OsUuid;
 
 use crate::{TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
 
@@ -351,9 +351,9 @@ where
 /// Obtain product uuid of the hardware Trident is running on. Falls back to
 /// "unknown" (rather than failing) since this value is purely informational
 /// metadata attached to trace entries.
-fn read_product_uuid(filepath: &str) -> String {
-    read_product_uuid_from(filepath).unwrap_or_else(|err| {
-        debug!("Failed to read product uuid from {filepath}: {err:#}");
+fn product_uuid_or_unknown(uuid: Result<OsUuid, Error>) -> String {
+    uuid.map(|uuid| uuid.to_string()).unwrap_or_else(|err| {
+        debug!("Failed to read product uuid: {err:#}");
         "unknown".into()
     })
 }
@@ -391,7 +391,7 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
     sys.refresh_all();
     platform_info.insert(
         "asset_id".to_string(),
-        json!(read_product_uuid(osutils::dmi::PRODUCT_UUID_PATH)),
+        json!(product_uuid_or_unknown(dmi::read_product_uuid())),
     );
     platform_info.insert("os_release".to_string(), json!(get_os_release()));
     platform_info.insert("total_cpu".to_string(), json!(sys.cpus().len()));
@@ -414,8 +414,6 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::{fs::File, io::Write};
 
     #[test]
     fn test_tracestream() {
@@ -461,17 +459,13 @@ mod tests {
 
     #[test]
     fn test_read_product_uuid_unknown() {
-        let uuid = read_product_uuid("/nonexistent/product_uuid-for-test");
+        let uuid = product_uuid_or_unknown(Err(anyhow!("UUID file unavailable")));
         assert_eq!(uuid, "unknown");
     }
 
     #[test]
     fn test_read_product_uuid_exists() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let filepath = temp_dir.path().join("product_uuid");
-        let mut file = File::create(&filepath).unwrap();
-        file.write_all("test_uuid".as_bytes()).unwrap();
-        let uuid = read_product_uuid(filepath.to_str().unwrap());
+        let uuid = product_uuid_or_unknown(Ok(OsUuid::from("test_uuid")));
         assert_eq!(uuid, "test_uuid");
     }
 }
@@ -534,7 +528,7 @@ mod functional_test {
         let mut expected_platform_info = BTreeMap::new();
         expected_platform_info.insert(
             "asset_id".to_string(),
-            json!(read_product_uuid(osutils::dmi::PRODUCT_UUID_PATH)),
+            json!(product_uuid_or_unknown(dmi::read_product_uuid())),
         );
         expected_platform_info.insert("os_release".to_string(), json!(get_os_release()));
         expected_platform_info.insert("total_cpu".to_string(), json!(4));

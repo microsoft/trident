@@ -335,11 +335,11 @@ func RunNodeResilience(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 		return fmt.Errorf("phase 4: %s did not survive the watch-delivered systemUUID mismatch without a restart: %w", aclAgentService, err)
 	}
 
-	// Restore the real systemUUID; the watch stream should deliver the fix
-	// the same way it delivered the mismatch, with no restart either.
+	// Restore the real systemUUID; recovery GET polling detects the fix
+	// after the mismatched event ended the watch, without restarting the agent.
 	nodeStore.SetSystemUUID(productUUID)
 	if reappearedCount, err = waitForJournalOccurrenceCountAbove(vmConfig.VMConfig, vmIP, aclAgentService, nodeReappearedLogSubstring, reappearedCount, 60*time.Second, journalSince); err != nil {
-		return fmt.Errorf("phase 4: agent did not log resuming after the watch-delivered systemUUID started matching again: %w", err)
+		return fmt.Errorf("phase 4: agent did not log resuming after recovery GET detected the matching systemUUID: %w", err)
 	}
 	if err := assertServiceMainPIDUnchanged(vmConfig.VMConfig, vmIP, aclAgentService, pid, 15*time.Second); err != nil {
 		return fmt.Errorf("phase 4: %s did not remain stable after the systemUUID started matching again: %w", aclAgentService, err)
