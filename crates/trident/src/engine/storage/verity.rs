@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -112,6 +113,23 @@ pub(super) fn setup_verity_devices(ctx: &EngineContext) -> Result<(), Error> {
 
     // Create the internal representation of the verity device.
     let verity_dev = VerityDeviceUtils::new(update_name, data_dev, hash_dev, root_hash);
+
+    // Prefer the declarative signature partition approach, if a signature
+    // device is configured on the verity device.
+    if let Some(hash_signature_device_id) = verity_device.hash_signature_device_id.as_ref() {
+        return open_verity_device_with_signature_partition(
+            ctx,
+            &verity_device.id,
+            verity_dev,
+            hash_signature_device_id,
+        )
+        .with_context(|| {
+            format!(
+                "Failed to open verity device '{}' with signature partition '{}'",
+                verity_device.id, hash_signature_device_id
+            )
+        });
+    }
 
     // Check internal parameters for verity signatures.
     if let Some(signature_file_map) = ctx
@@ -301,6 +319,120 @@ fn open_verity_device_with_signature(
         ))
 }
 
+/// Open a verity device using a signature from a dedicated partition.
+///
+/// cryptsetup requires a regular signature file. Extract only the bounded
+/// DER object, excluding partition padding, for diagnostics and activation.
+/// The matching certificate must exist in the kernel keyring.
+fn open_verity_device_with_signature_partition(
+    ctx: &EngineContext,
+    verity_device_id: &BlockDeviceId,
+    verity_device: VerityDeviceUtils,
+    hash_signature_device_id: &BlockDeviceId,
+) -> Result<(), Error> {
+    let signature_block_device_path = ctx
+        .get_block_device_path(hash_signature_device_id)
+        .with_context(|| {
+            format!("Failed to find path for block device '{hash_signature_device_id}'")
+        })?;
+
+    let mut source = fs::File::open(&signature_block_device_path).with_context(|| {
+        format!(
+            "Failed to read signature partition '{}'",
+            signature_block_device_path.display()
+        )
+    })?;
+    let signature = extract_verity_signature(&mut source).with_context(|| {
+        format!("Failed to extract signature from partition '{hash_signature_device_id}'")
+    })?;
+
+    // Try to print signature info
+    match veritysetup::get_verity_signature_info(signature.path()) {
+        Ok(signature_info) => {
+            debug!(
+                "Signature partition '{}' for verity device '{}' info:\n{}",
+                hash_signature_device_id, verity_device_id, signature_info
+            );
+        }
+        Err(e) => {
+            warn!(
+                "Failed to get signature info from partition '{}': {e:?}",
+                hash_signature_device_id,
+            );
+        }
+    }
+
+    debug!(
+        "Opening verity device '{}' with signature from partition '{}' [{}]",
+        verity_device_id,
+        hash_signature_device_id,
+        signature_block_device_path.display(),
+    );
+
+    verity_device
+        .open_with_signature(signature.path())
+        .context(format!(
+            "Failed to open verity device '{}' with signature from partition '{}'",
+            verity_device_id, hash_signature_device_id
+        ))
+}
+
+const MAX_VERITY_SIGNATURE_SIZE: usize = 1024 * 1024;
+
+fn extract_verity_signature(reader: &mut impl Read) -> Result<NamedTempFile, Error> {
+    let mut header = [0u8; 2];
+    reader
+        .read_exact(&mut header)
+        .context("Failed to read DER signature header")?;
+    ensure!(header[0] == 0x30, "Signature must be a DER sequence");
+
+    let mut length_bytes = [0u8; 4];
+    let length_count = if header[1] & 0x80 != 0 {
+        usize::from(header[1] & 0x7f)
+    } else {
+        0
+    };
+    let content_length = if header[1] & 0x80 == 0 {
+        usize::from(header[1])
+    } else {
+        ensure!(
+            (1..=length_bytes.len()).contains(&length_count),
+            "Invalid DER length encoding"
+        );
+        reader
+            .read_exact(&mut length_bytes[..length_count])
+            .context("Failed to read DER signature length")?;
+        ensure!(length_bytes[0] != 0, "Non-minimal DER length encoding");
+        let length = length_bytes[..length_count]
+            .iter()
+            .fold(0usize, |length, byte| (length << 8) | usize::from(*byte));
+        ensure!(length >= 128, "Non-minimal DER length encoding");
+        length
+    };
+    ensure!(content_length > 0, "Signature DER sequence is empty");
+    let header_length = header.len() + length_count;
+    ensure!(
+        content_length <= MAX_VERITY_SIGNATURE_SIZE - header_length,
+        "Signature exceeds the {MAX_VERITY_SIGNATURE_SIZE}-byte limit"
+    );
+
+    let mut signature =
+        NamedTempFile::new().context("Failed to create signature temporary file")?;
+    signature
+        .write_all(&header)
+        .context("Failed to write DER signature header")?;
+    signature
+        .write_all(&length_bytes[..length_count])
+        .context("Failed to write DER signature length")?;
+    let copied = io::copy(&mut reader.take(content_length as u64), &mut signature)
+        .context("Failed to copy DER signature")?;
+    ensure!(copied == content_length as u64, "Truncated DER signature");
+    signature
+        .flush()
+        .context("Failed to flush signature temporary file")?;
+    Ok(signature)
+}
+
 /// Get the verity data and hash paths.
 ///
 /// Verity data and hash devices are fetched from the engine context.
@@ -443,12 +575,59 @@ mod tests {
     use super::*;
 
     use sysdefs::partition_types::DiscoverablePartitionType;
-    use trident_api::constants::ROOT_MOUNT_POINT_PATH;
+    use trident_api::{
+        config::{
+            Disk, FileSystem, FileSystemSource, HostConfiguration, Partition, PartitionType,
+            Storage, VerityDevice,
+        },
+        constants::ROOT_MOUNT_POINT_PATH,
+    };
 
     use crate::osimage::{
         mock::{MockImage, MockOsImage},
         OsImage, OsImageFileSystemType,
     };
+
+    #[test]
+    fn test_extract_verity_signature_excludes_partition_padding() {
+        for encoded in [
+            vec![0x30, 3, 2, 1, 0],
+            [vec![0x30, 0x81, 0x80], vec![0; 128]].concat(),
+            [
+                vec![0x30, 0x83, 0x0f, 0xff, 0xfb],
+                vec![0; MAX_VERITY_SIGNATURE_SIZE - 5],
+            ]
+            .concat(),
+        ] {
+            let partition = [encoded.clone(), vec![0; 4096]].concat();
+            let mut reader = io::Cursor::new(partition);
+            let signature = extract_verity_signature(&mut reader).unwrap();
+            assert_eq!(fs::read(signature.path()).unwrap(), encoded);
+            assert_eq!(reader.position(), encoded.len() as u64);
+            assert!(signature.as_file().metadata().unwrap().is_file());
+        }
+    }
+
+    #[test]
+    fn test_extract_verity_signature_rejects_invalid_der() {
+        for (encoded, expected) in [
+            (vec![], "header"),
+            (vec![0x30], "header"),
+            (vec![0x31, 1, 0], "DER sequence"),
+            (vec![0x30, 0], "empty"),
+            (vec![0x30, 0x80], "length encoding"),
+            (vec![0x30, 0x85], "length encoding"),
+            (vec![0x30, 0x82, 1], "signature length"),
+            (vec![0x30, 0x82, 0, 0x80], "Non-minimal"),
+            (vec![0x30, 0x81, 0x7f], "Non-minimal"),
+            (vec![0x30, 0x83, 0x10, 0, 0], "limit"),
+            (vec![0x30, 3, 0], "Truncated"),
+        ] {
+            let mut reader = io::Cursor::new(encoded);
+            let error = extract_verity_signature(&mut reader).unwrap_err();
+            assert!(error.to_string().contains(expected), "{error:#}");
+        }
+    }
 
     #[test]
     fn test_get_updated_device_name() {
@@ -537,6 +716,99 @@ mod tests {
                 .to_string(),
             "Failed to get root filesystem from OS image",
             "Got unexpected error"
+        );
+    }
+
+    /// Tests that [`setup_verity_devices`] prefers the declarative
+    /// `hash_signature_device_id` signature partition over the legacy
+    /// `veritySignaturePaths` internal parameter when both are present on the
+    /// same verity device.
+    #[test]
+    fn test_setup_verity_devices_signature_partition_takes_precedence() {
+        let mut hc = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "sdb".to_string(),
+                    device: PathBuf::from("/dev/sdb"),
+                    partitions: vec![
+                        Partition {
+                            id: "root-hash".to_string(),
+                            partition_type: PartitionType::RootVerity,
+                            size: 4096.into(),
+                            uuid: None,
+                            label: None,
+                        },
+                        Partition {
+                            id: "root-data".to_string(),
+                            partition_type: PartitionType::Root,
+                            size: 4096.into(),
+                            uuid: None,
+                            label: None,
+                        },
+                        Partition {
+                            id: "root-hash-sig".to_string(),
+                            partition_type: PartitionType::LinuxGeneric,
+                            size: 4096.into(),
+                            uuid: None,
+                            label: None,
+                        },
+                    ],
+                    ..Default::default()
+                }],
+                verity: vec![VerityDevice {
+                    id: "root".into(),
+                    name: "root".into(),
+                    data_device_id: "root-data".into(),
+                    hash_device_id: "root-hash".into(),
+                    hash_signature_device_id: Some("root-hash-sig".into()),
+                    ..Default::default()
+                }],
+                filesystems: vec![FileSystem {
+                    device_id: Some("root".to_string()),
+                    mount_point: Some(ROOT_MOUNT_POINT_PATH.into()),
+                    source: FileSystemSource::Image,
+                    is_esp: false,
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        // Also configure the legacy signature-file mechanism for the same
+        // verity device, to prove it is NOT consulted while
+        // hash_signature_device_id is set.
+        hc.internal_params = serde_yaml::from_str(&format!(
+            "{}:\n  root: /mnt/some/signature/file",
+            VERITY_SIGNATURE_PATHS
+        ))
+        .unwrap();
+
+        let ctx = EngineContext::default()
+            .with_spec(hc)
+            .with_image(MockOsImage::new().with_image(MockImage::new(
+                ROOT_MOUNT_POINT_PATH,
+                OsImageFileSystemType::Ext4,
+                DiscoverablePartitionType::Root,
+                Some("deadbeef".to_string()),
+            )))
+            .with_partition_paths(
+                [
+                    ("sdb", PathBuf::from("/dev/sdb")),
+                    ("root-hash", PathBuf::from("/dev/sdb1")),
+                    ("root-data", PathBuf::from("/dev/sdb2")),
+                    // Deliberately do NOT register "root-hash-sig": if the
+                    // declarative signature-partition path is taken (as it
+                    // should be), setup fails here with a specific error
+                    // naming that partition, before any device is opened.
+                ]
+                .into_iter(),
+            );
+
+        let err = setup_verity_devices(&ctx).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("signature partition 'root-hash-sig'"),
+            "Expected the declarative signature partition to be tried first, got: {message}"
         );
     }
 }

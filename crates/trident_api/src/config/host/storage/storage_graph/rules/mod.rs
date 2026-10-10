@@ -161,7 +161,7 @@ impl BlkDevReferrerKind {
             Self::RaidArray => ValidCardinality::new_at_least(2),
             Self::ABVolume => ValidCardinality::new_exact(2),
             Self::EncryptedVolume => ValidCardinality::new_exact(1),
-            Self::VerityDevice => ValidCardinality::new_exact(2),
+            Self::VerityDevice => ValidCardinality::new_range(2, 3),
             Self::Swap => ValidCardinality::new_exact(1),
 
             Self::FileSystemNew => ValidCardinality::new_at_most(1),
