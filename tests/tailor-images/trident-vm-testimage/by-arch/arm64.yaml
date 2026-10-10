@@ -1,3 +1,2 @@
 base:
-  $set:
-    ref: core_arm64
+  $include: ../common/matrix/base-core-arm64.yaml
