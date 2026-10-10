@@ -109,7 +109,7 @@ pub struct PackageFile {
 /// package, a `labels` JSON attribute on the package, and, as a fallback for
 /// older manifests, the legacy `hash` attribute (Omaha's `sha1` field). So
 /// despite the field's Omaha-inherited name, treat
-/// [`sha1`](PackageHash::sha1) as "the value our Nebraska calls `hash`", not
+/// [`sha1`](PackageHash::sha1) as the resolved COSI metadata SHA-384, not
 /// as an actual SHA-1 digest; use
 /// [`to_cosi_sha384`](PackageHash::to_cosi_sha384) to get the value in the
 /// form Trident's gRPC API expects, rather than forwarding this field as-is.
