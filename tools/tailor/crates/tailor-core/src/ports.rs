@@ -85,10 +85,10 @@ pub struct ToolsDirPlan {
 /// The host-side signing port: sign the boot artifacts IC emits from a `customize` pass, in place,
 /// so IC's `inject-files` pass can re-inject them (`meta/docs/2026-06-29-signing.md` §6). Object-safe and
 /// **synchronous** — held as `dyn Signer` in [`ExecutionContext`]; the executor invokes it on a
-/// blocking thread so the async runtime is never blocked on `openssl`/`sbsign`.
+/// blocking thread so the async runtime is never blocked on `openssl`/`sbsign`/`pesign`.
 pub trait Signer: Send + Sync + fmt::Debug {
     /// Cheap, side-effect-free check that this backend can sign: required host binaries present
-    /// (`openssl`, and `sbsign` when PE artifacts are expected) and key material resolvable. Called
+    /// (`openssl`, plus either `sbsign` or the `pesign` toolchain when PE artifacts are expected) and key material resolvable. Called
     /// once per build, before any IC run (`meta/docs/2026-06-29-signing.md` §5.1).
     fn preflight(&self) -> Result<(), SignError>;
 
