@@ -35,7 +35,9 @@ def default_container_full() -> str:
     needle = """  entries:\n    - name: ic\n      container: """
     idx = text.find(needle)
     if idx == -1:
-        raise SystemExit("default toolchain not found in tests/tailor-images/tailor.yaml")
+        raise SystemExit(
+            "default toolchain not found in tests/tailor-images/tailor.yaml"
+        )
     rest = text[idx + len(needle) :].splitlines()
     container = rest[0].strip()
     tag = None
@@ -199,7 +201,20 @@ def dependencies(name: str):
             print(s)
 
 
-def resolve_slug(entry: dict, manifest: Path) -> str:
+# A legacy name's selectors can now match more than one tailor cell when a
+# scenario declares multiple outputs: formats (e.g. trident-vm-testimage's
+# grub-verity scenario produces both a .cosi A/B-update payload and a
+# .qcow2 "clean install" base disk from the very same selectors) - the
+# Makefile's generic pattern rule already tells us which one via the
+# requested output file's own extension, so use that to disambiguate
+# instead of requiring every legacy name to resolve to exactly one cell
+# unconditionally.
+_EXT_TO_TAILOR_FORMAT = {
+    "vhd": "vhd-fixed",
+}
+
+
+def resolve_slug(entry: dict, manifest: Path, requested_ext: str | None = None) -> str:
     proc = call_tailor(
         "--manifest",
         str(manifest),
@@ -211,6 +226,9 @@ def resolve_slug(entry: dict, manifest: Path) -> str:
         capture=True,
     )
     cells = json.loads(proc.stdout)
+    if len(cells) > 1 and requested_ext is not None:
+        wanted_format = _EXT_TO_TAILOR_FORMAT.get(requested_ext, requested_ext)
+        cells = [c for c in cells if c.get("format") == wanted_format]
     if len(cells) != 1:
         raise SystemExit(
             f"expected exactly one cell for {entry['image']}, got {len(cells)}"
@@ -224,8 +242,9 @@ def build(name: str, output_path: str, container: str | None):
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     manifest = tailor_manifest_for_container(container)
+    requested_ext = target.suffix.lstrip(".")
     try:
-        slug = resolve_slug(entry, manifest)
+        slug = resolve_slug(entry, manifest, requested_ext)
         cert_path = REPO_ROOT / "tests" / "images" / "artifacts" / "ca_cert.pem"
         cert_path.unlink(missing_ok=True)
         call_tailor(
@@ -238,6 +257,11 @@ def build(name: str, output_path: str, container: str | None):
             str(target.parent),
         )
         source_ext = entry.get("tailorExt", entry["ext"])
+        if requested_ext != entry["ext"]:
+            # The caller asked for a different format than this legacy name's
+            # default (see resolve_slug above) - trust the extension actually
+            # requested over legacy-map.json's single static default.
+            source_ext = requested_ext
         built = target.parent / f"{slug}.{source_ext}"
         if not built.exists():
             raise SystemExit(f"expected built artifact not found: {built}")

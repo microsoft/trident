@@ -183,6 +183,15 @@
     "baseImage": "qemu_guest",
     "ext": "cosi"
   },
+  "trident-vm-acl-agent-testimage": {
+    "image": "trident-vm-testimage",
+    "selectors": {
+      "arch": "amd64",
+      "scenario": "acl-agent"
+    },
+    "baseImage": "qemu_guest",
+    "ext": "cosi"
+  },
   "trident-vm-grub-verity-azure-testimage": {
     "image": "trident-vm-testimage",
     "selectors": {
