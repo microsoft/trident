@@ -24,7 +24,7 @@ def cargo_cmd() -> str:
     fallback = Path.home() / ".cargo" / "bin" / "cargo"
     if fallback.exists():
         return str(fallback)
-    alt = Path('/home/bfjelds/.cargo/bin/cargo')
+    alt = Path("/home/bfjelds/.cargo/bin/cargo")
     if alt.exists():
         return str(alt)
     raise SystemExit("cargo not found")
@@ -36,7 +36,7 @@ def default_container_full() -> str:
     idx = text.find(needle)
     if idx == -1:
         raise SystemExit("default toolchain not found in tests/images/tailor.yaml")
-    rest = text[idx + len(needle):].splitlines()
+    rest = text[idx + len(needle) :].splitlines()
     container = rest[0].strip()
     tag = None
     for line in rest[1:6]:
@@ -87,10 +87,20 @@ def selector_args(entry: dict) -> list[str]:
 
 
 def call_tailor(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
-    cmd = [cargo_cmd(), "run", "--manifest-path", "tools/tailor/Cargo.toml", "--quiet", "--", *args]
+    cmd = [
+        cargo_cmd(),
+        "run",
+        "--manifest-path",
+        "tools/tailor/Cargo.toml",
+        "--quiet",
+        "--",
+        *args,
+    ]
     env = dict(os.environ)
     env["PATH"] = f"{Path.home() / '.cargo' / 'bin'}:{env.get('PATH','')}"
-    return subprocess.run(cmd, cwd=str(REPO_ROOT), check=True, text=True, capture_output=capture, env=env)
+    return subprocess.run(
+        cmd, cwd=str(REPO_ROOT), check=True, text=True, capture_output=capture, env=env
+    )
 
 
 def legacy_list(filter_type: str):
@@ -114,7 +124,11 @@ def dependencies(name: str):
     if base_dep is not None:
         deps.append(base_dep)
     for path in sorted(image_dir.rglob("*")):
-        if path.is_file() and ".rendered" not in path.parts and path.name != ".tailor.make.yaml":
+        if (
+            path.is_file()
+            and ".rendered" not in path.parts
+            and path.name != ".tailor.make.yaml"
+        ):
             deps.append(path)
     needs_rpms = name not in {
         "trident-functest",
@@ -134,13 +148,28 @@ def dependencies(name: str):
             deps.append(rpm_dir)
             deps.extend(sorted(rpm_dir.rglob("*.rpm")))
     if entry["image"] == "trident-installer":
-        for extra in [REPO_ROOT / "bin" / "rcp-agent", REPO_ROOT / "tools" / "cmd" / "rcp-agent" / "rcp-agent.service"]:
+        for extra in [
+            REPO_ROOT / "bin" / "rcp-agent",
+            REPO_ROOT / "tools" / "cmd" / "rcp-agent" / "rcp-agent.service",
+        ]:
             if extra.exists():
                 deps.append(extra)
     if name == "azl-installer":
         for extra in [
-            REPO_ROOT / "tests" / "images" / "azl-installer" / "iso" / "bin" / "liveinstaller",
-            REPO_ROOT / "tests" / "images" / "azl-installer" / "iso" / "images" / "trident-testimage.cosi",
+            REPO_ROOT
+            / "tests"
+            / "images"
+            / "azl-installer"
+            / "iso"
+            / "bin"
+            / "liveinstaller",
+            REPO_ROOT
+            / "tests"
+            / "images"
+            / "azl-installer"
+            / "iso"
+            / "images"
+            / "trident-testimage.cosi",
         ]:
             if extra.exists():
                 deps.append(extra)
@@ -156,10 +185,21 @@ def dependencies(name: str):
 
 
 def resolve_slug(entry: dict, manifest: Path) -> str:
-    proc = call_tailor("--manifest", str(manifest), "matrix", entry["image"], "--format", "json", *selector_args(entry), capture=True)
+    proc = call_tailor(
+        "--manifest",
+        str(manifest),
+        "matrix",
+        entry["image"],
+        "--format",
+        "json",
+        *selector_args(entry),
+        capture=True,
+    )
     cells = json.loads(proc.stdout)
     if len(cells) != 1:
-        raise SystemExit(f"expected exactly one cell for {entry['image']}, got {len(cells)}")
+        raise SystemExit(
+            f"expected exactly one cell for {entry['image']}, got {len(cells)}"
+        )
     return cells[0]["slug"]
 
 
@@ -171,7 +211,15 @@ def build(name: str, output_path: str, container: str | None):
     manifest = tailor_manifest_for_container(container)
     try:
         slug = resolve_slug(entry, manifest)
-        call_tailor("--manifest", str(manifest), "build", entry["image"], *selector_args(entry), "--output-dir", str(target.parent))
+        call_tailor(
+            "--manifest",
+            str(manifest),
+            "build",
+            entry["image"],
+            *selector_args(entry),
+            "--output-dir",
+            str(target.parent),
+        )
         source_ext = entry.get("tailorExt", entry["ext"])
         built = target.parent / f"{slug}.{source_ext}"
         if not built.exists():
@@ -185,7 +233,10 @@ def build(name: str, output_path: str, container: str | None):
 def oras_download(name: str, out_path: Path):
     ref = f"mcr.microsoft.com/azurelinux/3.0/image/{name}:latest"
     with tempfile.TemporaryDirectory() as td:
-        subprocess.run(["oras", "pull", ref, "--output", td, "--platform", "linux/amd64"], check=True)
+        subprocess.run(
+            ["oras", "pull", ref, "--output", td, "--platform", "linux/amd64"],
+            check=True,
+        )
         files = list(Path(td).glob("*.vhdx"))
         if len(files) != 1:
             raise SystemExit(f"expected one .vhdx from {ref}, got {len(files)}")
@@ -243,4 +294,5 @@ def main():
 
 if __name__ == "__main__":
     import os
+
     main()
