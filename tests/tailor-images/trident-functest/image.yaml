@@ -6,8 +6,5 @@ base:
 outputs:
   - format: qcow2
 
-extraDependencies:
-  - ./base
-
 config:
   $include: ./tailor/baseimg.yaml
