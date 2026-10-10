@@ -18,7 +18,7 @@ use crate::{
     include, interpolate, matrix,
     matrix::AxisTuple,
     merge,
-    schema::{BaseSource, ExtraParam, ImageDefinition, OutputSpec},
+    schema::{BaseSource, ExtraParam, ImageDefinition, OutputSpec, SigningRef},
     types::{OutputFormat, ParamValue},
 };
 
@@ -65,6 +65,8 @@ pub struct RenderedCell {
     pub rpm_sources: Vec<PathBuf>,
     /// Extra IC command-line flags appended verbatim, concatenated across matched fragments.
     pub extra_params: Vec<ExtraParam>,
+    /// The resolved per-cell `signing:` opt-in after fragment merging.
+    pub signing: Option<SigningRef>,
     /// Resolved `skip` for this cell (merged from fragment `skip:` fields, last-wins). When `true`,
     /// the cell is dropped from bulk selection unless specifically requested
     /// (`meta/docs/2026-07-22-fragment-skip.md`).
@@ -203,6 +205,7 @@ fn render_cell(
         .iter()
         .flat_map(|f| f.doc.extra_params.clone())
         .collect();
+    let signing = resolve_signing_ref(image, &tuple, &matched)?;
 
     // Resolve `skip` last-wins over the matched fragments (base → most-specific). When the winning
     // value is `true`, remember that fragment's predicate coordinates as the pins that can override
@@ -223,6 +226,7 @@ fn render_cell(
         outputs,
         rpm_sources,
         extra_params,
+        signing,
         skip,
         skip_pins,
     })
@@ -321,6 +325,20 @@ fn resolve_outputs(
         Some(value) => deserialize_field(value, image, tuple, OUTPUTS_FIELD),
         None => Ok(Vec::new()),
     }
+}
+
+fn resolve_signing_ref(
+    _image: &ImageDefinition,
+    _tuple: &AxisTuple,
+    matched: &[&LoadedFragment],
+) -> Result<Option<SigningRef>, ConfigError> {
+    let mut signing: Option<SigningRef> = None;
+    for fragment in matched {
+        if let Some(value) = fragment.doc.signing.clone() {
+            signing = Some(value);
+        }
+    }
+    Ok(signing)
 }
 
 /// Reject `compression:` on formats where it makes no sense: `cosi` (IC already compresses it),
