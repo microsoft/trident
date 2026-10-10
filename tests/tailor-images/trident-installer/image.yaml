@@ -51,9 +51,9 @@ config:
       - path: base/post-install.sh
   iso:
     additionalFiles:
-      - source: base/files/config-placeholder.yaml
+      - source: ../common/files/config-placeholder.yaml
         destination: /trident-config.yaml
-      - source: base/files/override-placeholder.conf
+      - source: ../common/files/override-placeholder.conf
         destination: /trident-override.conf
     kernelCommandLine:
       extraCommandLine:
