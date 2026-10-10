@@ -2,8 +2,9 @@
 //! (`meta/docs/2026-06-29-signing.md` §6).
 //!
 //! External **host** tools only, no bundled crypto: `openssl` mints the per-cell CA + code-signing
-//! leaf and signs verity-hash artifacts (detached CMS/DER), and `sbsign` signs PE/Authenticode boot
-//! artifacts (UKIs, shim, systemd-boot). The signer reads the `inject-files.yaml` IC emits from a
+//! leaf and signs verity-hash artifacts (detached CMS/DER), while PE/Authenticode boot artifacts
+//! (UKIs, shim, systemd-boot) are signed with either `sbsign` or `pesign` depending on which host
+//! toolchain is available. The signer reads the `inject-files.yaml` IC emits from a
 //! `customize` pass and signs each listed artifact **in place**, so IC's `inject-files` pass can
 //! re-inject the now-signed files.
 
@@ -26,6 +27,13 @@ use tailor_core::{MissingPrerequisite, SignError, Signer, SigningPlan, SigningRe
 const OPENSSL: &str = "openssl";
 /// The `sbsign` binary — PE/Authenticode signing.
 const SBSIGN: &str = "sbsign";
+/// The `pesign` binary — alternate PE/Authenticode signing backend used on AZL/Mariner hosts.
+const PESIGN: &str = "pesign";
+/// NSS DB init/import tools used by the `pesign` fallback.
+const CERTUTIL: &str = "certutil";
+const PK12UTIL: &str = "pk12util";
+/// Friendly name used when importing a generated PEM keypair into a temporary NSS DB for `pesign`.
+const PESIGN_NICKNAME: &str = "tailor-signing-leaf";
 /// Validity of the minted local test CA and leaf. Long enough that CI never trips over expiry; this
 /// is explicitly **not** a production trust root (`meta/docs/2026-06-29-signing.md` §6).
 const CERT_VALIDITY_DAYS: &str = "3650";
@@ -88,7 +96,7 @@ struct Ca {
     cert: PathBuf,
 }
 
-/// A host-tool signer (`openssl` + `sbsign`) parameterized by its [`KeySource`].
+/// A host-tool signer (`openssl` + `sbsign`/`pesign`) parameterized by its [`KeySource`].
 #[derive(Debug)]
 struct HostSigner {
     profile_id: String,
@@ -108,19 +116,16 @@ impl Signer for HostSigner {
             });
         };
 
-        // Both tools are checked up front (fail-fast, `meta/docs/2026-06-29-signing.md` §5.1): `openssl` mints and
-        // signs verity-hash, `sbsign` signs PE artifacts. We cannot yet know which artifact types IC
-        // will emit, so require both whenever a profile signs — a missing tool fails at build start
-        // rather than minutes into a customize.
+        // `openssl` is always required (CA/leaf minting + verity CMS). PE artifacts are signed with
+        // either `sbsign` or the AZL/Mariner-native `pesign` toolchain, so fail fast only when
+        // neither path is available.
         if !tool_on_path(OPENSSL) {
             note(format!(
                 "`{OPENSSL}` not found on PATH (required to mint/sign)"
             ));
         }
-        if !tool_on_path(SBSIGN) {
-            note(format!(
-                "`{SBSIGN}` not found on PATH (required to sign PE/UKI boot artifacts)"
-            ));
+        if let Err(detail) = check_pe_signer_tools() {
+            note(detail);
         }
         match &self.key_source {
             KeySource::LocalTestCa { .. } => {}
@@ -297,7 +302,7 @@ enum ArtifactType {
 /// How an artifact is signed.
 #[derive(Debug, PartialEq, Eq)]
 enum ArtifactKind {
-    /// PE/Authenticode via `sbsign` (UKIs, shim, systemd-boot `.efi`).
+    /// PE/Authenticode via `sbsign` or `pesign` (UKIs, shim, systemd-boot `.efi`).
     Pe,
     /// Detached CMS/DER via `openssl smime` (dm-verity root hash).
     Verity,
@@ -326,7 +331,7 @@ fn infer_kind(source: &Path) -> ArtifactKind {
     }
 }
 
-// ───────────────────────────── openssl / sbsign orchestration ─────────────────────────────
+// ───────────────────────────── openssl / sbsign / pesign orchestration ─────────────────────────────
 
 /// Mint a self-signed CA (RSA-2048) with `openssl req -x509`.
 fn mint_ca(ca_key: &Path, ca_cert: &Path) -> Result<(), SignError> {
@@ -402,8 +407,21 @@ fn mint_leaf(
     )
 }
 
-/// PE/Authenticode-sign `file` in place with `sbsign` (writes to a temp output, then renames over).
+/// PE/Authenticode-sign `file` in place, preferring `sbsign` and falling back to `pesign` when the
+/// host only has the AZL/Mariner-native toolchain.
 fn sign_pe(file: &Path, key: &Path, cert: &Path) -> Result<(), SignError> {
+    match pe_signing_tool() {
+        Some(PeSigningTool::Sbsign) => sign_pe_with_sbsign(file, key, cert),
+        Some(PeSigningTool::Pesign) => sign_pe_with_pesign(file, key, cert),
+        None => Err(SignError::Execution {
+            detail: format!(
+                "neither `{SBSIGN}` nor the `pesign` toolchain (`{PESIGN}`, `{CERTUTIL}`, `{PK12UTIL}`) is available on PATH"
+            ),
+        }),
+    }
+}
+
+fn sign_pe_with_sbsign(file: &Path, key: &Path, cert: &Path) -> Result<(), SignError> {
     let signed = with_suffix(file, ".signed");
     run(
         SBSIGN,
@@ -417,6 +435,63 @@ fn sign_pe(file: &Path, key: &Path, cert: &Path) -> Result<(), SignError> {
             &lossy(file),
         ],
     )?;
+    fs::rename(&signed, file).map_err(|e| io_err("replace with signed PE", file, &e))
+}
+
+fn sign_pe_with_pesign(file: &Path, key: &Path, cert: &Path) -> Result<(), SignError> {
+    let temp = TempDir::new().map_err(|e| SignError::Execution {
+        detail: format!("create pesign temp dir: {e}"),
+    })?;
+    let nssdb = temp.path().join("nssdb");
+    fs::create_dir_all(&nssdb).map_err(|e| io_err("create pesign NSS DB dir", &nssdb, &e))?;
+    run(CERTUTIL, &["-N", "-d", &lossy(&nssdb), "--empty-password"])?;
+
+    let pkcs12 = temp.path().join("leaf.p12");
+    run(
+        OPENSSL,
+        &[
+            "pkcs12",
+            "-export",
+            "-out",
+            &lossy(&pkcs12),
+            "-inkey",
+            &lossy(key),
+            "-in",
+            &lossy(cert),
+            "-passout",
+            "pass:",
+            "-name",
+            PESIGN_NICKNAME,
+        ],
+    )?;
+    run(
+        PK12UTIL,
+        &[
+            "-i",
+            &lossy(&pkcs12),
+            "-d",
+            &lossy(&nssdb),
+            "-W",
+            "",
+        ],
+    )?;
+
+    let cert_arg = pesign_certificate_arg()?;
+    let signed = with_suffix(file, ".signed");
+    let args = vec![
+        "--certdir".to_owned(),
+        lossy(&nssdb),
+        cert_arg,
+        PESIGN_NICKNAME.to_owned(),
+        "--sign".to_owned(),
+        "--in".to_owned(),
+        lossy(file),
+        "--out".to_owned(),
+        lossy(&signed),
+        "--force".to_owned(),
+    ];
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run(PESIGN, &arg_refs)?;
     fs::rename(&signed, file).map_err(|e| io_err("replace with signed PE", file, &e))
 }
 
@@ -447,6 +522,58 @@ fn sign_verity(file: &Path, key: &Path, cert: &Path) -> Result<(), SignError> {
         ],
     )?;
     fs::rename(&sig, file).map_err(|e| io_err("replace with verity signature", file, &e))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PeSigningTool {
+    Sbsign,
+    Pesign,
+}
+
+fn pe_signing_tool() -> Option<PeSigningTool> {
+    if tool_on_path(SBSIGN) {
+        Some(PeSigningTool::Sbsign)
+    } else if tool_on_path(PESIGN) && tool_on_path(CERTUTIL) && tool_on_path(PK12UTIL) {
+        Some(PeSigningTool::Pesign)
+    } else {
+        None
+    }
+}
+
+fn check_pe_signer_tools() -> Result<(), String> {
+    if pe_signing_tool().is_some() {
+        return Ok(());
+    }
+    let mut missing = Vec::new();
+    for tool in [PESIGN, CERTUTIL, PK12UTIL] {
+        if !tool_on_path(tool) {
+            missing.push(format!("`{tool}`"));
+        }
+    }
+    Err(format!(
+        "neither `{SBSIGN}` nor the `pesign` toolchain is available on PATH (need `{SBSIGN}` or `{PESIGN}` + `{CERTUTIL}` + `{PK12UTIL}` to sign PE/UKI boot artifacts; missing: {})",
+        missing.join(", ")
+    ))
+}
+
+fn pesign_certificate_arg() -> Result<String, SignError> {
+    let output = Command::new(PESIGN)
+        .arg("--help")
+        .output()
+        .map_err(|e| SignError::Execution {
+            detail: format!("failed to run `{PESIGN} --help`: {e}"),
+        })?;
+    let help = format!(
+        "{}
+{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(if help.contains("--certficate") {
+        "--certficate".to_owned()
+    } else {
+        "--certificate".to_owned()
+    })
 }
 
 // ───────────────────────────── small helpers ─────────────────────────────
@@ -590,7 +717,8 @@ mod tests {
         let SignError::Preflight { missing } = signer.preflight().unwrap_err() else {
             panic!("expected a preflight error");
         };
-        // openssl/sbsign presence varies by host, so assert on the key/cert prerequisites we control.
+        // PE signer availability varies by host (`sbsign` vs `pesign`), so assert only on the
+        // key/cert prerequisites we control here.
         assert!(missing.iter().any(|m| m.detail.contains("`key`")));
         assert!(missing.iter().any(|m| m.detail.contains("`cert`")));
     }
@@ -614,7 +742,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let artifacts = dir.path().join("artifacts");
         fs::create_dir_all(&artifacts).unwrap();
-        // A verity-hash artifact (openssl can sign arbitrary bytes; sbsign needs a real PE, so this
+        // A verity-hash artifact (openssl can sign arbitrary bytes; PE signing needs a real EFI
         // test exercises the openssl path end to end without a PE fixture).
         fs::write(artifacts.join("root.hash"), b"deadbeef root hash bytes").unwrap();
         fs::write(

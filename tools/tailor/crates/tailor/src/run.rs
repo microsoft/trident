@@ -1566,7 +1566,7 @@ async fn build(
         return Ok(());
     }
 
-    // Fail fast on every signing prerequisite — including the `openssl`/`sbsign` binaries — before any
+    // Fail fast on every signing prerequisite — including the `openssl`/PE-signing binaries — before any
     // (slow, privileged) IC run (meta/docs/2026-06-29-signing.md §5.1).
     preflight_signers(&signers)?;
 
@@ -2076,7 +2076,7 @@ fn preflight_signers(signers: &[ProfileSigner<'_>]) -> Result<(), AppError> {
 }
 
 /// Report signing-preflight status **without failing** — for `validate` and `--dry-run`
-/// (`meta/docs/2026-06-29-signing.md` §5.1). Runs each signer's preflight so missing `openssl`/`sbsign` binaries
+/// (`meta/docs/2026-06-29-signing.md` §5.1). Runs each signer's preflight so missing `openssl`/PE-signing binaries
 /// surface too.
 fn report_signing(signers: &[ProfileSigner<'_>]) {
     for (requirement, signer) in signers {

@@ -661,7 +661,7 @@ pub(crate) fn render_signed_dry_run(
     Ok(format!(
         "# {slug} — signed 3-pass (meta/docs/2026-06-29-signing.md §5)\n\
          # pass 1/3: customize -> raw intermediate ({intermediate})\n{customize}\n\n\
-         # pass 2/3: host-side sign the staged boot artifacts (openssl + sbsign); publish CA -> {ca}\n\
+         # pass 2/3: host-side sign the staged boot artifacts (openssl + sbsign/pesign); publish CA -> {ca}\n\
          # pass 3/3: inject-files -> final {fmt} ({final})",
         slug = cell.slug.as_ref(),
         intermediate = intermediate.display(),

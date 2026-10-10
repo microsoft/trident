@@ -211,7 +211,6 @@ stages:
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-usrverity-testimage
-      requiresUbuntuPoolForSigning: true
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
@@ -221,7 +220,6 @@ stages:
     parameters:
       imageName: trident-container-usrverity-testimage
       runtimeEnv: "container"
-      requiresUbuntuPoolForSigning: true
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}

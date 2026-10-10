@@ -78,11 +78,8 @@ steps:
         sudo systemctl start docker
       else
         # Ubuntu is used for building and testing of VM images suitable for
-        # servicing by Trident. tailor signing currently shells out to host
-        # tools, so install sbsigntool here for the signed usr-verity cells.
-        sudo apt update -y
-        sudo apt install -y createrepo-c swtpm sbsigntool
-        sudo systemctl start docker
+        # servicing by Trident
+        sudo apt install -y createrepo-c swtpm
       fi
       az extension add --name azure-devops
     displayName: "Install native dependencies"
