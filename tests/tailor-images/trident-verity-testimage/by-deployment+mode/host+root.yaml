@@ -1,0 +1,17 @@
+config:
+  os:
+    hostname: trident-verity-testimg
+    packages:
+      install:
+        - trident-service
+    additionalFiles:
+      - source: ../common/files/use-grpc-client-commit.conf
+        destination: /etc/systemd/system/trident.service.d/override.conf
+    services:
+      enable:
+        - trident
+        - tridentd.socket
+  scripts:
+    postCustomization:
+      - path: base/trident-debug-log.sh
+      - path: base/create-web-dir.sh

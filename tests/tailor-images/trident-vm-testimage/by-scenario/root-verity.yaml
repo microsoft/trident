@@ -1,0 +1,24 @@
+config:
+  storage:
+    $include: ./include/storage-root-verity.yaml
+  os:
+    hostname: trident-vm-root-verity-testimg
+    additionalFiles:
+      - source: base/files/99-dhcp-eth0.network
+        destination: /etc/systemd/network/99-dhcp-eth0.network
+      - source: ../common/files/sudoers-wheel
+        destination: /etc/sudoers.d/wheel
+    overlays:
+      - mountPoint: /etc
+        lowerDirs:
+          - /etc
+        upperDir: /var/lib/overlays/etc/upper
+        workDir: /var/lib/overlays/etc/work
+        mountDependencies:
+          - /var
+        isInitrdOverlay: true
+    services:
+      enable:
+        - kdump
+        - trident
+        - tridentd.socket
