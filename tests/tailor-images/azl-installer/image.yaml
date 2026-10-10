@@ -5,6 +5,7 @@ base:
 
 outputs:
   - format: iso
+    name: azl-installer
 
 rpmSources:
   - ../../../bin/RPMS

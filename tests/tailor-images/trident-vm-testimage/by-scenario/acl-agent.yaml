@@ -1,6 +1,9 @@
 outputs:
-  $append:
+  $replace:
+    - format: cosi
+      name: trident-vm-acl-agent-update-testimage
     - format: qcow2
+      name: trident-vm-acl-agent-testimage
 config:
   storage:
     $include: ./include/storage-acl-agent.yaml

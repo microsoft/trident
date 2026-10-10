@@ -1,3 +1,8 @@
 base:
   $set:
     ref: gb200_2404_arm64
+
+outputs:
+  $replace:
+    - format: baremetal-image
+      name: gb200-direct-streaming-testimage-2404-arm64
