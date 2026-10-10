@@ -7,7 +7,7 @@ sidebar_position: 8
 Rollback tests validate manual rollback and runtime update workflows using
 `storm-trident run rollback`. Like [servicing tests](Servicing-Tests.md),
 they start from a pre-built VM image defined in
-`tests/images/trident-vm-testimage/`, but focus specifically on the rollback
+`tests/tailor-images/trident-vm-testimage/`, but focus specifically on the rollback
 chain: A/B updates, runtime updates (sysexts and netplan), and rolling each
 back in sequence.
 
@@ -21,7 +21,7 @@ extensions:
 | `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | Sysexts supported | Required |
 | `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | Not supported | Not needed |
 
-All image configs live under `tests/images/trident-vm-testimage/base/`. The
+All image configs live under `tests/tailor-images/trident-vm-testimage/base/`. The
 base image is `qemu_guest` (see
 [Servicing Tests — Download the qemu\_guest Base Image](Servicing-Tests.md#4-download-the-qemu_guest-base-image)
 for how to download it from the publicly available `minimal-os` image on MCR).
@@ -128,7 +128,7 @@ TEST_IMAGE_NAME="trident-vm-usr-verity-testimage"
 sudo rm -f artifacts/trident-vm-*-testimage.qcow2 artifacts/trident-vm-*-testimage.cosi
 
 # Build the COSI and QCOW2
-sudo ./tests/images/testimages.py build $TEST_IMAGE_NAME --output-dir ./artifacts
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-vm-testimage -s arch=amd64 -s scenario=usr-verity --output-dir ./artifacts
 make artifacts/$TEST_IMAGE_NAME.qcow2
 ```
 
