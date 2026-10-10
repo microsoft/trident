@@ -24,10 +24,10 @@ def cargo_cmd() -> str:
     fallback = Path.home() / ".cargo" / "bin" / "cargo"
     if fallback.exists():
         return str(fallback)
-    alt = Path("/home/bfjelds/.cargo/bin/cargo")
-    if alt.exists():
-        return str(alt)
-    raise SystemExit("cargo not found")
+    raise SystemExit(
+        "cargo not found: install a Rust toolchain (see "
+        "../common_tasks/rustup.yml in CI) or ensure cargo is on PATH"
+    )
 
 
 def default_container_full() -> str:
