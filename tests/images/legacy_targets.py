@@ -119,6 +119,10 @@ def dependencies(name: str):
         "core_selinux": REPO_ROOT / "artifacts" / "core_selinux.vhdx",
         "core_arm64": REPO_ROOT / "artifacts" / "core_arm64.vhdx",
         "qemu_guest": REPO_ROOT / "artifacts" / "qemu_guest.vhdx",
+        "ubuntu_2204_amd64": REPO_ROOT / "artifacts" / "ubuntu_2204_amd64.vhdx",
+        "ubuntu_2204_arm64": REPO_ROOT / "artifacts" / "ubuntu_2204_arm64.vhdx",
+        "ubuntu_2404_amd64": REPO_ROOT / "artifacts" / "ubuntu_2404_amd64.vhdx",
+        "ubuntu_2404_arm64": REPO_ROOT / "artifacts" / "ubuntu_2404_arm64.vhdx",
     }
     base_dep = base_dep_map.get(entry.get("baseImage"))
     if base_dep is not None:
