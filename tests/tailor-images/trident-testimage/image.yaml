@@ -12,8 +12,5 @@ outputs:
 rpmSources:
   - ../../../bin/RPMS
 
-extraDependencies:
-  - ./base
-
 config:
   $include: ./tailor/baseimg.yaml

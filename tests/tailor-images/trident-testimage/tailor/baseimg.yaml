@@ -63,4 +63,4 @@ os:
     destination: /etc/systemd/system/trident.service.d/override.conf
 scripts:
   postCustomization:
-  - path: ../common/scripts/post-install.sh
+  - path: base/post-install.sh

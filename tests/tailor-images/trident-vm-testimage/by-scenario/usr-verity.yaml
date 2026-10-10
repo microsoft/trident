@@ -1,3 +1,6 @@
+outputs:
+  $append:
+    - format: qcow2
 config:
   storage:
     $include: ./include/storage-usr-verity.yaml
