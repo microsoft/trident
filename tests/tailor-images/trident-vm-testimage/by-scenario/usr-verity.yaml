@@ -6,7 +6,7 @@ config:
     additionalFiles:
       - source: base/files/99-dhcp-eth0.network
         destination: /etc/systemd/network/99-dhcp-eth0.network
-      - source: base/files/sudoers-wheel
+      - source: ../common/files/sudoers-wheel
         destination: /etc/sudoers.d/wheel
     services:
       enable:

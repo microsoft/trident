@@ -59,8 +59,8 @@ os:
     - trident
     - tridentd.socket
   additionalFiles:
-  - source: base/files/use-grpc-client-commit.conf
+  - source: ../common/files/use-grpc-client-commit.conf
     destination: /etc/systemd/system/trident.service.d/override.conf
 scripts:
   postCustomization:
-  - path: base/post-install.sh
+  - path: ../common/scripts/post-install.sh

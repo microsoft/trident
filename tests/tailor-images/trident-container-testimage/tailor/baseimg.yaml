@@ -59,7 +59,7 @@ os:
   additionalFiles:
   - source: base/files/trident-container.service
     destination: /usr/lib/systemd/system/trident-container.service
-  - source: base/files/containerd-mmap-fix.cil
+  - source: ../common/files/containerd-mmap-fix.cil
     destination: /usr/share/selinux/packages/containerd-mmap-fix.cil
   services:
     enable:
@@ -67,5 +67,5 @@ os:
     - sshd
 scripts:
   postCustomization:
-  - path: base/scripts/post-install.sh
-  - path: base/scripts/load-containerd-selinux-fix.sh
+  - path: ../common/scripts/post-install.sh
+  - path: ../common/scripts/load-containerd-selinux-fix.sh
