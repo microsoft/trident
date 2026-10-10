@@ -538,7 +538,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: target/release/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/tailor-images|tests/azl-installer)'))
+	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/images|tests/azl-installer)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
@@ -627,7 +627,7 @@ run-attendedinstaller-simulator: bin/attendedinstaller-simulator
 
 # Test image paths
 ARTIFACTS_TEST_IMAGE_DIR := artifacts/test-image
-AZL_INSTALLER_DIR := tests/tailor-images/azl-installer
+AZL_INSTALLER_DIR := tests/images/azl-installer
 AZL_INSTALLER_ISO_DIR := $(AZL_INSTALLER_DIR)/iso
 
 # If regular.cosi is not present, download runtime images
@@ -651,7 +651,7 @@ $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
 	mkdir -p $(AZL_INSTALLER_ISO_DIR)/bin
 	cp bin/liveinstaller $(AZL_INSTALLER_ISO_DIR)/bin/
 	# Build ISO
-	python3 ./tests/tailor-images/legacy_targets.py build azl-installer --output-path $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso $(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
+	python3 ./tests/images/legacy_targets.py build azl-installer --output-path $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso $(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) target/release/trident
@@ -885,12 +885,12 @@ download-trident-container-installer-iso:
 		--path artifacts/ \
 		--artifact-name 'trident-container-installer'
 
-artifacts/trident-container-installer.iso: $(shell python3 ./tests/tailor-images/legacy_targets.py dependencies trident-container-installer)
+artifacts/trident-container-installer.iso: $(shell python3 ./tests/images/legacy_targets.py dependencies trident-container-installer)
 	@echo "Building 'trident-container-installer' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
 	@echo "Building image..."
-	python3 ./tests/tailor-images/legacy_targets.py build \
+	python3 ./tests/images/legacy_targets.py build \
 		trident-container-installer \
 		--output-path $@ \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
@@ -938,9 +938,9 @@ starter-configuration:
 bin/trident-mos.iso: \
 	artifacts/baremetal.vhdx \
 	packaging/systemd/trident-install.service \
-	tests/tailor-images/trident-mos/iso.yaml \
-	tests/tailor-images/trident-mos/files/* \
-	tests/tailor-images/trident-mos/post-install.sh \
+	tests/images/trident-mos/iso.yaml \
+	tests/images/trident-mos/files/* \
+	tests/images/trident-mos/post-install.sh \
 	packaging/selinux-policy-trident/* \
 	tools/cmd/rcp-agent/rcp-agent.service \
 	bin/rcp-agent
@@ -955,7 +955,7 @@ bin/trident-mos.iso: \
 		--build-dir /build \
 		--image-file /repo/$< \
 		--output-image-file /repo/$@ \
-		--config-file /repo/tests/tailor-images/trident-mos/iso.yaml \
+		--config-file /repo/tests/images/trident-mos/iso.yaml \
 		--output-image-format iso
 
 .PHONY: recreate-verity-image
@@ -1021,7 +1021,7 @@ validate-pipeline-website-artifact:
 #
 # Generic COSI image build target pattern
 #
-COSI_TARGETS = $(shell python3 ./tests/tailor-images/legacy_targets.py list --filter-type cosi)
+COSI_TARGETS = $(shell python3 ./tests/images/legacy_targets.py list --filter-type cosi)
 
 .PHONY: $(COSI_TARGETS)
 $(COSI_TARGETS): %: artifacts/%.cosi
@@ -1032,7 +1032,7 @@ all-cosi: $(COSI_TARGETS)
 #
 # Generic ISO image build target pattern
 #
-ISO_TARGETS = $(shell python3 ./tests/tailor-images/legacy_targets.py list --filter-type iso)
+ISO_TARGETS = $(shell python3 ./tests/images/legacy_targets.py list --filter-type iso)
 
 .PHONY: $(ISO_TARGETS)
 $(ISO_TARGETS): %: artifacts/%.iso
@@ -1044,30 +1044,30 @@ all-iso: $(ISO_TARGETS)
 # prerequisites so that we can use find to get all the files in the directory.
 # https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
 .SECONDEXPANSION:
-artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx artifacts/%.qcow2 artifacts/%.vhd: $$(shell python3 ./tests/tailor-images/legacy_targets.py dependencies $$*)
+artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx artifacts/%.qcow2 artifacts/%.vhd: $$(shell python3 ./tests/images/legacy_targets.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
 	@echo "Building image..."
-	python3 ./tests/tailor-images/legacy_targets.py build \
+	python3 ./tests/images/legacy_targets.py build \
 		$* \
 		--output-path $@ \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
 
-MIC_CONTAINER_IMAGE ?= $(shell python3 ./tests/tailor-images/legacy_targets.py show-artifact customizer-container-full)
-artifacts/trident-functest.qcow2: $$(shell python3 ./tests/tailor-images/legacy_targets.py dependencies $$(basename $$(notdir $$@)))
+MIC_CONTAINER_IMAGE ?= $(shell python3 ./tests/images/legacy_targets.py show-artifact customizer-container-full)
+artifacts/trident-functest.qcow2: $$(shell python3 ./tests/images/legacy_targets.py dependencies $$(basename $$(notdir $$@)))
 	@echo "Building '$*' [$@] from $<"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
 	@echo "Building image..."
-	python3 ./tests/tailor-images/legacy_targets.py build \
+	python3 ./tests/images/legacy_targets.py build \
 		$(basename $(notdir $@)) \
 		--output-path $@ \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
 
 # TRIDENT VM UPDATE IMAGES
 
-VM_IMAGE_PATH_PREFIX = tests/tailor-images/trident-vm-testimage/base
+VM_IMAGE_PATH_PREFIX = tests/images/trident-vm-testimage/base
 
 artifacts/rpm-overrides:
 	@mkdir -p artifacts/rpm-overrides
@@ -1102,12 +1102,12 @@ $(QEMU_GUEST_IMAGE):
 BAREMETAL_IMAGE = artifacts/baremetal.vhdx
 $(BAREMETAL_IMAGE):
 	@mkdir -p artifacts
-	@python3 ./tests/tailor-images/legacy_targets.py download-image baremetal
+	@python3 ./tests/images/legacy_targets.py download-image baremetal
 
 CORE_SELINUX_IMAGE = artifacts/core_selinux.vhdx
 $(CORE_SELINUX_IMAGE):
 	@mkdir -p artifacts
-	@python3 ./tests/tailor-images/legacy_targets.py download-image core_selinux
+	@python3 ./tests/images/legacy_targets.py download-image core_selinux
 
 CORE_ARM64_IMAGE_NAME ?= core_vhdx-arm64-3.0-stable
 CORE_ARM64_IMAGE_VERSION ?= *
@@ -1128,12 +1128,12 @@ artifacts/rcp-agent.service: tools/cmd/rcp-agent/rcp-agent.service
 MINIMAL_IMAGE = artifacts/minimal.vhdx
 $(MINIMAL_IMAGE):
 	@mkdir -p artifacts
-	@python3 ./tests/tailor-images/legacy_targets.py download-image minimal
+	@python3 ./tests/images/legacy_targets.py download-image minimal
 
 MINIMAL_IMAGE_AARCH64 = artifacts/minimal_aarch64.vhdx
 $(MINIMAL_IMAGE_AARCH64):
 	@mkdir -p artifacts
-	@python3 ./tests/tailor-images/legacy_targets.py download-image minimal_aarch64
+	@python3 ./tests/images/legacy_targets.py download-image minimal_aarch64
 
 
 .PHONY: imagecustomizer-dev-amd64
