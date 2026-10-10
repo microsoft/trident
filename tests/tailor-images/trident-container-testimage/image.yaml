@@ -5,6 +5,7 @@ base:
 
 outputs:
   - format: cosi
+    name: trident-container-testimage
 
 extraDependencies:
   - ./base

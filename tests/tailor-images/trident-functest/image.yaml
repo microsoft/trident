@@ -5,6 +5,7 @@ base:
 
 outputs:
   - format: qcow2
+    name: trident-functest
 
 config:
   $include: ./tailor/baseimg.yaml
