@@ -1992,6 +1992,7 @@ dependencies = [
  "tailor-core",
  "tempfile",
  "tracing",
+ "xxhash-rust",
 ]
 
 [[package]]
