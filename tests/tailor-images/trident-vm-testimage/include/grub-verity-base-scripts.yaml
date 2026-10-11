@@ -1,0 +1,7 @@
+- path: base/scripts/post-install.sh
+- path: base/scripts/create-rw-overlay-dirs.sh
+- path: base/scripts/update-host-status.sh
+- path: base/scripts/prepare-update-config-verity.sh
+- path: base/scripts/ssh-move-host-keys.sh
+- path: base/scripts/create-ssh-dirs.sh
+- path: base/scripts/duid-type-to-link-layer.sh
