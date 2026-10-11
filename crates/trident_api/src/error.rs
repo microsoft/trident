@@ -370,6 +370,12 @@ pub enum ServicingError {
         expected_device_path: String,
     },
 
+    #[error(
+        "ACL A/B update detected a BTRFS filesystem UUID collision on /usr (UUID {uuid}) \
+        but could not safely resolve it: {reason}"
+    )]
+    AclBtrfsUuidCollisionUnresolved { uuid: String, reason: String },
+
     #[error("Failed to apply Netplan config")]
     ApplyNetplanConfig,
 
