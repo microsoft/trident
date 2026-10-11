@@ -3,6 +3,18 @@ parameters:
     displayName: "Pipeline configuration type"
     type: string
 
+  - name: acrServiceConnectionName
+    displayName: "Service connection used to push extension/COSI images to ACR"
+    type: string
+    default: trident-dev-acr-write-umi-ECF
+
+  # When true, the E2E stages consume pre-built artifacts from the
+  # DownloadTestingElements stage (shortcut / testing-trident.yml) instead of
+  # depending on the in-pipeline build stages.
+  - name: testingRun
+    type: boolean
+    default: false
+
 stages:
   - stage: DefineTests_E2E
     displayName: Define all E2E test matrices
@@ -11,7 +23,7 @@ stages:
     jobs:
       - job: DefineTests
         displayName: Get List of tests to run
-        timeoutInMinutes: 10
+        timeoutInMinutes: 15
         pool:
           type: linux
 
@@ -21,6 +33,9 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
+          # storm-trident always comes from the in-pipeline BuildingTools
+          # build, so it is built from the branch under test in both the real
+          # CI and shortcut paths.
           - task: DownloadPipelineArtifact@2
             displayName: "Download go-tools"
             inputs:
@@ -36,17 +51,21 @@ stages:
             workingDirectory: $(TRIDENT_SOURCE_DIR)
             displayName: Matrix of Trident configurations for E2E Tests
 
-  # TODO: enable once storm tests are ready
   - template: test_execution_template.yml
     parameters:
       hardwareType: "VM"
       runtimeType: "HOST"
+      testingRun: ${{ parameters.testingRun }}
+      acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
-  # - template: test_execution_template.yml
-  #   parameters:
-  #     hardwareType: "VM"
-  #     runtimeType: "CONTAINER"
+  - template: test_execution_template.yml
+    parameters:
+      hardwareType: "VM"
+      runtimeType: "CONTAINER"
+      testingRun: ${{ parameters.testingRun }}
+      acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
+  # TODO: enable once bare-metal host setup is supported in storm
   # - template: test_execution_template.yml
   #   parameters:
   #     hardwareType: "BM"

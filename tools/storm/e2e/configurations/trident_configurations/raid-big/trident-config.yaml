@@ -1,0 +1,63 @@
+image:
+  url: http://NETLAUNCH_HOST_ADDRESS/files/regular.cosi
+  sha384: ignored
+storage:
+  disks:
+    - id: os
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-2
+      partitionTableType: gpt
+      partitions:
+        - id: esp1
+          type: esp
+          size: 100M
+        - id: root-a1
+          type: root
+          size: 75G
+        - id: trident
+          type: linux-generic
+          size: 500M
+    - id: disk2
+      device: /dev/disk/by-path/pci-0000:00:1f.2-ata-3
+      partitionTableType: gpt
+      partitions:
+        - id: root-a2
+          type: root
+          size: 75G
+  raid:
+    software:
+      - id: root-a
+        name: root-a
+        level: raid1
+        devices:
+          - root-a1
+          - root-a2
+  filesystems:
+    - deviceId: root-a
+      mountPoint: /
+    - deviceId: esp1
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: trident
+      source: new
+      mountPoint: /var/lib/trident
+scripts:
+  postConfigure:
+    - name: testing-privilege
+      runOn:
+        - clean-install
+      content: echo "testing-user ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers.d/testing-user
+os:
+  selinux:
+    mode: enforcing
+  netplan:
+    version: 2
+    ethernets:
+      vmeths:
+        match:
+          name: enp*
+        dhcp4: true
+  users:
+    - name: testing-user
+      sshPublicKeys: []
+      sshMode: key-only

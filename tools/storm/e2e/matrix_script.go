@@ -26,18 +26,33 @@ type TridentE2EScenarioMatrix struct {
 }
 
 func (s *TridentE2EScenarioMatrix) Run(suite core.SuiteContext) error {
-	suite.Logger().Infof("Generating Trident E2E test matrices for test ring '%s'", s.TestRing.ToString())
+	testRing, resolution := testrings.Resolve(s.TestRing)
+	switch resolution {
+	case testrings.ResolvedAlias:
+		suite.Logger().Infof("Pipeline stage type '%s' maps to test ring '%s'",
+			s.TestRing.ToString(), testRing.ToString())
+	case testrings.ResolvedFallback:
+		// Surface this in the pipeline UI: the alternative is an empty matrix
+		// and a stage that reports success without running any scenario.
+		utils.LogAzureDevopsWarning(fmt.Sprintf(
+			"Unknown test ring '%s'; falling back to '%s'. Add it to pipelineStageAliases in testrings if it should map elsewhere.",
+			s.TestRing.ToString(), testRing.ToString()))
+		suite.Logger().Warnf("Unknown test ring '%s'; falling back to '%s'",
+			s.TestRing.ToString(), testRing.ToString())
+	}
+
+	suite.Logger().Infof("Generating Trident E2E test matrices for test ring '%s'", testRing.ToString())
 
 	// Iterate over all hardware and runtime types to generate the corresponding matrices
 	for _, hw := range scenario.HardwareTypes() {
 		for _, rt := range trident.RuntimeTypes() {
 
 			// Get all matching scenarios for this hardware/runtime/testring combination
-			matchingScenarios := GetScenariosByHardwareAndRuntime(suite, hw, rt, s.TestRing)
+			matchingScenarios := GetScenariosByHardwareAndRuntime(suite, hw, rt, testRing)
 			slices.Sort(matchingScenarios)
 
 			// Generate the matrix JSON
-			matrixJson, err := s.GenerateMatrix(matchingScenarios, hw, rt, s.TestRing)
+			matrixJson, err := s.GenerateMatrix(matchingScenarios, hw, rt, testRing)
 			if err != nil {
 				return fmt.Errorf("failed to generate matrix for hardware '%s' and runtime '%s': %w", hw, rt, err)
 			}
@@ -126,13 +141,25 @@ func (s *TridentE2EScenarioMatrix) GenerateMatrix(
 ) (string, error) {
 	output := make(outputMatrix)
 	for _, scenarioName := range matchingScenarios {
-		entry := matrixEntry{
+		config, _, _, err := scenario.ParseScenarioName(scenarioName)
+		if err != nil {
+			return "", err
+		}
+
+		output[scenarioName] = matrixEntry{
 			Scenario: scenarioName,
 			Hardware: hardware.ToString(),
 			Runtime:  runtime.ToString(),
 			TestRing: testRing.ToString(),
+
+			// Facts the pipeline needs about the scenario. They are derived
+			// here, where the scenario name is composed, rather than being
+			// parsed back out of it with sed in a pipeline step.
+			ConfigurationName:     config,
+			RuntimeEnvironment:    runtime.ToString(),
+			DeploymentEnvironment: hardware.DeploymentEnvironment(),
+			InstallerIsoName:      installerIsoName(config, runtime),
 		}
-		output[scenarioName] = entry
 	}
 
 	rawJson, err := json.Marshal(output)
@@ -150,4 +177,30 @@ type matrixEntry struct {
 	Hardware string `json:"HARDWARE"`
 	Runtime  string `json:"RUNTIME"`
 	TestRing string `json:"TEST_RING"`
+
+	// Emitted under the names the E2E test execution template consumes.
+	ConfigurationName     string `json:"tridentConfigurationName"`
+	RuntimeEnvironment    string `json:"tridentRuntimeEnv"`
+	DeploymentEnvironment string `json:"tridentDeploymentEnv"`
+	InstallerIsoName      string `json:"installerISOName"`
+}
+
+// Installer ISO names. The split configuration installs from its own ISO;
+// everything else installs from the one matching its runtime.
+const (
+	splitConfigName       = "split"
+	splitInstallerIso     = "trident-split-installer"
+	hostInstallerIso      = "trident-installer"
+	containerInstallerIso = "trident-container-installer"
+)
+
+func installerIsoName(config string, runtime trident.RuntimeType) string {
+	switch {
+	case config == splitConfigName:
+		return splitInstallerIso
+	case runtime == trident.RuntimeTypeContainer:
+		return containerInstallerIso
+	default:
+		return hostInstallerIso
+	}
 }

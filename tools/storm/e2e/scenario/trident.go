@@ -7,6 +7,7 @@ import (
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/utils/sshutils"
+	"tridenttools/storm/utils/sysinspect"
 	"tridenttools/storm/utils/trident"
 
 	"github.com/microsoft/storm"
@@ -16,6 +17,17 @@ import (
 
 const (
 	defaultNetlaunchListenPort = 4000
+
+	// How long to wait for the host to come back after a reboot it was told to
+	// perform. This was 5 minutes, which proved too tight: with up to nineteen
+	// VMs servicing concurrently on shared hosts, boots were still in progress
+	// when the wait expired. A failure screenshot from build 1203168 caught one
+	// mid-initrd, roughly three seconds into the kernel, at the moment the test
+	// gave up on it.
+	//
+	// The cost of being generous is a slower failure when a host genuinely
+	// never returns; the cost of being tight is a red run for a healthy host.
+	postRebootReconnectTimeout = time.Minute * 10
 )
 
 type TridentE2EHostConfigParams struct {
@@ -63,6 +75,21 @@ type TridentE2EScenario struct {
 		DumpSshKeyFile        string             `name:"dump-ssh-key" help:"If set, the SSH private key used for VM access will be dumped to the specified file."`
 		VmWaitForLoginTimeout int                `name:"vm-wait-for-login-timeout" help:"Time in seconds to wait for the VM to reach login prompt." default:"600"`
 		TestRing              testrings.TestRing `name:"test-ring" help:"The test ring in which this scenario is being executed. Defaults to lowest ring for this scenario." env:"TEST_RING"`
+		SysextOciUrl          string             `name:"sysext-oci-url" help:"OCI URL of a system extension image to inject into the Host Configuration (os.sysexts)."`
+		SysextSha384          string             `name:"sysext-sha384" help:"SHA384 of the system extension image referenced by --sysext-oci-url."`
+		// Components of the pushed sysext image. Given these, the scenario
+		// assembles the OCI URL and hashes the local image itself, so the
+		// caller does not have to build either. Empty values mean "no sysext",
+		// which is how a configuration that does not use extensions passes
+		// through without the caller needing a conditional.
+		SysextAcr        string `name:"sysext-acr" help:"ACR name hosting the pushed system extension image."`
+		SysextRepo       string `name:"sysext-repo" help:"ACR repository holding the pushed system extension image."`
+		SysextTag        string `name:"sysext-tag" help:"Tag of the pushed system extension image."`
+		SysextFile       string `name:"sysext-file" help:"Local path of the system extension image, hashed to verify the pushed copy."`
+		ConfextOciUrl    string `name:"confext-oci-url" help:"OCI URL of a configuration extension image to inject into the Host Configuration (os.confexts)."`
+		ConfextSha384    string `name:"confext-sha384" help:"SHA384 of the configuration extension image referenced by --confext-oci-url."`
+		OciImageUrl      string `name:"oci-image-url" help:"If set, overwrites the Host Configuration image.url with this OCI URL (ACR-hosted COSI)."`
+		UefiFallbackMode string `name:"uefi-fallback-mode" help:"UEFI fallback mode to validate (disabled, conservative, optimistic). Defaults to one derived from the configuration name." enum:"disabled,conservative,optimistic," default:""`
 	}
 
 	// Runtime variables
@@ -73,11 +100,20 @@ type TridentE2EScenario struct {
 	// Stores information about the test host once it has been set up
 	testHost testHostInfo
 
+	// Set when the running case ends as a skip, so withFailureScreenshot can
+	// tell a skip apart from a failure (both unwind via runtime.Goexit).
+	caseSkipped bool
+
 	// Stores an open ssh.Client to the test host
 	sshClient *ssh.Client
 
 	// Version of the image, used for AB update tests
 	version uint
+
+	// Expected active A/B volume after the most recent servicing operation.
+	// Initialized to volume-a on clean install and flipped after each
+	// successful A/B update. Read by validation cases.
+	expectedActiveVolume trident.AbVolumeSelection
 
 	// Working copy of the host configuration, modified during test execution to
 	// reflect changes such as AB updates.
@@ -115,6 +151,9 @@ func (s *TridentE2EScenario) Args() any {
 }
 
 func (s *TridentE2EScenario) Setup(storm.SetupCleanupContext) error {
+	// A clean install boots the A volume; A/B updates flip this.
+	s.expectedActiveVolume = trident.AbVolumeA
+
 	if s.args.TestRing == testrings.TestRingEmpty {
 		// Default to lowest ring
 		lowestRing, err := s.testRings.Lowest()
@@ -170,13 +209,62 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	}
 
 	r.RegisterTestCase("prepare-hc", s.prepareHostConfig)
+	// Ensure the versioned test images the A/B updates will request exist
+	// (folds the versioning half of the legacy prepare-images helper). No-op
+	// for non-A/B and OCI-hosted images.
+	r.RegisterTestCase("prepare-test-images", s.prepareTestImages)
 	r.RegisterTestCase("setup-test-host", s.setupTestHost)
-	r.RegisterTestCase("install-os", s.installOs)
-	r.RegisterTestCase("check-trident-ssh", s.checkTridentViaSshAfterInstall)
+	r.RegisterTestCase("install-os", s.withFailureScreenshot(s.installOs))
+	r.RegisterTestCase("check-trident-ssh", s.withFailureScreenshot(s.checkTridentViaSshAfterInstall))
+	r.RegisterTestCase("validate-install", s.validateHostState)
+	// Host-only SELinux + tracing diagnostics, scoped to the clean install
+	// (mirrors legacy check-selinux/check-tracing). Self-skips on container.
+	r.RegisterTestCase("validate-host-diagnostics", s.validateHostDiagnostics)
+	// Parity with legacy's "Capture screenshot: clean install". Registered as
+	// its own case so the capture is visible in the report; it never fails.
+	r.RegisterTestCase("capture-install-screenshot", func(tc storm.TestCase) error {
+		s.captureScreenshot(tc, installScreenshotArtifact)
+		return nil
+	})
+	// Boot timings for the clean install, appended to the install's own
+	// trace-stream file (folds the pipeline's post-install boot-metrics helper
+	// invocation). Registered after the validations so this telemetry-only case
+	// can never pre-empt them.
+	r.RegisterTestCase("collect-install-boot-metrics", s.collectInstallBootMetrics)
 
 	if s.originalConfig.HasABUpdate() {
 		s.addAbUpdateTests(r, "ab-update-1")
+		r.RegisterTestCase("validate-ab-update-1", s.validateHostState)
+		// Boot timings for the first A/B update. Legacy measured only this one
+		// update, so the later servicing phases below are left unmeasured.
+		// Registered after the validation for the same reason as the install.
+		r.RegisterTestCase("collect-ab-update-boot-metrics",
+			s.collectAbUpdateBootMetrics("ab-update-1-ab-update"))
+		// Auto-rollback: force a failing A/B update and confirm the host rolls
+		// back to the current volume. Legacy runs this for every A/B config.
+		s.addAutoRollbackTests(r)
+		// Second A/B update: the return update into OS A after the rollback.
+		s.addSecondAbUpdateTests(r)
 		s.addSplitABUpdateTests(r, "ab-update-split")
+		// Validation of the split A/B update must skip on the same rings its
+		// update cases do, otherwise it would run (and likely fail) against a
+		// host that never underwent the split update.
+		r.RegisterTestCase("validate-ab-update-split", func(tc storm.TestCase) error {
+			s.skipIfSplitTestsDisabled(tc)
+			return s.validateHostState(tc)
+		})
+
+		// Manual rollback: after the A/B updates, explicitly roll back to the
+		// previously-committed volume and validate. Legacy runs this VM-only.
+		if s.hardware.IsVM() {
+			s.addManualRollbackTests(r)
+		}
+	}
+
+	// Rebuild-raid self-selects independently of A/B: any config with software
+	// RAID that is not usr-verity. Legacy runs it VM-only (BM not yet ported).
+	if s.hardware.IsVM() && s.originalConfig.HasRebuildableRaid() {
+		s.addRebuildRaidTests(r)
 	}
 	return nil
 }
@@ -184,6 +272,14 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 // populateSshClient ensures that `s.sshClient` is populated with a valid SSH client
 // connected to the test host. If there is already an open client, it checks if
 // it's still valid; if not, it opens a new client.
+//
+// ctx bounds only the dial/redial loop, never the returned client. Callers pass
+// tc.Context(), which storm cancels when the test case ends, while s.sshClient
+// deliberately outlives the case that opened it. That is safe today because
+// CreateSshClientWithRedial uses ctx solely for the retry loop and hands back a
+// *ssh.Client that is not tied to it. Do not thread ctx into the client's own
+// operations: doing so would bind a cross-case resource to a context that is
+// already cancelled by the time the next case uses it.
 func (s *TridentE2EScenario) populateSshClient(ctx context.Context) error {
 	if s.sshClient != nil {
 		logrus.Debug("SSH client already exists, checking validity")
@@ -221,6 +317,39 @@ func (s *TridentE2EScenario) populateSshClient(ctx context.Context) error {
 	}
 
 	s.sshClient = client
+
+	// For the container runtime, prepare the freshly-connected host the same way
+	// the pytest suite did at connection time: disable SELinux enforcement and
+	// load the Trident container image into Docker. This runs on every new
+	// connection (initial and post-reboot reconnects) because setenforce does
+	// not persist across reboots.
+	if s.runtime == trident.RuntimeTypeContainer {
+		if err := s.prepareContainerRuntime(); err != nil {
+			return fmt.Errorf("failed to prepare container runtime: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// prepareContainerRuntime readies a container-runtime host for Trident commands:
+// it disables SELinux enforcement (the container runtime requires permissive
+// mode) and loads the Trident container image into Docker. Mirrors the container
+// handling in the pytest suite's connection fixture.
+func (s *TridentE2EScenario) prepareContainerRuntime() error {
+	mode, err := sysinspect.Getenforce(s.sshClient)
+	if err != nil {
+		return fmt.Errorf("failed to query SELinux mode: %w", err)
+	}
+	if mode != "Disabled" {
+		if err := sysinspect.Setenforce(s.sshClient, false); err != nil {
+			return fmt.Errorf("failed to set SELinux permissive: %w", err)
+		}
+	}
+
+	if err := trident.LoadTridentContainer(s.sshClient); err != nil {
+		return fmt.Errorf("failed to load Trident container image: %w", err)
+	}
 
 	return nil
 }

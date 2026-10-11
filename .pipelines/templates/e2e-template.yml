@@ -119,6 +119,7 @@ stages:
   - template: stages/testing_e2e/storm_e2e.yml
     parameters:
       stageType: ${{ parameters.stageType }}
+      acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:

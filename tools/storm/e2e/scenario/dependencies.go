@@ -5,11 +5,21 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"tridenttools/storm/utils/cmd"
 	"tridenttools/storm/utils/env"
 
 	"github.com/microsoft/storm"
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	// pipRetries matches pip's own default, set explicitly so the value is
+	// visible next to the timeout it pairs with.
+	pipRetries = 5
+	// pipTimeoutSeconds raises pip's 15s default read timeout, which is too
+	// tight for the internal package feed under load.
+	pipTimeoutSeconds = 60
 )
 
 func (s *TridentE2EScenario) installVmDependencies(tc storm.TestCase) error {
@@ -83,7 +93,13 @@ func installUbuntuDependencies(osRelease *env.OsReleaseInfo) error {
 		// internal feed replacing PyPI
 		// Pin to version 26.2 to avoid a breaking change in
 		// 26.4.
-		err = cmd.Run("sudo", "-E", "pip3", "install", "virt-firmware==26.2", "-vvv")
+		// The feed is an ADO artifact proxy that intermittently stalls
+		// mid-download; pip's 15s default read timeout turns that blip
+		// into a failure of the whole 40-minute E2E job.
+		err = cmd.Run("sudo", "-E", "pip3", "install",
+			"--retries", strconv.Itoa(pipRetries),
+			"--timeout", strconv.Itoa(pipTimeoutSeconds),
+			"virt-firmware==26.2", "-vvv")
 	case "noble":
 		// noble seems to be using 24.1, which avoids the 26.4
 		// breaking change.
