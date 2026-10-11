@@ -627,25 +627,7 @@ AZL_INSTALLER_ISO_DIR := $(AZL_INSTALLER_DIR)/iso
 # If regular.cosi is not present, download runtime images
 $(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi: download-runtime-images
 
-# Build the installer ISO using the builder
-$(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
-	bin/RPMS \
-	bin/liveinstaller \
-	artifacts/baremetal.vhdx \
-	$(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi \
-	$(AZL_INSTALLER_DIR)/installer-iso.yaml \
-	$(shell find $(AZL_INSTALLER_DIR)/ -type f 2>/dev/null)
-	# Prepare dependencies
-	# Copy runtime image
-	rm -rf $(AZL_INSTALLER_ISO_DIR)/images
-	mkdir -p $(AZL_INSTALLER_ISO_DIR)/images
-	cp $(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi $(AZL_INSTALLER_ISO_DIR)/images/trident-testimage.cosi
-	# Copy installer binary
-	rm -rf $(AZL_INSTALLER_ISO_DIR)/bin
-	mkdir -p $(AZL_INSTALLER_ISO_DIR)/bin
-	cp bin/liveinstaller $(AZL_INSTALLER_ISO_DIR)/bin/
-	# Build ISO
-	python3 ./tests/tailor-images/legacy_targets.py build azl-installer --output-path $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso $(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
+include tests/tailor-images/targets.mk
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) target/release/trident
@@ -879,186 +861,6 @@ download-trident-container-installer-iso:
 		--path artifacts/ \
 		--artifact-name 'trident-container-installer'
 
-artifacts/trident-container-installer.iso: $(shell python3 ./tests/tailor-images/legacy_targets.py dependencies trident-container-installer)
-	@echo "Building 'trident-container-installer' [$@] from $<"
-	@echo "Prerequisites:"
-	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
-	@echo "Building image..."
-	python3 ./tests/tailor-images/legacy_targets.py build \
-		trident-container-installer \
-		--output-path $@ \
-		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
-
-# Copies locally built runtime images from ../test-images/build to ./artifacts/test-image.
-# Expects that both the regular and verity Trident test images have been built.
-.PHONY: copy-runtime-images
-copy-runtime-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.cosi $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.cosi
-	@test -d $(TEST_IMAGES_PATH) || { \
-		echo "$(TEST_IMAGES_PATH) not found"; \
-		exit 1; \
-	}
-	@test -d $(TEST_IMAGES_PATH)/build/trident-testimage || { \
-		echo "$(TEST_IMAGES_PATH)/build/trident-testimage not found"; \
-		exit 1; \
-	}
-	@test -d $(TEST_IMAGES_PATH)/build/trident-verity-testimage || { \
-		echo "$(TEST_IMAGES_PATH)/build/trident-verity-testimage not found"; \
-		exit 1; \
-	}
-
-	@rm -rf ./artifacts/test-image
-	@mkdir -p ./artifacts/test-image
-
-#	Copy all COSI images from trident-testimage
-	@for file in $(TEST_IMAGES_PATH)/build/trident-testimage/*.cosi; do \
-		cp $$file ./artifacts/test-image/$$(basename $$file); \
-		echo "Copied $$file to ./artifacts/test-image/$$(basename $$file)"; \
-	done
-
-#	Copy all COSI images from trident-verity-testimage
-	@for file in $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.cosi; do \
-		cp $$file ./artifacts/test-image/$$(basename $$file); \
-		echo "Copied $$file to ./artifacts/test-image/$$(basename $$file)"; \
-	done
-
-# Uses the simple E2E test to set up a starter Host Configuration
-.PHONY: starter-configuration
-starter-configuration:
-	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
-	@cp tests/e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
-	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
-	@echo "\033[33mDon't forget to add your SSH public key to the Host Configuration!"
-
-bin/trident-mos.iso: \
-	artifacts/baremetal.vhdx \
-	packaging/systemd/trident-install.service \
-	tests/tailor-images/trident-mos/iso.yaml \
-	tests/tailor-images/trident-mos/files/* \
-	tests/tailor-images/trident-mos/post-install.sh \
-	packaging/selinux-policy-trident/* \
-	tools/cmd/rcp-agent/rcp-agent.service \
-	bin/rcp-agent
-	@echo "Rebuilding Trident MOS ISO: $@ from $< because of: $?"
-	@mkdir -p bin
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-		--log-level=debug \
-		--build-dir /build \
-		--image-file /repo/$< \
-		--output-image-file /repo/$@ \
-		--config-file /repo/tests/tailor-images/trident-mos/iso.yaml \
-		--output-image-format iso
-
-.PHONY: recreate-verity-image
-recreate-verity-image: bin/trident-rpms.tar.gz
-	$(MAKE) -C $(TEST_IMAGES_PATH) copy-trident-rpms
-	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
-	make copy-runtime-images
-
-.PHONY: website-clear
-website-clear:
-	cd ./website && \
-		rm -rf ./docs && \
-		rm -rf ./versioned_* && \
-		rm -rf ./versions.json && \
-		rm -rf ./node_modules
-
-.PHONY: website-prereqs
-website-prereqs:
-	cd ./website && npm ci
-
-DOCS_CONTENTS = $(shell find ./docs -type f)
-website/docs: $(DOCS_CONTENTS)
-	rm -rf ./website/docs && \
-		cp -r ./docs ./website
-
-website/versions.json:
-	echo '[]' > website/versions.json
-
-.PHONY: website-build
-website-build: website-prereqs website/docs website/versions.json
-	cd ./website && \
-		npm run build
-
-.PHONY: website-serve
-website-serve: website-build
-	cd ./website && \
-		npm run serve -- --port $(SERVER_PORT)
-
-# Useful if you edit website/docs files in place and want to copy them back to ./docs
-.PHONY: website-reverse
-website-reverse: website/docs
-	rm -rf ./docs
-	cp -r ./website/docs ./
-
-.PHONY: validate-pipeline-website-artifact
-validate-pipeline-website-artifact:
-	if ! which gh > /dev/null; then \
-		sudo apt install gh; \
-	fi
-	$(eval STAGING_DIR := $(shell mktemp -d))
-	cp -r ./website/. $(STAGING_DIR)/
-	rm -rf $(STAGING_DIR)/build && \
-		mkdir -p $(STAGING_DIR)/build
-	$(eval RUN_ID ?= $(shell gh run list --workflow 'Deploy to GitHub Pages' --repo microsoft/trident --json conclusion,databaseId --jq '.[] | select(.conclusion == "success") | .databaseId' | sort -n | tail -n 1))
-	@echo "Downloading GitHub Pages artifact from $(RUN_ID)"
-	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)/build
-	cd $(STAGING_DIR)/build && \
-		tar -xvf ./artifact.tar && \
-		cd $(STAGING_DIR) && \
-		npm install && \
-			npm run serve -- --port $(SERVER_PORT)
-
-#
-# Generic COSI image build target pattern
-#
-COSI_TARGETS = $(shell python3 ./tests/tailor-images/legacy_targets.py list --filter-type cosi)
-
-.PHONY: $(COSI_TARGETS)
-$(COSI_TARGETS): %: artifacts/%.cosi
-
-.PHONY: all-cosi
-all-cosi: $(COSI_TARGETS)
-
-#
-# Generic ISO image build target pattern
-#
-ISO_TARGETS = $(shell python3 ./tests/tailor-images/legacy_targets.py list --filter-type iso)
-
-.PHONY: $(ISO_TARGETS)
-$(ISO_TARGETS): %: artifacts/%.iso
-
-.PHONY: all-iso
-all-iso: $(ISO_TARGETS)
-
-# Fun trick to use the stem of the target (%) as a variable ($*) in the
-# prerequisites so that we can use find to get all the files in the directory.
-# https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
-.SECONDEXPANSION:
-artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx artifacts/%.qcow2 artifacts/%.vhd: $$(shell python3 ./tests/tailor-images/legacy_targets.py dependencies $$*)
-	@echo "Building '$*' [$@] from $<"
-	@echo "Prerequisites:"
-	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
-	@echo "Building image..."
-	python3 ./tests/tailor-images/legacy_targets.py build \
-		$* \
-		--output-path $@ \
-		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
-
-MIC_CONTAINER_IMAGE ?= $(shell python3 ./tests/tailor-images/legacy_targets.py show-artifact customizer-container-full)
-artifacts/trident-functest.qcow2: $$(shell python3 ./tests/tailor-images/legacy_targets.py dependencies $$(basename $$(notdir $$@)))
-	@echo "Building '$*' [$@] from $<"
-	@echo "Prerequisites:"
-	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
-	@echo "Building image..."
-	python3 ./tests/tailor-images/legacy_targets.py build \
-		$(basename $(notdir $@)) \
-		--output-path $@ \
-		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
-
 # TRIDENT VM UPDATE IMAGES
 
 VM_IMAGE_PATH_PREFIX = tests/tailor-images/trident-vm-testimage/base
@@ -1096,12 +898,12 @@ $(QEMU_GUEST_IMAGE):
 BAREMETAL_IMAGE = artifacts/baremetal.vhdx
 $(BAREMETAL_IMAGE):
 	@mkdir -p artifacts
-	@python3 ./tests/tailor-images/legacy_targets.py download-image baremetal
+	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- --manifest tests/tailor-images/tailor.yaml bases download baremetal
 
 CORE_SELINUX_IMAGE = artifacts/core_selinux.vhdx
 $(CORE_SELINUX_IMAGE):
 	@mkdir -p artifacts
-	@python3 ./tests/tailor-images/legacy_targets.py download-image core_selinux
+	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- --manifest tests/tailor-images/tailor.yaml bases download core_selinux
 
 CORE_ARM64_IMAGE_NAME ?= core_vhdx-arm64-3.0-stable
 CORE_ARM64_IMAGE_VERSION ?= *
@@ -1119,15 +921,6 @@ artifacts/rcp-agent.service: tools/cmd/rcp-agent/rcp-agent.service
 	@mkdir -p artifacts
 	@cp tools/cmd/rcp-agent/rcp-agent.service $@
 
-MINIMAL_IMAGE = artifacts/minimal.vhdx
-$(MINIMAL_IMAGE):
-	@mkdir -p artifacts
-	@python3 ./tests/tailor-images/legacy_targets.py download-image minimal
-
-MINIMAL_IMAGE_AARCH64 = artifacts/minimal_aarch64.vhdx
-$(MINIMAL_IMAGE_AARCH64):
-	@mkdir -p artifacts
-	@python3 ./tests/tailor-images/legacy_targets.py download-image minimal_aarch64
 
 
 .PHONY: imagecustomizer-dev-amd64
