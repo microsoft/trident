@@ -87,15 +87,21 @@ steps:
 
   - bash: |
       set -euo pipefail
-      python3 - <<'PY' "${{ parameters.imageName }}"
-      import json
-      import sys
-      from pathlib import Path
 
-      legacy = json.loads(Path("tests/tailor-images/legacy-map.json").read_text())
-      entry = legacy[sys.argv[1]]
-      print(f"##vso[task.setvariable variable=baseImageType]{entry['baseImage']}")
-      PY
+      case '${{ parameters.imageName }}' in
+        azl-installer|trident-container-installer|trident-container-testimage|trident-functest|trident-installer|trident-split-installer|trident-testimage|trident-verity-testimage|trident-usrverity-testimage|trident-container-verity-testimage|trident-container-usrverity-testimage|trident-direct-streaming-installer-amd64)
+          baseImageType=baremetal
+          ;;
+        trident-direct-streaming-installer-arm64|trident-installer-arm64|trident-testimage-arm64)
+          baseImageType=core_arm64
+          ;;
+        *)
+          echo "Unsupported imageName for build-image-template: ${{ parameters.imageName }}"
+          exit 1
+          ;;
+      esac
+
+      echo "##vso[task.setvariable variable=baseImageType]${baseImageType}"
     displayName: "Resolve image metadata"
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
@@ -203,78 +209,109 @@ steps:
       export PATH="$HOME/.cargo/bin:$PATH"
       export CLICOLOR_FORCE=1
 
-      readarray -t selector_lines < <(python3 - <<'PY' "$legacy_name"
-      import json
-      import sys
-      from pathlib import Path
-
-      entry = json.loads(Path("tests/tailor-images/legacy-map.json").read_text())[sys.argv[1]]
-      print(entry["image"])
-      print(entry["ext"])
-      print(entry.get("tailorExt", entry["ext"]))
-      for key, value in entry["selectors"].items():
-          print(f"{key}={value}")
-      PY
-      )
-
-      tailor_image="${selector_lines[0]}"
-      artifact_ext="${selector_lines[1]}"
-      source_ext="${selector_lines[2]}"
       selector_args=()
-      if (( ${#selector_lines[@]} > 3 )); then
-        for selector in "${selector_lines[@]:3}"; do
-          selector_args+=("-s" "$selector")
-        done
-      fi
+      case "$legacy_name" in
+        azl-installer)
+          tailor_image=azl-installer
+          artifact_ext=iso
+          ;;
+        trident-functest)
+          tailor_image=trident-functest
+          artifact_ext=qcow2
+          ;;
+        trident-installer)
+          tailor_image=trident-installer
+          artifact_ext=iso
+          selector_args=(-s arch=amd64 -s variant=default)
+          ;;
+        trident-split-installer)
+          tailor_image=trident-installer
+          artifact_ext=iso
+          selector_args=(-s arch=amd64 -s variant=split)
+          ;;
+        trident-installer-arm64)
+          tailor_image=trident-installer
+          artifact_ext=iso
+          selector_args=(-s arch=arm64 -s variant=default)
+          ;;
+        trident-direct-streaming-installer-amd64)
+          tailor_image=trident-installer
+          artifact_ext=iso
+          selector_args=(-s arch=amd64 -s variant=direct-streaming)
+          ;;
+        trident-direct-streaming-installer-arm64)
+          tailor_image=trident-installer
+          artifact_ext=iso
+          selector_args=(-s arch=arm64 -s variant=direct-streaming)
+          ;;
+        trident-container-installer)
+          tailor_image=trident-container-installer
+          artifact_ext=iso
+          ;;
+        trident-testimage)
+          tailor_image=trident-testimage
+          artifact_ext=cosi
+          selector_args=(-s arch=amd64)
+          ;;
+        trident-testimage-arm64)
+          tailor_image=trident-testimage
+          artifact_ext=cosi
+          selector_args=(-s arch=arm64)
+          ;;
+        trident-container-testimage)
+          tailor_image=trident-container-testimage
+          artifact_ext=cosi
+          ;;
+        trident-verity-testimage)
+          tailor_image=trident-verity-testimage
+          artifact_ext=cosi
+          selector_args=(-s deployment=host -s mode=root)
+          ;;
+        trident-container-verity-testimage)
+          tailor_image=trident-verity-testimage
+          artifact_ext=cosi
+          selector_args=(-s deployment=container -s mode=root)
+          ;;
+        trident-usrverity-testimage)
+          tailor_image=trident-verity-testimage
+          artifact_ext=cosi
+          selector_args=(-s deployment=host -s mode=usr)
+          ;;
+        trident-container-usrverity-testimage)
+          tailor_image=trident-verity-testimage
+          artifact_ext=cosi
+          selector_args=(-s deployment=container -s mode=usr)
+          ;;
+        *)
+          echo "Unsupported imageName for build-image-template: ${legacy_name}"
+          exit 1
+          ;;
+      esac
 
       manifest_path=tests/tailor-images/tailor.yaml
       if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
         manifest_path=tests/tailor-images/.tailor.pipeline.yaml
         python3 - <<'PY'
-      from pathlib import Path
-      text = Path("tests/tailor-images/tailor.yaml").read_text()
-      needle = """toolchains:
-        default: ic
-        entries:
-          - name: ic
-            container: mcr.microsoft.com/azurelinux/imagecustomizer
-            tag: latest
-      """
-      replacement = """toolchains:
-        default: ic-dev
-        entries:
-          - name: ic
-            container: mcr.microsoft.com/azurelinux/imagecustomizer
-            tag: latest
-          - name: ic-dev
-            container: imagecustomizer
-            tag: dev
-            pull: never
-      """
-      Path("tests/tailor-images/.tailor.pipeline.yaml").write_text(text.replace(needle, replacement, 1))
-      PY
+from pathlib import Path
+text = Path('tests/tailor-images/tailor.yaml').read_text()
+needle = 'toolchains:\n  default: ic\n  entries:\n    - name: ic\n      container: mcr.microsoft.com/azurelinux/imagecustomizer\n      tag: latest\n'
+replacement = 'toolchains:\n  default: ic-dev\n  entries:\n    - name: ic\n      container: mcr.microsoft.com/azurelinux/imagecustomizer\n      tag: latest\n    - name: ic-dev\n      container: imagecustomizer\n      tag: dev\n      pull: never\n'
+Path('tests/tailor-images/.tailor.pipeline.yaml').write_text(text.replace(needle, replacement, 1))
+PY
       fi
 
-      matrix_json=$(cargo run --manifest-path tools/tailor/Cargo.toml --quiet --         --manifest "$manifest_path"         matrix "$tailor_image" --format json "${selector_args[@]}")
-
-      slug=$(python3 - <<'PY' "$matrix_json"
-      import json
-      import sys
-      cells = json.loads(sys.argv[1])
-      if len(cells) != 1:
-          raise SystemExit(f"expected exactly one cell, got {len(cells)}")
-      print(cells[0]["slug"])
-      PY
-      )
-
       rm -f tests/tailor-images/artifacts/ca_cert.pem
-      cargo run --manifest-path tools/tailor/Cargo.toml --quiet --         --manifest "$manifest_path"         build "$tailor_image"         "${selector_args[@]}"         --output-dir $(ob_outputDirectory)         --clones ${{ parameters.clones }}
+      cargo run --manifest-path tools/tailor/Cargo.toml --quiet -- \
+        --manifest "$manifest_path" \
+        build "$tailor_image" \
+        "${selector_args[@]}" \
+        --output-dir $(ob_outputDirectory) \
+        --clones ${{ parameters.clones }}
 
-      if [[ ${{ parameters.clones }} -eq 1 ]]; then
-        mv "$(ob_outputDirectory)/${slug}.${source_ext}" "$(ob_outputDirectory)/${legacy_name}.${artifact_ext}"
-      else
+      if [[ ${{ parameters.clones }} -gt 1 ]]; then
         for ((i=0; i<${{ parameters.clones }}; i++)); do
-          mv "$(ob_outputDirectory)/${slug}_clone${i}.${source_ext}"              "$(ob_outputDirectory)/${legacy_name}_${i}.${artifact_ext}"
+          mv "$(ob_outputDirectory)/${legacy_name}_clone${i}.${artifact_ext}" \
+             "$(ob_outputDirectory)/${legacy_name}_${i}.${artifact_ext}"
         done
       fi
 

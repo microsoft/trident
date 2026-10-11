@@ -1,8 +1,9 @@
 # Test images with tailor
 
 `tests/tailor-images/` is a [tailor](../../tools/tailor/README.md) workspace.
-It replaces the legacy `testimages.py` / `builder/` flow, which runs alongside it
-for now and is removed in a follow-up cleanup PR.
+It replaces the legacy `testimages.py` / `builder/` flow -- no Make target or
+pipeline invokes it anymore, though its files remain on disk until a follow-up
+cleanup PR removes them.
 
 ## Build from the repo root
 
@@ -55,7 +56,13 @@ The workspace declares read-only mounts for these inputs, and the image lists
 them in `extraDependencies` so changes invalidate Tailor's build cache. Do not
 copy these assets into the image workspace.
 
-## Image families
+## Legacy name mapping
+
+Pipelines and Make targets still accept the historical image names, but the
+mapping is now declarative: each image family emits the legacy basename via
+`outputs[].name`, while the remaining glue for aliases, clone suffixes, and
+raw-to-`.cosi` compatibility lives directly in the Makefile / pipeline
+templates.
 
 The current families are:
 
