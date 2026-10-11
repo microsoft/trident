@@ -292,12 +292,12 @@ steps:
       if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
         manifest_path=tests/tailor-images/.tailor.pipeline.yaml
         python3 - <<'PY'
-from pathlib import Path
-text = Path('tests/tailor-images/tailor.yaml').read_text()
-needle = 'toolchains:\n  default: ic\n  entries:\n    - name: ic\n      container: mcr.microsoft.com/azurelinux/imagecustomizer\n      tag: latest\n'
-replacement = 'toolchains:\n  default: ic-dev\n  entries:\n    - name: ic\n      container: mcr.microsoft.com/azurelinux/imagecustomizer\n      tag: latest\n    - name: ic-dev\n      container: imagecustomizer\n      tag: dev\n      pull: never\n'
-Path('tests/tailor-images/.tailor.pipeline.yaml').write_text(text.replace(needle, replacement, 1))
-PY
+        from pathlib import Path
+        text = Path('tests/tailor-images/tailor.yaml').read_text()
+        needle = 'toolchains:\n  default: ic\n  entries:\n    - name: ic\n      container: mcr.microsoft.com/azurelinux/imagecustomizer\n      tag: latest\n'
+        replacement = 'toolchains:\n  default: ic-dev\n  entries:\n    - name: ic\n      container: mcr.microsoft.com/azurelinux/imagecustomizer\n      tag: latest\n    - name: ic-dev\n      container: imagecustomizer\n      tag: dev\n      pull: never\n'
+        Path('tests/tailor-images/.tailor.pipeline.yaml').write_text(text.replace(needle, replacement, 1))
+        PY
       fi
 
       rm -f tests/tailor-images/artifacts/ca_cert.pem
