@@ -1703,14 +1703,23 @@ async fn clean(
         // A signed image also drops an enrollable CA cert beside each cell's image (§6); remove it
         // too. Lenient on config: `validate` surfaces signing errors; cleanup should not fail on them.
         for cell in cells_selected(target, selector)? {
-            let signed = tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())
-                .ok()
-                .flatten()
-                .is_some();
-            paths.push(output_dir.join(tailor_core::artifact_name(
-                cell.slug.as_ref(),
-                cell.output.format,
-            )));
+            let signed =
+                tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())
+                    .ok()
+                    .flatten()
+                    .is_some();
+            let name =
+                tailor_core::output_name(cell.slug.as_ref(), cell.output.name.as_deref(), None);
+            paths.push(output_dir.join(tailor_core::artifact_name(&name, cell.output.format)));
+            // A compressed artifact publishes under its own post-compression filename; make sure
+            // `clean` also knows about the compressed form for custom-named outputs.
+            if cell.output.compression.is_some() {
+                paths.push(output_dir.join(tailor_core::published_artifact_name(
+                    &name,
+                    cell.output.format,
+                    cell.output.compression,
+                )));
+            }
             if signed {
                 paths.push(output_dir.join(ca_cert_name(cell.slug.as_ref())));
             }
@@ -2005,8 +2014,14 @@ fn signing_requirements<'a>(
 ) -> Result<Vec<SigningRequirement<'a>>, AppError> {
     let mut requirements: Vec<SigningRequirement<'a>> = Vec::new();
     for target in targets {
-        for cell in select_node_cells(target, selector.selector, selector.requested.contains(target.name()), selector.required.get(target.name()))? {
-            let resolved = tailor_config::resolve_signing(cell.signing.as_ref(), workspace_signing)?;
+        for cell in select_node_cells(
+            target,
+            selector.selector,
+            selector.requested.contains(target.name()),
+            selector.required.get(target.name()),
+        )? {
+            let resolved =
+                tailor_config::resolve_signing(cell.signing.as_ref(), workspace_signing)?;
             if let Some((profile_id, profile)) = resolved {
                 let slug = cell.slug.as_ref().to_owned();
                 if let Some(existing) = requirements

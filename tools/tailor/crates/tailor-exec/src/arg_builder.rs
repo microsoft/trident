@@ -4,7 +4,9 @@ use std::{
 };
 
 use tailor_config::{Access, BaseSource, ExtraParam, Operation};
-use tailor_core::{Cell, ExecError, ExecutionContext, RuntimeConfig, artifact_name, output_name, output_slug};
+use tailor_core::{
+    Cell, ExecError, ExecutionContext, RuntimeConfig, artifact_name, output_name, output_slug,
+};
 
 use crate::{guard, path_translate, working_copy};
 
@@ -1287,6 +1289,7 @@ mod tests {
             arch: Arch::Amd64,
             output: OutputSpec {
                 format: OutputFormat::Cosi,
+                name: None,
                 cosi_compression_level: Some(7),
                 compression: None,
             },

@@ -4,7 +4,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -106,6 +106,7 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
         hash_cache_dir: Option<&Path>,
     ) -> Result<BuildPlan, CoreError> {
         let mut planned = Vec::new();
+        let mut seen_artifacts: BTreeMap<PathBuf, String> = BTreeMap::new();
         for target in targets {
             let (toolchain_id, toolchain) = toolchain_for(target, tool)?;
             let resolved_toolchain = resolved_toolchain(toolchains, &toolchain_id, &toolchain)?;
@@ -168,6 +169,11 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     hash_cache_dir,
                     target.name(),
                 )?;
+                let signing_profile =
+                    tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())
+                        .ok()
+                        .flatten()
+                        .map(|(profile_id, _profile)| profile_id);
                 let print = fingerprint(&FingerprintInputs {
                     slug: cell.slug.as_ref(),
                     toolchain_digest: &resolved_toolchain.ic_image_ref,
@@ -182,16 +188,22 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     compression: cell.output.compression,
                     cosi_compression_level: cell.output.cosi_compression_level,
                     output_name: cell.output.name.as_deref(),
+                    signing_profile: signing_profile.as_deref(),
                 });
                 let artifact = output_dir.join(published_artifact_name(
-                    &output_name(
-                        cell.slug.as_ref(),
-                        cell.output.name.as_deref(),
-                        None,
-                    ),
+                    &output_name(cell.slug.as_ref(), cell.output.name.as_deref(), None),
                     cell.output.format,
                     cell.output.compression,
                 ));
+                if let Some(first_slug) =
+                    seen_artifacts.insert(artifact.clone(), cell.slug.to_string())
+                {
+                    return Err(CoreError::DuplicateOutputPath {
+                        path: artifact,
+                        first: first_slug,
+                        second: cell.slug.to_string(),
+                    });
+                }
                 let up_to_date =
                     stamp::is_up_to_date(output_dir, cell.slug.as_ref(), print, &artifact);
                 let runtime = runtime_config(tool, lock, &target.root);
@@ -987,7 +999,10 @@ mod tests {
     #[test]
     fn output_name_prefers_explicit_names_and_suffixes_clones() {
         assert_eq!(output_name("img_amd64_cosi", None, None), "img_amd64_cosi");
-        assert_eq!(output_name("img_amd64_cosi", Some("legacy-name"), None), "legacy-name");
+        assert_eq!(
+            output_name("img_amd64_cosi", Some("legacy-name"), None),
+            "legacy-name"
+        );
         assert_eq!(
             output_name("img_amd64_cosi", Some("legacy-name"), Some(1)),
             "legacy-name_clone1"

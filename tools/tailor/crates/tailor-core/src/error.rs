@@ -185,6 +185,16 @@ pub enum CoreError {
     CompressedImageBase { image: String, dependency: String },
 
     #[error(
+        "cells `{first}` and `{second}` both publish to `{}` -- give one an explicit `outputs[].name`",
+        .path.display()
+    )]
+    DuplicateOutputPath {
+        path: PathBuf,
+        first: String,
+        second: String,
+    },
+
+    #[error(
         "image `{image}` cell `{slug}` depends on `{producer}`, but `{producer}` has axis `{axis}` \
          that `{image}` does not — the producer cell is ambiguous ({axis} ∈ {{{values}}}); pin it \
          with `cell: {{ {axis}: <value> }}`"

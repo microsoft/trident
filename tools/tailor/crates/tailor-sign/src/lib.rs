@@ -375,7 +375,16 @@ fn leaf_common_name(leaf_id: &str) -> String {
     // leaf_ids that share a truncated prefix never collide on CN alone.
     let hash = format!("{:016x}", xxh3_64(leaf_id.as_bytes()));
     let keep = budget.saturating_sub(hash.len() + 1); // +1 for the separator
-    format!("{CN_PREFIX}{}-{hash}", &leaf_id[..keep])
+    // Truncate at the last UTF-8 char boundary at or before `keep` bytes, not a raw byte index --
+    // leaf_id (image/matrix axis strings) is not restricted to ASCII, and slicing mid-character
+    // panics. This keeps the original byte-length CN budget while never splitting a character.
+    let safe_len = leaf_id
+        .char_indices()
+        .map(|(idx, _)| idx)
+        .take_while(|&idx| idx <= keep)
+        .last()
+        .unwrap_or(0);
+    format!("{CN_PREFIX}{}-{hash}", &leaf_id[..safe_len])
 }
 
 /// Mint a code-signing leaf (`extendedKeyUsage=codeSigning`) signed by the CA. The leaf CN embeds the
@@ -490,14 +499,7 @@ fn sign_pe_with_pesign(file: &Path, key: &Path, cert: &Path) -> Result<(), SignE
     )?;
     run(
         PK12UTIL,
-        &[
-            "-i",
-            &lossy(&pkcs12),
-            "-d",
-            &lossy(&nssdb),
-            "-W",
-            "",
-        ],
+        &["-i", &lossy(&pkcs12), "-d", &lossy(&nssdb), "-W", ""],
     )?;
 
     let cert_arg = pesign_certificate_arg()?;
@@ -699,7 +701,11 @@ mod tests {
         assert!(format!("tailor leaf {long_id}").len() > 64);
 
         let cn = leaf_common_name(long_id);
-        assert!(cn.len() <= 64, "CN still too long: {cn:?} ({} chars)", cn.len());
+        assert!(
+            cn.len() <= 64,
+            "CN still too long: {cn:?} ({} chars)",
+            cn.len()
+        );
         assert!(cn.starts_with("tailor leaf "));
 
         // Two different long ids sharing the same truncated prefix must not collide.
@@ -710,6 +716,27 @@ mod tests {
 
         // Deterministic: same input always yields the same CN.
         assert_eq!(cn, leaf_common_name(long_id));
+    }
+
+    #[test]
+    fn leaf_common_name_does_not_panic_on_multibyte_truncation_boundary() {
+        // A long, non-ASCII leaf_id whose naive byte-index truncation point would fall inside a
+        // multi-byte UTF-8 character must not panic, and the CN must still respect the original
+        // byte-length budget.
+        let long_id = "\u{1F600}".repeat(40); // 4-byte emoji, well past the CN budget
+        let cn = leaf_common_name(&long_id);
+        assert!(
+            cn.len() <= 64,
+            "CN still too long: {cn:?} ({} bytes)",
+            cn.len()
+        );
+        assert!(cn.starts_with("tailor leaf "));
+
+        // Deterministic and collision-resistant, same as the ASCII long-id case.
+        let other_id = "\u{1F601}".repeat(40);
+        let other_cn = leaf_common_name(&other_id);
+        assert_ne!(cn, other_cn);
+        assert_eq!(cn, leaf_common_name(&long_id));
     }
 
     #[test]
