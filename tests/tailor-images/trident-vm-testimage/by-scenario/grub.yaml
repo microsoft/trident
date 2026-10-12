@@ -1,6 +1,6 @@
 config:
   storage:
-    $include: ./include/storage-grub.yaml
+    $include: ./include/storage-grub-update.yaml
   os:
     bootloader:
       resetType: hard-reset

@@ -27,5 +27,6 @@ Other legacy variants map to selectors on the same family:
 - `trident-container-verity-testimage` → `-s deployment=container -s mode=root`
 - `trident-container-usrverity-testimage` → `-s deployment=container -s mode=usr`
 
-Output is written to `artifacts/` using the tailor cell slug by default. Use
-`--output-dir <path>` to change the output location.
+Output is written to `artifacts/` using each variant's configured `outputs[].name`
+(e.g. the host/root build above publishes `trident-verity-testimage.cosi`), not the
+cell slug. Use `--output-dir <path>` to change the output location.
