@@ -8,7 +8,6 @@
 outputs:
   $replace:
     - format: qcow2
-      name: trident-vm-acl-agent-testimage
 config:
   storage:
     $include: ./include/storage-acl-agent.yaml

@@ -1,7 +1,6 @@
 outputs:
   $replace:
     - format: cosi
-      name: trident-container-usrverity-testimage
 
 config:
   os:

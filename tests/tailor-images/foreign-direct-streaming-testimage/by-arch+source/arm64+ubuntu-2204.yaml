@@ -5,4 +5,3 @@ base:
 outputs:
   $replace:
     - format: baremetal-image
-      name: ubuntu-direct-streaming-testimage-2204-arm64

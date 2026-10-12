@@ -13,7 +13,6 @@ base:
 
 outputs:
   - format: cosi
-    name: trident-vm-grub-testimage
 
 rpmSources:
   - ../../../bin/RPMS

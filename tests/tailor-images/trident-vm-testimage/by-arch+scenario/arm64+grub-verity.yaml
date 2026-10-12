@@ -1,6 +1,3 @@
 outputs:
   $replace:
     - format: cosi
-      name: trident-vm-grub-verity-testimage-arm64
-    - format: qcow2
-      name: trident-vm-grub-verity-testimage-arm64

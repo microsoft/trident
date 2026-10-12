@@ -1,7 +1,6 @@
 outputs:
   $replace:
     - format: cosi
-      name: trident-vm-grub-verity-testimage
 config:
   storage:
     $include: ./include/storage-grub-verity.yaml

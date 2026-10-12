@@ -8,7 +8,6 @@ base:
 
 outputs:
   - format: cosi
-    name: trident-testimage
 
 rpmSources:
   - ../../../bin/RPMS
