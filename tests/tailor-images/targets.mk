@@ -62,7 +62,7 @@ $1: $(TAILOR_WORKSPACE) $4
 	@echo "Prerequisites:"
 	@echo "$$^" | tr ' ' '\n' | sed 's/^/    /'
 	rm -f $(TAILOR_DIR)/artifacts/ca_cert.pem
-	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --manifest $(TAILOR_WORKSPACE) build $2 $3 --output-dir $(dir $1)
+	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest $(TAILOR_WORKSPACE) build $2 $3 --output-dir $(dir $1)
 	@if [ -f $(TAILOR_DIR)/artifacts/ca_cert.pem ]; then cp $(TAILOR_DIR)/artifacts/ca_cert.pem "$(dir $1)/ca_cert.pem"; fi
 	@if [ "$1" != "$5" ]; then cp "$5" "$1"; fi
 	@$6
@@ -110,4 +110,4 @@ $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: $(TAILOR_WORKSPACE) $(AZL_INSTALL
 	mkdir -p $(AZL_INSTALLER_ISO_DIR)/bin
 	cp bin/liveinstaller $(AZL_INSTALLER_ISO_DIR)/bin/
 	rm -f $(TAILOR_DIR)/artifacts/ca_cert.pem
-	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --manifest $(TAILOR_WORKSPACE) build azl-installer --output-dir $(ARTIFACTS_TEST_IMAGE_DIR)
+	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest $(TAILOR_WORKSPACE) build azl-installer --output-dir $(ARTIFACTS_TEST_IMAGE_DIR)
