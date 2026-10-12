@@ -5,8 +5,3 @@ outputs:
 config:
   storage:
     $include: ./include/storage-grub-verity-base.yaml
-  os:
-    $include: ./include/grub-verity-base-os-common.yaml
-  scripts:
-    postCustomization:
-      - $include: ./include/grub-verity-base-scripts.yaml

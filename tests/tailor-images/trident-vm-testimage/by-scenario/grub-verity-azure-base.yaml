@@ -1,0 +1,34 @@
+# Base (vhd-fixed) counterpart to grub-verity-azure.yaml. The VHD is the
+# initial-deploy image and needs the dual-slot A/B partition layout (like
+# grub-verity-base.yaml), unlike the cosi update target which only ever
+# lands on a single slot. Shared os/scripts content comes from
+# grub-verity-base+grub-verity-azure-base.yaml; this file only layers the
+# azure-specific overrides on top.
+outputs:
+  $replace:
+    - format: vhd-fixed
+      name: trident-vm-grub-verity-azure-testimage
+base:
+  $set:
+    ref: core_selinux
+config:
+  storage:
+    $include: ./include/storage-grub-verity-base.yaml
+  os:
+    hostname:
+      $set: trident-vm-testimg
+    selinux:
+      mode:
+        $set: permissive
+    packages:
+      install:
+        $remove:
+          - netplan
+        $append:
+          - selinux-policy
+          - WALinuxAgent
+    users:
+      $replace:
+        - name: testuser
+          secondaryGroups:
+            - wheel
