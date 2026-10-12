@@ -390,12 +390,16 @@ fn validate_output_name(
     let Some(name) = &output.name else {
         return Ok(());
     };
+    // `Path::components()` normalizes away repeated/trailing separators (e.g. `foo/`, `foo//`,
+    // `foo/./` all collapse to a single `Normal("foo")` component), so it alone can't reject a
+    // name containing separator characters; check the raw string too.
     let mut components = Path::new(name).components();
     let is_single_normal_component = matches!(
         (components.next(), components.next()),
         (Some(std::path::Component::Normal(_)), None)
     );
-    if name.is_empty() || !is_single_normal_component {
+    let has_separator = name.contains(std::path::MAIN_SEPARATOR) || name.contains('/');
+    if name.is_empty() || has_separator || !is_single_normal_component {
         return Err(ConfigError::InvalidField {
             slug: slug(image, tuple),
             field: OUTPUTS_FIELD,
@@ -565,6 +569,35 @@ mod tests {
         assert_eq!(cells[0].outputs.len(), 2);
         assert_eq!(cells[0].outputs[0].name.as_deref(), Some("legacy-static"));
         assert_eq!(cells[0].outputs[1].name.as_deref(), Some("amd64-artifact"));
+    }
+
+    #[test]
+    fn output_name_rejects_trailing_path_separators() {
+        // `Path::components()` alone normalizes away `foo/`, `foo//`, and `foo/./` into a single
+        // `Normal("foo")` component, so the raw string must also be checked for separators.
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "image.yaml",
+            indoc! {"
+                name: named
+                matrix:
+                  arch: [amd64]
+                outputs:
+                  - format: cosi
+                    name: 'foo/'
+                base:
+                  path: ./b.img
+                config:
+                  os: { hostname: named }
+            "},
+        );
+        let image = load_image(tmp.path().join("image.yaml")).unwrap();
+        let err = render_image(&image, tmp.path()).unwrap_err();
+        assert!(
+            err.to_string().contains("single normal filename component"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
