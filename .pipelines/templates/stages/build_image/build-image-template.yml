@@ -166,9 +166,11 @@ steps:
         exit 1
       fi
 
-      # Move dev RPM overrides to artifacts/rpm-overrides/
+      # artifacts/rpm-overrides/ is a declared rpmSources entry for several tailor
+      # image families, so it must exist (even empty) regardless of whether dev
+      # RPM overrides were staged for this build.
+      mkdir -p artifacts/rpm-overrides
       if ls "$(Build.ArtifactStagingDirectory)/rpms/" 2>/dev/null | grep -q "rpms.tar.gz"; then
-        mkdir -p artifacts/rpm-overrides
         tar -xvf $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz \
           --strip-components=2 \
           -C artifacts/rpm-overrides

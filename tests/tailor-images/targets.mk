@@ -78,15 +78,15 @@ $1: $(TAILOR_WORKSPACE) $4
 	@echo "Prerequisites:"
 	@echo "$$^" | tr ' ' '\n' | sed 's/^/    /'
 	rm -f $(call tailor_ca_cert_staging_path,$1)
-	@manifest="$(TAILOR_WORKSPACE)"; \
+	@manifest="$(TAILOR_DIR)/.tailor.local.$(subst /,_,$1).yaml"; \
+	sed_args=(-e 's@^      publishCaCert: \./artifacts/ca_cert\.pem$$$$@      publishCaCert: ./artifacts/ca_cert.$(subst /,_,$1).pem@'); \
 	if [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
-		manifest="$(TAILOR_DIR)/.tailor.local.$(subst /,_,$1).yaml"; \
 		mic="$(MIC_CONTAINER_IMAGE)"; image="$$$${mic%:*}"; tag="$$$${mic##*:}"; \
 		if [ "$$$$image" = "$$$$tag" ]; then image="$$$$mic"; tag="latest"; fi; \
-		sed -e "s/^  default: ic$$$$/  default: ic-dev/" \
-		    -e "s/^      tag: latest$$$$/      tag: latest\n    - name: ic-dev\n      container: $$$$image\n      tag: $$$$tag\n      pull: never/" \
-		    "$(TAILOR_WORKSPACE)" > "$$$$manifest"; \
+		sed_args+=(-e "s/^  default: ic$$$$/  default: ic-dev/" \
+		           -e "s/^      tag: latest$$$$/      tag: latest\n    - name: ic-dev\n      container: $$$$image\n      tag: $$$$tag\n      pull: never/"); \
 	fi; \
+	sed "$$$${sed_args[@]}" "$(TAILOR_WORKSPACE)" > "$$$$manifest"; \
 	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest "$$$$manifest" build $2 $3 --output-dir $(dir $1)
 	@rm -f $(TAILOR_DIR)/.tailor.local.$(subst /,_,$1).yaml
 	@if [ -f $(call tailor_ca_cert_staging_path,$1) ]; then cp $(call tailor_ca_cert_staging_path,$1) "$(dir $1)/ca_cert.pem"; fi
@@ -116,15 +116,16 @@ $(eval $(call declare_tailor_target,artifacts/ubuntu-direct-streaming-testimage-
 $(eval $(call declare_tailor_target,artifacts/ubuntu-direct-streaming-testimage-2404-arm64.cosi,foreign-direct-streaming-testimage,-s arch=arm64 -s source=ubuntu-2404,$(FOREIGN_DIRECT_STREAMING_DEPS) artifacts/ubuntu_2404_arm64.vhdx,artifacts/ubuntu-direct-streaming-testimage-2404-arm64.raw,:))
 $(eval $(call declare_tailor_target,artifacts/gb200-direct-streaming-testimage-2404-arm64.cosi,foreign-direct-streaming-testimage,-s arch=arm64 -s source=gb200-2404,$(FOREIGN_DIRECT_STREAMING_DEPS) artifacts/gb200_2404_arm64.vhdx,artifacts/gb200-direct-streaming-testimage-2404-arm64.raw,:))
 $(eval $(call declare_tailor_target,artifacts/trident-vm-grub-testimage.cosi,trident-vm-testimage,-s arch=amd64 -s scenario=grub,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/qemu_guest.vhdx,artifacts/trident-vm-grub-testimage.cosi,:))
+$(eval $(call declare_tailor_target,artifacts/trident-vm-grub-testimage.qcow2,trident-vm-testimage,-s arch=amd64 -s scenario=grub-base,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/qemu_guest.vhdx,artifacts/trident-vm-grub-testimage.qcow2,:))
 $(eval $(call declare_tailor_target,artifacts/trident-vm-grub-verity-testimage.cosi,trident-vm-testimage,-s arch=amd64 -s scenario=grub-verity,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/qemu_guest.vhdx,artifacts/trident-vm-grub-verity-testimage.cosi,:))
 $(eval $(call declare_tailor_target,artifacts/trident-vm-grub-verity-testimage.qcow2,trident-vm-testimage,-s arch=amd64 -s scenario=grub-verity-base,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/qemu_guest.vhdx,artifacts/trident-vm-grub-verity-testimage.qcow2,:))
 $(eval $(call declare_tailor_target,artifacts/trident-vm-root-verity-testimage.cosi,trident-vm-testimage,-s arch=amd64 -s scenario=root-verity,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/qemu_guest.vhdx,artifacts/trident-vm-root-verity-testimage.cosi,:))
 $(eval $(call declare_tailor_target,artifacts/trident-vm-usr-verity-testimage.cosi,trident-vm-testimage,-s arch=amd64 -s scenario=usr-verity,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/qemu_guest.vhdx,artifacts/trident-vm-usr-verity-testimage.cosi,:))
 $(eval $(call declare_tailor_target,artifacts/trident-vm-usr-verity-testimage.qcow2,trident-vm-testimage,-s arch=amd64 -s scenario=usr-verity,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/qemu_guest.vhdx,artifacts/trident-vm-usr-verity-testimage.qcow2,:))
 $(eval $(call declare_tailor_target,artifacts/trident-vm-acl-agent-update-testimage.cosi,trident-vm-testimage,-s arch=amd64 -s scenario=acl-agent,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/qemu_guest.vhdx,artifacts/trident-vm-acl-agent-update-testimage.cosi,:))
-$(eval $(call declare_tailor_target,artifacts/trident-vm-acl-agent-testimage.qcow2,trident-vm-testimage,-s arch=amd64 -s scenario=acl-agent,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/qemu_guest.vhdx,artifacts/trident-vm-acl-agent-testimage.qcow2,:))
+$(eval $(call declare_tailor_target,artifacts/trident-vm-acl-agent-testimage.qcow2,trident-vm-testimage,-s arch=amd64 -s scenario=acl-agent-base,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/qemu_guest.vhdx,artifacts/trident-vm-acl-agent-testimage.qcow2,:))
 $(eval $(call declare_tailor_target,artifacts/trident-vm-grub-verity-azure-testimage.cosi,trident-vm-testimage,-s arch=amd64 -s scenario=grub-verity-azure,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/core_selinux.vhdx,artifacts/trident-vm-grub-verity-azure-testimage.cosi,:))
-$(eval $(call declare_tailor_target,artifacts/trident-vm-grub-verity-azure-testimage.vhd,trident-vm-testimage,-s arch=amd64 -s scenario=grub-verity-azure,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/core_selinux.vhdx,artifacts/trident-vm-grub-verity-azure-testimage.vhd,:))
+$(eval $(call declare_tailor_target,artifacts/trident-vm-grub-verity-azure-testimage.vhd,trident-vm-testimage,-s arch=amd64 -s scenario=grub-verity-azure-base,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/core_selinux.vhdx,artifacts/trident-vm-grub-verity-azure-testimage.vhd,:))
 $(eval $(call declare_tailor_target,artifacts/trident-vm-grub-testimage-arm64.cosi,trident-vm-testimage,-s arch=arm64 -s scenario=grub,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/core_arm64.vhdx,artifacts/trident-vm-grub-testimage-arm64.cosi,:))
 $(eval $(call declare_tailor_target,artifacts/trident-vm-grub-verity-testimage-arm64.cosi,trident-vm-testimage,-s arch=arm64 -s scenario=grub-verity,$(TRIDENT_VM_TESTIMAGE_DEPS) $(TAILOR_RPM_DEPS) artifacts/core_arm64.vhdx,artifacts/trident-vm-grub-verity-testimage-arm64.cosi,:))
 
