@@ -1,0 +1,10 @@
+name: consumer
+
+base:
+  azureLinux:
+    version: "3.0"
+    variant: minimal-os
+
+config:
+  os:
+    hostname: consumer
