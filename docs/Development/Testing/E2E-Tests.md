@@ -178,6 +178,14 @@ require two images with unique filesystem UUIDs — Trident rejects updates wher
 the new image matches the installed one. Use `--clones 2` to produce two images,
 then rename them into `artifacts/test-image/`.
 
+Several of these image families declare an optional dev-RPM-override source
+(`artifacts/rpm-overrides`) that tailor validates eagerly even when empty;
+create it once before building any of them:
+
+```bash
+mkdir -p artifacts/rpm-overrides
+```
+
 #### Host Runtime Images
 
 ```bash

@@ -215,72 +215,87 @@ steps:
       case "$legacy_name" in
         azl-installer)
           tailor_image=azl-installer
+          tailor_slug=azl-installer_amd64_iso
           artifact_ext=iso
           ;;
         trident-functest)
           tailor_image=trident-functest
+          tailor_slug=trident-functest_amd64_qcow2
           artifact_ext=qcow2
           ;;
         trident-installer)
           tailor_image=trident-installer
+          tailor_slug=trident-installer_amd64_default_iso
           artifact_ext=iso
           selector_args=(-s arch=amd64 -s variant=default)
           ;;
         trident-split-installer)
           tailor_image=trident-installer
+          tailor_slug=trident-installer_amd64_split_iso
           artifact_ext=iso
           selector_args=(-s arch=amd64 -s variant=split)
           ;;
         trident-installer-arm64)
           tailor_image=trident-installer
+          tailor_slug=trident-installer_arm64_default_iso
           artifact_ext=iso
           selector_args=(-s arch=arm64 -s variant=default)
           ;;
         trident-direct-streaming-installer-amd64)
           tailor_image=trident-installer
+          tailor_slug=trident-installer_amd64_direct-streaming_iso
           artifact_ext=iso
           selector_args=(-s arch=amd64 -s variant=direct-streaming)
           ;;
         trident-direct-streaming-installer-arm64)
           tailor_image=trident-installer
+          tailor_slug=trident-installer_arm64_direct-streaming_iso
           artifact_ext=iso
           selector_args=(-s arch=arm64 -s variant=direct-streaming)
           ;;
         trident-container-installer)
           tailor_image=trident-container-installer
+          tailor_slug=trident-container-installer_amd64_iso
           artifact_ext=iso
           ;;
         trident-testimage)
           tailor_image=trident-testimage
+          tailor_slug=trident-testimage_amd64_cosi
           artifact_ext=cosi
           selector_args=(-s arch=amd64)
           ;;
         trident-testimage-arm64)
           tailor_image=trident-testimage
+          tailor_slug=trident-testimage_arm64_cosi
           artifact_ext=cosi
           selector_args=(-s arch=arm64)
           ;;
         trident-container-testimage)
           tailor_image=trident-container-testimage
+          tailor_slug=trident-container-testimage_amd64_cosi
           artifact_ext=cosi
           ;;
         trident-verity-testimage)
           tailor_image=trident-verity-testimage
+          tailor_slug=trident-verity-testimage_host_root_amd64_cosi
           artifact_ext=cosi
           selector_args=(-s deployment=host -s mode=root)
           ;;
         trident-container-verity-testimage)
           tailor_image=trident-verity-testimage
+          tailor_slug=trident-verity-testimage_container_root_amd64_cosi
           artifact_ext=cosi
           selector_args=(-s deployment=container -s mode=root)
           ;;
         trident-usrverity-testimage)
           tailor_image=trident-verity-testimage
+          tailor_slug=trident-verity-testimage_host_usr_amd64_cosi
           artifact_ext=cosi
           selector_args=(-s deployment=host -s mode=usr)
           ;;
         trident-container-usrverity-testimage)
           tailor_image=trident-verity-testimage
+          tailor_slug=trident-verity-testimage_container_usr_amd64_cosi
           artifact_ext=cosi
           selector_args=(-s deployment=container -s mode=usr)
           ;;
@@ -314,9 +329,15 @@ steps:
 
       if [[ ${{ parameters.clones }} -gt 1 ]]; then
         for ((i=0; i<${{ parameters.clones }}; i++)); do
-          mv "$(ob_outputDirectory)/${legacy_name}_clone${i}.${artifact_ext}" \
+          mv "$(ob_outputDirectory)/${tailor_slug}_clone${i}.${artifact_ext}" \
              "$(ob_outputDirectory)/${legacy_name}_${i}.${artifact_ext}"
         done
+      else
+        # Tailor publishes under the cell's slug, not the legacy name; map it here so every
+        # downstream step (and any consumer outside this template) keeps seeing the stable
+        # legacy filename regardless of how tailor names the cell internally.
+        mv "$(ob_outputDirectory)/${tailor_slug}.${artifact_ext}" \
+           "$(ob_outputDirectory)/${legacy_name}.${artifact_ext}"
       fi
 
       if [ -f tests/tailor-images/artifacts/ca_cert.pem ]; then
