@@ -39,8 +39,6 @@ pub struct FingerprintInputs<'a> {
     pub compression: Option<Compression>,
     /// COSI compression level (`--cosi-compression-level`); a change rebuilds the COSI.
     pub cosi_compression_level: Option<u8>,
-    /// Published artifact basename override from `outputs[].name`; a change rebuilds the cell.
-    pub output_name: Option<&'a str>,
     /// Effective signing profile id (`meta/docs/2026-06-29-signing.md` §4); a change -- including
     /// unsigned-to-signed or a profile swap -- rebuilds the cell so an unsigned artifact isn't
     /// silently reused once signing is requested.
@@ -106,9 +104,6 @@ pub fn fingerprint(inputs: &FingerprintInputs<'_>) -> Fingerprint {
     if let Some(level) = inputs.cosi_compression_level {
         field(&mut hasher, b"cosi-compression-level", &[level]);
     }
-    if let Some(name) = inputs.output_name {
-        field(&mut hasher, b"output.name", name.as_bytes());
-    }
     if let Some(profile) = inputs.signing_profile {
         field(&mut hasher, b"signing.profile", profile.as_bytes());
     }
@@ -166,7 +161,6 @@ mod tests {
             extra_params: &[],
             compression: None,
             cosi_compression_level: None,
-            output_name: None,
             signing_profile: None,
         }
     }
@@ -263,22 +257,6 @@ mod tests {
         let mut level_two = inputs("cell", &cfg, &base);
         level_two.cosi_compression_level = Some(2);
         assert_ne!(fingerprint(&level_one), fingerprint(&level_two));
-    }
-
-    #[test]
-    fn output_name_changes_fingerprint() {
-        let base = base();
-        let cfg: Value = serde_yaml_ng::from_str(
-            "os:
-  hostname: a
-",
-        )
-        .unwrap();
-        let mut a = inputs("cell", &cfg, &base);
-        a.output_name = Some("legacy-name");
-        let mut b = inputs("cell", &cfg, &base);
-        b.output_name = Some("other-name");
-        assert_ne!(fingerprint(&a), fingerprint(&b));
     }
 
     #[test]

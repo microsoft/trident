@@ -1429,7 +1429,6 @@ fn convert_cell(input: &Path, dir: &Path, arch: Arch, format: OutputFormat, slug
     };
     let output = OutputSpec {
         format,
-        name: None,
         cosi_compression_level: None,
         compression: None,
     };
@@ -1618,6 +1617,10 @@ async fn build(
     let clones = args.clones.max(1);
     let mut built = 0usize;
     let mut selected_cells = 0usize;
+    // Threaded across every per-node `plan()` call below (not reset each iteration) so a collision
+    // between two different targets' output paths is still caught -- a map scoped to one call only
+    // sees that target's own cells (`orchestrator.rs::plan`).
+    let mut seen_artifacts = BTreeMap::new();
     for node in &ordered {
         let plan = orchestrator
             .plan(
@@ -1630,6 +1633,7 @@ async fn build(
                 &build_selection,
                 &output_dir,
                 Some(&base_hash_cache_dir),
+                &mut seen_artifacts,
             )
             .await?;
         selected_cells += plan.cells.len();
@@ -1708,14 +1712,15 @@ async fn clean(
                     .ok()
                     .flatten()
                     .is_some();
-            let name =
-                tailor_core::output_name(cell.slug.as_ref(), cell.output.name.as_deref(), None);
-            paths.push(output_dir.join(tailor_core::artifact_name(&name, cell.output.format)));
+            paths.push(output_dir.join(tailor_core::artifact_name(
+                cell.slug.as_ref(),
+                cell.output.format,
+            )));
             // A compressed artifact publishes under its own post-compression filename; make sure
-            // `clean` also knows about the compressed form for custom-named outputs.
+            // `clean` also knows about the compressed form.
             if cell.output.compression.is_some() {
                 paths.push(output_dir.join(tailor_core::published_artifact_name(
-                    &name,
+                    cell.slug.as_ref(),
                     cell.output.format,
                     cell.output.compression,
                 )));
@@ -2185,7 +2190,6 @@ fn build_targets(workspace: &Workspace, names: &[String]) -> Result<Vec<Arc<Targ
     let default_outputs = defaults
         .and_then(|d| d.outputs.clone())
         .unwrap_or_else(default_cosi);
-    validate_default_output_names(&default_outputs)?;
     let default_output_artifacts = defaults
         .and_then(|d| d.output_artifacts)
         .unwrap_or_default();
@@ -2238,39 +2242,10 @@ pub(crate) fn init_timestamps(mode: TimestampMode) {
     let _ = TIMESTAMP_MODE.set(mode);
 }
 
-/// Workspace-level `defaults.outputs` bypasses the per-cell `render_cell` validation (image-level
-/// outputs are checked there, after `${axis}` interpolation, via `validate_output_name`); an
-/// inherited default never goes through that path, so check the same structural contract here.
-/// (`${arch}`-style placeholders in a default name are not interpolated by this check -- a cell
-/// that actually inherits an unrendered default still surfaces the placeholder verbatim in its
-/// published filename, which is a visible correctness bug but not the directory-escape risk this
-/// guards against.)
-fn validate_default_output_names(outputs: &[OutputSpec]) -> Result<(), AppError> {
-    for output in outputs {
-        let Some(name) = &output.name else {
-            continue;
-        };
-        let mut components = std::path::Path::new(name).components();
-        let is_single_normal_component = matches!(
-            (components.next(), components.next()),
-            (Some(std::path::Component::Normal(_)), None)
-        );
-        let has_separator = name.contains(std::path::MAIN_SEPARATOR) || name.contains('/');
-        if name.is_empty() || has_separator || !is_single_normal_component {
-            return Err(AppError::Message(format!(
-                "workspace `defaults.outputs[].name` `{name}` must be a single normal filename \
-                 component (non-empty, no `..`, no path separators)"
-            )));
-        }
-    }
-    Ok(())
-}
-
 /// The built-in default output (`cosi`) when neither the image nor the workspace declares one.
 fn default_cosi() -> Vec<OutputSpec> {
     vec![OutputSpec {
         format: OutputFormat::Cosi,
-        name: None,
         cosi_compression_level: None,
         compression: None,
     }]
@@ -3034,27 +3009,6 @@ toolsDirSources:
             err.to_string().contains(
                 "toolchain `ic` local image is `amd64` but cell `gizmo_lite_arm64_stable_cosi` targets `arm64`"
             ),
-            "got {err:?}"
-        );
-    }
-
-    #[test]
-    fn build_targets_rejects_an_unsafe_workspace_default_output_name() {
-        // Workspace-level `defaults.outputs` bypasses render_cell's own per-cell
-        // `validate_output_name` (that only runs over image-level outputs, after
-        // `${axis}` interpolation), so build_targets must apply the same structural
-        // check itself to close the directory-escape gap.
-        let workspace = discover(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests")
-                .join("fixtures")
-                .join("defaults-bad-output-name"),
-        )
-        .unwrap();
-        let err = build_targets(&workspace, &[]).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("defaults.outputs[].name` `escape/attempt` must be a single normal"),
             "got {err:?}"
         );
     }
