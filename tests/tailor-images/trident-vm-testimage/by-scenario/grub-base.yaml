@@ -1,0 +1,57 @@
+# Base (qcow2) counterpart to grub.yaml, matching the pre-migration
+# baseimg-grub.yaml / updateimg-grub.yaml split: the base image is a
+# dual-slot A/B layout (storage-grub.yaml, unchanged), while the cosi
+# update target uses a single slot (storage-grub-update.yaml).
+outputs:
+  $replace:
+    - format: qcow2
+      name: trident-vm-grub-testimage
+config:
+  storage:
+    $include: ./include/storage-grub.yaml
+  os:
+    bootloader:
+      resetType: hard-reset
+    hostname: trident-vm-testimg
+    selinux:
+      mode: disabled
+    kernelCommandLine:
+      extraCommandLine:
+        - console=tty0
+        - console=tty1
+        - console=ttyS0
+        - rd.debug
+        - loglevel=6
+        - log_buf_len=1M
+        - systemd.journald.forward_to_console=1
+    packages:
+      install:
+        - dnf
+        - efibootmgr
+        - grub2-efi-binary
+        - iproute
+        - iptables
+        - jq
+        - openssh-server
+        - trident-service
+        - vim
+        - netplan
+    services:
+      enable:
+        - tridentd.socket
+    users:
+      - name: testuser
+        sshPublicKeyPaths:
+          - base/files/id_rsa.pub
+        secondaryGroups:
+          - wheel
+    additionalFiles:
+      - source: base/files/sshd-keygen.service
+        destination: /usr/lib/systemd/system/sshd-keygen.service
+      - source: base/files/99-dhcp-eth0.network
+        destination: /etc/systemd/network/99-dhcp-eth0.network
+      - source: ../common/files/sudoers-wheel
+        destination: /etc/sudoers.d/wheel
+  scripts:
+    postCustomization:
+      - $include: ./include/grub-base-scripts.yaml

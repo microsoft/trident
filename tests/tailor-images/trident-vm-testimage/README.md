@@ -47,5 +47,5 @@ To build the update images, run:
 | Image type | Make command | Output path |
 | ---------- | ------------ | ----------- |
 | Regular | `make trident-vm-grub-testimage` | `artifacts/trident-vm-grub-testimage/*` |
-| With verity | `make trident-vm-grub-verity-testimage` | `artifacts/trident-vm-grub-testimage/*` |
+| With verity | `make trident-vm-grub-verity-testimage` | `artifacts/trident-vm-grub-verity-testimage/*` |
 | ACL-agent UKI usr-verity | `make artifacts/trident-vm-acl-agent-update-testimage.cosi` | `artifacts/trident-vm-acl-agent-update-testimage.cosi` |
