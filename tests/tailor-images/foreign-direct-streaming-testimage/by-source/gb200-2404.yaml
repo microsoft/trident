@@ -5,4 +5,3 @@ base:
 outputs:
   $replace:
     - format: baremetal-image
-      name: gb200-direct-streaming-testimage-2404-arm64

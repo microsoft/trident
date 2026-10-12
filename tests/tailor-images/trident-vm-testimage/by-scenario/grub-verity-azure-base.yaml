@@ -7,7 +7,6 @@
 outputs:
   $replace:
     - format: vhd-fixed
-      name: trident-vm-grub-verity-azure-testimage
 base:
   $set:
     ref: core_selinux
@@ -15,8 +14,6 @@ config:
   storage:
     $include: ./include/storage-grub-verity-base.yaml
   os:
-    hostname:
-      $set: trident-vm-testimg
     selinux:
       mode:
         $set: permissive

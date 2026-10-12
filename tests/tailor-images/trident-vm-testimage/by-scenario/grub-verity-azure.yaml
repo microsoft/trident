@@ -1,7 +1,6 @@
 outputs:
   $replace:
     - format: cosi
-      name: trident-vm-grub-verity-azure-testimage
 base:
   $set:
     ref: core_selinux

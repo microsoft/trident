@@ -1,9 +1,7 @@
 outputs:
   $replace:
     - format: cosi
-      name: trident-vm-usr-verity-testimage
     - format: qcow2
-      name: trident-vm-usr-verity-testimage
 config:
   storage:
     $include: ./include/storage-usr-verity.yaml
