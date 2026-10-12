@@ -302,6 +302,8 @@ steps:
 
       rm -f tests/tailor-images/artifacts/ca_cert.pem
       cargo run --manifest-path tools/tailor/Cargo.toml --quiet -- \
+        -vvv \
+        --log-dir $(ob_outputDirectory)/tailor-logs \
         --manifest "$manifest_path" \
         build "$tailor_image" \
         "${selector_args[@]}" \
