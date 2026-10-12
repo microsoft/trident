@@ -4,4 +4,3 @@ base:
 outputs:
   $replace:
     - format: cosi
-      name: trident-vm-grub-testimage-arm64

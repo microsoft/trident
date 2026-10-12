@@ -4,4 +4,3 @@ base:
 outputs:
   $replace:
     - format: iso
-      name: trident-installer-arm64

@@ -1,7 +1,6 @@
 outputs:
   $replace:
     - format: cosi
-      name: trident-vm-root-verity-testimage
 
 config:
   storage:

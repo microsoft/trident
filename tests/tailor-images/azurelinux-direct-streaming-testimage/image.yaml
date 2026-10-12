@@ -8,7 +8,6 @@ base:
 
 outputs:
   - format: baremetal-image
-    name: "azurelinux-direct-streaming-testimage-${arch}"
 
 rpmSources:
   - ../../../bin/RPMS

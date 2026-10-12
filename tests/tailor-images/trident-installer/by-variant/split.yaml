@@ -1,7 +1,6 @@
 outputs:
   $replace:
     - format: iso
-      name: trident-split-installer
 
 config:
   os:

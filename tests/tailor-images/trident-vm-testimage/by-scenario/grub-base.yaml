@@ -5,7 +5,6 @@
 outputs:
   $replace:
     - format: qcow2
-      name: trident-vm-grub-testimage
 config:
   storage:
     $include: ./include/storage-grub.yaml

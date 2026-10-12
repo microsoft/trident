@@ -5,7 +5,6 @@ base:
 
 outputs:
   - format: iso
-    name: trident-container-installer
 
 extraDependencies:
   - ./base
