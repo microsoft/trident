@@ -538,7 +538,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: target/release/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/tailor-images|tests/azl-installer)'))
+	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/tailor-images|tests/images|tests/azl-installer)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
@@ -640,6 +640,32 @@ validate: $(TRIDENT_CONFIG) target/release/trident
 	@target/release/trident validate $(TRIDENT_CONFIG) -v info
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
+
+# MIC_CONTAINER_IMAGE is defined (with a default) in tests/tailor-images/targets.mk,
+# included above; override it to build against a dev imagecustomizer, same as
+# the tailor-backed targets.
+bin/trident-mos.iso: \
+	artifacts/baremetal.vhdx \
+	packaging/systemd/trident-install.service \
+	tests/images/trident-mos/iso.yaml \
+	tests/images/trident-mos/files/* \
+	tests/images/trident-mos/post-install.sh \
+	packaging/selinux-policy-trident/* \
+	tools/cmd/rcp-agent/rcp-agent.service \
+	bin/rcp-agent
+	@echo "Rebuilding Trident MOS ISO: $@ from $< because of: $?"
+	@mkdir -p bin
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+		--log-level=debug \
+		--build-dir /build \
+		--image-file /repo/$< \
+		--output-image-file /repo/$@ \
+		--config-file /repo/tests/images/trident-mos/iso.yaml \
+		--output-image-format iso
 
 input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input

@@ -1,19 +1,29 @@
 CARGO_TAILOR ?= $(if $(shell command -v cargo 2>/dev/null),cargo,$(HOME)/.cargo/bin/cargo)
 TAILOR_DIR := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
 TAILOR_WORKSPACE := $(TAILOR_DIR)/tailor.yaml
-TAILOR_RPM_DEPS := bin/RPMS $(shell find bin/RPMS -name '*.rpm' 2>/dev/null)
+
+# Matches tailor.yaml's default `ic` toolchain entry. Also used directly by
+# bin/trident-mos.iso (see root Makefile). Override to build against a dev
+# imagecustomizer; only overridden values trigger the toolchain swap below.
+TAILOR_DEFAULT_IC_IMAGE := mcr.microsoft.com/azurelinux/imagecustomizer:latest
+MIC_CONTAINER_IMAGE ?= $(TAILOR_DEFAULT_IC_IMAGE)
+TAILOR_RPM_DEPS := bin/RPMS $(shell find bin/RPMS -name '*.rpm' 2>/dev/null) artifacts/rpm-overrides
 VM_IMAGE_PATH_PREFIX := $(TAILOR_DIR)/trident-vm-testimage/base
 
-TRIDENT_INSTALLER_DEPS := $(shell find $(TAILOR_DIR)/trident-installer -type f 2>/dev/null)
-TRIDENT_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-testimage -type f 2>/dev/null)
-TRIDENT_VERITY_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-verity-testimage -type f 2>/dev/null)
-TRIDENT_CONTAINER_INSTALLER_DEPS := $(shell find $(TAILOR_DIR)/trident-container-installer -type f 2>/dev/null)
-TRIDENT_CONTAINER_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-container-testimage -type f 2>/dev/null)
+# Shared files under common/ are referenced (via extraDependencies) by every
+# family below; depend on them everywhere so edits there trigger a rebuild.
+TAILOR_COMMON_DEPS := $(shell find $(TAILOR_DIR)/common -type f 2>/dev/null)
+
+TRIDENT_INSTALLER_DEPS := $(shell find $(TAILOR_DIR)/trident-installer -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-testimage -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_VERITY_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-verity-testimage -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_CONTAINER_INSTALLER_DEPS := $(shell find $(TAILOR_DIR)/trident-container-installer -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_CONTAINER_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-container-testimage -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
 TRIDENT_FUNCTEST_DEPS := $(shell find $(TAILOR_DIR)/trident-functest -type f 2>/dev/null)
 AZL_INSTALLER_TAILOR_DEPS := $(shell find $(AZL_INSTALLER_DIR) -type f 2>/dev/null)
-AZURELINUX_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/azurelinux-direct-streaming-testimage -type f 2>/dev/null)
+AZURELINUX_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/azurelinux-direct-streaming-testimage -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
 FOREIGN_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/foreign-direct-streaming-testimage -type f 2>/dev/null)
-TRIDENT_VM_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-vm-testimage -type f 2>/dev/null) $(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub
+TRIDENT_VM_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-vm-testimage -type f 2>/dev/null) $(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub $(TAILOR_COMMON_DEPS)
 
 COSI_TARGETS = \
 	trident-testimage \
@@ -56,14 +66,30 @@ azl-installer: $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso
 all-cosi: $(COSI_TARGETS)
 all-iso: $(ISO_TARGETS)
 
+# Per-target, not shared: avoids `make -j` races where two in-flight builds
+# would otherwise stomp on the same staging path (row 20).
+define tailor_ca_cert_staging_path
+$(TAILOR_DIR)/artifacts/ca_cert.$(subst /,_,$1).pem
+endef
+
 define declare_tailor_target
 $1: $(TAILOR_WORKSPACE) $4
 	@echo "Building '$$(@F)' [$@]"
 	@echo "Prerequisites:"
 	@echo "$$^" | tr ' ' '\n' | sed 's/^/    /'
-	rm -f $(TAILOR_DIR)/artifacts/ca_cert.pem
-	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest $(TAILOR_WORKSPACE) build $2 $3 --output-dir $(dir $1)
-	@if [ -f $(TAILOR_DIR)/artifacts/ca_cert.pem ]; then cp $(TAILOR_DIR)/artifacts/ca_cert.pem "$(dir $1)/ca_cert.pem"; fi
+	rm -f $(call tailor_ca_cert_staging_path,$1)
+	@manifest="$(TAILOR_WORKSPACE)"; \
+	if [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
+		manifest="$(TAILOR_DIR)/.tailor.local.$(subst /,_,$1).yaml"; \
+		mic="$(MIC_CONTAINER_IMAGE)"; image="$$$${mic%:*}"; tag="$$$${mic##*:}"; \
+		if [ "$$$$image" = "$$$$tag" ]; then image="$$$$mic"; tag="latest"; fi; \
+		sed -e "s/^  default: ic$$$$/  default: ic-dev/" \
+		    -e "s/^      tag: latest$$$$/      tag: latest\n    - name: ic-dev\n      container: $$$$image\n      tag: $$$$tag\n      pull: never/" \
+		    "$(TAILOR_WORKSPACE)" > "$$$$manifest"; \
+	fi; \
+	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest "$$$$manifest" build $2 $3 --output-dir $(dir $1)
+	@rm -f $(TAILOR_DIR)/.tailor.local.$(subst /,_,$1).yaml
+	@if [ -f $(call tailor_ca_cert_staging_path,$1) ]; then cp $(call tailor_ca_cert_staging_path,$1) "$(dir $1)/ca_cert.pem"; fi
 	@if [ "$1" != "$5" ]; then cp "$5" "$1"; fi
 	@$6
 endef
