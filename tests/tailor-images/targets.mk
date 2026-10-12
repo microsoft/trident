@@ -79,14 +79,15 @@ $1: $(TAILOR_WORKSPACE) $4
 	@echo "$$^" | tr ' ' '\n' | sed 's/^/    /'
 	rm -f $(call tailor_ca_cert_staging_path,$1)
 	@manifest="$(TAILOR_DIR)/.tailor.local.$(subst /,_,$1).yaml"; \
-	sed_args=(-e 's@^      publishCaCert: \./artifacts/ca_cert\.pem$$$$@      publishCaCert: ./artifacts/ca_cert.$(subst /,_,$1).pem@'); \
+	sed -e 's@^      publishCaCert: \./artifacts/ca_cert\.pem$$$$@      publishCaCert: ./artifacts/ca_cert.$(subst /,_,$1).pem@' \
+	    "$(TAILOR_WORKSPACE)" > "$$$$manifest"; \
 	if [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
 		mic="$(MIC_CONTAINER_IMAGE)"; image="$$$${mic%:*}"; tag="$$$${mic##*:}"; \
 		if [ "$$$$image" = "$$$$tag" ]; then image="$$$$mic"; tag="latest"; fi; \
-		sed_args+=(-e "s/^  default: ic$$$$/  default: ic-dev/" \
-		           -e "s/^      tag: latest$$$$/      tag: latest\n    - name: ic-dev\n      container: $$$$image\n      tag: $$$$tag\n      pull: never/"); \
+		sed -e "s/^  default: ic$$$$/  default: ic-dev/" \
+		    -e "s/^      tag: latest$$$$/      tag: latest\n    - name: ic-dev\n      container: $$$$image\n      tag: $$$$tag\n      pull: never/" \
+		    "$$$$manifest" > "$$$$manifest.tmp" && mv "$$$$manifest.tmp" "$$$$manifest"; \
 	fi; \
-	sed "$$$${sed_args[@]}" "$(TAILOR_WORKSPACE)" > "$$$$manifest"; \
 	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest "$$$$manifest" build $2 $3 --output-dir $(dir $1)
 	@rm -f $(TAILOR_DIR)/.tailor.local.$(subst /,_,$1).yaml
 	@if [ -f $(call tailor_ca_cert_staging_path,$1) ]; then cp $(call tailor_ca_cert_staging_path,$1) "$(dir $1)/ca_cert.pem"; fi
