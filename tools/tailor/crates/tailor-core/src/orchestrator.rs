@@ -89,6 +89,11 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
 
     /// Plan a build: render and resolve every selected cell of every target, fingerprint it, and
     /// decide whether it is up to date against its build stamp.
+    ///
+    /// `seen_artifacts` accumulates claimed output paths across *every* call for a build run (the
+    /// caller plans one node at a time, `run.rs`'s per-node scheduling loop) -- a map scoped to a
+    /// single call only catches collisions within one target, not across the whole dependency
+    /// closure, letting two different images silently publish to the same path.
     #[allow(
         clippy::too_many_arguments,
         reason = "planning needs config, lock, pre-resolved images, selection, and output root"
@@ -104,9 +109,9 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
         selection: &BuildSelection<'_>,
         output_dir: &Path,
         hash_cache_dir: Option<&Path>,
+        seen_artifacts: &mut BTreeMap<PathBuf, String>,
     ) -> Result<BuildPlan, CoreError> {
         let mut planned = Vec::new();
-        let mut seen_artifacts: BTreeMap<PathBuf, String> = BTreeMap::new();
         for target in targets {
             let (toolchain_id, toolchain) = toolchain_for(target, tool)?;
             let resolved_toolchain = resolved_toolchain(toolchains, &toolchain_id, &toolchain)?;
@@ -187,22 +192,32 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     extra_params: &cell.extra_params,
                     compression: cell.output.compression,
                     cosi_compression_level: cell.output.cosi_compression_level,
-                    output_name: cell.output.name.as_deref(),
                     signing_profile: signing_profile.as_deref(),
                 });
                 let artifact = output_dir.join(published_artifact_name(
-                    &output_name(cell.slug.as_ref(), cell.output.name.as_deref(), None),
+                    cell.slug.as_ref(),
                     cell.output.format,
                     cell.output.compression,
                 ));
-                if let Some(first_slug) =
-                    seen_artifacts.insert(artifact.clone(), cell.slug.to_string())
+                // Claim both the final published path and the uncompressed path Image Customizer
+                // actually writes: with the same slug/format, a compressed and an uncompressed
+                // output both execute through the same IC-written `artifact_name`, so checking only
+                // the (possibly different) published path misses that collision.
+                let written =
+                    output_dir.join(artifact_name(cell.slug.as_ref(), cell.output.format));
+                for claim in [artifact.clone(), written]
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
                 {
-                    return Err(CoreError::DuplicateOutputPath {
-                        path: artifact,
-                        first: first_slug,
-                        second: cell.slug.to_string(),
-                    });
+                    if let Some(first_slug) =
+                        seen_artifacts.insert(claim.clone(), cell.slug.to_string())
+                    {
+                        return Err(CoreError::DuplicateOutputPath {
+                            path: claim,
+                            first: first_slug,
+                            second: cell.slug.to_string(),
+                        });
+                    }
                 }
                 let up_to_date =
                     stamp::is_up_to_date(output_dir, cell.slug.as_ref(), print, &artifact);
@@ -918,17 +933,6 @@ pub fn output_slug(slug: &str, clone_index: Option<u32>) -> String {
     }
 }
 
-/// The published artifact basename for a build run: either the explicit `outputs[].name` override
-/// or the cell slug, with the clone suffix applied when building `--clones`.
-#[must_use]
-pub fn output_name(slug: &str, override_name: Option<&str>, clone_index: Option<u32>) -> String {
-    let base = override_name.unwrap_or(slug);
-    match clone_index {
-        Some(clone) => format!("{base}_clone{clone}"),
-        None => base.to_owned(),
-    }
-}
-
 /// The artifact filename for a published basename + format (a directory for `pxe-dir`). This is
 /// what Image Customizer writes — the **uncompressed** name; see [`published_artifact_name`] for the
 /// final artifact tailor publishes when `compression:` is set.
@@ -993,27 +997,6 @@ mod tests {
         assert_eq!(
             published_artifact_name(&output_slug("img", Some(1)), OutputFormat::Cosi, None),
             "img_clone1.cosi"
-        );
-    }
-
-    #[test]
-    fn output_name_prefers_explicit_names_and_suffixes_clones() {
-        assert_eq!(output_name("img_amd64_cosi", None, None), "img_amd64_cosi");
-        assert_eq!(
-            output_name("img_amd64_cosi", Some("legacy-name"), None),
-            "legacy-name"
-        );
-        assert_eq!(
-            output_name("img_amd64_cosi", Some("legacy-name"), Some(1)),
-            "legacy-name_clone1"
-        );
-        assert_eq!(
-            published_artifact_name(
-                &output_name("img_amd64_cosi", Some("legacy-name"), Some(1)),
-                OutputFormat::Cosi,
-                None,
-            ),
-            "legacy-name_clone1.cosi"
         );
     }
 
@@ -1136,6 +1119,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap();
@@ -1200,6 +1184,7 @@ mod tests {
                     &BuildSelection::from_selector(&Selector::default()),
                     out.path(),
                     None,
+                    &mut BTreeMap::new(),
                 )
                 .await
                 .unwrap()
@@ -1258,6 +1243,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 TempDir::new().unwrap().path(),
                 None,
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap_err();
@@ -1286,6 +1272,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap();
@@ -1325,6 +1312,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap();
@@ -1397,7 +1385,6 @@ mod tests {
             dir: tmp.path().to_path_buf(),
             default_outputs: vec![OutputSpec {
                 format: OutputFormat::Cosi,
-                name: None,
                 cosi_compression_level: None,
                 compression: None,
             }],
@@ -1540,7 +1527,6 @@ mod tests {
             dir: tmp.path().to_path_buf(),
             default_outputs: vec![OutputSpec {
                 format: OutputFormat::Cosi,
-                name: None,
                 cosi_compression_level: None,
                 compression: None,
             }],
@@ -1698,6 +1684,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap_err();
@@ -1791,6 +1778,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap();

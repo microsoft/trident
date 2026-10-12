@@ -185,7 +185,8 @@ pub enum CoreError {
     CompressedImageBase { image: String, dependency: String },
 
     #[error(
-        "cells `{first}` and `{second}` both publish to `{}` -- give one an explicit `outputs[].name`",
+        "cells `{first}` and `{second}` both publish to `{}` -- give the cells distinct matrix \
+         axis values (or format/compression) so their slugs no longer collide",
         .path.display()
     )]
     DuplicateOutputPath {

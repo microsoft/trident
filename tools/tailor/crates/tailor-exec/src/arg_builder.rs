@@ -4,9 +4,7 @@ use std::{
 };
 
 use tailor_config::{Access, BaseSource, ExtraParam, Operation};
-use tailor_core::{
-    Cell, ExecError, ExecutionContext, RuntimeConfig, artifact_name, output_name, output_slug,
-};
+use tailor_core::{Cell, ExecError, ExecutionContext, RuntimeConfig, artifact_name, output_slug};
 
 use crate::{guard, path_translate, working_copy};
 
@@ -269,11 +267,7 @@ pub(crate) fn intermediate_path(cell: &Cell, context: &ExecutionContext) -> Path
     context.output_dir.join(format!("{slug}.intermediate.raw"))
 }
 pub(crate) fn artifact_path(cell: &Cell, context: &ExecutionContext) -> PathBuf {
-    let name = output_name(
-        cell.slug.as_ref(),
-        cell.output.name.as_deref(),
-        context.clone_index,
-    );
+    let name = output_slug(cell.slug.as_ref(), context.clone_index);
     context
         .output_dir
         .join(artifact_name(&name, cell.output.format))
@@ -1289,7 +1283,6 @@ mod tests {
             arch: Arch::Amd64,
             output: OutputSpec {
                 format: OutputFormat::Cosi,
-                name: None,
                 cosi_compression_level: Some(7),
                 compression: None,
             },

@@ -13,7 +13,7 @@ use tailor_config::{Compression, OutputArtifactsPolicy, OutputFormat};
 use tailor_core::{
     Cell, ContainerConfig, ContainerResult, ContainerRuntime, ExecError, ExecutionContext,
     ExecutionResult, Executor, RuntimeConfig, Signer, SigningPlan, ToolsDirPlan, artifact_name,
-    atomic, output_name, output_slug, published_artifact_name,
+    atomic, output_slug, published_artifact_name,
 };
 
 use crate::{arg_builder, guard, janitor, output_artifacts, rpm_farm, working_copy};
@@ -49,12 +49,8 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
         // Image Customizer writes the uncompressed artifact; when `compression:` is set, tailor
         // compresses it into `published_path` after the build (`ic_output_path` is then removed).
         // The published artifact name carries the clone index, so each `--clones` run still yields
-        // a distinct file even when `outputs[].name` overrides the basename.
-        let out_name = output_name(
-            cell.slug.as_ref(),
-            cell.output.name.as_deref(),
-            context.clone_index,
-        );
+        // a distinct file.
+        let out_name = output_slug(cell.slug.as_ref(), context.clone_index);
         let ic_output_path = context
             .output_dir
             .join(artifact_name(&out_name, cell.output.format));
@@ -793,7 +789,6 @@ mod tests {
             arch: Arch::Amd64,
             output: OutputSpec {
                 format: OutputFormat::Cosi,
-                name: None,
                 cosi_compression_level: None,
                 compression: None,
             },

@@ -124,7 +124,14 @@ pub fn merge_plan(
         .map(|f| MergeStep {
             label: f.label.clone(),
             reason: f.reason(),
-            includes: collect_includes(f.doc.config.as_ref()),
+            // `base:` fragments can `$include` a shared snippet too (`resolve_base` below), so the
+            // explain plan must report those targets alongside `config:`'s, or it silently omits
+            // whichever base the fragment actually spliced in.
+            includes: {
+                let mut includes = collect_includes(f.doc.config.as_ref());
+                includes.extend(collect_includes(f.doc.base.as_ref()));
+                includes
+            },
         })
         .collect())
 }
@@ -196,7 +203,6 @@ fn render_cell(
     let outputs = resolve_outputs(image, &tuple, &matched, &context)?;
     for output in &outputs {
         validate_output_compression(image, &tuple, output)?;
-        validate_output_name(image, &tuple, output)?;
     }
     let rpm_sources = matched
         .iter()
@@ -377,41 +383,6 @@ fn validate_output_compression(
     }
     Ok(())
 }
-
-/// `outputs[].name` is published as a basename under the output directory
-/// (`<output_dir>/<name>.<ext>`), so it must be a single normal filename component: non-empty, no
-/// `..`, and no path separators. Otherwise a crafted name could write/overwrite a file outside the
-/// output directory.
-fn validate_output_name(
-    image: &ImageDefinition,
-    tuple: &AxisTuple,
-    output: &OutputSpec,
-) -> Result<(), ConfigError> {
-    let Some(name) = &output.name else {
-        return Ok(());
-    };
-    // `Path::components()` normalizes away repeated/trailing separators (e.g. `foo/`, `foo//`,
-    // `foo/./` all collapse to a single `Normal("foo")` component), so it alone can't reject a
-    // name containing separator characters; check the raw string too.
-    let mut components = Path::new(name).components();
-    let is_single_normal_component = matches!(
-        (components.next(), components.next()),
-        (Some(std::path::Component::Normal(_)), None)
-    );
-    let has_separator = name.contains(std::path::MAIN_SEPARATOR) || name.contains('/');
-    if name.is_empty() || has_separator || !is_single_normal_component {
-        return Err(ConfigError::InvalidField {
-            slug: slug(image, tuple),
-            field: OUTPUTS_FIELD,
-            detail: format!(
-                "name `{name}` must be a single normal filename component (non-empty, no `..`, no \
-                 path separators)"
-            ),
-        });
-    }
-    Ok(())
-}
-
 fn deserialize_field<T: DeserializeOwned>(
     value: Value,
     image: &ImageDefinition,
@@ -544,60 +515,38 @@ mod tests {
     }
 
     #[test]
-    fn output_name_parses_static_and_interpolated_values() {
+    fn merge_plan_reports_includes_from_base_as_well_as_config() {
+        // `resolve_base` splices `$include` under `base:` just like `config:` does, so the explain
+        // plan must surface it too -- otherwise `tailor explain` silently omits a library an image
+        // actually depends on.
         let tmp = TempDir::new().unwrap();
         write(
             tmp.path(),
             "image.yaml",
             indoc! {"
-                name: named
+                name: based
                 matrix:
                   arch: [amd64]
                 outputs:
                   - format: cosi
-                    name: legacy-static
-                  - format: raw
-                    name: '${arch}-artifact'
-                base:
-                  path: ./b.img
-                config:
-                  os: { hostname: named }
+                config: {}
             "},
         );
-        let image = load_image(tmp.path().join("image.yaml")).unwrap();
-        let cells = render_image(&image, tmp.path()).unwrap();
-        assert_eq!(cells[0].outputs.len(), 2);
-        assert_eq!(cells[0].outputs[0].name.as_deref(), Some("legacy-static"));
-        assert_eq!(cells[0].outputs[1].name.as_deref(), Some("amd64-artifact"));
-    }
-
-    #[test]
-    fn output_name_rejects_trailing_path_separators() {
-        // `Path::components()` alone normalizes away `foo/`, `foo//`, and `foo/./` into a single
-        // `Normal("foo")` component, so the raw string must also be checked for separators.
-        let tmp = TempDir::new().unwrap();
         write(
             tmp.path(),
-            "image.yaml",
-            indoc! {"
-                name: named
-                matrix:
-                  arch: [amd64]
-                outputs:
-                  - format: cosi
-                    name: 'foo/'
-                base:
-                  path: ./b.img
-                config:
-                  os: { hostname: named }
-            "},
+            "by-arch/amd64.yaml",
+            "base:\n  $include: common/base-amd64.yaml\n",
         );
+        write(tmp.path(), "common/base-amd64.yaml", "path: ./amd64.img\n");
         let image = load_image(tmp.path().join("image.yaml")).unwrap();
-        let err = render_image(&image, tmp.path()).unwrap_err();
-        assert!(
-            err.to_string().contains("single normal filename component"),
-            "unexpected error: {err}"
-        );
+        let mut axes = BTreeMap::new();
+        axes.insert("arch".to_owned(), "amd64".to_owned());
+        let plan = merge_plan(&image, tmp.path(), &axes).unwrap();
+        let step = plan
+            .iter()
+            .find(|step| step.label == "by-arch/amd64.yaml")
+            .expect("by-arch step");
+        assert_eq!(step.includes, vec!["common/base-amd64.yaml".to_owned()]);
     }
 
     #[test]
