@@ -1,0 +1,34 @@
+# Base (qcow2) counterpart to acl-agent.yaml. The real A/B reboot lands on a
+# different root than the one the storm harness SSHes into pre-stage, and
+# /etc/trident + /var/lib/kubelet live on per-root ext4 partitions, so a live
+# "systemctl enable --now" on the old root has no effect on the new one.
+# trident-acl-agent.service is therefore only enabled by default on the
+# cosi (update) counterpart; the qcow2 base image enables it live via SSH
+# during initial deploy.
+outputs:
+  $replace:
+    - format: qcow2
+      name: trident-vm-acl-agent-testimage
+config:
+  storage:
+    $include: ./include/storage-acl-agent.yaml
+  os:
+    hostname: trident-acl-agent-testimg
+    packages:
+      install:
+        $append:
+          - trident-acl
+    additionalFiles:
+      - source: base/files/99-dhcp-eth0.network
+        destination: /etc/systemd/network/99-dhcp-eth0.network
+      - source: ../common/files/sudoers-wheel
+        destination: /etc/sudoers.d/wheel
+      - source: base/files/trident-acl-agent-override.conf
+        destination: /etc/systemd/system/trident-acl-agent.service.d/override.conf
+      - source: base/files/trident-acl-agent-cert-install.service
+        destination: /etc/systemd/system/trident-acl-agent-cert-install.service
+    services:
+      enable:
+        - kdump
+        - tridentd.socket
+        - trident-acl-agent-cert-install.service

@@ -2,11 +2,11 @@ name: trident-vm-testimage
 
 matrix:
   arch: [amd64, arm64]
-  scenario: [grub, grub-verity, grub-verity-base, root-verity, usr-verity, acl-agent, grub-verity-azure]
+  scenario: [grub, grub-verity, grub-verity-base, root-verity, usr-verity, acl-agent, acl-agent-base, grub-verity-azure, grub-verity-azure-base]
 
 selectors:
   exclude:
-    - { arch: arm64, scenario: [grub-verity-base, root-verity, usr-verity, acl-agent, grub-verity-azure] }
+    - { arch: arm64, scenario: [grub-verity-base, root-verity, usr-verity, acl-agent, acl-agent-base, grub-verity-azure, grub-verity-azure-base] }
 
 base:
   ref: qemu_guest
@@ -20,5 +20,6 @@ rpmSources:
 
 extraDependencies:
   - ./base
+  - ../common
 
 config: {}

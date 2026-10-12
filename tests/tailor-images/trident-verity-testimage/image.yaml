@@ -13,5 +13,6 @@ outputs:
 extraDependencies:
   - ./base
   - ./usr
+  - ../common
 
 config: {}

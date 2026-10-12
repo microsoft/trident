@@ -1,7 +1,7 @@
 # Test images with tailor
 
-`tests/tailor-images/` is now a [tailor](../../tools/tailor/README.md) workspace.
-The legacy `testimages.py` / `builder/` flow is removed.
+`tests/tailor-images/` is a [tailor](../../tools/tailor/README.md) workspace.
+It replaces the legacy `testimages.py` / `builder/` flow, which has been removed.
 
 ## Build from the repo root
 
@@ -46,11 +46,7 @@ Ubuntu / GB200 direct-streaming inputs still come from the pipeline-managed blob
 staging flow; those slots are intentionally catalogued without an in-workspace
 remote source.
 
-## Legacy name mapping
-
-Pipelines still accept the historical image names. `tests/tailor-images/legacy-map.json`
-maps each legacy name to the tailor image family, selectors, expected base slot,
-and published artifact extension.
+## Image families
 
 The current families are:
 
