@@ -661,6 +661,68 @@ bin/trident-mos.iso: \
 		--config-file /repo/tests/images/trident-mos/iso.yaml \
 		--output-image-format iso
 
+# Uses the simple E2E test to set up a starter Host Configuration
+.PHONY: starter-configuration
+starter-configuration:
+	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
+	@cp tests/e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
+	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
+	@echo "\033[33mDon't forget to add your SSH public key to the Host Configuration!"
+
+.PHONY: website-clear
+website-clear:
+	cd ./website && \
+		rm -rf ./docs && \
+		rm -rf ./versioned_* && \
+		rm -rf ./versions.json && \
+		rm -rf ./node_modules
+
+.PHONY: website-prereqs
+website-prereqs:
+	cd ./website && npm ci
+
+DOCS_CONTENTS = $(shell find ./docs -type f)
+website/docs: $(DOCS_CONTENTS)
+	rm -rf ./website/docs && \
+		cp -r ./docs ./website
+
+website/versions.json:
+	echo '[]' > website/versions.json
+
+.PHONY: website-build
+website-build: website-prereqs website/docs website/versions.json
+	cd ./website && \
+		npm run build
+
+.PHONY: website-serve
+website-serve: website-build
+	cd ./website && \
+		npm run serve -- --port $(SERVER_PORT)
+
+# Useful if you edit website/docs files in place and want to copy them back to ./docs
+.PHONY: website-reverse
+website-reverse: website/docs
+	rm -rf ./docs
+	cp -r ./website/docs ./
+
+.PHONY: validate-pipeline-website-artifact
+validate-pipeline-website-artifact:
+	if ! which gh > /dev/null; then \
+		sudo apt install gh; \
+	fi
+	$(eval STAGING_DIR := $(shell mktemp -d))
+	cp -r ./website/. $(STAGING_DIR)/
+	rm -rf $(STAGING_DIR)/build && \
+		mkdir -p $(STAGING_DIR)/build
+	$(eval RUN_ID ?= $(shell gh run list --workflow 'Deploy to GitHub Pages' --repo microsoft/trident --json conclusion,databaseId --jq '.[] | select(.conclusion == "success") | .databaseId' | sort -n | tail -n 1))
+	@echo "Downloading GitHub Pages artifact from $(RUN_ID)"
+	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)/build
+	cd $(STAGING_DIR)/build && \
+		tar -xvf ./artifact.tar && \
+		cd $(STAGING_DIR) && \
+		npm install && \
+			npm run serve -- --port $(SERVER_PORT)
+
 input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input
 	ln -vsf "$$(realpath "$<")" $@
