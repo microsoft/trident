@@ -319,3 +319,16 @@ steps:
       fi
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Copy artifacts to output directory"
+
+  # Runs even if "Build Test Image" failed, so IC's full debug/trace log
+  # (-vvv streams it live already; this persists the raw file as a
+  # downloadable artifact too) is still available for diagnosing the failure.
+  - script: |
+      set -ex
+      if [ -d "tests/tailor-images/artifacts/tailor-logs" ]; then
+        mkdir -p "${{ parameters.outputDirectory }}/tailor-logs"
+        sudo cp -rv tests/tailor-images/artifacts/tailor-logs/. "${{ parameters.outputDirectory }}/tailor-logs/"
+      fi
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+    displayName: "Copy tailor logs to output directory"
+    condition: always()
