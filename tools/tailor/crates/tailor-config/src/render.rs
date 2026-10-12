@@ -196,6 +196,7 @@ fn render_cell(
     let outputs = resolve_outputs(image, &tuple, &matched, &context)?;
     for output in &outputs {
         validate_output_compression(image, &tuple, output)?;
+        validate_output_name(image, &tuple, output)?;
     }
     let rpm_sources = matched
         .iter()
@@ -371,6 +372,36 @@ fn validate_output_compression(
                 "compression `{compression}` is not supported for format `{}` (only raw disk-image \
                  formats: vhd, vhd-fixed, vhdx, qcow2, raw, baremetal-image)",
                 output.format
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// `outputs[].name` is published as a basename under the output directory
+/// (`<output_dir>/<name>.<ext>`), so it must be a single normal filename component: non-empty, no
+/// `..`, and no path separators. Otherwise a crafted name could write/overwrite a file outside the
+/// output directory.
+fn validate_output_name(
+    image: &ImageDefinition,
+    tuple: &AxisTuple,
+    output: &OutputSpec,
+) -> Result<(), ConfigError> {
+    let Some(name) = &output.name else {
+        return Ok(());
+    };
+    let mut components = Path::new(name).components();
+    let is_single_normal_component = matches!(
+        (components.next(), components.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    );
+    if name.is_empty() || !is_single_normal_component {
+        return Err(ConfigError::InvalidField {
+            slug: slug(image, tuple),
+            field: OUTPUTS_FIELD,
+            detail: format!(
+                "name `{name}` must be a single normal filename component (non-empty, no `..`, no \
+                 path separators)"
             ),
         });
     }
@@ -781,10 +812,18 @@ mod tests {
   $include: common/base-arm64.yaml
 ",
         );
-        write(tmp.path(), "common/base-amd64.yaml", "path: ./amd64.img
-");
-        write(tmp.path(), "common/base-arm64.yaml", "path: ./arm64.img
-");
+        write(
+            tmp.path(),
+            "common/base-amd64.yaml",
+            "path: ./amd64.img
+",
+        );
+        write(
+            tmp.path(),
+            "common/base-arm64.yaml",
+            "path: ./arm64.img
+",
+        );
 
         let image = load_image(tmp.path().join("image.yaml")).unwrap();
         let cells = render_image(&image, tmp.path()).unwrap();

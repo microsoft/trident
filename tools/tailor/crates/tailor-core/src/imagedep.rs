@@ -21,7 +21,7 @@ use tailor_config::{BaseSource, OutputFormat, render_image};
 use crate::{
     domain::{Cell, Target},
     error::CoreError,
-    orchestrator::{cells, published_artifact_name},
+    orchestrator::{cells, output_name, published_artifact_name},
 };
 
 /// The dependency-closed set of `selected` images: `selected` plus every workspace image reachable
@@ -253,8 +253,9 @@ fn resolve_image_base(
             dependency: image.to_owned(),
         });
     }
+    let name = output_name(matched.slug.as_ref(), matched.output.name.as_deref(), None);
     let path = output_dir.join(published_artifact_name(
-        matched.slug.as_ref(),
+        &name,
         matched.output.format,
         matched.output.compression,
     ));
@@ -276,8 +277,9 @@ fn resolve_image_ref(
     output_dir: &Path,
 ) -> Result<PathBuf, CoreError> {
     let (_producer, matched) = resolve_producer(consumer, image, output, pins, members)?;
+    let published_name = output_name(matched.slug.as_ref(), matched.output.name.as_deref(), None);
     let name = published_artifact_name(
-        matched.slug.as_ref(),
+        &published_name,
         matched.output.format,
         matched.output.compression,
     );
@@ -669,6 +671,57 @@ mod tests {
             // ...and the path is recorded as a content-hashed dependency.
             assert_eq!(cell.input_deps, vec![expected]);
         }
+    }
+
+    #[test]
+    fn resolve_inputs_honors_the_producer_s_output_name_override() {
+        let tmp = TempDir::new().unwrap();
+        // A producer whose cell publishes under outputs[].name, not its slug.
+        let dir = tmp.path().join("payload");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("image.yaml"),
+            "name: payload
+base:
+  path: ./b.img
+config:
+  os: { hostname: payload }
+",
+        )
+        .unwrap();
+        let definition = load_image(dir.join("image.yaml")).unwrap();
+        let payload = Arc::new(Target {
+            definition,
+            dir,
+            default_outputs: vec![OutputSpec {
+                format: OutputFormat::Cosi,
+                name: Some("legacy-payload".to_owned()),
+                cosi_compression_level: None,
+                compression: None,
+            }],
+            output_artifacts: OutputArtifactsPolicy::default(),
+            root: tmp.path().to_path_buf(),
+            base_images: BaseImageCatalogue::default(),
+            tools_dir_sources: Vec::new(),
+        });
+        let iso = target(
+            tmp.path(),
+            "iso",
+            "name: iso\nbase:\n  path: ./iso.img\ninputs:\n  - name: payload\n    image: payload\nconfig:\n  os:\n    additionalFiles:\n      - source: \"${inputs.payload}\"\n        destination: /images/payload.cosi\n",
+        );
+        let members = vec![Arc::clone(&payload), Arc::clone(&iso)];
+        let output_dir = tmp.path().join("artifacts");
+
+        let mut cells = cells(&iso).unwrap();
+        resolve_inputs(&mut cells, &members, &output_dir).unwrap();
+
+        // The resolved path must use the producer's override name, matching what the executor
+        // actually publishes -- not the producer's slug (which the executor never writes to).
+        let expected = output_dir.join("legacy-payload.cosi");
+        let source = cells[0].ic_config["os"]["additionalFiles"][0]["source"]
+            .as_str()
+            .unwrap();
+        assert_eq!(source, expected.to_string_lossy());
     }
 
     #[test]

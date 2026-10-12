@@ -793,6 +793,7 @@ mod tests {
             arch: Arch::Amd64,
             output: OutputSpec {
                 format: OutputFormat::Cosi,
+                name: None,
                 cosi_compression_level: None,
                 compression: None,
             },

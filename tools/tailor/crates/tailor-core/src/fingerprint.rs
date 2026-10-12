@@ -41,6 +41,10 @@ pub struct FingerprintInputs<'a> {
     pub cosi_compression_level: Option<u8>,
     /// Published artifact basename override from `outputs[].name`; a change rebuilds the cell.
     pub output_name: Option<&'a str>,
+    /// Effective signing profile id (`meta/docs/2026-06-29-signing.md` §4); a change -- including
+    /// unsigned-to-signed or a profile swap -- rebuilds the cell so an unsigned artifact isn't
+    /// silently reused once signing is requested.
+    pub signing_profile: Option<&'a str>,
 }
 
 /// Compute the canonical fingerprint. Each field is domain-separated and length-prefixed so distinct
@@ -105,6 +109,9 @@ pub fn fingerprint(inputs: &FingerprintInputs<'_>) -> Fingerprint {
     if let Some(name) = inputs.output_name {
         field(&mut hasher, b"output.name", name.as_bytes());
     }
+    if let Some(profile) = inputs.signing_profile {
+        field(&mut hasher, b"signing.profile", profile.as_bytes());
+    }
 
     Fingerprint(hasher.finalize().into())
 }
@@ -160,6 +167,7 @@ mod tests {
             compression: None,
             cosi_compression_level: None,
             output_name: None,
+            signing_profile: None,
         }
     }
 
@@ -170,6 +178,21 @@ mod tests {
         let a = fingerprint(&inputs("cell", &cfg, &base));
         let b = fingerprint(&inputs("cell", &cfg, &base));
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_signing_profile_changes() {
+        let base = base();
+        let cfg: Value = serde_yaml_ng::from_str("os:\n  hostname: a\n").unwrap();
+        let mut unsigned = inputs("cell", &cfg, &base);
+        let mut signed = inputs("cell", &cfg, &base);
+        signed.signing_profile = Some("release");
+        assert_ne!(fingerprint(&unsigned), fingerprint(&signed));
+
+        unsigned.signing_profile = Some("release");
+        let mut other_profile = inputs("cell", &cfg, &base);
+        other_profile.signing_profile = Some("dev");
+        assert_ne!(fingerprint(&unsigned), fingerprint(&other_profile));
     }
 
     #[test]
@@ -245,9 +268,12 @@ mod tests {
     #[test]
     fn output_name_changes_fingerprint() {
         let base = base();
-        let cfg: Value = serde_yaml_ng::from_str("os:
+        let cfg: Value = serde_yaml_ng::from_str(
+            "os:
   hostname: a
-").unwrap();
+",
+        )
+        .unwrap();
         let mut a = inputs("cell", &cfg, &base);
         a.output_name = Some("legacy-name");
         let mut b = inputs("cell", &cfg, &base);
