@@ -16,6 +16,11 @@ cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-i
 Build examples:
 
 ```bash
+# Several image families declare an optional dev-RPM-override source
+# (artifacts/rpm-overrides); tailor validates it eagerly, so create the
+# (possibly empty) directory once before building any of them directly:
+mkdir -p artifacts/rpm-overrides
+
 # trident-testimage
 cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-testimage -s arch=amd64 --output-dir ./artifacts
 
@@ -50,11 +55,13 @@ remote source.
 
 ## Legacy name mapping
 
-Pipelines and Make targets still accept the historical image names, but the
-mapping is now declarative: each image family emits the legacy basename via
-`outputs[].name`, while the remaining glue for aliases, clone suffixes, and
-raw-to-`.cosi` compatibility lives directly in the Makefile / pipeline
-templates.
+Tailor publishes every cell under its slug (`<image>_<axis values>_<format>`),
+not a legacy filename. Pipelines and Make targets still accept the historical
+image names, so the mapping from legacy name to slug is declared explicitly:
+the Makefile's `declare_tailor_target` macro (`targets.mk`) and the pipeline's
+`build-image-template.yml` each name the exact slug they expect and rename it
+to the legacy path after the build (plus clone-suffix and raw-to-`.cosi`
+handling where needed).
 
 The current families are:
 
