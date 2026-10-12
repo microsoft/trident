@@ -9,6 +9,7 @@ outputs:
 
 extraDependencies:
   - ./base
+  - ../common
 
 config:
   $include: ./tailor/baseimg.yaml

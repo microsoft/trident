@@ -14,6 +14,7 @@ extraDependencies:
   - ./installer-iso.yaml
   - ./mos
   - ./iso
+  - ../common
 
 config:
   $include: ./installer-iso.yaml
