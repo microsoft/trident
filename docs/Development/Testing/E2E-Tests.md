@@ -183,13 +183,13 @@ then rename them into `artifacts/test-image/`.
 ```bash
 mkdir -p artifacts/test-image
 
-# Build two clones (produces trident-testimage_amd64_cosi_clone0.cosi and
-# trident-testimage_amd64_cosi_clone1.cosi)
+# Build two clones (produces trident-testimage_clone0.cosi and
+# trident-testimage_clone1.cosi)
 cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-testimage -s arch=amd64     --output-dir ./artifacts/test-image --clones 2
 
 # Rename clones to the filenames referenced by Host Configurations
-mv artifacts/test-image/trident-testimage_amd64_cosi_clone0.cosi artifacts/test-image/regular.cosi
-mv artifacts/test-image/trident-testimage_amd64_cosi_clone1.cosi artifacts/test-image/regular_v2.cosi
+mv artifacts/test-image/trident-testimage_clone0.cosi artifacts/test-image/regular.cosi
+mv artifacts/test-image/trident-testimage_clone1.cosi artifacts/test-image/regular_v2.cosi
 ```
 
 Repeat for other image types as needed:
@@ -218,8 +218,8 @@ mkdir -p artifacts/test-image
 
 # Regular container image
 cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-container-testimage     --output-dir ./artifacts/test-image --clones 2
-mv artifacts/test-image/trident-container-testimage_amd64_cosi_clone0.cosi artifacts/test-image/regular.cosi
-mv artifacts/test-image/trident-container-testimage_amd64_cosi_clone1.cosi artifacts/test-image/regular_v2.cosi
+mv artifacts/test-image/trident-container-testimage_clone0.cosi artifacts/test-image/regular.cosi
+mv artifacts/test-image/trident-container-testimage_clone1.cosi artifacts/test-image/regular_v2.cosi
 
 # Verity container image (for root-verity configuration)
 cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-verity-testimage -s deployment=container -s mode=root     --output-dir ./artifacts/test-image --clones 2
