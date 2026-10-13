@@ -60,6 +60,11 @@ pub struct Cell {
     pub base_image: Option<String>,
     /// Local RPM sources passed to IC as `--rpm-source`.
     pub rpm_sources: Vec<PathBuf>,
+    /// Extra local dependency paths declared by a matched fragment (`extraDependencies:`),
+    /// content-hashed into the fingerprint alongside the image-level `extraDependencies`
+    /// (`cell.target.definition.extra_dependencies`) so an edit to a fragment-declared asset
+    /// invalidates this cell too.
+    pub extra_dependencies: Vec<PathBuf>,
     /// Extra IC command-line flags appended verbatim after every tailor-managed flag.
     pub extra_params: Vec<ExtraParam>,
     /// The resolved per-cell `signing:` opt-in after fragment merging.
