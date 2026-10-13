@@ -118,6 +118,7 @@ async fn run_janitor<R: ContainerRuntime>(
                 args,
                 binds,
                 privileged: false,
+                disable_selinux_label: true,
                 cell_slug: String::new(),
                 log_source: LogSource::Janitor,
                 log_file: None,
@@ -151,6 +152,96 @@ fn path_arg(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::Mutex;
+
+    use tailor_core::{ContainerResult, DaemonInfo, LocalImage};
+
+    #[derive(Default)]
+    struct RecordingRuntime {
+        configs: Mutex<Vec<ContainerConfig>>,
+    }
+
+    impl ContainerRuntime for RecordingRuntime {
+        async fn pull_image(&self, _reference: &str) -> Result<(), ExecError> {
+            Ok(())
+        }
+
+        async fn inspect_image(&self, _reference: &str) -> Result<Option<LocalImage>, ExecError> {
+            Ok(None)
+        }
+
+        async fn create_and_run(
+            &self,
+            config: ContainerConfig,
+            _cancel: CancellationToken,
+        ) -> Result<ContainerResult, ExecError> {
+            self.configs.lock().unwrap().push(config);
+            Ok(ContainerResult {
+                exit_code: 0,
+                logs: String::new(),
+                failure_dump: None,
+            })
+        }
+
+        async fn daemon_info(&self) -> Result<DaemonInfo, ExecError> {
+            Ok(DaemonInfo::default())
+        }
+
+        async fn export_container(
+            &self,
+            _image_ref: &str,
+            _platform: &str,
+            _pull: bool,
+            _dest_dir: &Path,
+            _cancel: CancellationToken,
+        ) -> Result<(), ExecError> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn janitor_requests_disable_selinux_labels_without_privilege_or_broad_mounts() {
+        let dir = tempfile::Builder::new()
+            .prefix("tailor-janitor-")
+            .tempdir_in(std::env::current_dir().unwrap())
+            .unwrap();
+        let target = dir.path().join("tools-dir");
+        std::fs::create_dir(&target).unwrap();
+        let runtime = RecordingRuntime::default();
+        let config = RuntimeConfig {
+            janitor_image: "example/janitor@sha256:abc".to_owned(),
+            ..RuntimeConfig::default()
+        };
+
+        chown_paths(
+            &runtime,
+            std::slice::from_ref(&target),
+            &config,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        remove_paths(
+            &runtime,
+            std::slice::from_ref(&target),
+            &config,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+
+        let configs = runtime.configs.lock().unwrap();
+        assert_eq!(configs.len(), 2);
+        for request in configs.iter() {
+            assert!(request.disable_selinux_label);
+            assert!(!request.privileged);
+            assert_eq!(request.log_source, LogSource::Janitor);
+        }
+        assert_eq!(configs[0].binds, vec![identity_bind(&target)]);
+        assert_eq!(configs[1].binds, vec![identity_bind(dir.path())]);
+        assert!(target.exists(), "mock janitor must not delete host files");
+    }
 
     #[test]
     fn host_platform_matches_the_running_arch() {
