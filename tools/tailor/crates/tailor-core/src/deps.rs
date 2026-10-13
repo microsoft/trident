@@ -114,8 +114,11 @@ fn walk_dir(
 
 /// A per-file dependency hash: XXH3 over the file's relative path (rename sensitivity + machine
 /// portability) domain-separated from its content hash + size. The content hash comes from the shared
-/// cache, so an unchanged file is not re-read.
-fn hash_one(
+/// cache, so an unchanged file is not re-read. Unlike [`hash_dependencies`]'s directory-walk dispatch,
+/// this follows symlinks (via `fs::metadata`/`File::open` in [`hashcache::hash_file_cached`]) rather
+/// than skipping them -- safe here because callers that know in advance they have exactly one
+/// declared file (not a directory to walk) have no symlink-cycle risk to guard against.
+pub(crate) fn hash_one(
     path: &Path,
     base_dir: &Path,
     cache_dir: Option<&Path>,
