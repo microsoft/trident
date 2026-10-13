@@ -15,5 +15,6 @@ From the repo root, run:
 cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-container-testimage --output-dir ./artifacts
 ```
 
-Output is written to `artifacts/trident-container-testimage.cosi` by default.
+Output is written to `artifacts/trident-container-testimage_amd64_cosi.cosi` by default
+(tailor publishes under the cell's slug).
 Use `--output-dir <path>` to change the output location.
