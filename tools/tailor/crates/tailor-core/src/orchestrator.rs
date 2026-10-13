@@ -101,6 +101,11 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
     /// same profile id (and therefore are expected to converge on the same CA); across different
     /// profile ids each `build_signer` call mints an independent root, so the second write silently
     /// invalidates the first image's trust chain.
+    ///
+    /// `clones` is the `--clones N` count the caller will execute with (1 for a normal build):
+    /// claims cover every clone's own suffixed output path (`output_slug`), not just the bare slug,
+    /// so a `publishCaCert` set to a clone-suffixed path is still caught as a collision here instead
+    /// of silently colliding with that clone's image at build time.
     #[allow(
         clippy::too_many_arguments,
         reason = "planning needs config, lock, pre-resolved images, selection, and output root"
@@ -116,6 +121,7 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
         selection: &BuildSelection<'_>,
         output_dir: &Path,
         hash_cache_dir: Option<&Path>,
+        clones: u32,
         seen_artifacts: &mut BTreeMap<PathBuf, String>,
         seen_ca_cert_paths: &mut BTreeMap<PathBuf, String>,
     ) -> Result<BuildPlan, CoreError> {
@@ -239,13 +245,25 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                 // Claim both the final published path and the uncompressed path Image Customizer
                 // actually writes: with the same slug/format, a compressed and an uncompressed
                 // output both execute through the same IC-written `artifact_name`, so checking only
-                // the (possibly different) published path misses that collision.
-                let written =
-                    output_dir.join(artifact_name(cell.slug.as_ref(), cell.output.format));
-                for claim in [artifact.clone(), written]
-                    .into_iter()
-                    .collect::<BTreeSet<_>>()
-                {
+                // the (possibly different) published path misses that collision. Also claim every
+                // `--clones N` variant's own suffixed paths (`output_slug` -- `<slug>_cloneN`), not
+                // just the bare slug: execution publishes each clone under its own suffixed path, so
+                // a `publishCaCert` set to a clone-suffixed path would otherwise pass this check
+                // unnoticed and collide with that clone's image at build time.
+                let clone_count = clones.max(1);
+                let mut claims: BTreeSet<PathBuf> = BTreeSet::new();
+                claims.insert(artifact.clone());
+                for clone in 0..clone_count {
+                    let clone_slug =
+                        output_slug(cell.slug.as_ref(), (clone_count > 1).then_some(clone));
+                    claims.insert(output_dir.join(published_artifact_name(
+                        &clone_slug,
+                        cell.output.format,
+                        cell.output.compression,
+                    )));
+                    claims.insert(output_dir.join(artifact_name(&clone_slug, cell.output.format)));
+                }
+                for claim in claims {
                     if let Some(ca_profile) = seen_ca_cert_paths.get(&claim) {
                         return Err(CoreError::CaCertPathCollidesWithArtifact {
                             path: claim,
@@ -1281,6 +1299,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
                 &mut BTreeMap::new(),
                 &mut BTreeMap::new(),
             )
@@ -1347,6 +1366,7 @@ mod tests {
                     &BuildSelection::from_selector(&Selector::default()),
                     out.path(),
                     None,
+                    1,
                     &mut BTreeMap::new(),
                     &mut BTreeMap::new(),
                 )
@@ -1407,6 +1427,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 TempDir::new().unwrap().path(),
                 None,
+                1,
                 &mut BTreeMap::new(),
                 &mut BTreeMap::new(),
             )
@@ -1437,6 +1458,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
                 &mut BTreeMap::new(),
                 &mut BTreeMap::new(),
             )
@@ -1478,6 +1500,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
                 &mut BTreeMap::new(),
                 &mut BTreeMap::new(),
             )
@@ -1851,6 +1874,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
                 &mut BTreeMap::new(),
                 &mut BTreeMap::new(),
             )
@@ -1946,6 +1970,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
                 &mut BTreeMap::new(),
                 &mut BTreeMap::new(),
             )
@@ -2230,6 +2255,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
                 &mut BTreeMap::new(),
                 &mut BTreeMap::new(),
             )
@@ -2242,6 +2268,71 @@ mod tests {
                 CoreError::Config(tailor_config::ConfigError::UnknownSigningProfile { .. })
             ),
             "an unknown signing profile must be a config error, not a silently-unsigned plan: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_rejects_a_publish_ca_cert_path_colliding_with_a_clone_suffixed_artifact() {
+        // Regression: the artifact/CA-path collision check only ever claimed the bare (un-cloned)
+        // `<slug>.<ext>` path, never the `--clones N` clone-suffixed variants (`output_slug` --
+        // `<slug>_cloneN.<ext>`) that execution actually publishes under. A `publishCaCert` set to
+        // one of those clone paths passed planning unnoticed, then collided with that clone's own
+        // image at build time.
+        let out = TempDir::new().unwrap();
+        // "solo" with no axes, default amd64 arch, default cosi output -> slug "solo_amd64_cosi"
+        // (`defaults_to_amd64_with_no_arch_axis_and_no_architectures`), so clone 0's own published
+        // path is "solo_amd64_cosi_clone0.cosi".
+        let colliding_path = out.path().join("solo_amd64_cosi_clone0.cosi");
+        let (_tmp, target) = target_with(indoc! {"
+                name: solo
+                base:
+                  path: ./b.img
+                signing: release
+                config:
+                  os:
+                    hostname: solo
+            "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(&format!(
+            indoc! {"
+                schemaVersion: 1
+                toolchains:
+                  default: ic
+                  entries:
+                    - name: ic
+                      container: registry.example/imagecustomizer
+                      version: 1.0.0
+                signing:
+                  default: release
+                  profiles:
+                    release:
+                      backend: local-test-ca
+                      publishCaCert: {}
+            "},
+            colliding_path.display()
+        ))
+        .unwrap();
+        let toolchains = resolved_toolchains(&tool);
+
+        let err = Orchestrator::new(FakeExecutor::default(), FakeResolver)
+            .plan(
+                &[target],
+                &[],
+                &tool,
+                &Lockfile::default(),
+                &toolchains,
+                &BTreeMap::new(),
+                &BuildSelection::from_selector(&Selector::default()),
+                out.path(),
+                None,
+                2,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
+            "a publishCaCert matching a clone-suffixed artifact path must be rejected: {err:?}"
         );
     }
 }
