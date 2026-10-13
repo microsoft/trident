@@ -92,8 +92,8 @@ $1: $(TAILOR_WORKSPACE) $4
 	if [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
 		mic="$(MIC_CONTAINER_IMAGE)"; image="$$$${mic%:*}"; tag="$$$${mic##*:}"; \
 		if [ "$$$$image" = "$$$$tag" ]; then image="$$$$mic"; tag="latest"; fi; \
-		sed -e "s/^  default: ic$$$$/  default: ic-dev/" \
-		    -e "s/^      tag: latest$$$$/      tag: latest\n    - name: ic-dev\n      container: $$$$image\n      tag: $$$$tag\n      pull: never/" \
+		sed -e "s|^  default: ic$$$$|  default: ic-dev|" \
+		    -e "s|^      tag: latest$$$$|      tag: latest\n    - name: ic-dev\n      container: $$$$image\n      tag: $$$$tag\n      pull: never|" \
 		    "$$$$manifest" > "$$$$manifest.tmp" && mv "$$$$manifest.tmp" "$$$$manifest"; \
 	fi; \
 	flock artifacts/.tailor-build.flock $(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest "$$$$manifest" build $2 $3 --output-dir $(dir $1)
@@ -166,5 +166,15 @@ $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: $(TAILOR_WORKSPACE) $(AZL_INSTALL
 	mkdir -p $(AZL_INSTALLER_ISO_DIR)/bin
 	cp bin/liveinstaller $(AZL_INSTALLER_ISO_DIR)/bin/
 	rm -f $(TAILOR_DIR)/artifacts/ca_cert.pem
-	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest $(TAILOR_WORKSPACE) build azl-installer --output-dir $(ARTIFACTS_TEST_IMAGE_DIR)
+	@manifest="$(TAILOR_WORKSPACE)"; \
+	if [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
+		manifest="$(TAILOR_DIR)/.tailor.local.azl-installer.yaml"; \
+		mic="$(MIC_CONTAINER_IMAGE)"; image="$${mic%:*}"; tag="$${mic##*:}"; \
+		if [ "$$image" = "$$tag" ]; then image="$$mic"; tag="latest"; fi; \
+		sed -e "s|^  default: ic$$|  default: ic-dev|" \
+		    -e "s|^      tag: latest$$|      tag: latest\n    - name: ic-dev\n      container: $$image\n      tag: $$tag\n      pull: never|" \
+		    "$(TAILOR_WORKSPACE)" > "$$manifest"; \
+	fi; \
+	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest "$$manifest" build azl-installer --output-dir $(ARTIFACTS_TEST_IMAGE_DIR)
+	@rm -f $(TAILOR_DIR)/.tailor.local.azl-installer.yaml
 	mv $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer_amd64_iso.iso $@
