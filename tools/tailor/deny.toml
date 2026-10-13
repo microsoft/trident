@@ -48,6 +48,9 @@ allow-wildcard-paths = true
 # Fail on a dependency pinned to a yanked release; RustSec vulnerability/unmaintained findings use
 # cargo-deny's defaults.
 yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2024-0449", reason = "serde_yaml_ng depends on unsafe-libyaml; migrate the YAML parser" },
+]
 
 [sources]
 # Only crates.io; reject unknown registries or git sources so nothing sneaks in off-registry.
