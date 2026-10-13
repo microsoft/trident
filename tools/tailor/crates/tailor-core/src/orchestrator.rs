@@ -446,17 +446,24 @@ fn signing_profile_descriptor(id: &str, profile: &tailor_config::SigningProfile)
     )
 }
 
+/// Separate `(key_hash, cert_hash)` -- not a single merged-and-sorted set -- so the fingerprint
+/// never confuses which file is the key and which is the certificate (see `signing_key_hashes`).
+type SigningKeyHashes = (Option<[u8; 16]>, Option<[u8; 16]>);
+
 /// Content-hash a signing profile's local key and certificate files, keeping their roles distinct
 /// (`keypair` backend only -- other backends ignore `key`/`cert` in `tailor_sign::build_signer`,
 /// so stray values on a non-`keypair` profile are intentionally not hashed, and never required to
 /// exist). Returned as `(key_hash, cert_hash)` rather than a single merged-and-sorted set: folding
 /// both into one sorted set would make swapping the two files produce an identical fingerprint.
+/// Uses [`deps::hash_one`] directly (not [`deps::hash_dependencies`]) so a symlinked key/cert is
+/// hashed by its resolved target content -- the same file `tailor_sign::build_signer` actually
+/// reads -- instead of being silently skipped the way a directory-walk dependency would be.
 fn signing_key_hashes(
     profile: &tailor_config::SigningProfile,
     workspace_root: &Path,
     cache_dir: Option<&Path>,
     image: &str,
-) -> Result<(Option<[u8; 16]>, Option<[u8; 16]>), CoreError> {
+) -> Result<SigningKeyHashes, CoreError> {
     if profile.backend != tailor_config::SigningBackend::Keypair {
         return Ok((None, None));
     }
@@ -464,14 +471,14 @@ fn signing_key_hashes(
         let Some(path) = path else {
             return Ok(None);
         };
-        let hashes = deps::hash_dependencies(
-            &[PathBuf::from(path)],
-            workspace_root,
-            None,
-            cache_dir,
-            image,
-        )?;
-        Ok(hashes.into_iter().next())
+        let absolute = tailor_config::absolutize(path, workspace_root);
+        if !absolute.exists() {
+            return Err(CoreError::MissingDependency {
+                image: image.to_owned(),
+                path: path.to_owned(),
+            });
+        }
+        Ok(Some(deps::hash_one(&absolute, workspace_root, cache_dir)?))
     };
     Ok((
         hash_one(profile.key.as_deref())?,
@@ -1849,6 +1856,46 @@ mod tests {
             plan.cells[0].base_ref.as_deref(),
             Some("oci:registry.example/base@sha256:lockedbase"),
             "the locked base digest must win over the re-resolved tag"
+        );
+    }
+
+    #[test]
+    fn signing_key_hashes_follows_a_rotated_symlink() {
+        // Regression: a symlinked key/cert (e.g. a `current` symlink repointed at a rotated
+        // credential) must change the hash -- `hash_dependencies`'s directory-walk dispatch skips
+        // symlinks entirely (to avoid cycles), but `tailor_sign::build_signer` reads straight
+        // through them via `fs::read`, so skipping here would let a rotated credential silently
+        // reuse a stale signed artifact.
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new().unwrap();
+        let key_a = dir.path().join("key-a.pem");
+        let key_b = dir.path().join("key-b.pem");
+        fs::write(&key_a, b"key-version-a").unwrap();
+        fs::write(&key_b, b"key-version-b").unwrap();
+        let link = dir.path().join("current.key");
+        symlink(&key_a, &link).unwrap();
+
+        let profile = tailor_config::SigningProfile {
+            backend: tailor_config::SigningBackend::Keypair,
+            key: Some(PathBuf::from("current.key")),
+            cert: None,
+            publish_ca_cert: None,
+            vault: None,
+            certificate: None,
+        };
+
+        let (before_key, _) = signing_key_hashes(&profile, dir.path(), None, "img").unwrap();
+        assert!(before_key.is_some(), "a symlinked key must still be hashed");
+
+        // Rotate: repoint the symlink at the other key file, as a credential rotation would.
+        fs::remove_file(&link).unwrap();
+        symlink(&key_b, &link).unwrap();
+
+        let (after_key, _) = signing_key_hashes(&profile, dir.path(), None, "img").unwrap();
+        assert_ne!(
+            before_key, after_key,
+            "rotating the symlink target must change the hash"
         );
     }
 }
