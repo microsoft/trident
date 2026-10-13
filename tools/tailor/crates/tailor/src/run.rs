@@ -1635,6 +1635,7 @@ async fn build(
                 &build_selection,
                 &output_dir,
                 Some(&base_hash_cache_dir),
+                clones,
                 &mut seen_artifacts,
                 &mut seen_ca_cert_paths,
             )
