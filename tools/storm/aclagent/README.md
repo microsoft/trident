@@ -87,10 +87,10 @@ The VM image used by this scenario must already contain:
 - `tridentd.socket` installed and enabled (starts `tridentd.service` on demand)
 - `trident-acl-agent` package installed, but **`trident-acl-agent.service`
   left disabled in the base image** -- it must not start before the fake
-  kubeconfig exists. `updateimg-acl-agent.yaml` enables it directly in the
+  kubeconfig exists. `acl-agent.yaml` enables it directly in the
   image build instead (see below for why).
 - a `/etc/systemd/system/trident-acl-agent.service.d/override.conf` drop-in
-  baked into **both** `baseimg-acl-agent.yaml` and `updateimg-acl-agent.yaml`
+  baked into **both** `acl-agent-base.yaml` and `acl-agent.yaml`
   (see below)
 - the same SSH user/key setup expected by the existing storm servicing scenario
 
@@ -108,11 +108,11 @@ reboot onto the other A/B volume - it has to be baked into whichever image
 - **service enablement**: the base image ships it disabled;
   `prepareVmForAclAgent` enables it at runtime for the base image's own
   root, but that runtime "enable" doesn't need to (and can't) carry over to
-  the update image's root - `updateimg-acl-agent.yaml` bakes enablement in
+  the update image's root - `acl-agent.yaml` bakes enablement in
   directly instead.
 - **the annotation-prefix/current-version-key drop-in**: for the same
   reason, this is baked into `additionalFiles` in both
-  `baseimg-acl-agent.yaml` and `updateimg-acl-agent.yaml`, rather than
+  `acl-agent-base.yaml` and `acl-agent.yaml`, rather than
   written at runtime by `prepareVmForAclAgent`.
 
 `prepareVmForAclAgent` never writes a `trident-acl-agent.conf`, nor the
