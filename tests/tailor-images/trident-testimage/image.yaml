@@ -13,6 +13,7 @@ rpmSources:
   - ../../../bin/RPMS
 
 extraDependencies:
+  - ./base
   - ../common
 
 config:
