@@ -1,6 +1,7 @@
 outputs:
   $replace:
     - format: cosi
+    - format: qcow2
 
 config:
   storage:
