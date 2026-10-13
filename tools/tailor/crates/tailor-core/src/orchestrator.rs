@@ -181,11 +181,11 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                 let signing_profile_descriptor_value = resolved_signing_profile
                     .as_ref()
                     .map(|(id, profile)| signing_profile_descriptor(id, profile));
-                let signing_key_hashes_list = match &resolved_signing_profile {
+                let (signing_key_hash, signing_cert_hash) = match &resolved_signing_profile {
                     Some((_, profile)) => {
                         signing_key_hashes(profile, &target.root, hash_cache_dir, target.name())?
                     }
-                    None => Vec::new(),
+                    None => (None, None),
                 };
                 let print = fingerprint(&FingerprintInputs {
                     slug: cell.slug.as_ref(),
@@ -201,7 +201,8 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     compression: cell.output.compression,
                     cosi_compression_level: cell.output.cosi_compression_level,
                     signing_profile: signing_profile_descriptor_value.as_deref(),
-                    signing_key_hashes: &signing_key_hashes_list,
+                    signing_key_hash,
+                    signing_cert_hash,
                 });
                 let artifact = output_dir.join(published_artifact_name(
                     cell.slug.as_ref(),
@@ -445,21 +446,37 @@ fn signing_profile_descriptor(id: &str, profile: &tailor_config::SigningProfile)
     )
 }
 
-/// Content-hash a signing profile's local key/cert files (`keypair` backend only -- other backends
-/// declare no local file, so this is empty for them), resolved against the workspace root the same
-/// way `tailor_sign::build_signer` resolves them.
+/// Content-hash a signing profile's local key and certificate files, keeping their roles distinct
+/// (`keypair` backend only -- other backends ignore `key`/`cert` in `tailor_sign::build_signer`,
+/// so stray values on a non-`keypair` profile are intentionally not hashed, and never required to
+/// exist). Returned as `(key_hash, cert_hash)` rather than a single merged-and-sorted set: folding
+/// both into one sorted set would make swapping the two files produce an identical fingerprint.
 fn signing_key_hashes(
     profile: &tailor_config::SigningProfile,
     workspace_root: &Path,
     cache_dir: Option<&Path>,
     image: &str,
-) -> Result<Vec<[u8; 16]>, CoreError> {
-    let paths: Vec<PathBuf> = [profile.key.as_deref(), profile.cert.as_deref()]
-        .into_iter()
-        .flatten()
-        .map(PathBuf::from)
-        .collect();
-    deps::hash_dependencies(&paths, workspace_root, None, cache_dir, image)
+) -> Result<(Option<[u8; 16]>, Option<[u8; 16]>), CoreError> {
+    if profile.backend != tailor_config::SigningBackend::Keypair {
+        return Ok((None, None));
+    }
+    let hash_one = |path: Option<&Path>| -> Result<Option<[u8; 16]>, CoreError> {
+        let Some(path) = path else {
+            return Ok(None);
+        };
+        let hashes = deps::hash_dependencies(
+            &[PathBuf::from(path)],
+            workspace_root,
+            None,
+            cache_dir,
+            image,
+        )?;
+        Ok(hashes.into_iter().next())
+    };
+    Ok((
+        hash_one(profile.key.as_deref())?,
+        hash_one(profile.cert.as_deref())?,
+    ))
 }
 
 fn resolve_tools_dir(target: &Target) -> Result<Option<CellToolsDir>, CoreError> {
