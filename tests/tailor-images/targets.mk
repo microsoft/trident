@@ -89,14 +89,16 @@ $1: $(TAILOR_WORKSPACE) $4
 	@manifest="$(TAILOR_DIR)/.tailor.local.$(subst /,_,$1).yaml"; \
 	sed -e 's@^      publishCaCert: \./artifacts/ca_cert\.pem$$$$@      publishCaCert: ./artifacts/ca_cert.$(subst /,_,$1).pem@' \
 	    "$(TAILOR_WORKSPACE)" > "$$$$manifest"; \
-	if [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
+	if [ -n "$(MIC_CONTAINER_IMAGE)" ] && [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
 		mic="$(MIC_CONTAINER_IMAGE)"; \
 		case "$$$$mic" in \
-			*/*) repo_part="$$$${mic%/*}/"; last_part="$$$${mic##*/}" ;; \
-			*) repo_part=""; last_part="$$$$mic" ;; \
-		esac; \
-		case "$$$$last_part" in \
-			*:*) tag="$$$${last_part##*:}"; image="$$$${repo_part}$$$${last_part%:*}" ;; \
+			*@*) image="$$$$mic"; tag="" ;; \
+			*/*) repo_part="$$$${mic%/*}/"; last_part="$$$${mic##*/}"; \
+				case "$$$$last_part" in \
+					*:*) tag="$$$${last_part##*:}"; image="$$$${repo_part}$$$${last_part%:*}" ;; \
+					*) tag="latest"; image="$$$$mic" ;; \
+				esac ;; \
+			*:*) tag="$$$${mic##*:}"; image="$$$${mic%:*}" ;; \
 			*) tag="latest"; image="$$$$mic" ;; \
 		esac; \
 		sed -e "s|^  default: ic$$$$|  default: ic-dev|" \
@@ -174,15 +176,17 @@ $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: $(TAILOR_WORKSPACE) $(AZL_INSTALL
 	cp bin/liveinstaller $(AZL_INSTALLER_ISO_DIR)/bin/
 	rm -f $(TAILOR_DIR)/artifacts/ca_cert.pem
 	@manifest="$(TAILOR_WORKSPACE)"; \
-	if [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
+	if [ -n "$(MIC_CONTAINER_IMAGE)" ] && [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
 		manifest="$(TAILOR_DIR)/.tailor.local.azl-installer.yaml"; \
 		mic="$(MIC_CONTAINER_IMAGE)"; \
 		case "$$mic" in \
-			*/*) repo_part="$${mic%/*}/"; last_part="$${mic##*/}" ;; \
-			*) repo_part=""; last_part="$$mic" ;; \
-		esac; \
-		case "$$last_part" in \
-			*:*) tag="$${last_part##*:}"; image="$${repo_part}$${last_part%:*}" ;; \
+			*@*) image="$$mic"; tag="" ;; \
+			*/*) repo_part="$${mic%/*}/"; last_part="$${mic##*/}"; \
+				case "$$last_part" in \
+					*:*) tag="$${last_part##*:}"; image="$${repo_part}$${last_part%:*}" ;; \
+					*) tag="latest"; image="$$mic" ;; \
+				esac ;; \
+			*:*) tag="$${mic##*:}"; image="$${mic%:*}" ;; \
 			*) tag="latest"; image="$$mic" ;; \
 		esac; \
 		sed -e "s|^  default: ic$$|  default: ic-dev|" \
