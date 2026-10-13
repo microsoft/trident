@@ -51,7 +51,7 @@ name the image and pass `--cell` — `tailor build <slug>` is shorthand for
 | --- | --- |
 | `-s`, `--select AXIS=VALUE` | Constrain matrix axes. Repeatable. Comma-separated axis pairs are accepted, for example `-s variant=full,arch=amd64`. |
 | `--cell SLUG` | Select exact cells by slug. Repeatable. |
-| `--locked` | *(preview, `lock-preview` feature)* Require a complete `tailor.lock`; fail on missing entries or registry drift. Absent from default builds — see [`tailor lock`](#tailor-lock-preview). |
+| `--locked` | *(preview, `lock-preview` feature)* Flag is present in feature-enabled builds, but strict lockfile enforcement is **not implemented**. Do not use as a CI drift gate. Absent from default builds. |
 | `--force` | Ignore incremental up-to-date checks. |
 | `--arch ARCH` | Restrict build to architecture(s). Repeatable. |
 | `--output-dir PATH` | Output directory. Default: `<workspace>/artifacts`. |

@@ -38,8 +38,8 @@ toolchain: ic-1.3
 > the `lock-preview` Cargo feature and are **absent from default builds** (lockfile enforcement is not
 > yet implemented). Install with `cargo install --features lock-preview` to use the commands below.
 
-`tailor.lock` records the exact digest each toolchain (and base image) resolves to, so every machine
-builds the same inputs.
+`tailor.lock` records digests for resolvable toolchains and registry bases; builds can use existing
+pins. The version and tag settings above are available without the preview feature.
 
 ```bash
 # First time — resolve everything and write the lock:
@@ -62,8 +62,9 @@ intend to move up.
 tailor build --locked
 ```
 
-`--locked` requires a complete lock and fails on any missing entry or registry drift, so a CI build
-never silently resolves something new.
+**Do not rely on `--locked` as a CI drift gate yet.** The flag exists only in `lock-preview`
+builds, and strict lockfile enforcement is not implemented. For now, verify resolved inputs by
+other means if your pipeline requires a complete, immutable lock.
 
 > **Local images.** A local-only Image Customizer image (a fresh `docker build` that was never pushed,
 > so it has no registry digest) can't be pinned and is omitted from `tailor.lock`; reproducibility then

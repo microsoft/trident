@@ -11,6 +11,8 @@ guide notes anything extra it needs.
 - [Add an axis](add-an-axis.md)
 - [Share config with `$include`](share-config-with-include.md)
 - [Override a base per axis](override-a-base-per-axis.md)
+- [Build dependent images](build-dependent-images.md)
+- [Track local build inputs](track-build-inputs.md)
 
 ## Choose a base image
 
@@ -26,6 +28,8 @@ guide notes anything extra it needs.
 - [Change an output format](change-an-output-format.md)
 - [Convert an image format](convert-an-image-format.md)
 - [Set the build directory](set-the-build-directory.md)
+- [Clean and rebuild a cell](clean-and-rebuild.md)
+- [Manage extracted Image Customizer artifacts](manage-extracted-artifacts.md)
 
 ## Pin and reproduce
 
