@@ -635,32 +635,6 @@ validate: $(TRIDENT_CONFIG) target/release/trident
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
 
-# MIC_CONTAINER_IMAGE is defined (with a default) in tests/tailor-images/targets.mk,
-# included above; override it to build against a dev imagecustomizer, same as
-# the tailor-backed targets.
-bin/trident-mos.iso: \
-	artifacts/baremetal.vhdx \
-	packaging/systemd/trident-install.service \
-	tests/images/trident-mos/iso.yaml \
-	tests/images/trident-mos/files/* \
-	tests/images/trident-mos/post-install.sh \
-	packaging/selinux-policy-trident/* \
-	tools/cmd/rcp-agent/rcp-agent.service \
-	bin/rcp-agent
-	@echo "Rebuilding Trident MOS ISO: $@ from $< because of: $?"
-	@mkdir -p bin
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-		--log-level=debug \
-		--build-dir /build \
-		--image-file /repo/$< \
-		--output-image-file /repo/$@ \
-		--config-file /repo/tests/images/trident-mos/iso.yaml \
-		--output-image-format iso
-
 # Uses the simple E2E test to set up a starter Host Configuration
 .PHONY: starter-configuration
 starter-configuration:
