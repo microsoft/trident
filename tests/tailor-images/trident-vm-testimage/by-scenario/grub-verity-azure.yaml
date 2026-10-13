@@ -14,8 +14,6 @@ config:
         $set: permissive
     packages:
       install:
-        $remove:
-          - netplan
         $append:
           - selinux-policy
           - WALinuxAgent
