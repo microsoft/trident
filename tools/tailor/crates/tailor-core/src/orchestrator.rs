@@ -433,10 +433,15 @@ fn resolved_tools_dir<'a>(
 /// place.
 fn signing_profile_descriptor(id: &str, profile: &tailor_config::SigningProfile) -> String {
     format!(
-        "{id}:{}:{}:{}",
+        "{id}:{}:{}:{}:{}",
         profile.backend.as_str(),
         profile.vault.as_deref().unwrap_or_default(),
         profile.certificate.as_deref().unwrap_or_default(),
+        profile
+            .publish_ca_cert
+            .as_deref()
+            .map(Path::to_string_lossy)
+            .unwrap_or_default(),
     )
 }
 
