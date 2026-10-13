@@ -105,15 +105,16 @@ endef
 
 # NOTE on signed targets and `make -j`: each signed target's own certificate
 # always lands, race-free, at `artifacts/ca_cert.<target>.pem`
-# (tailor_ca_cert_staging_path, above). The extra copy to the shared
-# `artifacts/ca_cert.pem` compat path (for single-target builds and the CI
-# templates, which only ever build one signed target per job) is NOT safe to
-# rely on when `make -j` builds more than one signed target together
-# (currently trident-usrverity-testimage and trident-container-usrverity-testimage,
-# both carrying the `test-ca` signing profile): a fresh CA is minted per
-# invocation, so the shared path ends up with whichever target finished last.
-# Build signed targets one at a time (or read each target's own
-# `artifacts/ca_cert.<target>.pem`) when that matters.
+# (tailor_ca_cert_staging_path, above). Tailor persists each signing profile's
+# `local-test-ca` root under `<output-dir>/.tailor/ca-cache/<profile-id>/` and
+# reuses it across invocations, so two targets sharing a profile (currently
+# trident-usrverity-testimage and trident-container-usrverity-testimage, both
+# on `test-ca`) always get the *same* cert even when `make -j` builds them
+# together -- the extra copy to the shared `artifacts/ca_cert.pem` compat path
+# (for single-target builds and the CI templates, which only ever build one
+# signed target per job) just races harmlessly to write identical content.
+# Read each target's own `artifacts/ca_cert.<target>.pem` if you need a path
+# that is guaranteed to exist without depending on build ordering.
 
 # NETLAUNCH_ISO (root Makefile) defaults to bin/trident-mos.iso -- output
 # path kept outside artifacts/ for legacy/netlaunch-tooling compatibility,
