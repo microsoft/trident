@@ -90,8 +90,15 @@ $1: $(TAILOR_WORKSPACE) $4
 	sed -e 's@^      publishCaCert: \./artifacts/ca_cert\.pem$$$$@      publishCaCert: ./artifacts/ca_cert.$(subst /,_,$1).pem@' \
 	    "$(TAILOR_WORKSPACE)" > "$$$$manifest"; \
 	if [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
-		mic="$(MIC_CONTAINER_IMAGE)"; image="$$$${mic%:*}"; tag="$$$${mic##*:}"; \
-		if [ "$$$$image" = "$$$$tag" ]; then image="$$$$mic"; tag="latest"; fi; \
+		mic="$(MIC_CONTAINER_IMAGE)"; \
+		case "$$$$mic" in \
+			*/*) repo_part="$$$${mic%/*}/"; last_part="$$$${mic##*/}" ;; \
+			*) repo_part=""; last_part="$$$$mic" ;; \
+		esac; \
+		case "$$$$last_part" in \
+			*:*) tag="$$$${last_part##*:}"; image="$$$${repo_part}$$$${last_part%:*}" ;; \
+			*) tag="latest"; image="$$$$mic" ;; \
+		esac; \
 		sed -e "s|^  default: ic$$$$|  default: ic-dev|" \
 		    -e "s|^      tag: latest$$$$|      tag: latest\n    - name: ic-dev\n      container: $$$$image\n      tag: $$$$tag\n      pull: never|" \
 		    "$$$$manifest" > "$$$$manifest.tmp" && mv "$$$$manifest.tmp" "$$$$manifest"; \
@@ -169,8 +176,15 @@ $(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: $(TAILOR_WORKSPACE) $(AZL_INSTALL
 	@manifest="$(TAILOR_WORKSPACE)"; \
 	if [ "$(MIC_CONTAINER_IMAGE)" != "$(TAILOR_DEFAULT_IC_IMAGE)" ]; then \
 		manifest="$(TAILOR_DIR)/.tailor.local.azl-installer.yaml"; \
-		mic="$(MIC_CONTAINER_IMAGE)"; image="$${mic%:*}"; tag="$${mic##*:}"; \
-		if [ "$$image" = "$$tag" ]; then image="$$mic"; tag="latest"; fi; \
+		mic="$(MIC_CONTAINER_IMAGE)"; \
+		case "$$mic" in \
+			*/*) repo_part="$${mic%/*}/"; last_part="$${mic##*/}" ;; \
+			*) repo_part=""; last_part="$$mic" ;; \
+		esac; \
+		case "$$last_part" in \
+			*:*) tag="$${last_part##*:}"; image="$${repo_part}$${last_part%:*}" ;; \
+			*) tag="latest"; image="$$mic" ;; \
+		esac; \
 		sed -e "s|^  default: ic$$|  default: ic-dev|" \
 		    -e "s|^      tag: latest$$|      tag: latest\n    - name: ic-dev\n      container: $$image\n      tag: $$tag\n      pull: never|" \
 		    "$(TAILOR_WORKSPACE)" > "$$manifest"; \
