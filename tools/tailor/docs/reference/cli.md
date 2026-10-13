@@ -99,9 +99,10 @@ Print one selected cell slug per line. Equivalent to `tailor matrix --format slu
 
 ## `tailor explain <image|slug>`
 
-Print the **merge order** for each selected cell: the ordered list of fragment files that merge into it
-(base first, later files win), each annotated with why it applies and any `$include`d libraries. This makes
-the fragment precedence model legible. Add `--with-config` to also print the merged Image Customizer
+Print the **merge order** for each selected cell: the ordered list of applicable fragment files
+(base first), each annotated with its *path* predicate and any `$include`d libraries. An inline
+`match:` filters applicability but does not appear in the reason label or change precedence. Add
+`--with-config` to also print the merged Image Customizer
 config. Pass an image name to explain its selected cells, or a cell slug to explain that cell
 directly. Accepts `-s/--select` and `--cell`; read-only and offline.
 

@@ -184,8 +184,8 @@ and [Cross-arch building](../how-to/cross-arch-building.md).
 
 ## Fragments
 
-Per-cell deltas live in `by-*/` files whose **path** is the condition — no inline `match:` needed. A
-fragment applies to a cell when its path predicate holds:
+Per-cell deltas live in `by-*/` files. Their **path** supplies a condition; an optional inline
+`match:` adds another condition (it does not replace the path predicate):
 
 | Path | Applies when | Kind |
 | --- | --- | --- |
@@ -199,12 +199,41 @@ several values (a disjunction, in the axis's declared value order); a directory 
 takes exactly one value per axis, positionally, with the axes in matrix-declared order. `image.yaml` is the
 base (applies to every cell).
 
-Apply order is merge precedence (later wins for scalars, extends lists). Fragments are sorted by: **arity**
-(more axes apply later — a composite refines the singles it builds on), then **axis-declaration order**
-(cross-axis precedence follows the matrix), then **breadth** (a broader disjunction applies before a
-narrower single value on the same axis, so the more specific one wins). Run `tailor explain <image> --cell
-<slug>` to print the exact merge order for a cell. See [Merge directives](directives.md) and
-[Merge model](../explanation/merge-model.md) for the full model.
+### Inline `match:`
+
+Inside a `by-*/*.yaml` fragment, a leaf mapping tests axis values (equality for a string,
+membership for a list); multiple keys in one leaf are ANDed. The special `feature` key tests the
+image's `features:` list (a list value matches **any** named feature). Combine leaves with
+`all: [<predicate>, ...]`, `any: [<predicate>, ...]`, and `not: <predicate>`; nesting is supported.
+Missing axes and disabled features do not match their leaf.
+
+```yaml
+# by-arch/amd64.yaml
+match:
+  all:
+    - any:
+        - channel: stable
+        - feature: diagnostics
+    - not:
+        variant: minimal
+config:
+  os:
+    hostname:
+      $set: diagnostic-amd64
+```
+
+This applies only to `amd64` cells (the path), with a non-`minimal` variant and either
+`channel=stable` or the `diagnostics` feature. Inline `match:` is **not** a top-level
+`image.yaml` field, nor a substitute for declaring axes/features. It changes which cells receive
+this fragment, **not** its sort order: even complex matches retain their path-based precedence.
+`tailor explain <image> --cell <slug>` lists only fragments that actually apply; its reason label
+describes the path predicate. See [Field-specific merging](directives.md#field-specific-merging)
+for which top-level fields a fragment may contribute.
+
+Apply order is merge precedence; **conflicting plain scalars error** rather than silently
+overriding. Fragments are sorted by **arity** (multi-axis composites after single-axis and feature
+fragments), then **axis-declaration order** (features follow matrix axes at the same arity), then
+**breadth** (broader disjunctions first). See [Merge model](../explanation/merge-model.md).
 
 ## Base sources
 

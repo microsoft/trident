@@ -12,6 +12,28 @@ Fragments apply after `image.yaml`. Local `by-<axis>/<value>.yaml` fragments app
 
 A later `$set` wins over an earlier `$set`. A plain reassignment after a `$set` still conflicts.
 
+## Field-specific merging
+
+Only `base`, `outputs`, `params`, `rpmSources`, `extraParams`, `skip`, `config`, and the
+predicate-only `match` are read from `by-*/*.yaml` fragments. `name`, `toolchain`, `toolsDir`,
+`matrix`, `selectors`, `features`, `operation`, `outputArtifacts`, `signing`,
+`extraDependencies`, `dependsOn`, and `inputs` belong in `image.yaml`; putting them in a
+fragment does **not** change the cell.
+
+| Fragment field | Behavior |
+| --- | --- |
+| `config` | Deep-merge IC mappings; lists append; differing plain scalars conflict. Directives below apply, including `$include` in the `config:` tree. |
+| `base` | Merge mappings with the same rules. Exactly one source kind must remain; use `$set` on the whole `base` to switch kinds. |
+| `outputs` | Append output specs by default; use `$replace` (or `$set`) on the whole list to replace it. |
+| `params` | Repeat the same scalar value freely; different values for one name error. Values are compared as strings, not overridden with `$set`. |
+| `rpmSources`, `extraParams` | Concatenate base and matched fragment lists in merge order; no list directives. |
+| `skip` | Last specified boolean wins (`skip: false` can undo an earlier `true`). |
+| `match` | Filters this fragment together with its path predicate; never merged into the config. |
+
+`$include` resolves **only inside `config:`**, relative to the image directory. It does not
+include a `base`, `outputs`, or another top-level tailor field. See
+[Fragments and inline match](image-yaml.md#fragments).
+
 ## Directives
 
 | Directive | Valid position | Value | Purpose |
@@ -22,7 +44,7 @@ A later `$set` wins over an earlier `$set`. A plain reassignment after a `$set` 
 | `$prepend` | List field value | list | Insert items **before** the inherited list. |
 | `$append` | List field value | list | Insert items **after** the inherited list. |
 | `$unset` | Mapping value | the bare token `$unset` | Remove the inherited key entirely. |
-| `$include` | Mapping value or list item | path string | Splice a shared YAML file at that position. |
+| `$include` | Mapping value or list item **inside `config:`** | path string | Splice a shared YAML file at that position. |
 | `$select` | — | — | **Reserved, not implemented** — use [`by-<axis>/<value>.yaml` fragments](image-yaml.md#fragments) instead. |
 | `$rename` | — | — | **Unsupported**; rejected by the merger. |
 
