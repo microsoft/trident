@@ -727,6 +727,106 @@ mod tests {
     }
 
     #[test]
+    fn a_fragment_signs_only_its_own_matched_cells() {
+        // Regression: signing is resolved per cell from the matched fragment chain
+        // (resolve_signing_ref), not image-wide -- a by-<axis> fragment's signing: opt-in must
+        // apply only to the cells it matches, leaving sibling cells unsigned.
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "image.yaml",
+            indoc! {"
+                name: xs
+                matrix:
+                  arch: [amd64, arm64]
+                base:
+                  path: ./b.img
+                config:
+                  os: { hostname: xs }
+            "},
+        );
+        write(
+            tmp.path(),
+            "by-arch/arm64.yaml",
+            indoc! {"
+                signing: release
+            "},
+        );
+        let image = load_image(tmp.path().join("image.yaml")).unwrap();
+        let cells = render_image(&image, tmp.path()).unwrap();
+
+        let amd64 = cells
+            .iter()
+            .find(|c| c.tuple.get("arch") == Some("amd64"))
+            .unwrap();
+        let arm64 = cells
+            .iter()
+            .find(|c| c.tuple.get("arch") == Some("arm64"))
+            .unwrap();
+
+        assert_eq!(
+            amd64.signing, None,
+            "unmatched sibling cell must stay unsigned"
+        );
+        assert_eq!(
+            arm64.signing,
+            Some(SigningRef::Profile("release".to_owned())),
+            "the matched fragment's signing opt-in must apply to its own cell"
+        );
+    }
+
+    #[test]
+    fn a_more_specific_fragment_can_override_signing_to_false() {
+        // Regression: resolve_signing_ref must be last-wins across the matched chain (base ->
+        // most-specific), so a more-specific `signing: false` can override a less-specific
+        // `signing: true` -- not get silently ignored in favor of the image-wide opt-in.
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "image.yaml",
+            indoc! {"
+                name: xf
+                matrix:
+                  arch: [amd64, arm64]
+                signing: true
+                base:
+                  path: ./b.img
+                config:
+                  os: { hostname: xf }
+            "},
+        );
+        write(
+            tmp.path(),
+            "by-arch/arm64.yaml",
+            indoc! {"
+                signing: false
+            "},
+        );
+        let image = load_image(tmp.path().join("image.yaml")).unwrap();
+        let cells = render_image(&image, tmp.path()).unwrap();
+
+        let amd64 = cells
+            .iter()
+            .find(|c| c.tuple.get("arch") == Some("amd64"))
+            .unwrap();
+        let arm64 = cells
+            .iter()
+            .find(|c| c.tuple.get("arch") == Some("arm64"))
+            .unwrap();
+
+        assert_eq!(
+            amd64.signing,
+            Some(SigningRef::Enabled(true)),
+            "the base document's image-wide opt-in applies where no fragment overrides it"
+        );
+        assert_eq!(
+            arm64.signing,
+            Some(SigningRef::Enabled(false)),
+            "a more-specific fragment's signing: false must win over the less-specific opt-in"
+        );
+    }
+
+    #[test]
     fn lite_cell_keeps_path_base_appends_packages_and_resolves_include_and_nested_params() {
         let tmp = TempDir::new().unwrap();
         let image = mini_image(tmp.path());
