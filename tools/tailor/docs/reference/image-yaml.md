@@ -264,12 +264,13 @@ entries whose kind is `image` add a build-order edge; each input `name` is uniqu
 outputs:
   - format: cosi
     cosiCompressionLevel: 6
-    name: "${name}-${arch}"
   - format: vhd-fixed
     compression: zstd      # tailor compresses the artifact → <slug>.vhd.zst
 ```
 
-`format` is required. `cosiCompressionLevel`, `compression`, and `name` are optional.
+`format` is required. `cosiCompressionLevel` and `compression` are optional. The published
+basename is always the cell's slug (`<slug>.<ext>`, clone-suffixed `_cloneN` under `--clones`) --
+there is no per-output name override.
 
 ### `compression`
 
