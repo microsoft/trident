@@ -283,18 +283,23 @@ impl HostSigner {
 }
 
 /// A profile id made safe to use as a single path component (profile ids are free-form YAML map
-/// keys and could in principle contain `/`).
+/// keys and could in principle contain `/`), using a collision-free, percent-encoding-style
+/// escape: every byte outside `[A-Za-z0-9-]` -- including a literal `_` -- is replaced with `_`
+/// followed by its two-digit lowercase hex value, so no two distinct inputs can ever encode to
+/// the same output (e.g. `release/prod` -> `release_2fprod`, `release_prod` -> `release_5fprod`;
+/// unlike a simple one-char-per-char substitution, these no longer collide).
 fn sanitize_for_filename(profile_id: &str) -> String {
-    profile_id
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(profile_id.len());
+    for byte in profile_id.bytes() {
+        let c = byte as char;
+        if c.is_ascii_alphanumeric() || c == '-' {
+            out.push(c);
+        } else {
+            let _ = write!(out, "_{byte:02x}");
+        }
+    }
+    out
 }
 
 // ───────────────────────────── inject-files.yaml model ─────────────────────────────
@@ -1009,5 +1014,29 @@ mod tests {
             first, other,
             "different profile ids must not share a cached CA"
         );
+    }
+
+    #[test]
+    fn sanitize_for_filename_is_collision_free() {
+        // Regression: a naive one-char-per-char substitution (replace every unsafe char with `_`)
+        // let distinct profile ids collide on the same cache directory, e.g. "release/prod" and
+        // "release_prod" both mapped to "release_prod" -- silently sharing one profile's private
+        // CA root with an unrelated profile. The percent-encoding-style escape must keep every
+        // distinct input distinct, including inputs that already contain a literal `_`.
+        let cases: &[(&str, &str)] = &[
+            ("release/prod", "release_2fprod"),
+            ("release_prod", "release_5fprod"),
+            ("a/b", "a_2fb"),
+            ("a_b", "a_5fb"),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for (input, expected) in cases {
+            let encoded = sanitize_for_filename(input);
+            assert_eq!(&encoded, expected, "unexpected encoding for {input:?}");
+            assert!(
+                seen.insert(encoded.clone()),
+                "encoding collision: {input:?} produced {encoded:?}, which was already seen"
+            );
+        }
     }
 }

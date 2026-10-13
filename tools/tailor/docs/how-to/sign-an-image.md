@@ -33,7 +33,7 @@ Add a `signing:` block to `tailor.yaml`. A profile names a key-source `backend` 
 signing:
   default: test-ca            # profile used when an image says `signing: true`
   profiles:
-    test-ca:                  # self-signed CA minted per build (CI / local; not a production root)
+    test-ca:                  # self-signed CA, cached per profile under <output>/.tailor/ca-cache (CI / local; not a production root)
       backend: local-test-ca
       publishCaCert: ./artifacts/ca_cert.pem
     byo:                      # bring your own Secure Boot key + cert
@@ -48,7 +48,7 @@ signing:
 
 | Backend | Required fields | Use |
 | --- | --- | --- |
-| `local-test-ca` | none | MVP / CI. A self-signed CA + leaf minted per build. Not a production trust root. |
+| `local-test-ca` | none | MVP / CI. A self-signed CA + leaf, persisted per profile id under `<output>/.tailor/ca-cache` and reused across builds. Not a production trust root. |
 | `keypair` | `key`, `cert` | Bring your own Secure Boot key + certificate (PEM). |
 | `azure-key-vault` | `vault`, `certificate` | Remote signing — configuration only; execution is a later milestone. |
 
@@ -116,5 +116,9 @@ declared `output.artifacts`, sign them on the host, and re-inject them so the fi
 
 - Private key material is always **referenced** by path, never inlined into the manifest or written
   into an image.
-- `local-test-ca` mints fresh keys each build, so its signed outputs are intentionally not
-  reproducible; use `keypair` (a fixed cert identity) for reproducible production builds.
+- `local-test-ca` mints a CA once per signing profile id and caches it under
+  `<output-dir>/.tailor/ca-cache/<profile-id>/`, reusing it across subsequent builds so an
+  incremental rebuild of a sibling cell on the same profile can't silently invalidate an
+  already-built cell's signature. Delete that profile's cache subdirectory to force a fresh root.
+  Still not a production trust root -- use `keypair` (a fixed cert identity) for reproducible
+  production builds.
