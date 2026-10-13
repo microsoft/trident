@@ -199,6 +199,7 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                         profile_id,
                         profile,
                         &target.root,
+                        cell.slug.as_ref(),
                         seen_artifacts,
                         seen_ca_cert_paths,
                     )?;
@@ -569,27 +570,35 @@ fn signing_key_hashes(
     ))
 }
 
-/// Claim a `local-test-ca` profile's resolved `publishCaCert` destination, rejecting a collision
-/// with either an already-claimed image artifact path or another profile's CA path. Two cells
-/// sharing the exact same profile id are allowed to resolve to the same path (expected to converge
-/// on the same CA); across different profile ids, `build_signer` mints an independent self-signed
-/// root per call, so the second write would silently invalidate the first image's trust chain. A
-/// profile with no `publishCaCert` set (the executor's per-image default path) has nothing to claim
-/// here -- that default is already slug-scoped, so it cannot collide across cells.
+/// Claim a `local-test-ca` profile's resolved CA-cert destination, rejecting a collision with
+/// either an already-claimed image artifact path or another profile's CA path. Two cells sharing
+/// the exact same profile id are allowed to resolve to the same path (expected to converge on the
+/// same CA); across different profile ids, `build_signer` mints an independent self-signed root
+/// per call, so the second write would silently invalidate the first image's trust chain. A
+/// profile with no `publishCaCert` set still writes a CA cert -- at the executor's slug-scoped
+/// default (`<output_dir>/<slug>.ca_cert.pem`, matching `tailor-exec`'s `ca_cert_name`) -- so that
+/// default must be claimed too, or a *different* profile's explicit `publishCaCert` could alias it
+/// and silently overwrite this cell's CA undetected.
 fn claim_ca_cert_path(
     profile_id: &str,
     profile: &tailor_config::SigningProfile,
     workspace_root: &Path,
+    slug: &str,
     seen_artifacts: &BTreeMap<PathBuf, String>,
     seen_ca_cert_paths: &mut BTreeMap<PathBuf, String>,
 ) -> Result<(), CoreError> {
     if profile.backend != tailor_config::SigningBackend::LocalTestCa {
         return Ok(());
     }
-    let Some(ca_path) = profile.publish_ca_cert.as_deref() else {
-        return Ok(());
+    let ca_path: PathBuf = match profile.publish_ca_cert.as_deref() {
+        Some(p) => p.to_owned(),
+        // Must match `tailor_exec::output_artifacts::ca_cert_name`'s `"{slug}.ca_cert.pem"`.
+        // `tailor-core` can't depend on `tailor-exec` to share that helper directly (the
+        // dependency only runs the other way), so the format is duplicated here.
+        None => PathBuf::from(format!("{slug}.ca_cert.pem")),
     };
-    let resolved = resolve_for_collision_check(&tailor_config::absolutize(ca_path, workspace_root));
+    let resolved =
+        resolve_for_collision_check(&tailor_config::absolutize(&ca_path, workspace_root));
     if let Some((_, artifact_slug)) = find_collision(&resolved, seen_artifacts) {
         return Err(CoreError::CaCertPathCollidesWithArtifact {
             path: resolved,
@@ -2077,6 +2086,7 @@ mod tests {
             "release",
             &profile,
             root.path(),
+            "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
         )
@@ -2085,6 +2095,7 @@ mod tests {
             "release",
             &profile,
             root.path(),
+            "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
         )
@@ -2105,6 +2116,7 @@ mod tests {
             "release",
             &profile,
             root.path(),
+            "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
         )
@@ -2113,6 +2125,7 @@ mod tests {
             "dev",
             &profile,
             root.path(),
+            "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
         )
@@ -2138,6 +2151,7 @@ mod tests {
             "release",
             &profile,
             root.path(),
+            "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
         )
@@ -2167,6 +2181,7 @@ mod tests {
             "release",
             &profile,
             root.path(),
+            "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
         )
@@ -2255,7 +2270,7 @@ mod tests {
     }
 
     #[test]
-    fn claim_ca_cert_path_ignores_non_local_test_ca_backends_and_unset_paths() {
+    fn claim_ca_cert_path_ignores_non_local_test_ca_backends() {
         let root = TempDir::new().unwrap();
         let mut seen_ca_cert_paths = BTreeMap::new();
         let seen_artifacts = BTreeMap::new();
@@ -2273,23 +2288,78 @@ mod tests {
             "a",
             &keypair,
             root.path(),
+            "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
         )
         .unwrap();
         assert!(seen_ca_cert_paths.is_empty());
+    }
 
-        // local-test-ca with no publishCaCert set: nothing to claim (slug-scoped default path).
+    #[test]
+    fn claim_ca_cert_path_claims_the_slug_scoped_default_when_unset() {
+        // A profile with no `publishCaCert` override still writes a CA cert at the executor's
+        // slug-scoped default (`<slug>.ca_cert.pem`); that default must be claimed, not skipped,
+        // or a later profile's *explicit* `publishCaCert` could alias it undetected.
+        let root = TempDir::new().unwrap();
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
         let no_publish = local_test_ca_profile(None);
         claim_ca_cert_path(
             "b",
             &no_publish,
             root.path(),
+            "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
         )
         .unwrap();
-        assert!(seen_ca_cert_paths.is_empty());
+        assert_eq!(
+            seen_ca_cert_paths.len(),
+            1,
+            "the slug-scoped default must be claimed"
+        );
+        assert_eq!(
+            seen_ca_cert_paths.get(&root.path().join("img.ca_cert.pem")),
+            Some(&"b".to_owned())
+        );
+    }
+
+    #[test]
+    fn claim_ca_cert_path_rejects_an_explicit_override_aliasing_another_cells_default() {
+        // Regression: a profile with no override writes to the slug-scoped default
+        // (`<slug>.ca_cert.pem`); a *different* profile explicitly overriding `publishCaCert` to
+        // that exact literal path must be rejected as a collision, not treated as free.
+        let root = TempDir::new().unwrap();
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        let no_publish = local_test_ca_profile(None);
+        claim_ca_cert_path(
+            "release",
+            &no_publish,
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+
+        let colliding_override = local_test_ca_profile(Some("img.ca_cert.pem"));
+        let err = claim_ca_cert_path(
+            "dev",
+            &colliding_override,
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CoreError::DuplicateCaCertPath { .. }),
+            "an explicit override aliasing another cell's slug-scoped default must be rejected: {err:?}"
+        );
     }
 
     #[test]
