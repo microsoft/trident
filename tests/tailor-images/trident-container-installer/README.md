@@ -16,5 +16,6 @@ From the repo root, run:
 cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-container-installer --output-dir ./artifacts
 ```
 
-Output is written to `artifacts/trident-container-installer.iso` by default.
+Output is written to `artifacts/trident-container-installer_amd64_iso.iso` by default
+(tailor publishes under the cell's slug).
 Use `--output-dir <path>` to change the output location.

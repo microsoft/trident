@@ -22,5 +22,6 @@ cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-i
 
 Use `-s arch=arm64` for the ARM64 variant.
 
-Output is written to `artifacts/trident-testimage.cosi` by default. Use
-`--output-dir <path>` to change the output location.
+Output is written to `artifacts/trident-testimage_amd64_cosi.cosi` by default
+(tailor publishes under the cell's slug; substitute `arm64` for the ARM64
+variant). Use `--output-dir <path>` to change the output location.
