@@ -10,10 +10,11 @@ tailor build appliance --cell appliance_amd64_cosi --force
 ```
 
 `clean` targets only selected cells' default **uncompressed** artifact names in the workspace's
-`artifacts/`, plus CA certificates for signed images. It does not remove build stamps, clone
-outputs, `.zst` compressed outputs, managed extracted `.artifacts` directories, or a custom
-`build --output-dir` tree. Remove those separately if needed. `--force` reruns IC even if a
-remaining stamp says the cell is current.
+`artifacts/`, plus the default `<slug>.ca_cert.pem` for signed images using that path. If a
+`local-test-ca` profile sets `publishCaCert`, remove that custom path yourself. It does not remove
+build stamps, clone outputs, `.zst` compressed outputs, managed extracted `.artifacts` directories,
+or a custom `build --output-dir` tree. Remove those separately if needed. `--force` reruns IC even
+if a remaining stamp says the cell is current.
 
 A real `build` acquires an advisory lock at `<output-dir>/.tailor/build.lock`. A second build
 targeting that output directory fails promptly; use a distinct `--output-dir` for parallel runs.

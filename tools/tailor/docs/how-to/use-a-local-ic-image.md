@@ -2,7 +2,7 @@
 
 Sometimes the toolchain (or a tools-dir source) is an image you build **locally** and never push to
 a registry — for example an Image Customizer image with extra host tools layered in, tagged
-`my-ic:local`. tailor runs such images directly: no registry, no `localhost:5000`
+`my-ic:local`. tailor runs such images directly: no registry, no local registry
 workaround.
 
 ## 1. Reference the local image
@@ -31,20 +31,23 @@ tailor build
 
 Under `pull: missing`, tailor inspects the local daemon, finds `my-ic:local`, and runs
 it **without a registry pull**. Under `pull: never`, tailor requires the image to be present locally
-(or a locked digest) and never contacts a registry — use it to guarantee an offline build.
+when no digest is locked and fails if it is missing. An existing lock digest takes precedence
+and may trigger a pull even with `pull: never`; registry **base** resolution is independent. This
+policy alone does not guarantee an offline build.
 
 ## 2. How the image is identified (and whether it locks)
 
 tailor inspects the local image and picks the most reproducible identifier available:
 
 - If the image carries a **`RepoDigest`** (it was pulled from, or pushed to, a registry at some
-  point), tailor runs it as `container@sha256:…` and that digest is **recorded in `tailor.lock`**.
+  point), tailor runs it as `container@sha256:…`. A feature-enabled `tailor lock` can record
+  named workspace toolchain/tools-dir source digests; an ordinary build does **not** write the lock.
 - If the image is **local-only** (no `RepoDigest` — a fresh `docker build` that was never pushed),
   tailor runs it by its image **`Id`**. An `Id` is not portable across machines, so it is
-  **intentionally omitted from `tailor.lock`**: a locked build cannot pin something another machine
-  cannot fetch.
+  **not lockable**: another machine cannot fetch that local image by its ID.
 
-This applies identically to `toolsDirSources` and to an image's inline `toolchain:` / `toolsDir.source`.
+Inline `toolchain:` / `toolsDir.source` images can run locally by digest or ID, but `tailor lock`
+does not add standalone inline sources to its named workspace lists.
 
 ## 3. Match the architecture
 
@@ -61,6 +64,7 @@ Build cells whose arch the local image can serve (for example select the matchin
 
 ## 4. Make a reproducible build
 
-To pin a local image in the lockfile, give it a `RepoDigest` by pushing (or re-pulling) it through a
-registry your builders can reach, then `tailor lock`. A purely local `Id`-based image stays usable
-but is never locked — see [Pull policy](../reference/tailor-yaml.md#pull-policy).
+To record a **named** source in the lockfile, give it a `RepoDigest` by pushing (or re-pulling) it
+through a registry your builders can reach, then use a `lock-preview` build's `tailor lock`.
+Strict `build --locked` enforcement is not implemented; a purely local `Id` remains usable but
+unlocked. See [Pull policy](../reference/tailor-yaml.md#pull-policy).

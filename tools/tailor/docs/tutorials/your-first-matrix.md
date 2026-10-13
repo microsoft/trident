@@ -120,21 +120,24 @@ tailor explain gizmo -s variant=full,arch=amd64,channel=edge --with-config
 Expected shape:
 
 ```text
-gizmo: 1 cell(s)
+cell  gizmo_full_amd64_edge_cosi   (arch=amd64, channel=edge, variant=full)
 
-── gizmo_full_amd64_edge_cosi ──
+merge order (top = base, bottom wins):
+   1  image.yaml             base
+   2  by-variant/full.yaml   variant=full
+   3  by-arch/amd64.yaml     arch=amd64
+   4  by-channel/edge.yaml  channel=edge
+
+merged config:
+previewFeatures:
+- input-image-oci
 os:
   hostname: gizmo
-  packages:
-    install:
-      - openssh-server
-      - grub2-efi-x64
-      - vim
-      - git
-      - gizmo-edge
+  ...
 ```
 
-The exact config depends on your edits. The important point: `explain --with-config` shows the fully merged IC config for selected cells (plain `explain` shows only the ordered list of fragment files that merge into each cell).
+The full config also includes the merged package list and storage layout. `explain --with-config`
+prints it after the fragment order; plain `explain` omits that last section.
 
 ## 6. Dry-run one selected cell
 

@@ -317,8 +317,8 @@ references none of its output. (An `image` base or input already implies the edg
 
 ### Embedding an artifact with `inputs:`
 
-To consume a producer's artifact *inside* `config:` (e.g. as an IC `additionalFiles` source or a
-local `rpmSources` entry), declare it in `inputs:` and reference it by name as `${inputs.<name>}`:
+To consume a producer's artifact *inside* `config:` (e.g. as an IC `additionalFiles` source),
+declare it in `inputs:` and reference it by name as `${inputs.<name>}`:
 
 ```yaml
 inputs:
@@ -339,6 +339,7 @@ config:
 fingerprint — so a producer rebuild rebuilds this image, and you never hand-write a
 `../…/artifacts/…` path. A `${inputs.<name>}` that names no declared input is an error. `inputs`
 entries whose kind is `image` add a build-order edge; each input `name` is unique per image.
+Substitution applies only to `config:` values, **not** to `rpmSources` or other tailor-level paths.
 
 ## Output spec
 
@@ -346,7 +347,6 @@ entries whose kind is `image` add a build-order edge; each input `name` is uniqu
 outputs:
   - format: cosi
     cosiCompressionLevel: 6
-    name: "${name}-${arch}"
   - format: vhd-fixed
     compression: zstd      # tailor compresses the artifact → <slug>.vhd.zst
 ```

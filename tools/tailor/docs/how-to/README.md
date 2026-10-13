@@ -1,9 +1,9 @@
 # How-to guides
 
 How-to guides are task-oriented recipes. Most assume a **workspace** (`tailor.yaml` plus one or
-more `image.yaml` files); the execution verbs (`build`, `render` with a real run) additionally need a
-container **engine**, and some steps need a **registry** login or a base-image **catalogue**. Each
-guide notes anything extra it needs.
+more `image.yaml` files); actual `build` and `convert` runs need a container **engine**, while
+`render`, `validate`, and `build --dry-run` do not. Some steps need a **registry** login or a
+base-image **catalogue**. Each guide notes anything extra it needs.
 
 ## Author a workspace
 

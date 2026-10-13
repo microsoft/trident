@@ -59,6 +59,9 @@ name the image and pass `--cell` — `tailor build <slug>` is shorthand for
 | `--dry-run` | Render each selected container/IC invocation without running it. |
 | `--clones N` | Build N clones of each cell — distinct artifacts sharing all meaningful content but differing in incidental details (fresh UUIDs, timestamps), each published as `<slug>_clone<n>`. Default: `1`. |
 
+Builds run sequentially. A hidden `--jobs` argument is accepted but has no scheduling effect; do
+not use it to request parallel builds.
+
 ## `tailor convert <input> --to <format>`
 
 Convert a single image file to another format via Image Customizer (`convert`) — no workspace or
@@ -166,15 +169,17 @@ avoid exporting those configs unchanged to a pipeline without substituting concr
 > implemented). Build with `cargo install --features lock-preview` (or `cargo build --features
 > lock-preview`) to enable them.
 
-Resolve registry inputs and write `tailor.lock` without building. Inputs already pinned in the
-current lock **keep their digests** — only new or unpinned inputs are resolved, so re-running `lock`
-is idempotent and never silently moves an existing pin. Use it to freeze a reproducible set.
+Write `tailor.lock` without building. Existing pins are retained rather than silently moved, but
+registry bases are still **resolved** before their pinned digest is reused: `lock` is not offline.
+Toolchains, named tools-dir sources, and an **explicitly configured** janitor image can be
+recorded; the built-in default janitor and inline sources are not added. A normal build can use
+existing pins but does not write a lock, and strict `--locked` enforcement is not implemented.
 
 ## `tailor update` *(preview)*
 
-Re-resolve **every** input to its latest digest and rewrite `tailor.lock`, ignoring the existing
-pins. Use it to deliberately refresh to newer base images / toolchains. Preview feature — see
-[`tailor lock`](#tailor-lock-preview).
+Ignore old pins and rewrite `tailor.lock`, resolving each input under its pull policy (a local
+image may keep the same digest). Use it to deliberately refresh registry bases/toolchains.
+Preview feature — see [`tailor lock`](#tailor-lock-preview).
 
 ## `tailor resolve [images...]`
 
@@ -184,7 +189,9 @@ it. May contact the engine/registries; unlike `lock`, available in default build
 ## `tailor clean [images...]`
 
 Use the container janitor to remove selected cells' default, **uncompressed** artifacts from
-`<workspace>/artifacts` (and signed cells' CA certificates). Accepts `-s/--select` and `--cell`.
+`<workspace>/artifacts` (and the default `<slug>.ca_cert.pem` path for signed cells).
+An explicit signing profile `publishCaCert` path is **not** removed. Accepts `-s/--select` and
+`--cell`.
 Requires a reachable engine. It does **not** remove build stamps, clones, compressed `.zst` outputs,
 managed `.artifacts` directories, or outputs from `build --output-dir`; delete those separately.
 To regenerate after cleaning, use `build --force` if the stamp still marks a cell up to date.

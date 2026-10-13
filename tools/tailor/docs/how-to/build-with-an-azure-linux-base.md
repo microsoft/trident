@@ -66,12 +66,14 @@ Pass `-vv` to also stream the Image Customizer logs.
 
 ## What tailor handles for you
 
-- **Digest pinning.** tailor resolves the base to a digest and passes IC a reproducible
-  `--image oci:<repo>@sha256:…`. Run `tailor lock` to record it in `tailor.lock`.
+- **Digest resolution.** tailor resolves the base to a digest and passes IC
+  `--image oci:<repo>@sha256:…` for that run. Recording it with `tailor lock` requires a
+  `lock-preview` build; an existing pin is reused after registry resolution, not as an offline
+  guarantee. Strict `build --locked` enforcement is not implemented.
 - **Image cache.** `oci`/`azureLinux` bases need a cache directory; tailor defaults
   `runtime.imageCacheDir` to `<workspace>/.tailor/cache`.
 - **Ownership.** IC writes outputs as root; the sudo-free janitor normalizes them (and the cache) back
   to you, so artifacts are yours to read and delete. tailor defaults `runtime.janitorImage` to
   `mcr.microsoft.com/azurelinux/base/core:3.0`.
 
-Set any of these explicitly under `runtime:` in `tailor.yaml` to override the defaults.
+Set `imageCacheDir` or `janitorImage` under `runtime:` in `tailor.yaml` to override those defaults.

@@ -54,14 +54,16 @@ out-of-workspace inputs. The old whole-host `-v /:/host` bind is never emitted.
 
 Toolchains and tools-dir sources support `pull: always | missing | never`:
 
-- `always` resolves the image from its registry and pulls before use.
+- `always` pulls before use; without a lock pin, it first resolves a registry digest.
 - `missing` (default) uses a local image when present, otherwise resolves and pulls from the registry.
   If `tailor.lock` already pins a digest for the named source, the locked digest wins.
-- `never` requires a locked digest or a local image and never contacts the registry.
+- `never` uses a local image when no digest is locked; without either, it fails. A **locked digest**
+  is selected first and may be pulled, even with `pull: never`: this setting alone is not an offline
+  guarantee.
 
-Local images that expose a `RepoDigest` are lockable and run as `container@sha256:…`. Local-only
-images without a `RepoDigest` run by their image `Id` and are intentionally omitted from
-`tailor.lock`.
+Local images that expose a `RepoDigest` run as `container@sha256:…`; named workspace sources can
+be recorded by the preview `lock` command. Local-only images without a `RepoDigest` run by their
+image `Id` and cannot be pinned in `tailor.lock`.
 
 A local toolchain image serves the architecture it was built for. tailor reads that architecture
 during resolution and **fails fast, before any container run,** when it cannot provide a selected
@@ -72,8 +74,9 @@ error: toolchain `local-ic` local image is `amd64` but cell `gizmo_arm64_cosi` t
        no local image for that arch and pull policy won't fetch it
 ```
 
-`pull: never` with no local image and no locked digest fails the same way — never silently reaching a
-registry. See [Use a locally-built Image Customizer image](../how-to/use-a-local-ic-image.md).
+`pull: never` with no local image and no locked digest fails without a registry request. Registry
+base images may still require resolution independently of toolchain pull policy. See
+[Use a locally-built Image Customizer image](../how-to/use-a-local-ic-image.md).
 
 A toolchain entry with every optional key set:
 
@@ -105,7 +108,8 @@ runtime:
 `toolsDirSources:` is a list of named container root filesystems that tailor can export, cache, bind,
 and pass to IC as `--tools-dir`. This is useful for sealed/minimal images whose target root does not
 contain a package manager. The cache is tailor-owned under `runtime.imageCacheDir/tools-dirs/<digest>`
-and is bound read-only by default. tailor never passes `--tools-dir /`.
+and stays as a shared cache; tailor copies it into per-cell disposable scratch under
+`runtime.buildDirBase` and binds **that copy writable** for IC. tailor never passes `--tools-dir /`.
 
 ```yaml
 toolsDirSources:

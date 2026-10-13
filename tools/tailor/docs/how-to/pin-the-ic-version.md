@@ -38,23 +38,26 @@ toolchain: ic-1.3
 > the `lock-preview` Cargo feature and are **absent from default builds** (lockfile enforcement is not
 > yet implemented). Install with `cargo install --features lock-preview` to use the commands below.
 
-`tailor.lock` records digests for resolvable toolchains and registry bases; builds can use existing
-pins. The version and tag settings above are available without the preview feature.
+`tailor.lock` can record named toolchains, tools-dir sources, registry bases, and an explicitly
+configured janitor image. Builds can use existing pins; ordinary builds do not write the lock.
+The version and tag settings above are available without the preview feature.
 
 ```bash
-# First time — resolve everything and write the lock:
+# First time — write supported pins:
 tailor lock
 
-# Add a new image/toolchain later — lock keeps existing pins and resolves only the new inputs:
+# Add a new image/toolchain later — lock keeps existing pins:
 tailor lock
 
-# Deliberately move every pin to the latest digest:
+# Deliberately refresh pins according to each source's pull policy:
 tailor update
 ```
 
 `lock` is a **freeze**: inputs already pinned keep their digests, so re-running it is idempotent and
-never silently moves a pin. `update` re-resolves **everything** to the latest digest — use it when you
-intend to move up.
+never silently moves a pin. It **still resolves registry bases** before reusing their pins, so
+neither `lock` nor a build using a registry base is necessarily offline. `update` ignores prior
+pins and resolves inputs under their pull policies; locally selected images need not change.
+The built-in janitor and inline image sources are not added to the lock.
 
 ## Lockfile enforcement is not available yet
 
@@ -64,5 +67,6 @@ pipeline requires a complete, immutable lock.
 
 > **Local images.** A local-only Image Customizer image (a fresh `docker build` that was never pushed,
 > so it has no registry digest) can't be pinned and is omitted from `tailor.lock`; reproducibility then
-> depends on the local image tag you built. A local image that *does* carry a repo digest is still
-> locked. See [Use a locally-built Image Customizer image](use-a-local-ic-image.md).
+> depends on the local image tag you built. A local image that *does* carry a repo digest can be
+> pinned when it is a named workspace source and you run the preview `lock` command.
+> See [Use a locally-built Image Customizer image](use-a-local-ic-image.md).

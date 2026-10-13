@@ -59,13 +59,16 @@ load-bearing — treat a regression in them as a serious bug:
 
 ## Supply-chain pinning
 
-Because a moving container tag is a reproducibility hazard (today's `:latest` is
-not tomorrow's), tailor resolves and pins the digests of the images it runs —
-the IC toolchain, tools-directory sources, base images, and the janitor image —
-into `tailor.lock`. Pinning by digest is a **consistency and reproducibility**
-measure under the trusted-host model, not a defense against a compromised
-registry account; run `tailor lock` to freeze digests and `tailor update` to
-refresh them deliberately.
+Because a moving tag is a reproducibility hazard, a normal build resolves
+registry inputs to digests for that run and can reuse pins in an existing
+`tailor.lock`. Writing/refreshing the lock with `tailor lock`/`update` requires
+a binary built with the optional `lock-preview` feature. Named toolchains,
+tools-dir sources, registry bases, and an **explicitly configured** janitor
+image can be pinned; the built-in janitor and inline sources are not recorded.
+Registry bases are still resolved before existing pins are reused, and strict
+`build --locked` enforcement is not implemented. Digest pinning improves
+consistency; it does not defend against a compromised registry account or
+guarantee an offline build.
 
 ## Reporting
 
