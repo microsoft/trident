@@ -186,7 +186,8 @@ pub enum CoreError {
 
     #[error(
         "cells `{first}` and `{second}` both publish to `{}` -- give the cells distinct matrix \
-         axis values (or format/compression) so their slugs no longer collide",
+         axis values or output format so their slugs no longer collide (compression alone cannot \
+         fix this: both cells still collide on the shared uncompressed artifact path)",
         .path.display()
     )]
     DuplicateOutputPath {

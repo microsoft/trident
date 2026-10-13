@@ -44,10 +44,15 @@ pub struct FingerprintInputs<'a> {
     /// swap, or editing the backend/vault/certificate fields under the same id -- rebuilds the cell
     /// so an unsigned (or differently-keyed) artifact isn't silently reused.
     pub signing_profile: Option<&'a str>,
-    /// Sorted content hashes of the profile's local key/cert files (XXH3-128, `deps.rs`); a change
-    /// to the file *contents* alone (same declared path) still busts the fingerprint, unlike the id
-    /// or path strings above which only change when the config text itself changes.
-    pub signing_key_hashes: &'a [[u8; 16]],
+    /// Content hash of the profile's local key file (XXH3-128, `deps.rs`, `keypair` backend only); a
+    /// change to the file *contents* alone (same declared path) still busts the fingerprint, unlike
+    /// the id or path strings above which only change when the config text itself changes. Kept
+    /// separate from `signing_cert_hash` (rather than merged into one sorted set) so swapping the
+    /// key and cert files changes the fingerprint instead of silently reusing a stale artifact.
+    pub signing_key_hash: Option<[u8; 16]>,
+    /// Content hash of the profile's local certificate file (XXH3-128, `deps.rs`, `keypair` backend
+    /// only); see `signing_key_hash`.
+    pub signing_cert_hash: Option<[u8; 16]>,
 }
 
 /// Compute the canonical fingerprint. Each field is domain-separated and length-prefixed so distinct
@@ -112,8 +117,11 @@ pub fn fingerprint(inputs: &FingerprintInputs<'_>) -> Fingerprint {
     if let Some(profile) = inputs.signing_profile {
         field(&mut hasher, b"signing.profile", profile.as_bytes());
     }
-    for hash in inputs.signing_key_hashes {
-        field(&mut hasher, b"signing.key", hash);
+    if let Some(hash) = inputs.signing_key_hash {
+        field(&mut hasher, b"signing.key", &hash);
+    }
+    if let Some(hash) = inputs.signing_cert_hash {
+        field(&mut hasher, b"signing.cert", &hash);
     }
 
     Fingerprint(hasher.finalize().into())
@@ -170,7 +178,8 @@ mod tests {
             compression: None,
             cosi_compression_level: None,
             signing_profile: None,
-            signing_key_hashes: &[],
+            signing_key_hash: None,
+            signing_cert_hash: None,
         }
     }
 
@@ -206,11 +215,30 @@ mod tests {
         let cfg: Value = serde_yaml_ng::from_str("os:\n  hostname: a\n").unwrap();
         let mut a = inputs("cell", &cfg, &base);
         a.signing_profile = Some("release:keypair::");
-        a.signing_key_hashes = &[[1; 16], [2; 16]];
+        a.signing_key_hash = Some([1; 16]);
+        a.signing_cert_hash = Some([2; 16]);
         let mut b = inputs("cell", &cfg, &base);
         b.signing_profile = Some("release:keypair::");
-        b.signing_key_hashes = &[[1; 16], [9; 16]];
+        b.signing_key_hash = Some([1; 16]);
+        b.signing_cert_hash = Some([9; 16]);
         assert_ne!(fingerprint(&a), fingerprint(&b));
+    }
+
+    #[test]
+    fn fingerprint_changes_when_key_and_cert_hashes_are_swapped() {
+        // Swapping which file is the key and which is the cert must not be a no-op: merging both
+        // into one sorted hash set would make this pair indistinguishable from an unswapped one.
+        let base = base();
+        let cfg: Value = serde_yaml_ng::from_str("os:\n  hostname: a\n").unwrap();
+        let mut a = inputs("cell", &cfg, &base);
+        a.signing_profile = Some("release:keypair::");
+        a.signing_key_hash = Some([1; 16]);
+        a.signing_cert_hash = Some([2; 16]);
+        let mut swapped = inputs("cell", &cfg, &base);
+        swapped.signing_profile = Some("release:keypair::");
+        swapped.signing_key_hash = Some([2; 16]);
+        swapped.signing_cert_hash = Some([1; 16]);
+        assert_ne!(fingerprint(&a), fingerprint(&swapped));
     }
 
     #[test]
