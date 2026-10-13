@@ -13,10 +13,10 @@ Before=trident-acl-agent.service
 Type=oneshot
 RemainAfterExit=yes
 # Re-derives the system trust store install every boot: /etc is part of
-# this usr-verity image's A/B-swapped root (an overlay backed by the
-# per-slot trident-overlay-a/-b partitions), so neither step below carries
-# over across a reboot into the other slot, unlike the source cert on
-# /var/lib/trident-acl-agent.
+# this usr-verity image's plain A/B-swapped root filesystem (root-a/root-b,
+# see storage-acl-agent.yaml -- no overlay involved), so neither step below
+# carries over across a reboot into the other slot, unlike the source cert
+# on /var/lib/trident-acl-agent.
 ExecStart=/bin/sh -c ' \
     cp /var/lib/trident-acl-agent/nebraska-ca.pem /etc/pki/ca-trust/source/anchors/trident-acl-agent-storm-test-ca.pem && \
     update-ca-trust extract && \
