@@ -174,11 +174,19 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     hash_cache_dir,
                     target.name(),
                 )?;
-                let signing_profile =
+                let resolved_signing_profile =
                     tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())
                         .ok()
-                        .flatten()
-                        .map(|(profile_id, _profile)| profile_id);
+                        .flatten();
+                let signing_profile_descriptor_value = resolved_signing_profile
+                    .as_ref()
+                    .map(|(id, profile)| signing_profile_descriptor(id, profile));
+                let signing_key_hashes_list = match &resolved_signing_profile {
+                    Some((_, profile)) => {
+                        signing_key_hashes(profile, &target.root, hash_cache_dir, target.name())?
+                    }
+                    None => Vec::new(),
+                };
                 let print = fingerprint(&FingerprintInputs {
                     slug: cell.slug.as_ref(),
                     toolchain_digest: &resolved_toolchain.ic_image_ref,
@@ -192,7 +200,8 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     extra_params: &cell.extra_params,
                     compression: cell.output.compression,
                     cosi_compression_level: cell.output.cosi_compression_level,
-                    signing_profile: signing_profile.as_deref(),
+                    signing_profile: signing_profile_descriptor_value.as_deref(),
+                    signing_key_hashes: &signing_key_hashes_list,
                 });
                 let artifact = output_dir.join(published_artifact_name(
                     cell.slug.as_ref(),
@@ -416,6 +425,36 @@ fn resolved_tools_dir<'a>(
         .get(&key)
         .map(Some)
         .ok_or(CoreError::MissingResolvedToolsDir { reference: key })
+}
+
+/// A deterministic descriptor of a signing profile's build-affecting *reference* settings --
+/// everything except local key/cert file contents, which are content-hashed separately
+/// (`signing_key_hashes`) since a path alone doesn't change when the file it names is edited in
+/// place.
+fn signing_profile_descriptor(id: &str, profile: &tailor_config::SigningProfile) -> String {
+    format!(
+        "{id}:{}:{}:{}",
+        profile.backend.as_str(),
+        profile.vault.as_deref().unwrap_or_default(),
+        profile.certificate.as_deref().unwrap_or_default(),
+    )
+}
+
+/// Content-hash a signing profile's local key/cert files (`keypair` backend only -- other backends
+/// declare no local file, so this is empty for them), resolved against the workspace root the same
+/// way `tailor_sign::build_signer` resolves them.
+fn signing_key_hashes(
+    profile: &tailor_config::SigningProfile,
+    workspace_root: &Path,
+    cache_dir: Option<&Path>,
+    image: &str,
+) -> Result<Vec<[u8; 16]>, CoreError> {
+    let paths: Vec<PathBuf> = [profile.key.as_deref(), profile.cert.as_deref()]
+        .into_iter()
+        .flatten()
+        .map(PathBuf::from)
+        .collect();
+    deps::hash_dependencies(&paths, workspace_root, None, cache_dir, image)
 }
 
 fn resolve_tools_dir(target: &Target) -> Result<Option<CellToolsDir>, CoreError> {

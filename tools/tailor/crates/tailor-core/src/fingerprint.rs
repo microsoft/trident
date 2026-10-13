@@ -39,10 +39,15 @@ pub struct FingerprintInputs<'a> {
     pub compression: Option<Compression>,
     /// COSI compression level (`--cosi-compression-level`); a change rebuilds the COSI.
     pub cosi_compression_level: Option<u8>,
-    /// Effective signing profile id (`meta/docs/2026-06-29-signing.md` §4); a change -- including
-    /// unsigned-to-signed or a profile swap -- rebuilds the cell so an unsigned artifact isn't
-    /// silently reused once signing is requested.
+    /// Effective signing profile descriptor -- `<id>:<backend>:<vault>:<certificate>`
+    /// (`meta/docs/2026-06-29-signing.md` §4); a change -- including unsigned-to-signed, a profile
+    /// swap, or editing the backend/vault/certificate fields under the same id -- rebuilds the cell
+    /// so an unsigned (or differently-keyed) artifact isn't silently reused.
     pub signing_profile: Option<&'a str>,
+    /// Sorted content hashes of the profile's local key/cert files (XXH3-128, `deps.rs`); a change
+    /// to the file *contents* alone (same declared path) still busts the fingerprint, unlike the id
+    /// or path strings above which only change when the config text itself changes.
+    pub signing_key_hashes: &'a [[u8; 16]],
 }
 
 /// Compute the canonical fingerprint. Each field is domain-separated and length-prefixed so distinct
@@ -107,6 +112,9 @@ pub fn fingerprint(inputs: &FingerprintInputs<'_>) -> Fingerprint {
     if let Some(profile) = inputs.signing_profile {
         field(&mut hasher, b"signing.profile", profile.as_bytes());
     }
+    for hash in inputs.signing_key_hashes {
+        field(&mut hasher, b"signing.key", hash);
+    }
 
     Fingerprint(hasher.finalize().into())
 }
@@ -162,6 +170,7 @@ mod tests {
             compression: None,
             cosi_compression_level: None,
             signing_profile: None,
+            signing_key_hashes: &[],
         }
     }
 
@@ -187,6 +196,21 @@ mod tests {
         let mut other_profile = inputs("cell", &cfg, &base);
         other_profile.signing_profile = Some("dev");
         assert_ne!(fingerprint(&unsigned), fingerprint(&other_profile));
+    }
+
+    #[test]
+    fn fingerprint_changes_when_signing_key_hash_changes() {
+        // A credential edit under the *same* profile id (e.g. rotating the keypair's PEM files in
+        // place) must still bust the fingerprint -- the id string alone doesn't change.
+        let base = base();
+        let cfg: Value = serde_yaml_ng::from_str("os:\n  hostname: a\n").unwrap();
+        let mut a = inputs("cell", &cfg, &base);
+        a.signing_profile = Some("release:keypair::");
+        a.signing_key_hashes = &[[1; 16], [2; 16]];
+        let mut b = inputs("cell", &cfg, &base);
+        b.signing_profile = Some("release:keypair::");
+        b.signing_key_hashes = &[[1; 16], [9; 16]];
+        assert_ne!(fingerprint(&a), fingerprint(&b));
     }
 
     #[test]
