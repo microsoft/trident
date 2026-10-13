@@ -39,11 +39,23 @@ pub struct FingerprintInputs<'a> {
     pub compression: Option<Compression>,
     /// COSI compression level (`--cosi-compression-level`); a change rebuilds the COSI.
     pub cosi_compression_level: Option<u8>,
-    /// Effective signing profile descriptor -- `<id>:<backend>:<vault>:<certificate>`
-    /// (`meta/docs/2026-06-29-signing.md` §4); a change -- including unsigned-to-signed, a profile
-    /// swap, or editing the backend/vault/certificate fields under the same id -- rebuilds the cell
-    /// so an unsigned (or differently-keyed) artifact isn't silently reused.
-    pub signing_profile: Option<&'a str>,
+    /// Effective signing profile's id (`meta/docs/2026-06-29-signing.md` §4); a change -- including
+    /// unsigned-to-signed or a profile swap -- rebuilds the cell. The reference fields below are
+    /// hashed separately (each under its own domain-separated tag, not concatenated into this or any
+    /// other single string) so that, say, a `:`-containing `certificate` value can never be
+    /// misattributed to `publish_ca_cert` or vice versa.
+    pub signing_profile_id: Option<&'a str>,
+    /// Effective signing profile's `backend`; a change (e.g. `keypair` -> `azure-key-vault` under the
+    /// same id) rebuilds the cell.
+    pub signing_backend: Option<&'a str>,
+    /// Effective signing profile's `vault` (azure-key-vault backend); a change rebuilds the cell.
+    pub signing_vault: Option<&'a str>,
+    /// Effective signing profile's `certificate` (azure-key-vault backend); a change rebuilds the
+    /// cell.
+    pub signing_certificate: Option<&'a str>,
+    /// Effective signing profile's `publishCaCert` path (local-test-ca backend); a change -- e.g.
+    /// redirecting where the enrollable CA certificate is written -- rebuilds the cell.
+    pub signing_publish_ca_cert: Option<&'a str>,
     /// Content hash of the profile's local key file (XXH3-128, `deps.rs`, `keypair` backend only); a
     /// change to the file *contents* alone (same declared path) still busts the fingerprint, unlike
     /// the id or path strings above which only change when the config text itself changes. Kept
@@ -114,8 +126,28 @@ pub fn fingerprint(inputs: &FingerprintInputs<'_>) -> Fingerprint {
     if let Some(level) = inputs.cosi_compression_level {
         field(&mut hasher, b"cosi-compression-level", &[level]);
     }
-    if let Some(profile) = inputs.signing_profile {
-        field(&mut hasher, b"signing.profile", profile.as_bytes());
+    if let Some(id) = inputs.signing_profile_id {
+        field(&mut hasher, b"signing.profile.id", id.as_bytes());
+    }
+    if let Some(backend) = inputs.signing_backend {
+        field(&mut hasher, b"signing.profile.backend", backend.as_bytes());
+    }
+    if let Some(vault) = inputs.signing_vault {
+        field(&mut hasher, b"signing.profile.vault", vault.as_bytes());
+    }
+    if let Some(certificate) = inputs.signing_certificate {
+        field(
+            &mut hasher,
+            b"signing.profile.certificate",
+            certificate.as_bytes(),
+        );
+    }
+    if let Some(publish_ca_cert) = inputs.signing_publish_ca_cert {
+        field(
+            &mut hasher,
+            b"signing.profile.publish-ca-cert",
+            publish_ca_cert.as_bytes(),
+        );
     }
     if let Some(hash) = inputs.signing_key_hash {
         field(&mut hasher, b"signing.key", &hash);
@@ -177,7 +209,11 @@ mod tests {
             extra_params: &[],
             compression: None,
             cosi_compression_level: None,
-            signing_profile: None,
+            signing_profile_id: None,
+            signing_backend: None,
+            signing_vault: None,
+            signing_certificate: None,
+            signing_publish_ca_cert: None,
             signing_key_hash: None,
             signing_cert_hash: None,
         }
@@ -198,13 +234,34 @@ mod tests {
         let cfg: Value = serde_yaml_ng::from_str("os:\n  hostname: a\n").unwrap();
         let mut unsigned = inputs("cell", &cfg, &base);
         let mut signed = inputs("cell", &cfg, &base);
-        signed.signing_profile = Some("release");
+        signed.signing_profile_id = Some("release");
         assert_ne!(fingerprint(&unsigned), fingerprint(&signed));
 
-        unsigned.signing_profile = Some("release");
+        unsigned.signing_profile_id = Some("release");
         let mut other_profile = inputs("cell", &cfg, &base);
-        other_profile.signing_profile = Some("dev");
+        other_profile.signing_profile_id = Some("dev");
         assert_ne!(fingerprint(&unsigned), fingerprint(&other_profile));
+    }
+
+    #[test]
+    fn fingerprint_changes_when_signing_profile_fields_are_reassigned_across_a_delimiter() {
+        // Regression: concatenating profile fields with a plain `:` was not collision-free --
+        // `certificate: "ignored"` + `publish_ca_cert: "a:b"` produced the same joined string as
+        // `certificate: "ignored:a"` + `publish_ca_cert: "b"`. Each field must be hashed under its
+        // own domain-separated tag instead.
+        let base = base();
+        let cfg: Value = serde_yaml_ng::from_str("os:\n  hostname: a\n").unwrap();
+        let mut a = inputs("cell", &cfg, &base);
+        a.signing_certificate = Some("ignored");
+        a.signing_publish_ca_cert = Some("a:b");
+        let mut b = inputs("cell", &cfg, &base);
+        b.signing_certificate = Some("ignored:a");
+        b.signing_publish_ca_cert = Some("b");
+        assert_ne!(
+            fingerprint(&a),
+            fingerprint(&b),
+            "reassigning bytes across the certificate/publish_ca_cert boundary must change the fingerprint"
+        );
     }
 
     #[test]
@@ -214,11 +271,11 @@ mod tests {
         let base = base();
         let cfg: Value = serde_yaml_ng::from_str("os:\n  hostname: a\n").unwrap();
         let mut a = inputs("cell", &cfg, &base);
-        a.signing_profile = Some("release:keypair::");
+        a.signing_profile_id = Some("release:keypair::");
         a.signing_key_hash = Some([1; 16]);
         a.signing_cert_hash = Some([2; 16]);
         let mut b = inputs("cell", &cfg, &base);
-        b.signing_profile = Some("release:keypair::");
+        b.signing_profile_id = Some("release:keypair::");
         b.signing_key_hash = Some([1; 16]);
         b.signing_cert_hash = Some([9; 16]);
         assert_ne!(fingerprint(&a), fingerprint(&b));
@@ -231,11 +288,11 @@ mod tests {
         let base = base();
         let cfg: Value = serde_yaml_ng::from_str("os:\n  hostname: a\n").unwrap();
         let mut a = inputs("cell", &cfg, &base);
-        a.signing_profile = Some("release:keypair::");
+        a.signing_profile_id = Some("release:keypair::");
         a.signing_key_hash = Some([1; 16]);
         a.signing_cert_hash = Some([2; 16]);
         let mut swapped = inputs("cell", &cfg, &base);
-        swapped.signing_profile = Some("release:keypair::");
+        swapped.signing_profile_id = Some("release:keypair::");
         swapped.signing_key_hash = Some([2; 16]);
         swapped.signing_cert_hash = Some([1; 16]);
         assert_ne!(fingerprint(&a), fingerprint(&swapped));

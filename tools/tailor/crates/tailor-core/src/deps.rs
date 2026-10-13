@@ -129,6 +129,28 @@ pub(crate) fn hash_one(
             source,
         })
     })?;
+    Ok(compose_hash(path, base_dir, &file))
+}
+
+/// Like [`hash_one`], but never consults the `(size, mtime)` cache -- always reads and hashes the
+/// file fresh. Required for a symlinked declared path (e.g. a signing key/cert): the cache key is
+/// scoped to the symlink's own path plus its *resolved target's* size/mtime, so rotating the symlink
+/// to a different target file with coincidentally equal size and mtime would otherwise return the
+/// previous target's stale cached hash.
+pub(crate) fn hash_one_uncached(
+    path: &Path,
+    base_dir: &Path,
+) -> Result<[u8; DEP_HASH_BYTES], CoreError> {
+    let file = hashcache::hash_file(path).map_err(|source| {
+        CoreError::Exec(ExecError::Io {
+            context: format!("failed to read dependency file `{}`", path.display()),
+            source,
+        })
+    })?;
+    Ok(compose_hash(path, base_dir, &file))
+}
+
+fn compose_hash(path: &Path, base_dir: &Path, file: &hashcache::FileHash) -> [u8; DEP_HASH_BYTES] {
     let rel = path.strip_prefix(base_dir).unwrap_or(path);
     let rel_bytes = rel.to_string_lossy();
     let mut hasher = Xxh3::new();
@@ -136,7 +158,7 @@ pub(crate) fn hash_one(
     hasher.update(rel_bytes.as_bytes());
     hasher.update(&file.hash);
     hasher.update(&file.size.to_le_bytes());
-    Ok(hasher.digest128().to_le_bytes())
+    hasher.digest128().to_le_bytes()
 }
 
 #[cfg(test)]
