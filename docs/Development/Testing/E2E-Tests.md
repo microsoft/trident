@@ -257,9 +257,7 @@ make bin/trident-mos.iso
 **Container runtime:**
 
 ```bash
-cargo run --manifest-path tools/tailor/Cargo.toml -- \
-    --manifest tests/tailor-images/tailor.yaml \
-    build trident-container-installer --output-dir ./artifacts
+make artifacts/trident-container-installer.iso
 ```
 
 This builds `artifacts/trident-container-installer.iso` using Image Customizer.
