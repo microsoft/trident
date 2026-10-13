@@ -6,22 +6,48 @@ An image definition lives in an `image.yaml`. The top level belongs to tailor. T
 | --- | --- | --- | --- |
 | `name` | string | yes | Image id used by CLI and slugs. Use `[A-Za-z0-9.-]+`; `_` is reserved as the slug separator. |
 | `skip` | bool | no | Default `false`. When `true`, the image is excluded from **bulk** selection — any command run with no image named (`build`, `matrix`, `slugs`, `validate`, `render`, `export`, `clean`, …), so a pipeline that runs those over all images never picks it up. Build it by naming it explicitly (`tailor build <name>`); `tailor list` marks it `(skip)`. Useful for an experimental config that isn't ready to build in CI. **Also valid in a `by-<axis>/<value>.yaml` fragment** — there it drops every cell that picks that value from bulk selection, unless the run pins that value (`-s <axis>=<value>`) or names the cell (`--cell <slug>`); a non-pinning selector like `-s arch=amd64` does *not* resurrect it. Fragment `skip` merges last-wins (a more-specific fragment may set `skip: false`). |
-| `toolchain` | string or `{name, container, version?, tag?, pull?}` | no | Workspace toolchain name or inline standalone toolchain. Defaults to workspace default or built-in `latest`; `pull` defaults to `missing`. |
+| `toolchain` | string or `{name, container, version?, tag?, pull?}` | no | Workspace toolchain name or inline toolchain. Defaults to workspace default or built-in `latest`; `pull` defaults to `missing`. |
 | `toolsDir` | `{source}` | no | Tailor-managed IC `--tools-dir`. `source` is a `toolsDirSources` name or inline `{container, tag?, pull?}`. Always bound writable as a per-cell copy under `runtime.buildDirBase` (which defaults to `<output>/.tailor/build`). |
 | `matrix` | ordered map `axis: [values]` | no | User-defined axes; their cartesian product is the candidate cells. Omit for one cell. Declaration order controls slug order and fragment precedence — order axes widest → most-specific (so `arch` is first). |
 | `selectors` | `{ include?, exclude? }` | no | Which cells of the `matrix:` product to build. Lists of **selectors** (sub-cubes); `include` is an allowlist, `exclude` a denylist. Requires `matrix:`; omitted ⇒ the full product. |
-| `outputs` | list of output specs | no | Defaults from workspace or built-in `cosi`. One artifact per cell × output. |
+| `outputs` | list of `{format, cosiCompressionLevel?, compression?}` | no | Defaults from workspace or built-in `cosi`. One artifact per cell × output. |
 | `base` | one of `path`, `oci`, `azureLinux`, `ref`, `image` | conditional | Exactly one base resolves per cell. `ref: <name>` references a `baseImages:` slot; `image: <name>` bases on another workspace image's output (see [Inter-image dependencies](#inter-image-dependencies)). |
 | `features` | string list | no | Enables matching `by-feature/<name>.yaml` fragments. Does not multiply cells. |
 | `params` | scalar map | no | Values interpolated into `config:` strings with `${name}`. Params may reference other params. |
 | `rpmSources` | path list | no | Each path is a directory of RPMs or a `.repo` file; passed as IC `--rpm-source`. |
 | `operation` | `customize` or `convert` | no | Default: `customize`. |
+| `outputArtifacts` | `managed`, `scratch`, or `strip` | no | Policy for unsigned cells using IC's `output-artifacts` preview flag. Overrides `defaults.outputArtifacts`; see [Staging extracted artifacts](#staging-extracted-artifacts). |
 | `signing` | `true` or profile id | no | Opt in to the signed-image pipeline. `true` ⇒ the workspace `signing.default` profile; a string ⇒ that named profile; omitted ⇒ unsigned. See [Sign an image](../how-to/sign-an-image.md). |
 | `extraDependencies` | path list | no | Extra files/directories to hash for incremental checks; use for IC-config-referenced assets. |
 | `dependsOn` | string list | no | Order-only build dependencies on other workspace images. See [Inter-image dependencies](#inter-image-dependencies). |
 | `inputs` | list of `{name, image, output?, cell?}` | no | Named producer artifacts embedded in `config:` via `${inputs.<name>}`. See [Embedding an artifact with `inputs:`](#embedding-an-artifact-with-inputs). |
 | `extraParams` | list of `{param, value?}` | no | Extra Image Customizer command-line flags, appended verbatim after every flag tailor manages. For experimental/non-standard IC builds. See [Extra params](#extra-params). |
-| `config` | mapping or path string | conditional | Required for `customize`, forbidden for `convert`. Opaque IC config. |
+| `config` | mapping | conditional | Inline IC config for `customize`. Path-string configs are not supported; `convert` does not use a config. |
+
+Top-level keys are checked: an unknown tailor field is an error. Tailor does not validate the
+Image Customizer schema *inside* `config:`; use IC for that check.
+
+## Interpolation and local inputs
+
+`params` values may be strings, numbers, or booleans. `${axis}` and `${param}` expand in **string
+values** of `config:` (not mapping keys); parameters may reference other parameters. Unknown names,
+unterminated expressions, and parameter cycles are errors. For example:
+
+```yaml
+matrix:
+  arch: [amd64, arm64]
+params:
+  hostLabel: "node-${arch}"
+config:
+  os:
+    hostname: "${hostLabel}"
+```
+
+`base.oci.platform: "linux/${arch}"` also expands per cell. Relative `base.path`,
+`rpmSources`, and `extraDependencies` paths resolve from the image directory (for an inline
+workspace image, the workspace root). `extraDependencies` tracks IC-referenced scripts or files for
+incremental builds; `rpmSources` accepts RPM directories or `.repo` files and is passed as
+`--rpm-source`. Neither changes the IC config.
 
 ## Tools dir
 
@@ -59,6 +85,33 @@ config:
 tailor exports the source container to `runtime.imageCacheDir/tools-dirs/<digest>` and passes the
 translated `/host/...` path to customize passes only. It never emits `--tools-dir /`, and convert or
 inject-files passes do not receive the flag.
+
+## Staging extracted artifacts
+
+For an **unsigned** cell whose IC `config.previewFeatures` contains `output-artifacts`, tailor
+handles `config.output.artifacts` using `outputArtifacts` (or workspace
+`defaults.outputArtifacts`). The default is `managed`:
+
+```yaml
+outputArtifacts: managed
+config:
+  previewFeatures: [output-artifacts]
+  output:
+    artifacts:
+      items: [ukis]
+      path: ./extracted
+```
+
+| Policy | What happens to the IC `output.artifacts` block |
+| --- | --- |
+| `managed` (default) | Rewrite its `path` to `<output-dir>/<slug>.artifacts`, keep and chown the extracted files. |
+| `scratch` | Rewrite its `path` to tailor-owned scratch beside the image definition; reclaim after the run. |
+| `strip` | Remove the block and its `output-artifacts` preview flag before calling IC. |
+
+The declared `path` is replaced for `managed` and `scratch`. Without the IC preview flag, tailor
+does not apply this policy. Signing has its own extraction/re-injection flow; see
+[Sign an image](../how-to/sign-an-image.md). `tailor render` and `export` write the *authored*
+config, not the temporary working copy used during execution.
 
 ## Extra params
 
@@ -269,7 +322,8 @@ outputs:
     compression: zstd      # tailor compresses the artifact → <slug>.vhd.zst
 ```
 
-`format` is required. `cosiCompressionLevel`, `compression`, and `name` are optional.
+`format` is required. `cosiCompressionLevel` and `compression` are optional; there is no output
+`name` field. The cell slug determines the artifact name.
 
 ### `compression`
 
@@ -286,4 +340,3 @@ uncompressed original. This is a **tailor** step, not an IC feature, and is inde
 breaks bootability), and the `pxe-*` outputs (a directory / an already-gzipped tar) — `validate`
 rejects those combinations. It applies to the raw disk-image formats: `vhd`, `vhd-fixed`, `vhdx`,
 `qcow2`, `raw`, `baremetal-image`. Changing it re-fingerprints the cell, so the artifact rebuilds.
-

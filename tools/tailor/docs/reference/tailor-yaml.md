@@ -32,7 +32,7 @@ defaults:
 | `runtime.mounts.hostRoot` | path | no | Default `/host`; namespace prefix for translated host paths. tailor no longer binds host `/` there. |
 | `runtime.mounts.dev` | bool | no | Default `true`; bind `/dev:/dev`. |
 | `runtime.mounts.extraPaths` | list of extra mount objects | no | Additional paths exposed under `hostRoot`. `access` defaults to `ro`; use `rw` only for explicit writable carve-outs. Relative paths resolve against the workspace root. |
-| `runtime.buildDirBase` | path | no | Host filesystem base for per-cell IC build dirs (`<buildDirBase>/<slug>`). Omit to use the default under the output dir (`<output>/.tailor/build`). Must not be `/`, a system directory, or `$HOME`. |
+| `runtime.buildDirBase` | path | no | Host filesystem base for per-cell IC build dirs (`<buildDirBase>/<slug>`). Omit to use `<output>/.tailor/build`. Must not be `/`, a system directory, `$HOME`, or an ancestor of the current directory. |
 | `runtime.logLevel` | enum | no | IC log level: `panic`, `fatal`, `error`, `warn`, `info`, `debug`, `trace`. |
 | `runtime.logDir` | path | no | Directory for on-disk IC log files (one per cell). Off by default (logs stream to the console). Overridden, highest precedence first, by the `--log-dir` flag then the `TAILOR_LOG_DIR` environment variable. |
 | `runtime.imageCacheDir` | path | no | Cache for registry base images. Default: `<workspace>/.tailor/cache`. Required by IC for `oci`/`azureLinux` bases — tailor supplies the default so they build out of the box. |
@@ -40,7 +40,7 @@ defaults:
 | `signing.default` | string | no | Signing profile used when an image says `signing: true`. See [Sign an image](../how-to/sign-an-image.md). |
 | `signing.profiles` | map of `{backend, …}` | no | Named signing profiles. `backend` is `local-test-ca` (optional `publishCaCert`: where to write the enrollable CA certificate), `keypair` (needs `key`+`cert`), or `azure-key-vault` (needs `vault`+`certificate`). |
 | `defaults.outputs` | output list | no | Inherited by images without `outputs`. |
-| `defaults.outputArtifacts` | enum | no | Default `output.artifacts` staging policy for images that don't set their own: `managed` (default — relocate the extracted artifacts to the output dir and keep them), `scratch` (treat as signing scratch: extract, then reclaim), or `strip` (drop the `output.artifacts` block so IC never extracts). A per-image `outputArtifacts` overrides this. |
+| `defaults.outputArtifacts` | enum | no | Default `output.artifacts` policy for unsigned images: `managed` (default; keep extracted files), `scratch` (reclaim), or `strip` (disable extraction). Per-image `outputArtifacts` overrides it; only applies when IC `config.previewFeatures` includes `output-artifacts`. See [Staging extracted artifacts](image-yaml.md#staging-extracted-artifacts). |
 | `export.outputDir` | path | cond | Committed directory for `tailor export` output (one `<slug>.yaml` per cell), relative to the workspace root. Required to run `tailor export` argument-free. See [Export](#export). |
 | `export.scope` | enum | no | What `tailor export` emits. Defaults to `configsOnly` (the only value today); omit it. |
 | `export.images` | list of strings | no | Restrict `tailor export` to a subset of images. Default: all images. |
@@ -125,8 +125,9 @@ toolsDirSources:
 | `tag` | string | no | Registry tag. Defaults to `latest` when `container` has no tag or digest. |
 | `pull` | `always`\|`missing`\|`never` | no | Pull policy. Defaults to `missing`; see [Pull policy](#pull-policy). |
 
-Run `tailor lock` to pin named tools-dir source digests in `tailor.lock`. Local-only tools-dir
-images without a registry digest are usable by local image `Id`, but are not lockable.
+`tailor lock` (requires a build with the `lock-preview` Cargo feature) can pin named tools-dir
+source digests in `tailor.lock`. Local-only tools-dir images without a registry digest are usable by
+local image `Id`, but are not lockable.
 
 ## Base-image catalogue
 

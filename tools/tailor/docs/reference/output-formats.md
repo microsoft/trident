@@ -28,6 +28,9 @@ Optional output fields:
 | `cosiCompressionLevel` | COSI compression level. tailor passes IC `--cosi-compression-level` when set. |
 | `compression` | Post-build compression tailor applies to the artifact (`zstd` ⇒ `<slug>.<ext>.zst`). Not an IC feature; see below. |
 
+There is no `name` output field: filenames come from the cell slug. Both `vhd` and `vhd-fixed`
+use `.vhd`; select a producer output by **format**, not extension.
+
 ### Compression
 
 `compression: zstd` makes tailor compress the finished artifact: IC writes the raw image, then tailor
