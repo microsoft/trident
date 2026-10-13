@@ -35,7 +35,7 @@ Add a check so a config change can never be committed without regenerating:
 tailor export --check
 ```
 
-`--check` renders to a temporary directory and compares against the committed files, exiting non-zero
+`--check` compares freshly rendered configs against the committed files, exiting non-zero
 on any **changed**, **missing**, or **extra** (stale) file — without writing anything. Wire it into a
 pre-commit hook and a PR CI job:
 
@@ -52,18 +52,21 @@ one-liner.
 The exported `<slug>.yaml` is only the Image Customizer **config**. Everything else in an IC
 invocation — the base image, `--rpm-source`, `--tools-dir`, output format, and any signing — is not in
 the config and is provided by the pipeline. This is deliberate: the config is portable and static, so
-`tailor export` renders any cell whose config is complete, and the pipeline owns the invocation using
+`tailor export` renders the IC config, and the pipeline owns the invocation using
 its own approved machinery.
 
 A minimal pipeline call per cell looks like:
 
 ```bash
-imagecustomizer \
+imagecustomizer customize \
   --config-file rendered/<slug>.yaml \
   --image-file <base-for-that-cell> \
   --output-image-file out/<slug>.<ext> \
   --output-image-format <format>
 ```
 
-Pin the Image Customizer image the pipeline runs to the digest in your committed `tailor.lock` so it
-matches what tailor resolved.
+`export` is offline: it does not resolve toolchain or base digests, nor substitute
+`${inputs.<name>}` producer paths. If your config uses producer inputs, supply the concrete
+artifact paths in the pipeline rather than treating the exported tokens as self-contained YAML.
+Pin the pipeline's IC version independently; `tailor.lock` commands require the optional
+`lock-preview` build feature, and strict lock enforcement is not shipped.

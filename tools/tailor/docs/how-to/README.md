@@ -30,6 +30,7 @@ guide notes anything extra it needs.
 - [Set the build directory](set-the-build-directory.md)
 - [Clean and rebuild a cell](clean-and-rebuild.md)
 - [Manage extracted Image Customizer artifacts](manage-extracted-artifacts.md)
+- [Skip experimental cells in bulk runs](skip-experimental-cells.md)
 
 ## Pin and reproduce
 
@@ -39,10 +40,12 @@ guide notes anything extra it needs.
 ## Environment and engine
 
 - [Select a container engine (Docker or Podman)](select-a-container-engine.md)
+- [Capture Image Customizer logs](capture-build-logs.md)
 
 ## Pipelines and CI
 
 - [Export configs for a pipeline](export-configs-for-a-pipeline.md)
+- [Generate a CI matrix](generate-a-ci-matrix.md)
 - [Handle exit codes in scripts](handle-exit-codes.md)
 
 ## Signing and preview features

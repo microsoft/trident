@@ -27,7 +27,7 @@ defaults:
 | `toolchains.entries` | list of `{name, container, version?, tag?, pull?}` | yes | Named toolchain definitions. Each `name` must be unique. `tag` defaults to `version`, else `latest`; `pull` defaults to `missing`. |
 | `toolsDirSources` | list of `{name, container, tag?, pull?}` | no | Named tools-dir sources. Each `name` must be unique. `tag` defaults to `latest`; `pull` defaults to `missing`. Images opt in with `toolsDir.source`. |
 | `runtime.engine` | enum | no | Container engine: `docker` (default), `podman`, or `auto`. See [Select a container engine](../how-to/select-a-container-engine.md). |
-| `runtime.host` | string | no | Explicit engine endpoint (`unix://…`, a bare socket path, or `tcp://…`), overriding the engine default and `DOCKER_HOST` / `CONTAINER_HOST`. |
+| `runtime.host` | string | no | Engine endpoint (`unix://…`, a bare socket path, or `tcp://…`); used after `--host` and the selected engine's `DOCKER_HOST` / `CONTAINER_HOST`, before the engine default. |
 | `runtime.privileged` | bool | no | Default `true`; IC requires privileged container execution. |
 | `runtime.mounts.hostRoot` | path | no | Default `/host`; namespace prefix for translated host paths. tailor no longer binds host `/` there. |
 | `runtime.mounts.dev` | bool | no | Default `true`; bind `/dev:/dev`. |

@@ -24,6 +24,7 @@ A later `$set` wins over an earlier `$set`. A plain reassignment after a `$set` 
 | `$unset` | Mapping value | the bare token `$unset` | Remove the inherited key entirely. |
 | `$include` | Mapping value or list item | path string | Splice a shared YAML file at that position. |
 | `$select` | — | — | **Reserved, not implemented** — use [`by-<axis>/<value>.yaml` fragments](image-yaml.md#fragments) instead. |
+| `$rename` | — | — | **Unsupported**; rejected by the merger. |
 
 `$prepend`, `$append`, and `$remove` may share one mapping (e.g. trim the inherited list and add to both
 ends at once); `$set` and `$replace` are exclusive and cannot be combined with the others.
@@ -98,8 +99,9 @@ config:
 
 Remove several keys by annotating each; remove a whole subtree by unsetting it at its own level
 (`scripts: $unset`). `$unset` is resolved at merge time before interpolation, so a field can never hold the
-literal string `$unset` (as with YAML's reserved `null`/`~`). A later fragment may set a removed key again.
+literal string `$unset`. A later fragment may set a removed key again.
 The mapping synonym `key: { $unset: true }` is tolerated; `{ $unset: false }` is an error.
+Unlike `$unset`, YAML `null`/`~` is an ordinary scalar for merge purposes, not a removal directive.
 
 ## `$include`
 

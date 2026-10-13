@@ -56,15 +56,11 @@ tailor update
 never silently moves a pin. `update` re-resolves **everything** to the latest digest — use it when you
 intend to move up.
 
-## Build reproducibly from the lock
+## Lockfile enforcement is not available yet
 
-```bash
-tailor build --locked
-```
-
-**Do not rely on `--locked` as a CI drift gate yet.** The flag exists only in `lock-preview`
-builds, and strict lockfile enforcement is not implemented. For now, verify resolved inputs by
-other means if your pipeline requires a complete, immutable lock.
+**Do not rely on `--locked` as a CI drift gate.** The flag exists only in `lock-preview` builds,
+and strict lockfile enforcement is not implemented. Verify resolved inputs separately if your
+pipeline requires a complete, immutable lock.
 
 > **Local images.** A local-only Image Customizer image (a fresh `docker build` that was never pushed,
 > so it has no registry digest) can't be pinned and is omitted from `tailor.lock`; reproducibility then

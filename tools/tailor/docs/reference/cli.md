@@ -9,7 +9,7 @@ Global options:
 | `--host <ENDPOINT>` | Engine endpoint for this invocation (`unix://…` or `tcp://…`). Overrides `runtime.host` and `DOCKER_HOST` / `CONTAINER_HOST`. |
 | `--log-dir <PATH>` | Persist each cell's full IC debug log to `<PATH>/<slug>.log`. |
 | `--ic-log-level <panic\|fatal\|error\|warn\|info\|debug\|trace>` | Set IC's own log level, independent of `-v`/`-q` (default: `debug`; overrides `runtime.logLevel`). |
-| `--strict` | Promote authority/confinement warnings to errors. |
+| `--strict` | Accepted, but currently unused; does **not** promote warnings to errors. |
 | `-v`, `--verbose` | Increase verbosity; repeatable. |
 | `-q`, `--quiet` | Decrease verbosity; repeatable. |
 | `--timestamps <elapsed\|time\|off>` | Leading timestamp on status/log lines (default elapsed). |
@@ -154,9 +154,9 @@ export:
 | `--cell SLUG` | Select exact cells by slug. Repeatable. |
 
 `tailor export` writes each `<slug>.yaml` and prunes any stale `*.yaml` in the output directory that no
-selected cell produces. Only static cells are exportable — the config YAML itself carries no
-tools-dir, base, rpm-source, or signing details (those are Image Customizer invocation arguments the
-consuming pipeline supplies).
+selected cell produces. The config YAML carries no tools-dir, base, rpm-source, or signing arguments
+(the pipeline must supply those). `${inputs.<name>}` producer paths are **not** resolved by export;
+avoid exporting those configs unchanged to a pipeline without substituting concrete paths.
 
 ## `tailor lock` *(preview)*
 
