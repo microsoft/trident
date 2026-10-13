@@ -57,6 +57,7 @@ The current families are:
 - `trident-container-testimage`
 - `trident-functest`
 - `trident-installer`
+- `trident-mos`
 - `trident-testimage`
 - `trident-verity-testimage`
 - `trident-vm-testimage`
