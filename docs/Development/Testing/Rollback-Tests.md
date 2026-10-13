@@ -21,8 +21,10 @@ extensions:
 | `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | Sysexts supported | Required |
 | `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | Not supported | Not needed |
 
-All image configs live under `tests/tailor-images/trident-vm-testimage/base/`. The
-base image is `qemu_guest` (see
+All image configs live under `tests/tailor-images/trident-vm-testimage/`: the
+matrix is defined in `image.yaml`, and each scenario's specific configuration
+lives under `by-scenario/` (e.g. `by-scenario/usr-verity.yaml` and
+`by-scenario/grub-verity.yaml`). The base image is `qemu_guest` (see
 [Servicing Tests — Download the qemu\_guest Base Image](Servicing-Tests.md#4-download-the-qemu_guest-base-image)
 for how to download it from the publicly available `minimal-os` image on MCR).
 

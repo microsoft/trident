@@ -19,25 +19,26 @@ The servicing scenario expects a QCOW2 image matching the pattern
 `trident-vm-*-testimage.qcow2` in the artifacts directory. The pipeline-tested
 image types are:
 
-| Image | Bootloader | Integrity | UKI | Config File |
+| Image | Bootloader | Integrity | UKI | Config Files |
 |-------|-----------|-----------|-----|-------------|
-| `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | `updateimg-grub-verity.yaml` |
-| `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | `baseimg-usr-verity.yaml` |
+| `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | `by-scenario/grub-verity-base.yaml` (base), `by-scenario/grub-verity.yaml` (update) |
+| `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | `by-scenario/usr-verity.yaml` |
 
-All image configs live under `tests/tailor-images/trident-vm-testimage/base/`. The
-base image is `qemu_guest` (see [step 4](#4-download-the-qemu_guest-base-image)
+All image configs live under `tests/tailor-images/trident-vm-testimage/`: the
+matrix is defined in `image.yaml`, and each scenario's specific configuration
+lives under `by-scenario/`. The base image is `qemu_guest` (see [step 4](#4-download-the-qemu_guest-base-image)
 for how to obtain it).
 
 **`trident-vm-grub-verity-testimage`** uses grub2 with root dm-verity. The root
 filesystem is read-only and integrity-protected, with `/var` on a separate
 partition and an `/etc` overlay service for runtime state. It uses the
-`updateimg-grub-verity.yaml` config which includes SSH access, network
-configuration, and sudoers for the test user.
+`by-scenario/grub-verity-base.yaml` and `by-scenario/grub-verity.yaml` configs
+which include SSH access, network configuration, and sudoers for the test user.
 
 **`trident-vm-usr-verity-testimage`** uses systemd-boot with a Unified Kernel
 Image (UKI) and `/usr` dm-verity. This is a preview feature
 (`previewFeatures: uki`) that requires `ukify` on the build host. It uses the
-`baseimg-usr-verity.yaml` config which defines the full runtime layout.
+`by-scenario/usr-verity.yaml` config which defines the full runtime layout.
 
 ### COSI Update Images
 
