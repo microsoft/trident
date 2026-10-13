@@ -24,6 +24,8 @@ config:
           - trident-install
         $append:
           - rcp-agent
+      disable:
+        - trident-install
     additionalFiles:
       $remove:
         - source: base/files/trident-install.service
