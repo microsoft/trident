@@ -8,6 +8,8 @@ config:
     hostname: trident-acl-agent-testimg
     packages:
       install:
+        $remove:
+          - trident-service
         $append:
           - trident-acl
     additionalFiles:
