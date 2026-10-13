@@ -11,19 +11,19 @@ VM_IMAGE_PATH_PREFIX := $(TAILOR_DIR)/trident-vm-testimage/base
 
 # Shared files under common/ are referenced (via extraDependencies) by every
 # family below; depend on them everywhere so edits there trigger a rebuild.
-TAILOR_COMMON_DEPS := $(shell find $(TAILOR_DIR)/common -type f 2>/dev/null)
+TAILOR_COMMON_DEPS := $(shell find $(TAILOR_DIR)/common 2>/dev/null)
 
-TRIDENT_INSTALLER_DEPS := $(shell find $(TAILOR_DIR)/trident-installer -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
-TRIDENT_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-testimage -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
-TRIDENT_VERITY_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-verity-testimage -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
-TRIDENT_CONTAINER_INSTALLER_DEPS := $(shell find $(TAILOR_DIR)/trident-container-installer -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
-TRIDENT_CONTAINER_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-container-testimage -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
-TRIDENT_FUNCTEST_DEPS := $(shell find $(TAILOR_DIR)/trident-functest -type f 2>/dev/null)
-AZL_INSTALLER_TAILOR_DEPS := $(shell find $(AZL_INSTALLER_DIR) -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
-AZURELINUX_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/azurelinux-direct-streaming-testimage -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
-FOREIGN_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/foreign-direct-streaming-testimage -type f 2>/dev/null)
-TRIDENT_VM_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-vm-testimage -type f 2>/dev/null) $(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub $(TAILOR_COMMON_DEPS)
-TRIDENT_MOS_DEPS := $(shell find $(TAILOR_DIR)/trident-mos -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_INSTALLER_DEPS := $(shell find $(TAILOR_DIR)/trident-installer 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-testimage 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_VERITY_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-verity-testimage 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_CONTAINER_INSTALLER_DEPS := $(shell find $(TAILOR_DIR)/trident-container-installer 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_CONTAINER_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-container-testimage 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_FUNCTEST_DEPS := $(shell find $(TAILOR_DIR)/trident-functest 2>/dev/null)
+AZL_INSTALLER_TAILOR_DEPS := $(shell find $(AZL_INSTALLER_DIR) 2>/dev/null) $(TAILOR_COMMON_DEPS)
+AZURELINUX_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/azurelinux-direct-streaming-testimage 2>/dev/null) $(TAILOR_COMMON_DEPS)
+FOREIGN_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/foreign-direct-streaming-testimage 2>/dev/null)
+TRIDENT_VM_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-vm-testimage 2>/dev/null) $(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub $(TAILOR_COMMON_DEPS)
+TRIDENT_MOS_DEPS := $(shell find $(TAILOR_DIR)/trident-mos 2>/dev/null) $(TAILOR_COMMON_DEPS)
 
 COSI_TARGETS = \
 	trident-testimage \
