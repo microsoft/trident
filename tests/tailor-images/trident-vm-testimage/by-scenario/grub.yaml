@@ -50,6 +50,8 @@ config:
         destination: /etc/systemd/network/99-dhcp-eth0.network
       - source: ../common/files/sudoers-wheel
         destination: /etc/sudoers.d/wheel
+      - source: ../common/files/use-grpc-client-commit.conf
+        destination: /etc/systemd/system/trident.service.d/override.conf
   scripts:
     postCustomization:
       - $include: ./include/grub-scripts.yaml
