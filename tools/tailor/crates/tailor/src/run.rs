@@ -1621,6 +1621,8 @@ async fn build(
     // between two different targets' output paths is still caught -- a map scoped to one call only
     // sees that target's own cells (`orchestrator.rs::plan`).
     let mut seen_artifacts = BTreeMap::new();
+    // Same cross-call accumulation, for a `local-test-ca` profile's resolved `publishCaCert` path.
+    let mut seen_ca_cert_paths = BTreeMap::new();
     for node in &ordered {
         let plan = orchestrator
             .plan(
@@ -1634,6 +1636,7 @@ async fn build(
                 &output_dir,
                 Some(&base_hash_cache_dir),
                 &mut seen_artifacts,
+                &mut seen_ca_cert_paths,
             )
             .await?;
         selected_cells += plan.cells.len();

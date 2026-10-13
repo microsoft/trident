@@ -94,6 +94,13 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
     /// caller plans one node at a time, `run.rs`'s per-node scheduling loop) -- a map scoped to a
     /// single call only catches collisions within one target, not across the whole dependency
     /// closure, letting two different images silently publish to the same path.
+    ///
+    /// `seen_ca_cert_paths` is the same kind of cross-call accumulator, but for a `local-test-ca`
+    /// signing profile's resolved `publishCaCert` destination (keyed by path, valued by profile id):
+    /// two cells publishing their self-signed CA to the same path is only safe when they share the
+    /// same profile id (and therefore are expected to converge on the same CA); across different
+    /// profile ids each `build_signer` call mints an independent root, so the second write silently
+    /// invalidates the first image's trust chain.
     #[allow(
         clippy::too_many_arguments,
         reason = "planning needs config, lock, pre-resolved images, selection, and output root"
@@ -110,6 +117,7 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
         output_dir: &Path,
         hash_cache_dir: Option<&Path>,
         seen_artifacts: &mut BTreeMap<PathBuf, String>,
+        seen_ca_cert_paths: &mut BTreeMap<PathBuf, String>,
     ) -> Result<BuildPlan, CoreError> {
         let mut planned = Vec::new();
         for target in targets {
@@ -176,6 +184,15 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                 )?;
                 let resolved_signing_profile =
                     tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())?;
+                if let Some((profile_id, profile)) = &resolved_signing_profile {
+                    claim_ca_cert_path(
+                        profile_id,
+                        profile,
+                        &target.root,
+                        seen_artifacts,
+                        seen_ca_cert_paths,
+                    )?;
+                }
                 let signing_profile_descriptor_value = resolved_signing_profile
                     .as_ref()
                     .map(|(id, profile)| signing_profile_descriptor(id, profile));
@@ -229,6 +246,13 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     .into_iter()
                     .collect::<BTreeSet<_>>()
                 {
+                    if let Some(ca_profile) = seen_ca_cert_paths.get(&claim) {
+                        return Err(CoreError::CaCertPathCollidesWithArtifact {
+                            path: claim,
+                            profile: ca_profile.clone(),
+                            slug: cell.slug.to_string(),
+                        });
+                    }
                     if let Some(first_slug) =
                         seen_artifacts.insert(claim.clone(), cell.slug.to_string())
                     {
@@ -512,6 +536,48 @@ fn signing_key_hashes(
         hash_one(profile.key.as_deref())?,
         hash_one(profile.cert.as_deref())?,
     ))
+}
+
+/// Claim a `local-test-ca` profile's resolved `publishCaCert` destination, rejecting a collision
+/// with either an already-claimed image artifact path or another profile's CA path. Two cells
+/// sharing the exact same profile id are allowed to resolve to the same path (expected to converge
+/// on the same CA); across different profile ids, `build_signer` mints an independent self-signed
+/// root per call, so the second write would silently invalidate the first image's trust chain. A
+/// profile with no `publishCaCert` set (the executor's per-image default path) has nothing to claim
+/// here -- that default is already slug-scoped, so it cannot collide across cells.
+fn claim_ca_cert_path(
+    profile_id: &str,
+    profile: &tailor_config::SigningProfile,
+    workspace_root: &Path,
+    seen_artifacts: &BTreeMap<PathBuf, String>,
+    seen_ca_cert_paths: &mut BTreeMap<PathBuf, String>,
+) -> Result<(), CoreError> {
+    if profile.backend != tailor_config::SigningBackend::LocalTestCa {
+        return Ok(());
+    }
+    let Some(ca_path) = profile.publish_ca_cert.as_deref() else {
+        return Ok(());
+    };
+    let resolved = tailor_config::absolutize(ca_path, workspace_root);
+    if let Some(artifact_slug) = seen_artifacts.get(&resolved) {
+        return Err(CoreError::CaCertPathCollidesWithArtifact {
+            path: resolved,
+            profile: profile_id.to_owned(),
+            slug: artifact_slug.clone(),
+        });
+    }
+    match seen_ca_cert_paths.get(&resolved) {
+        Some(existing) if existing == profile_id => Ok(()),
+        Some(existing) => Err(CoreError::DuplicateCaCertPath {
+            path: resolved,
+            first: existing.clone(),
+            second: profile_id.to_owned(),
+        }),
+        None => {
+            seen_ca_cert_paths.insert(resolved, profile_id.to_owned());
+            Ok(())
+        }
+    }
 }
 
 fn resolve_tools_dir(target: &Target) -> Result<Option<CellToolsDir>, CoreError> {
@@ -1216,6 +1282,7 @@ mod tests {
                 out.path(),
                 None,
                 &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap();
@@ -1281,6 +1348,7 @@ mod tests {
                     out.path(),
                     None,
                     &mut BTreeMap::new(),
+                    &mut BTreeMap::new(),
                 )
                 .await
                 .unwrap()
@@ -1340,6 +1408,7 @@ mod tests {
                 TempDir::new().unwrap().path(),
                 None,
                 &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap_err();
@@ -1368,6 +1437,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                &mut BTreeMap::new(),
                 &mut BTreeMap::new(),
             )
             .await
@@ -1408,6 +1478,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                &mut BTreeMap::new(),
                 &mut BTreeMap::new(),
             )
             .await
@@ -1781,6 +1852,7 @@ mod tests {
                 out.path(),
                 None,
                 &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap_err();
@@ -1875,6 +1947,7 @@ mod tests {
                 out.path(),
                 None,
                 &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap();
@@ -1885,6 +1958,137 @@ mod tests {
             Some("oci:registry.example/base@sha256:lockedbase"),
             "the locked base digest must win over the re-resolved tag"
         );
+    }
+
+    fn local_test_ca_profile(publish_ca_cert: Option<&str>) -> tailor_config::SigningProfile {
+        tailor_config::SigningProfile {
+            backend: tailor_config::SigningBackend::LocalTestCa,
+            key: None,
+            cert: None,
+            publish_ca_cert: publish_ca_cert.map(PathBuf::from),
+            vault: None,
+            certificate: None,
+        }
+    }
+
+    #[test]
+    fn claim_ca_cert_path_allows_the_same_profile_to_share_a_path() {
+        let root = TempDir::new().unwrap();
+        let profile = local_test_ca_profile(Some("ca.pem"));
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        claim_ca_cert_path(
+            "release",
+            &profile,
+            root.path(),
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+        claim_ca_cert_path(
+            "release",
+            &profile,
+            root.path(),
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn claim_ca_cert_path_rejects_two_profiles_sharing_a_path() {
+        // Regression: distinct `local-test-ca` profiles each mint an independent self-signed root
+        // (`tailor_sign::build_signer`), so if both publish to the same path, the second build
+        // silently invalidates the first image's trust chain.
+        let root = TempDir::new().unwrap();
+        let profile = local_test_ca_profile(Some("ca.pem"));
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        claim_ca_cert_path(
+            "release",
+            &profile,
+            root.path(),
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+        let err = claim_ca_cert_path(
+            "dev",
+            &profile,
+            root.path(),
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CoreError::DuplicateCaCertPath { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn claim_ca_cert_path_rejects_colliding_with_an_image_artifact() {
+        let root = TempDir::new().unwrap();
+        let profile = local_test_ca_profile(Some("artifacts/img.cosi"));
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let mut seen_artifacts = BTreeMap::new();
+        seen_artifacts.insert(
+            root.path().join("artifacts/img.cosi"),
+            "img_amd64_cosi".to_owned(),
+        );
+
+        let err = claim_ca_cert_path(
+            "release",
+            &profile,
+            root.path(),
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn claim_ca_cert_path_ignores_non_local_test_ca_backends_and_unset_paths() {
+        let root = TempDir::new().unwrap();
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        // keypair backend: publish_ca_cert is meaningless here, never claimed.
+        let keypair = tailor_config::SigningProfile {
+            backend: tailor_config::SigningBackend::Keypair,
+            key: Some(PathBuf::from("k.pem")),
+            cert: Some(PathBuf::from("c.pem")),
+            publish_ca_cert: Some(PathBuf::from("ca.pem")),
+            vault: None,
+            certificate: None,
+        };
+        claim_ca_cert_path(
+            "a",
+            &keypair,
+            root.path(),
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+        assert!(seen_ca_cert_paths.is_empty());
+
+        // local-test-ca with no publishCaCert set: nothing to claim (slug-scoped default path).
+        let no_publish = local_test_ca_profile(None);
+        claim_ca_cert_path(
+            "b",
+            &no_publish,
+            root.path(),
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+        assert!(seen_ca_cert_paths.is_empty());
     }
 
     #[test]
@@ -2026,6 +2230,7 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                &mut BTreeMap::new(),
                 &mut BTreeMap::new(),
             )
             .await
