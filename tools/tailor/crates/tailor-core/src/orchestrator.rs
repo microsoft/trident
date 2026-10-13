@@ -175,9 +175,7 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     target.name(),
                 )?;
                 let resolved_signing_profile =
-                    tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())
-                        .ok()
-                        .flatten();
+                    tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())?;
                 let signing_profile_descriptor_value = resolved_signing_profile
                     .as_ref()
                     .map(|(id, profile)| signing_profile_descriptor(id, profile));
@@ -1896,6 +1894,65 @@ mod tests {
         assert_ne!(
             before_key, after_key,
             "rotating the symlink target must change the hash"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_errors_on_an_unknown_signing_profile_instead_of_building_unsigned() {
+        // Regression: `resolve_signing`'s `ConfigError` (unknown profile, missing default,
+        // malformed profile) must propagate, not be swallowed into `None` -- otherwise a typo'd
+        // signing reference silently produces an apparently-valid *unsigned* plan.
+        let (_tmp, target) = target_with(indoc! {"
+                name: solo
+                base:
+                  oci:
+                    uri: registry.example/base:edge
+                    platform: linux/amd64
+                signing: nope
+                config:
+                  os:
+                    hostname: solo
+            "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(indoc! {"
+            schemaVersion: 1
+            toolchains:
+              default: ic
+              entries:
+                - name: ic
+                  container: registry.example/imagecustomizer
+                  version: 1.0.0
+            signing:
+              default: release
+              profiles:
+                release:
+                  backend: local-test-ca
+        "})
+        .unwrap();
+        let toolchains = resolved_toolchains(&tool);
+        let out = TempDir::new().unwrap();
+
+        let err = Orchestrator::new(FakeExecutor::default(), FakeResolver)
+            .plan(
+                &[target],
+                &[],
+                &tool,
+                &Lockfile::default(),
+                &toolchains,
+                &BTreeMap::new(),
+                &BuildSelection::from_selector(&Selector::default()),
+                out.path(),
+                None,
+                &mut BTreeMap::new(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                CoreError::Config(tailor_config::ConfigError::UnknownSigningProfile { .. })
+            ),
+            "an unknown signing profile must be a config error, not a silently-unsigned plan: {err:?}"
         );
     }
 }
