@@ -264,22 +264,28 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     claims.insert(output_dir.join(artifact_name(&clone_slug, cell.output.format)));
                 }
                 for claim in claims {
-                    if let Some(ca_profile) = seen_ca_cert_paths.get(&claim) {
+                    // Resolve as far as the filesystem allows before comparing: a claim that doesn't
+                    // exist yet can't be mis-detected by a stale cached value, and resolving the
+                    // longest *existing* ancestor catches a real symlink planted in the output tree
+                    // (e.g. by a prior incremental build) that a purely lexical path could miss.
+                    let resolved_claim = resolve_for_collision_check(&claim);
+                    if let Some((_, ca_profile)) =
+                        find_collision(&resolved_claim, seen_ca_cert_paths)
+                    {
                         return Err(CoreError::CaCertPathCollidesWithArtifact {
                             path: claim,
                             profile: ca_profile.clone(),
                             slug: cell.slug.to_string(),
                         });
                     }
-                    if let Some(first_slug) =
-                        seen_artifacts.insert(claim.clone(), cell.slug.to_string())
-                    {
+                    if let Some((_, first_slug)) = find_collision(&resolved_claim, seen_artifacts) {
                         return Err(CoreError::DuplicateOutputPath {
                             path: claim,
-                            first: first_slug,
+                            first: first_slug.clone(),
                             second: cell.slug.to_string(),
                         });
                     }
+                    seen_artifacts.insert(resolved_claim, cell.slug.to_string());
                 }
                 let up_to_date =
                     stamp::is_up_to_date(output_dir, cell.slug.as_ref(), print, &artifact);
@@ -576,19 +582,26 @@ fn claim_ca_cert_path(
     let Some(ca_path) = profile.publish_ca_cert.as_deref() else {
         return Ok(());
     };
-    let resolved = tailor_config::absolutize(ca_path, workspace_root);
-    if let Some(artifact_slug) = seen_artifacts.get(&resolved) {
+    let resolved = resolve_for_collision_check(&tailor_config::absolutize(ca_path, workspace_root));
+    if let Some((_, artifact_slug)) = find_collision(&resolved, seen_artifacts) {
         return Err(CoreError::CaCertPathCollidesWithArtifact {
             path: resolved,
             profile: profile_id.to_owned(),
             slug: artifact_slug.clone(),
         });
     }
-    match seen_ca_cert_paths.get(&resolved) {
-        Some(existing) if existing == profile_id => Ok(()),
-        Some(existing) => Err(CoreError::DuplicateCaCertPath {
+    match find_collision(&resolved, seen_ca_cert_paths) {
+        // Only an *exact* match on the same profile id is the expected "two cells sharing one CA"
+        // case; a same-profile claim that merely overlaps (but isn't identical) is still a
+        // misconfiguration -- two different declared paths were never meant to alias.
+        Some((existing_path, existing_profile))
+            if existing_profile == profile_id && *existing_path == resolved =>
+        {
+            Ok(())
+        }
+        Some((_, existing_profile)) => Err(CoreError::DuplicateCaCertPath {
             path: resolved,
-            first: existing.clone(),
+            first: existing_profile.clone(),
             second: profile_id.to_owned(),
         }),
         None => {
@@ -596,6 +609,55 @@ fn claim_ca_cert_path(
             Ok(())
         }
     }
+}
+
+/// Resolves `path` as far as the filesystem allows, for collision-detection purposes:
+/// canonicalizes the longest *existing* ancestor (following any real symlinks -- relevant on an
+/// incremental rebuild, where a prior build's output may already be on disk), then lexically
+/// re-appends whatever doesn't exist yet. A path component that doesn't exist cannot itself be a
+/// symlink, so this is a complete resolution for comparison purposes even though the full path may
+/// not exist yet (these are artifact/CA-cert paths being checked *before* a build creates them).
+/// Falls back to the (already lexically-normalized) input unchanged if nothing on the path exists
+/// yet, e.g. a brand-new output directory.
+fn resolve_for_collision_check(path: &Path) -> PathBuf {
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut candidate = path;
+    loop {
+        if let Ok(real) = candidate.canonicalize() {
+            let mut resolved = real;
+            for component in tail.into_iter().rev() {
+                resolved.push(component);
+            }
+            return resolved;
+        }
+        match (candidate.file_name(), candidate.parent()) {
+            (Some(name), Some(parent)) => {
+                tail.push(name.to_owned());
+                candidate = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// Whether two already-resolved paths would collide on a real filesystem: identical, or one nested
+/// inside the other. A directory can't coexist with a file at the same path, so an ancestor claim
+/// and a descendant claim are just as fatal as an exact match (`<slug>.cosi` as a file vs.
+/// `<slug>.cosi/ca.pem` needing `<slug>.cosi` to be a directory).
+fn paths_collide(a: &Path, b: &Path) -> bool {
+    a == b || a.starts_with(b) || b.starts_with(a)
+}
+
+/// Scans `claimed` for any path that collides (by [`paths_collide`]) with `candidate`, returning the
+/// first match found. `claimed`'s keys are themselves already resolved via
+/// [`resolve_for_collision_check`], so this is a like-for-like comparison.
+fn find_collision<'a>(
+    candidate: &Path,
+    claimed: &'a BTreeMap<PathBuf, String>,
+) -> Option<(&'a PathBuf, &'a String)> {
+    claimed
+        .iter()
+        .find(|(path, _)| paths_collide(candidate, path))
 }
 
 fn resolve_tools_dir(target: &Target) -> Result<Option<CellToolsDir>, CoreError> {
@@ -2076,6 +2138,112 @@ mod tests {
             matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
             "{err:?}"
         );
+    }
+
+    #[test]
+    fn claim_ca_cert_path_rejects_nesting_inside_an_image_artifact() {
+        // Regression: a publishCaCert *nested inside* an artifact path (not just equal to it) must
+        // also be rejected -- otherwise signing creates the artifact's filename as a directory to
+        // hold the CA cert, and Image Customizer's later write of the real image to that same path
+        // fails with a confusing filesystem error instead of this purpose-built one.
+        let root = TempDir::new().unwrap();
+        let profile = local_test_ca_profile(Some("artifacts/img.cosi/ca.pem"));
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let mut seen_artifacts = BTreeMap::new();
+        seen_artifacts.insert(
+            root.path().join("artifacts/img.cosi"),
+            "img_amd64_cosi".to_owned(),
+        );
+
+        let err = claim_ca_cert_path(
+            "release",
+            &profile,
+            root.path(),
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
+            "a publishCaCert nested inside an artifact path must be rejected: {err:?}"
+        );
+    }
+
+    #[test]
+    fn paths_collide_covers_equality_ancestry_and_rejects_similar_siblings() {
+        let equal = (Path::new("/out/img.cosi"), Path::new("/out/img.cosi"));
+        let ancestor = (
+            Path::new("/out/img.cosi"),
+            Path::new("/out/img.cosi/ca.pem"),
+        );
+        let descendant = (
+            Path::new("/out/img.cosi/ca.pem"),
+            Path::new("/out/img.cosi"),
+        );
+        // "img.cosi" is a string-prefix of "img.cosi-extra" but not a path-component ancestor of
+        // it -- these are unrelated siblings and must NOT be flagged.
+        let similar_sibling = (Path::new("/out/img.cosi"), Path::new("/out/img.cosi-extra"));
+        let unrelated = (Path::new("/out/a.cosi"), Path::new("/out/b.cosi"));
+
+        assert!(
+            paths_collide(equal.0, equal.1),
+            "identical paths must collide"
+        );
+        assert!(
+            paths_collide(ancestor.0, ancestor.1),
+            "ancestor must collide"
+        );
+        assert!(
+            paths_collide(descendant.0, descendant.1),
+            "descendant must collide"
+        );
+        assert!(
+            !paths_collide(similar_sibling.0, similar_sibling.1),
+            "a string-prefix that isn't a real path ancestor must not collide"
+        );
+        assert!(
+            !paths_collide(unrelated.0, unrelated.1),
+            "unrelated paths must not collide"
+        );
+    }
+
+    #[test]
+    fn resolve_for_collision_check_follows_a_real_symlink_in_an_existing_ancestor() {
+        // Regression: lexical normalization alone can't detect that two differently-spelled paths
+        // land on the same real location through a symlink -- only a component that already exists
+        // can possibly be a symlink, so canonicalizing the longest existing ancestor (and only
+        // lexically appending whatever doesn't exist yet) is a complete resolution for
+        // collision-detection purposes.
+        let root = TempDir::new().unwrap();
+        let real_dir = root.path().join("real");
+        fs::create_dir_all(&real_dir).unwrap();
+        let link = root.path().join("link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real_dir, &link).unwrap();
+        #[cfg(not(unix))]
+        {
+            eprintln!("skipping: symlink creation not implemented for this platform in this test");
+            return;
+        }
+
+        // "link" exists (it's the symlink itself); "not-yet-built.cosi" does not.
+        let via_link = link.join("not-yet-built.cosi");
+        let via_real = real_dir.join("not-yet-built.cosi");
+
+        let resolved_via_link = resolve_for_collision_check(&via_link);
+        let resolved_via_real = resolve_for_collision_check(&via_real);
+        assert_eq!(
+            resolved_via_link, resolved_via_real,
+            "two paths reaching the same real location through a symlink must resolve identically"
+        );
+    }
+
+    #[test]
+    fn resolve_for_collision_check_falls_back_to_lexical_when_nothing_exists_yet() {
+        // The common case: a brand-new output directory, nothing built yet. Nothing to
+        // canonicalize, so the already-lexically-normalized input passes through unchanged.
+        let path = Path::new("/definitely/does/not/exist/anywhere/img.cosi");
+        assert_eq!(resolve_for_collision_check(path), path);
     }
 
     #[test]
