@@ -1,7 +1,8 @@
 # Test images with tailor
 
 `tests/tailor-images/` is a [tailor](../../tools/tailor/README.md) workspace.
-It replaces the legacy `testimages.py` / `builder/` flow, which has been removed.
+It replaces the legacy `testimages.py` / `builder/` flow, which runs alongside it
+for now and is removed in a follow-up cleanup PR.
 
 ## Build from the repo root
 
