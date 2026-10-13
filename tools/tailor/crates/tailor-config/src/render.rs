@@ -63,6 +63,9 @@ pub struct RenderedCell {
     pub outputs: Vec<OutputSpec>,
     /// Local RPM sources (directories or `.repo` files) passed to IC as `--rpm-source`.
     pub rpm_sources: Vec<PathBuf>,
+    /// Extra local dependency paths, concatenated across matched fragments; content-hashed into the
+    /// incremental fingerprint alongside the image-level `extraDependencies`.
+    pub extra_dependencies: Vec<PathBuf>,
     /// Extra IC command-line flags appended verbatim, concatenated across matched fragments.
     pub extra_params: Vec<ExtraParam>,
     /// The resolved per-cell `signing:` opt-in after fragment merging.
@@ -208,6 +211,10 @@ fn render_cell(
         .iter()
         .flat_map(|f| f.doc.rpm_sources.clone())
         .collect();
+    let extra_dependencies = matched
+        .iter()
+        .flat_map(|f| f.doc.extra_dependencies.clone())
+        .collect();
     let extra_params = matched
         .iter()
         .flat_map(|f| f.doc.extra_params.clone())
@@ -232,6 +239,7 @@ fn render_cell(
         base,
         outputs,
         rpm_sources,
+        extra_dependencies,
         extra_params,
         signing,
         skip,
@@ -824,6 +832,60 @@ mod tests {
             Some(SigningRef::Enabled(false)),
             "a more-specific fragment's signing: false must win over the less-specific opt-in"
         );
+    }
+
+    #[test]
+    fn extra_dependencies_concatenate_base_then_fragment() {
+        // Regression: a by-variant/by-scenario fragment's own `extraDependencies:` was silently
+        // dropped (the schema had no such field), so edits to a fragment-declared local asset never
+        // busted the incremental fingerprint for that variant. `extraDependencies` must merge across
+        // matched fragments exactly like `extraParams`/`rpmSources` (base -> most-specific).
+        let tmp = TempDir::new().unwrap();
+        write(
+            tmp.path(),
+            "image.yaml",
+            indoc! {"
+                name: xd
+                matrix:
+                  variant: [plain, extra]
+                extraDependencies:
+                  - ./base-dep.txt
+                base:
+                  path: ./b.img
+                config:
+                  os: { hostname: xd }
+            "},
+        );
+        write(
+            tmp.path(),
+            "by-variant/extra.yaml",
+            indoc! {"
+                extraDependencies:
+                  - ./variant-only-dep.txt
+            "},
+        );
+        let image = load_image(tmp.path().join("image.yaml")).unwrap();
+        let cells = render_image(&image, tmp.path()).unwrap();
+
+        let plain = cells
+            .iter()
+            .find(|c| c.tuple.get("variant") == Some("plain"))
+            .unwrap();
+        let extra = cells
+            .iter()
+            .find(|c| c.tuple.get("variant") == Some("extra"))
+            .unwrap();
+
+        let deps = |c: &RenderedCell| -> Vec<String> {
+            c.extra_dependencies
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect()
+        };
+        assert_eq!(deps(plain), ["./base-dep.txt"]);
+        // base -> most-specific: the fragment's own extraDependencies is appended after the base
+        // document's, not replacing it.
+        assert_eq!(deps(extra), ["./base-dep.txt", "./variant-only-dep.txt"]);
     }
 
     #[test]
