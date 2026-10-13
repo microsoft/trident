@@ -2,9 +2,8 @@ CARGO_TAILOR ?= $(if $(shell command -v cargo 2>/dev/null),cargo,$(HOME)/.cargo/
 TAILOR_DIR := $(patsubst %/,%,$(dir $(lastword $(MAKEFILE_LIST))))
 TAILOR_WORKSPACE := $(TAILOR_DIR)/tailor.yaml
 
-# Matches tailor.yaml's default `ic` toolchain entry. Also used directly by
-# bin/trident-mos.iso (see root Makefile). Override to build against a dev
-# imagecustomizer; only overridden values trigger the toolchain swap below.
+# Matches tailor.yaml's default `ic` toolchain entry. Override to build against
+# a dev imagecustomizer; only overridden values trigger the toolchain swap below.
 TAILOR_DEFAULT_IC_IMAGE := mcr.microsoft.com/azurelinux/imagecustomizer:latest
 MIC_CONTAINER_IMAGE ?= $(TAILOR_DEFAULT_IC_IMAGE)
 TAILOR_RPM_DEPS := bin/RPMS $(shell find bin/RPMS -name '*.rpm' 2>/dev/null) artifacts/rpm-overrides $(shell find artifacts/rpm-overrides -name '*.rpm' 2>/dev/null)
@@ -24,6 +23,7 @@ AZL_INSTALLER_TAILOR_DEPS := $(shell find $(AZL_INSTALLER_DIR) -type f 2>/dev/nu
 AZURELINUX_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/azurelinux-direct-streaming-testimage -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
 FOREIGN_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/foreign-direct-streaming-testimage -type f 2>/dev/null)
 TRIDENT_VM_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-vm-testimage -type f 2>/dev/null) $(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub $(TAILOR_COMMON_DEPS)
+TRIDENT_MOS_DEPS := $(shell find $(TAILOR_DIR)/trident-mos -type f 2>/dev/null) $(TAILOR_COMMON_DEPS)
 
 COSI_TARGETS = \
 	trident-testimage \
@@ -72,8 +72,16 @@ define tailor_ca_cert_staging_path
 $(TAILOR_DIR)/artifacts/ca_cert.$(subst /,_,$1).pem
 endef
 
+# Every declare_tailor_target recipe invokes tailor with the same
+# `--output-dir artifacts/`, and tailor takes a nonblocking exclusive lock on
+# that output directory (`another tailor build is already running` otherwise)
+# -- so under `make -j all-cosi`/`all-iso`, every invocation but the first to
+# acquire tailor's own lock would fail outright instead of queuing. Wrap just
+# the tailor invocation in a blocking flock on a shared lock file so parallel
+# Make jobs serialize through tailor one at a time instead of racing it.
 define declare_tailor_target
 $1: $(TAILOR_WORKSPACE) $4
+	@mkdir -p artifacts
 	@echo "Building '$$(@F)' [$@]"
 	@echo "Prerequisites:"
 	@echo "$$^" | tr ' ' '\n' | sed 's/^/    /'
@@ -88,7 +96,7 @@ $1: $(TAILOR_WORKSPACE) $4
 		    -e "s/^      tag: latest$$$$/      tag: latest\n    - name: ic-dev\n      container: $$$$image\n      tag: $$$$tag\n      pull: never/" \
 		    "$$$$manifest" > "$$$$manifest.tmp" && mv "$$$$manifest.tmp" "$$$$manifest"; \
 	fi; \
-	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest "$$$$manifest" build $2 $3 --output-dir $(dir $1)
+	flock artifacts/.tailor-build.flock $(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- -vvv --log-dir $(TAILOR_DIR)/artifacts/tailor-logs --manifest "$$$$manifest" build $2 $3 --output-dir $(dir $1)
 	@rm -f $(TAILOR_DIR)/.tailor.local.$(subst /,_,$1).yaml
 	@if [ -f $(call tailor_ca_cert_staging_path,$1) ]; then cp $(call tailor_ca_cert_staging_path,$1) "$(dir $1)/ca_cert.pem"; fi
 	@if [ "$1" != "$5" ]; then cp "$5" "$1"; fi
@@ -106,6 +114,13 @@ endef
 # invocation, so the shared path ends up with whichever target finished last.
 # Build signed targets one at a time (or read each target's own
 # `artifacts/ca_cert.<target>.pem`) when that matters.
+
+# NETLAUNCH_ISO (root Makefile) defaults to bin/trident-mos.iso -- output
+# path kept outside artifacts/ for legacy/netlaunch-tooling compatibility,
+# same as every other declare_tailor_target: $(dir $1) becomes the
+# --output-dir, so the tailor-produced bin/trident-mos_amd64_iso.iso is
+# renamed in place to the legacy bin/trident-mos.iso.
+$(eval $(call declare_tailor_target,bin/trident-mos.iso,trident-mos,,$(TRIDENT_MOS_DEPS) artifacts/baremetal.vhdx artifacts/rcp-agent,bin/trident-mos_amd64_iso.iso,:))
 
 $(eval $(call declare_tailor_target,artifacts/trident-installer.iso,trident-installer,-s arch=amd64 -s variant=default,$(TRIDENT_INSTALLER_DEPS) $(TAILOR_RPM_DEPS) artifacts/baremetal.vhdx,artifacts/trident-installer_amd64_default_iso.iso,:))
 $(eval $(call declare_tailor_target,artifacts/trident-split-installer.iso,trident-installer,-s arch=amd64 -s variant=split,$(TRIDENT_INSTALLER_DEPS) $(TAILOR_RPM_DEPS) artifacts/baremetal.vhdx,artifacts/trident-installer_amd64_split_iso.iso,:))
