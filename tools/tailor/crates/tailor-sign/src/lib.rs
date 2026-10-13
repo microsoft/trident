@@ -43,11 +43,19 @@ const CERT_VALIDITY_DAYS: &str = "3650";
 /// `keypair` `key`/`cert` paths resolve against `base_dir` (the workspace root). The returned signer's
 /// [`Signer::preflight`] reports any unmet prerequisite — including an unimplemented backend — so the
 /// fail-fast gate needs no special-casing.
+///
+/// `ca_cache_dir`, when set, persists a `local-test-ca` profile's minted root across separate
+/// `tailor build` invocations (keyed by `profile_id`), not just across cells within one invocation
+/// (which already share one `HostSigner`/root via `run.rs`'s per-profile signer map). Without it, a
+/// cell skipped as already up to date can end up signed by a root that a *later* invocation's rebuild
+/// of a sibling cell on the same profile silently replaced at the shared `publishCaCert` path. `None`
+/// (e.g. in tests) falls back to today's always-mint-fresh, wiped-on-drop behavior.
 #[must_use]
 pub fn build_signer(
     profile_id: &str,
     profile: &SigningProfile,
     base_dir: &Path,
+    ca_cache_dir: Option<&Path>,
 ) -> Arc<dyn Signer> {
     let key_source = match profile.backend {
         SigningBackend::LocalTestCa => KeySource::LocalTestCa {
@@ -70,6 +78,7 @@ pub fn build_signer(
         profile_id: profile_id.to_owned(),
         key_source,
         ca: Mutex::new(None),
+        ca_cache_dir: ca_cache_dir.map(Path::to_path_buf),
     })
 }
 
@@ -88,11 +97,14 @@ enum KeySource {
     Unsupported { backend: &'static str },
 }
 
-/// The minted local test CA, kept alive for the signer's lifetime so its per-cell leaves chain to one
-/// trust root (`meta/docs/2026-06-29-signing.md` §7). The temp dir wipes the CA private key on drop.
+/// The local test CA, kept alive for the signer's lifetime so its per-cell leaves chain to one trust
+/// root (`meta/docs/2026-06-29-signing.md` §7). Ephemeral (no `ca_cache_dir`): `_dir` holds a temp
+/// dir that wipes the CA private key on drop. Persisted (`ca_cache_dir` set): `_dir` is `None` and
+/// `key`/`cert` point into that cache dir instead, so the same root survives across separate `tailor
+/// build` invocations for the same profile id.
 #[derive(Debug)]
 struct Ca {
-    _dir: TempDir,
+    _dir: Option<TempDir>,
     key: PathBuf,
     cert: PathBuf,
 }
@@ -104,6 +116,9 @@ struct HostSigner {
     key_source: KeySource,
     /// The lazily-minted per-build CA (`local-test-ca` only); `None` until the first `sign`.
     ca: Mutex<Option<Ca>>,
+    /// Persists the minted CA across separate invocations, keyed by `profile_id`; see
+    /// [`build_signer`].
+    ca_cache_dir: Option<PathBuf>,
 }
 
 impl Signer for HostSigner {
@@ -220,27 +235,66 @@ impl Signer for HostSigner {
 
 impl HostSigner {
     /// Get the signer's CA, minting it (once) on first use. Kept in `self.ca` so every cell's leaf
-    /// chains to one trust root; the temp dir wipes the CA private key when the signer drops.
+    /// chains to one trust root for the lifetime of this signer (process). When `ca_cache_dir` is
+    /// set, also persists the mint to `<ca_cache_dir>/<profile_id>/` and loads it back on a cache
+    /// hit, so a *later* invocation of the same profile reuses the same root instead of minting a
+    /// new one -- without this, a cell skipped as already up to date in one invocation could end up
+    /// signed by a root a later invocation's rebuild of a sibling cell silently replaces at the
+    /// shared `publishCaCert` path.
     fn get_or_mint_ca(&self) -> Result<(PathBuf, PathBuf), SignError> {
         let mut guard = self.ca.lock().map_err(|_| SignError::Execution {
             detail: "CA state lock poisoned".to_owned(),
         })?;
         if guard.is_none() {
+            *guard = Some(self.load_or_mint_ca()?);
+        }
+        let ca = guard.as_ref().expect("invariant: CA minted above");
+        Ok((ca.key.clone(), ca.cert.clone()))
+    }
+
+    fn load_or_mint_ca(&self) -> Result<Ca, SignError> {
+        let Some(cache_dir) = &self.ca_cache_dir else {
             let dir = TempDir::new().map_err(|e| SignError::Execution {
                 detail: format!("create CA temp dir: {e}"),
             })?;
             let key = dir.path().join("ca.key");
             let cert = dir.path().join("ca_cert.pem");
             mint_ca(&key, &cert)?;
-            *guard = Some(Ca {
-                _dir: dir,
+            return Ok(Ca {
+                _dir: Some(dir),
                 key,
                 cert,
             });
+        };
+        let profile_dir = cache_dir.join(sanitize_for_filename(&self.profile_id));
+        let key = profile_dir.join("ca.key");
+        let cert = profile_dir.join("ca_cert.pem");
+        if !key.is_file() || !cert.is_file() {
+            fs::create_dir_all(&profile_dir)
+                .map_err(|e| io_err("create CA cache dir", &profile_dir, &e))?;
+            mint_ca(&key, &cert)?;
         }
-        let ca = guard.as_ref().expect("invariant: CA minted above");
-        Ok((ca.key.clone(), ca.cert.clone()))
+        Ok(Ca {
+            _dir: None,
+            key,
+            cert,
+        })
     }
+}
+
+/// A profile id made safe to use as a single path component (profile ids are free-form YAML map
+/// keys and could in principle contain `/`).
+fn sanitize_for_filename(profile_id: &str) -> String {
+    profile_id
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 // ───────────────────────────── inject-files.yaml model ─────────────────────────────
@@ -793,7 +847,7 @@ mod tests {
         let mut byo = profile(SigningBackend::Keypair);
         byo.key = Some(PathBuf::from("absent.key"));
         byo.cert = Some(PathBuf::from("absent.crt"));
-        let signer = build_signer("byo", &byo, dir.path());
+        let signer = build_signer("byo", &byo, dir.path(), None);
         let SignError::Preflight { missing } = signer.preflight().unwrap_err() else {
             panic!("expected a preflight error");
         };
@@ -806,7 +860,12 @@ mod tests {
     #[test]
     fn azure_key_vault_preflight_reports_unimplemented() {
         let dir = tempdir().unwrap();
-        let signer = build_signer("kv", &profile(SigningBackend::AzureKeyVault), dir.path());
+        let signer = build_signer(
+            "kv",
+            &profile(SigningBackend::AzureKeyVault),
+            dir.path(),
+            None,
+        );
         let SignError::Preflight { missing } = signer.preflight().unwrap_err() else {
             panic!("expected a preflight error");
         };
@@ -831,7 +890,12 @@ mod tests {
         )
         .unwrap();
 
-        let signer = build_signer("test-ca", &profile(SigningBackend::LocalTestCa), dir.path());
+        let signer = build_signer(
+            "test-ca",
+            &profile(SigningBackend::LocalTestCa),
+            dir.path(),
+            None,
+        );
         signer.preflight().unwrap();
         let ca_dest = dir.path().join("image.ca_cert.pem");
         let plan = SigningPlan {
@@ -871,7 +935,7 @@ mod tests {
 
         let mut profile = profile(SigningBackend::LocalTestCa);
         profile.publish_ca_cert = Some(PathBuf::from("pinned/ca.pem"));
-        let signer = build_signer("test-ca", &profile, dir.path());
+        let signer = build_signer("test-ca", &profile, dir.path(), None);
         let plan = SigningPlan {
             inject_files_yaml: artifacts.join("inject-files.yaml"),
             artifacts_dir: artifacts.clone(),
@@ -886,6 +950,64 @@ mod tests {
         assert!(
             !dir.path().join("image.ca_cert.pem").exists(),
             "default path should be unused when the override is set"
+        );
+    }
+
+    #[test]
+    fn local_test_ca_reuses_a_cached_root_across_separate_signer_instances() {
+        // Regression: without a persisted cache, each `tailor build` invocation mints an
+        // independent HostSigner (and therefore an independent root) for the same profile id --
+        // so a cell skipped as already up to date in one invocation could end up signed by a root
+        // a *later* invocation's rebuild of a sibling cell on the same profile silently replaces at
+        // the shared `publishCaCert` path. Two separate `build_signer` calls for the same profile id
+        // sharing a `ca_cache_dir` (simulating two separate invocations) must mint the root only
+        // once and reuse it thereafter.
+        if !openssl_available() {
+            eprintln!("skipping: openssl not on PATH");
+            return;
+        }
+        let dir = tempdir().unwrap();
+        let cache_dir = dir.path().join("ca-cache");
+        let sign_once = |profile_id: &str| -> String {
+            let artifacts = dir.path().join(format!("artifacts-{profile_id}"));
+            fs::create_dir_all(&artifacts).unwrap();
+            fs::write(artifacts.join("root.hash"), b"hash bytes").unwrap();
+            fs::write(
+                artifacts.join("inject-files.yaml"),
+                "injectFiles:\n- partition:\n    idType: part-label\n    id: esp\n  destination: /root.hash\n  source: ./root.hash\n  type: verity-hash\n",
+            )
+            .unwrap();
+            let signer = build_signer(
+                profile_id,
+                &profile(SigningBackend::LocalTestCa),
+                dir.path(),
+                Some(&cache_dir),
+            );
+            let ca_dest = artifacts.join("image.ca_cert.pem");
+            let plan = SigningPlan {
+                inject_files_yaml: artifacts.join("inject-files.yaml"),
+                artifacts_dir: artifacts.clone(),
+                leaf_id: format!("{profile_id}_amd64_cosi"),
+                ca_cert_dest: ca_dest.clone(),
+            };
+            signer.sign(&plan).unwrap();
+            fs::read_to_string(&ca_dest).unwrap()
+        };
+
+        // Two separate HostSigner instances (as two separate `tailor build` invocations would each
+        // construct) for the *same* profile id must reuse the same cached root.
+        let first = sign_once("test-ca");
+        let second = sign_once("test-ca");
+        assert_eq!(
+            first, second,
+            "a cached CA must be reused across separate signer instances for the same profile id"
+        );
+
+        // A *different* profile id must not reuse another profile's cached root.
+        let other = sign_once("other-ca");
+        assert_ne!(
+            first, other,
+            "different profile ids must not share a cached CA"
         );
     }
 }

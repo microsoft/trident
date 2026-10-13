@@ -47,6 +47,9 @@ const LOCK_FILE: &str = "tailor.lock";
 const ARTIFACTS_DIR: &str = "artifacts";
 const TAILOR_STATE_DIR: &str = ".tailor";
 const BASE_HASH_CACHE_DIR: &str = "base-hashes";
+/// Persists a `local-test-ca` signing profile's minted root across separate `tailor build`
+/// invocations, keyed by profile id (`tailor_sign::build_signer`).
+const CA_CACHE_DIR: &str = "ca-cache";
 /// Default per-cell build/scratch directory under the output state dir, used when
 /// `runtime.buildDirBase` is unset.
 const BUILD_DIR: &str = "build";
@@ -362,7 +365,9 @@ fn validate(workspace: &Workspace, names: &[String], selector: &Selector) -> Res
         }
     }
     ensure_signing_preview(&tool, &signing)?;
-    report_signing(&build_signers(&signing, &workspace.root));
+    // `tailor validate` only previews signing prerequisites (no real build), so no CA is ever
+    // minted here -- no cache dir needed.
+    report_signing(&build_signers(&signing, &workspace.root, None));
     Ok(())
 }
 
@@ -1529,7 +1534,8 @@ async fn build(
     // Build one signer per required profile (a shared CA per build); `signer_for` resolves a cell to
     // its signer via the rendered cell slug, so only the cells whose merged fragments opted into
     // `signing:` take the signed three-pass path.
-    let signers = build_signers(&signing, &workspace.root);
+    let ca_cache_dir = output_dir.join(TAILOR_STATE_DIR).join(CA_CACHE_DIR);
+    let signers = build_signers(&signing, &workspace.root, Some(&ca_cache_dir));
     let slug_signer: HashMap<&str, Arc<dyn Signer>> = signers
         .iter()
         .flat_map(|(requirement, signer)| {
@@ -2054,17 +2060,25 @@ fn signing_requirements<'a>(
 type ProfileSigner<'a> = (&'a SigningRequirement<'a>, Arc<dyn Signer>);
 
 /// Build one [`Signer`] per required profile — a shared CA per build (`meta/docs/2026-06-29-signing.md` §6).
-/// Relative `keypair` key/cert paths resolve against the workspace root.
+/// Relative `keypair` key/cert paths resolve against the workspace root. `ca_cache_dir` persists a
+/// `local-test-ca` profile's minted root across separate invocations (keyed by profile id), not just
+/// across cells within this one (already covered by sharing one `Signer` per profile here).
 fn build_signers<'a>(
     requirements: &'a [SigningRequirement<'a>],
     root: &Path,
+    ca_cache_dir: Option<&Path>,
 ) -> Vec<ProfileSigner<'a>> {
     requirements
         .iter()
         .map(|requirement| {
             (
                 requirement,
-                tailor_sign::build_signer(&requirement.profile_id, requirement.profile, root),
+                tailor_sign::build_signer(
+                    &requirement.profile_id,
+                    requirement.profile,
+                    root,
+                    ca_cache_dir,
+                ),
             )
         })
         .collect()
