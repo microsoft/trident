@@ -56,7 +56,9 @@ and a base image also from MCR.
    cargo run --manifest-path tools/tailor/Cargo.toml --      --manifest tests/tailor-images/tailor.yaml      build trident-functest --output-dir ./artifacts
    ```
 
-   This produces `artifacts/trident-functest.qcow2`. The image is selected from
+   This produces `artifacts/trident-functest_amd64_qcow2.qcow2` (tailor
+   publishes under the cell's slug; use `make artifacts/trident-functest.qcow2`
+   for the legacy-named compatibility output). The image is selected from
    the `trident-functest` family in `tests/tailor-images/tailor.yaml`.
 
 ## Building Test Dependencies
