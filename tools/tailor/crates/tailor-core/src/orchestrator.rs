@@ -249,10 +249,13 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                 // `--clones N` variant's own suffixed paths (`output_slug` -- `<slug>_cloneN`), not
                 // just the bare slug: execution publishes each clone under its own suffixed path, so
                 // a `publishCaCert` set to a clone-suffixed path would otherwise pass this check
-                // unnoticed and collide with that clone's image at build time.
+                // unnoticed and collide with that clone's image at build time. The loop alone
+                // already covers the unsuffixed path too -- `output_slug` returns the bare slug when
+                // `clone_count == 1` -- so nothing extra needs claiming before it; claiming the bare
+                // path unconditionally would over-reserve it when `clone_count > 1`, when execution
+                // only ever writes the suffixed variants and the bare path is genuinely free.
                 let clone_count = clones.max(1);
                 let mut claims: BTreeSet<PathBuf> = BTreeSet::new();
-                claims.insert(artifact.clone());
                 for clone in 0..clone_count {
                     let clone_slug =
                         output_slug(cell.slug.as_ref(), (clone_count > 1).then_some(clone));
@@ -2501,6 +2504,69 @@ mod tests {
         assert!(
             matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
             "a publishCaCert matching a clone-suffixed artifact path must be rejected: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_accepts_a_publish_ca_cert_path_matching_the_unused_bare_slug_under_clones() {
+        // Regression: planning used to claim the bare (un-cloned) `<slug>.<ext>` path
+        // unconditionally, even when `--clones N` (N > 1) meant execution would only ever write
+        // the clone-suffixed variants -- so a publishCaCert at that genuinely-unused bare path was
+        // incorrectly rejected as colliding with an artifact nothing actually writes there.
+        let out = TempDir::new().unwrap();
+        // Same slug as the sibling test above: "solo_amd64_cosi".
+        let unused_bare_path = out.path().join("solo_amd64_cosi.cosi");
+        let (_tmp, target) = target_with(indoc! {"
+                name: solo
+                base:
+                  path: ./b.img
+                signing: release
+                config:
+                  os:
+                    hostname: solo
+            "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(&format!(
+            indoc! {"
+                schemaVersion: 1
+                toolchains:
+                  default: ic
+                  entries:
+                    - name: ic
+                      container: registry.example/imagecustomizer
+                      version: 1.0.0
+                signing:
+                  default: release
+                  profiles:
+                    release:
+                      backend: local-test-ca
+                      publishCaCert: {}
+            "},
+            unused_bare_path.display()
+        ))
+        .unwrap();
+        let toolchains = resolved_toolchains(&tool);
+
+        let plan = Orchestrator::new(FakeExecutor::default(), FakeResolver)
+            .plan(
+                &[target],
+                &[],
+                &tool,
+                &Lockfile::default(),
+                &toolchains,
+                &BTreeMap::new(),
+                &BuildSelection::from_selector(&Selector::default()),
+                out.path(),
+                None,
+                2,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            plan.cells.len(),
+            1,
+            "a publishCaCert at the unused bare path must plan successfully under --clones 2"
         );
     }
 }
