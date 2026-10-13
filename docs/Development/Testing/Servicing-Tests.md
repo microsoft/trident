@@ -135,8 +135,8 @@ mkdir -p artifacts/update-a artifacts/update-b
 cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-vm-testimage -s arch=amd64 -s scenario=grub-verity     --output-dir ./artifacts --clones 2
 
 # Move the clones into the update directories with the same filename
-mv artifacts/trident-vm-grub-verity-testimage_clone0.cosi     artifacts/update-a/trident-vm-grub-verity-testimage.cosi
-mv artifacts/trident-vm-grub-verity-testimage_clone1.cosi     artifacts/update-b/trident-vm-grub-verity-testimage.cosi
+mv artifacts/trident-vm-testimage_amd64_grub-verity_cosi_clone0.cosi     artifacts/update-a/trident-vm-grub-verity-testimage.cosi
+mv artifacts/trident-vm-testimage_amd64_grub-verity_cosi_clone1.cosi     artifacts/update-b/trident-vm-grub-verity-testimage.cosi
 ```
 
 :::note

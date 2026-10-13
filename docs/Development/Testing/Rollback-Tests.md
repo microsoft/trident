@@ -127,8 +127,9 @@ TEST_IMAGE_NAME="trident-vm-usr-verity-testimage"
 # Clean any previous test images
 sudo rm -f artifacts/trident-vm-*-testimage.qcow2 artifacts/trident-vm-*-testimage.cosi
 
-# Build the COSI and QCOW2
-cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-vm-testimage -s arch=amd64 -s scenario=usr-verity --output-dir ./artifacts
+# Build the COSI and QCOW2 (the compatibility Make targets select the
+# correct scenario/layout and legacy filename for each format)
+make artifacts/$TEST_IMAGE_NAME.cosi
 make artifacts/$TEST_IMAGE_NAME.qcow2
 ```
 
