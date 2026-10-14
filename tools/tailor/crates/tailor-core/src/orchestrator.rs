@@ -199,6 +199,7 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                         profile_id,
                         profile,
                         &target.root,
+                        output_dir,
                         cell.slug.as_ref(),
                         seen_artifacts,
                         seen_ca_cert_paths,
@@ -270,6 +271,13 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                         cell.output.compression,
                     )));
                     claims.insert(output_dir.join(artifact_name(&clone_slug, cell.output.format)));
+                    // A signed build's first IC pass writes this raw intermediate before signing and
+                    // the inject pass run (`run_signed_passes`); claim it too, or a `publishCaCert`
+                    // matching it would get overwritten by the CA write before the inject pass reads
+                    // it, corrupting the in-progress build instead of being caught here.
+                    if resolved_signing_profile.is_some() {
+                        claims.insert(output_dir.join(intermediate_artifact_name(&clone_slug)));
+                    }
                 }
                 for claim in claims {
                     // Resolve as far as the filesystem allows before comparing: a claim that doesn't
@@ -576,13 +584,18 @@ fn signing_key_hashes(
 /// same CA); across different profile ids, `build_signer` mints an independent self-signed root
 /// per call, so the second write would silently invalidate the first image's trust chain. A
 /// profile with no `publishCaCert` set still writes a CA cert -- at the executor's slug-scoped
-/// default (`<output_dir>/<slug>.ca_cert.pem`, matching `tailor-exec`'s `ca_cert_name`) -- so that
-/// default must be claimed too, or a *different* profile's explicit `publishCaCert` could alias it
-/// and silently overwrite this cell's CA undetected.
+/// default, `<output_dir>/<slug>.ca_cert.pem` -- so that default must be claimed too, or a
+/// *different* profile's explicit `publishCaCert` could alias it and silently overwrite this
+/// cell's CA undetected. An explicit override is a workspace-relative config value and resolves
+/// against `workspace_root`; the default is not configurable and is exactly where the executor
+/// writes it, so it resolves against `output_dir` instead -- these two roots can differ (the
+/// default `output_dir` is `<workspace_root>/artifacts`), and conflating them previously let the
+/// default-path claim land somewhere execution never actually writes.
 fn claim_ca_cert_path(
     profile_id: &str,
     profile: &tailor_config::SigningProfile,
     workspace_root: &Path,
+    output_dir: &Path,
     slug: &str,
     seen_artifacts: &BTreeMap<PathBuf, String>,
     seen_ca_cert_paths: &mut BTreeMap<PathBuf, String>,
@@ -590,15 +603,10 @@ fn claim_ca_cert_path(
     if profile.backend != tailor_config::SigningBackend::LocalTestCa {
         return Ok(());
     }
-    let ca_path: PathBuf = match profile.publish_ca_cert.as_deref() {
-        Some(p) => p.to_owned(),
-        // Must match `tailor_exec::output_artifacts::ca_cert_name`'s `"{slug}.ca_cert.pem"`.
-        // `tailor-core` can't depend on `tailor-exec` to share that helper directly (the
-        // dependency only runs the other way), so the format is duplicated here.
-        None => PathBuf::from(format!("{slug}.ca_cert.pem")),
+    let resolved = match profile.publish_ca_cert.as_deref() {
+        Some(p) => resolve_for_collision_check(&tailor_config::absolutize(p, workspace_root)),
+        None => resolve_for_collision_check(&output_dir.join(ca_cert_name(slug))),
     };
-    let resolved =
-        resolve_for_collision_check(&tailor_config::absolutize(&ca_path, workspace_root));
     if let Some((_, artifact_slug)) = find_collision(&resolved, seen_artifacts) {
         return Err(CoreError::CaCertPathCollidesWithArtifact {
             path: resolved,
@@ -1222,6 +1230,24 @@ pub fn published_artifact_name(
         Some(codec) => format!("{base}.{}", codec.suffix()),
         None => base,
     }
+}
+
+/// The per-cell published CA cert filename, `<slug>.ca_cert.pem`. Defined once here (not in
+/// `tailor-exec`, which depends on this crate and not the reverse) so planning's collision claims
+/// and the executor's actual write can never drift apart the way they did before -- `tailor-exec`
+/// re-exports this same function rather than defining its own copy.
+#[must_use]
+pub fn ca_cert_name(slug: &str) -> String {
+    format!("{slug}.ca_cert.pem")
+}
+
+/// The per-cell, per-clone raw intermediate path a signed build's first IC pass writes to
+/// (`customize` -> raw intermediate -> sign -> inject-files), before the inject pass overwrites it
+/// with the final signed image. `slug` should already include the clone suffix (pass the result of
+/// [`output_slug`]). Shared with `tailor-exec`'s executor for the same reason as [`ca_cert_name`].
+#[must_use]
+pub fn intermediate_artifact_name(slug: &str) -> String {
+    format!("{slug}.intermediate.raw")
 }
 
 #[cfg(test)]
@@ -2086,6 +2112,7 @@ mod tests {
             "release",
             &profile,
             root.path(),
+            root.path(),
             "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
@@ -2094,6 +2121,7 @@ mod tests {
         claim_ca_cert_path(
             "release",
             &profile,
+            root.path(),
             root.path(),
             "img",
             &seen_artifacts,
@@ -2116,6 +2144,7 @@ mod tests {
             "release",
             &profile,
             root.path(),
+            root.path(),
             "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
@@ -2124,6 +2153,7 @@ mod tests {
         let err = claim_ca_cert_path(
             "dev",
             &profile,
+            root.path(),
             root.path(),
             "img",
             &seen_artifacts,
@@ -2150,6 +2180,7 @@ mod tests {
         let err = claim_ca_cert_path(
             "release",
             &profile,
+            root.path(),
             root.path(),
             "img",
             &seen_artifacts,
@@ -2180,6 +2211,7 @@ mod tests {
         let err = claim_ca_cert_path(
             "release",
             &profile,
+            root.path(),
             root.path(),
             "img",
             &seen_artifacts,
@@ -2288,6 +2320,7 @@ mod tests {
             "a",
             &keypair,
             root.path(),
+            root.path(),
             "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
@@ -2309,6 +2342,7 @@ mod tests {
         claim_ca_cert_path(
             "b",
             &no_publish,
+            root.path(),
             root.path(),
             "img",
             &seen_artifacts,
@@ -2340,6 +2374,7 @@ mod tests {
             "release",
             &no_publish,
             root.path(),
+            root.path(),
             "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
@@ -2351,6 +2386,7 @@ mod tests {
             "dev",
             &colliding_override,
             root.path(),
+            root.path(),
             "img",
             &seen_artifacts,
             &mut seen_ca_cert_paths,
@@ -2359,6 +2395,55 @@ mod tests {
         assert!(
             matches!(err, CoreError::DuplicateCaCertPath { .. }),
             "an explicit override aliasing another cell's slug-scoped default must be rejected: {err:?}"
+        );
+    }
+
+    #[test]
+    fn claim_ca_cert_path_resolves_the_default_against_output_dir_not_workspace_root() {
+        // Regression: the slug-scoped default is exactly where the executor writes it --
+        // `<output_dir>/<slug>.ca_cert.pem` -- which is `<workspace_root>/artifacts/...` by default,
+        // not `<workspace_root>/...`. Resolving the default against `workspace_root` (as an explicit
+        // override correctly does) claimed a path execution never actually writes to, silently
+        // reopening the exact collision this check exists to close whenever an explicit override
+        // elsewhere names the real (`output_dir`-rooted) default path.
+        let workspace_root = TempDir::new().unwrap();
+        let output_dir = workspace_root.path().join("artifacts");
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        let no_publish = local_test_ca_profile(None);
+        claim_ca_cert_path(
+            "release",
+            &no_publish,
+            workspace_root.path(),
+            &output_dir,
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+        assert_eq!(
+            seen_ca_cert_paths.get(&output_dir.join("img.ca_cert.pem")),
+            Some(&"release".to_owned()),
+            "the default must be claimed under output_dir, matching where the executor writes it"
+        );
+
+        // An explicit override naming that same real (output_dir-rooted) path must still collide.
+        let colliding_override =
+            local_test_ca_profile(Some(output_dir.join("img.ca_cert.pem").to_str().unwrap()));
+        let err = claim_ca_cert_path(
+            "dev",
+            &colliding_override,
+            workspace_root.path(),
+            &output_dir,
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CoreError::DuplicateCaCertPath { .. }),
+            "an explicit override naming the real output_dir-rooted default path must be rejected: {err:?}"
         );
     }
 
@@ -2642,6 +2727,69 @@ mod tests {
             plan.cells.len(),
             1,
             "a publishCaCert at the unused bare path must plan successfully under --clones 2"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_rejects_a_publish_ca_cert_path_colliding_with_a_signed_intermediate() {
+        // Regression: a signed build's first IC pass writes a raw intermediate
+        // (`<slug>.intermediate.raw`) before signing and the inject pass run -- that path was never
+        // claimed, so a `publishCaCert` matching it passed planning unnoticed, then got overwritten
+        // by the CA write mid-build, corrupting the in-progress image before the inject pass could
+        // read it.
+        let out = TempDir::new().unwrap();
+        // Same slug as the sibling clone tests: "solo_amd64_cosi".
+        let intermediate_path = out.path().join("solo_amd64_cosi.intermediate.raw");
+        let (_tmp, target) = target_with(indoc! {"
+                name: solo
+                base:
+                  path: ./b.img
+                signing: release
+                config:
+                  os:
+                    hostname: solo
+            "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(&format!(
+            indoc! {"
+                schemaVersion: 1
+                toolchains:
+                  default: ic
+                  entries:
+                    - name: ic
+                      container: registry.example/imagecustomizer
+                      version: 1.0.0
+                signing:
+                  default: release
+                  profiles:
+                    release:
+                      backend: local-test-ca
+                      publishCaCert: {}
+            "},
+            intermediate_path.display()
+        ))
+        .unwrap();
+        let toolchains = resolved_toolchains(&tool);
+
+        let err = Orchestrator::new(FakeExecutor::default(), FakeResolver)
+            .plan(
+                &[target],
+                &[],
+                &tool,
+                &Lockfile::default(),
+                &toolchains,
+                &BTreeMap::new(),
+                &BuildSelection::from_selector(&Selector::default()),
+                out.path(),
+                None,
+                1,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
+            "a publishCaCert matching a signed build's own raw intermediate path must be rejected: {err:?}"
         );
     }
 }
