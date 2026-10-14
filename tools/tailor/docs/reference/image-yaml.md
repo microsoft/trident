@@ -58,7 +58,7 @@ tools-dir is always bound **writable** as a per-cell disposable copy under `runt
 cannot work). `runtime.buildDirBase` defaults to `<output>/.tailor/build`, so no configuration is
 needed; set it to override the location. Inline sources
 accept the same `pull: always | missing | never` policy as workspace `toolsDirSources`; local-only
-images without a `RepoDigest` run by image `Id` and are not lockable. The inline IC
+images without a `RepoDigest` run by local image `Id` (not portable across machines). The inline IC
 `config.previewFeatures` list must include `tools-dir`.
 
 ```yaml
@@ -261,10 +261,10 @@ base:
   ref: baremetal          # a named slot in tailor.yaml `baseImages:`
 ```
 
-For an `oci` or `azureLinux` base, tailor resolves the registry digest and passes IC a digest-pinned
-`--image oci:<repo>@sha256:…` (so the build is reproducible). Image Customizer downloads OCI input
-images behind a **preview feature**, and tailor never edits your IC `config:`, so you must enable it
-yourself in the image's `config:`:
+For an `oci` or `azureLinux` base, tailor resolves a registry digest for the run and passes IC
+`--image oci:<repo>@sha256:…`. A tag may resolve to different bytes on a later run. Image
+Customizer downloads OCI inputs behind a **preview feature**, and tailor never edits your IC
+`config:`, so you must enable it yourself in the image's `config:`:
 
 ```yaml
 config:

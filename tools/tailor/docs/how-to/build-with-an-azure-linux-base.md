@@ -67,9 +67,7 @@ Pass `-vv` to also stream the Image Customizer logs.
 ## What tailor handles for you
 
 - **Digest resolution.** tailor resolves the base to a digest and passes IC
-  `--image oci:<repo>@sha256:…` for that run. Recording it with `tailor lock` requires a
-  `lock-preview` build; an existing pin is reused after registry resolution, not as an offline
-  guarantee. Strict `build --locked` enforcement is not implemented.
+  `--image oci:<repo>@sha256:…` for that run. A tag may resolve to a different digest later.
 - **Image cache.** `oci`/`azureLinux` bases need a cache directory; tailor defaults
   `runtime.imageCacheDir` to `<workspace>/.tailor/cache`.
 - **Ownership.** IC writes outputs as root; the sudo-free janitor normalizes them (and the cache) back

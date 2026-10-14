@@ -57,18 +57,12 @@ load-bearing — treat a regression in them as a serious bug:
   paths a build produced (the build directory's children, the image cache, the
   per-cell log), never arbitrary locations.
 
-## Supply-chain pinning
+## Registry input identity
 
-Because a moving tag is a reproducibility hazard, a normal build resolves
-registry inputs to digests for that run and can reuse pins in an existing
-`tailor.lock`. Writing/refreshing the lock with `tailor lock`/`update` requires
-a binary built with the optional `lock-preview` feature. Named toolchains,
-tools-dir sources, registry bases, and an **explicitly configured** janitor
-image can be pinned; the built-in janitor and inline sources are not recorded.
-Registry bases are still resolved before existing pins are reused, and strict
-`build --locked` enforcement is not implemented. Digest pinning improves
-consistency; it does not defend against a compromised registry account or
-guarantee an offline build.
+Registry inputs resolve to digests for a build invocation, but a moving tag can
+select different bytes next time. Digest resolution is not a defense against a
+compromised registry account and does not make a build offline. Build only from
+trusted registries and images within the trusted-host boundary above.
 
 ## Reporting
 

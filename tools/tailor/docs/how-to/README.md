@@ -32,9 +32,9 @@ base-image **catalogue**. Each guide notes anything extra it needs.
 - [Manage extracted Image Customizer artifacts](manage-extracted-artifacts.md)
 - [Skip experimental cells in bulk runs](skip-experimental-cells.md)
 
-## Pin and reproduce
+## Toolchains
 
-- [Pin the Image Customizer version](pin-the-ic-version.md)
+- [Select an Image Customizer tag](pin-the-ic-version.md)
 - [Use a locally-built Image Customizer image](use-a-local-ic-image.md)
 
 ## Environment and engine

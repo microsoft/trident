@@ -68,5 +68,4 @@ imagecustomizer customize \
 `export` is offline: it does not resolve toolchain or base digests, nor substitute
 `${inputs.<name>}` producer paths. If your config uses producer inputs, supply the concrete
 artifact paths in the pipeline rather than treating the exported tokens as self-contained YAML.
-Pin the pipeline's IC version independently; `tailor.lock` commands require the optional
-`lock-preview` build feature, and strict lock enforcement is not shipped.
+Choose the pipeline's IC image independently of tailor's toolchain settings.

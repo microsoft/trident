@@ -51,7 +51,6 @@ name the image and pass `--cell` — `tailor build <slug>` is shorthand for
 | --- | --- |
 | `-s`, `--select AXIS=VALUE` | Constrain matrix axes. Repeatable. Comma-separated axis pairs are accepted, for example `-s variant=full,arch=amd64`. |
 | `--cell SLUG` | Select exact cells by slug. Repeatable. |
-| `--locked` | *(preview, `lock-preview` feature)* Flag is present in feature-enabled builds, but strict lockfile enforcement is **not implemented**. Do not use as a CI drift gate. Absent from default builds. |
 | `--force` | Ignore incremental up-to-date checks. |
 | `--arch ARCH` | Restrict build to architecture(s). Repeatable. |
 | `--output-dir PATH` | Output directory. Default: `<workspace>/artifacts`. |
@@ -162,29 +161,12 @@ selected cell produces. The config YAML carries no tools-dir, base, rpm-source, 
 (the pipeline must supply those). `${inputs.<name>}` producer paths are **not** resolved by export;
 avoid exporting those configs unchanged to a pipeline without substituting concrete paths.
 
-## `tailor lock` *(preview)*
-
-> **Preview feature.** `lock`, `update`, and `build --locked` are gated behind the `lock-preview`
-> Cargo feature and are **absent from default builds** (lockfile *enforcement* is not yet
-> implemented). Build with `cargo install --features lock-preview` (or `cargo build --features
-> lock-preview`) to enable them.
-
-Write `tailor.lock` without building. Existing pins are retained rather than silently moved, but
-registry bases are still **resolved** before their pinned digest is reused: `lock` is not offline.
-Toolchains, named tools-dir sources, and an **explicitly configured** janitor image can be
-recorded; the built-in default janitor and inline sources are not added. A normal build can use
-existing pins but does not write a lock, and strict `--locked` enforcement is not implemented.
-
-## `tailor update` *(preview)*
-
-Ignore old pins and rewrite `tailor.lock`, resolving each input under its pull policy (a local
-image may keep the same digest). Use it to deliberately refresh registry bases/toolchains.
-Preview feature — see [`tailor lock`](#tailor-lock-preview).
-
 ## `tailor resolve [images...]`
 
-Resolve toolchain, tools-dir, and base inputs and print proposed lockfile content without writing
-it. May contact the engine/registries; unlike `lock`, available in default builds.
+Inspect the selected images' inputs and print a YAML summary of resolved toolchain, named
+tools-dir, and registry-base digests (plus an explicitly configured janitor image). Requires a
+reachable container engine and may contact registries. Prints to stdout without building or
+writing a file; local-only images without registry digests are omitted from the summary.
 
 ## `tailor clean [images...]`
 

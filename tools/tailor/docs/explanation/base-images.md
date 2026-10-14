@@ -22,8 +22,8 @@ moves.
 
 For local file bases (`path` and catalogue `ref` slots), tailor computes an **XXH3-128** content
 hash plus the file size before planning. This hash is only for rebuild/change detection; it is not a
-security or provenance digest, and local files are not pinned in `tailor.lock`. Supply identical
-bytes separately on each builder; a matching path alone is no provenance guarantee.
+security or provenance digest. Supply identical bytes separately on each builder; a matching
+path alone is no provenance guarantee.
 
 Large bases are cached on the build path. After the first hash, `tailor build` stores a versioned
 entry under `<output>/.tailor/base-hashes/` keyed by the base path and guarded by the stored absolute

@@ -30,24 +30,20 @@ tailor build
 ```
 
 Under `pull: missing`, tailor inspects the local daemon, finds `my-ic:local`, and runs
-it **without a registry pull**. Under `pull: never`, tailor requires the image to be present locally
-when no digest is locked and fails if it is missing. An existing lock digest takes precedence
-and may trigger a pull even with `pull: never`; registry **base** resolution is independent. This
-policy alone does not guarantee an offline build.
+it **without a registry pull** in the normal local-image flow. `pull: never` normally requires
+a local image instead of fetching the toolchain. Registry **bases** resolve independently, so
+this setting alone does not make the entire build offline.
 
-## 2. How the image is identified (and whether it locks)
+## 2. How the image is identified
 
-tailor inspects the local image and picks the most reproducible identifier available:
+tailor inspects the local image and chooses an identifier for this run:
 
 - If the image carries a **`RepoDigest`** (it was pulled from, or pushed to, a registry at some
-  point), tailor runs it as `container@sha256:…`. A feature-enabled `tailor lock` can record
-  named workspace toolchain/tools-dir source digests; an ordinary build does **not** write the lock.
+  point), tailor runs it as `container@sha256:…`.
 - If the image is **local-only** (no `RepoDigest` — a fresh `docker build` that was never pushed),
-  tailor runs it by its image **`Id`**. An `Id` is not portable across machines, so it is
-  **not lockable**: another machine cannot fetch that local image by its ID.
+  tailor runs it by its image **`Id`**. That identifier is not portable across machines.
 
-Inline `toolchain:` / `toolsDir.source` images can run locally by digest or ID, but `tailor lock`
-does not add standalone inline sources to its named workspace lists.
+This also applies to inline `toolchain:` and `toolsDir.source` images.
 
 ## 3. Match the architecture
 
@@ -62,9 +58,8 @@ error: toolchain `local-ic` local image is `amd64` but cell `gizmo_arm64_cosi` t
 Build cells whose arch the local image can serve (for example select the matching arch, see
 [Cross-arch building](cross-arch-building.md)), or provide a local image for the other arch.
 
-## 4. Make a reproducible build
+## 4. Use the image on another machine
 
-To record a **named** source in the lockfile, give it a `RepoDigest` by pushing (or re-pulling) it
-through a registry your builders can reach, then use a `lock-preview` build's `tailor lock`.
-Strict `build --locked` enforcement is not implemented; a purely local `Id` remains usable but
-unlocked. See [Pull policy](../reference/tailor-yaml.md#pull-policy).
+Build or distribute the same toolchain image on each builder, or push it to a registry they can
+access. A shared tag alone does not guarantee identical bytes across machines. See
+[Pull policy](../reference/tailor-yaml.md#pull-policy).

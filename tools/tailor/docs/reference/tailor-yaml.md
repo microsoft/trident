@@ -54,16 +54,15 @@ out-of-workspace inputs. The old whole-host `-v /:/host` bind is never emitted.
 
 Toolchains and tools-dir sources support `pull: always | missing | never`:
 
-- `always` pulls before use; without a lock pin, it first resolves a registry digest.
-- `missing` (default) uses a local image when present, otherwise resolves and pulls from the registry.
-  If `tailor.lock` already pins a digest for the named source, the locked digest wins.
-- `never` uses a local image when no digest is locked; without either, it fails. A **locked digest**
-  is selected first and may be pulled, even with `pull: never`: this setting alone is not an offline
-  guarantee.
+- `always` requests a pull before use.
+- `missing` (default) normally uses an available local image; otherwise it resolves and pulls
+  from the registry.
+- `never` requires an available local image in ordinary use; do not treat it as a whole-build
+  offline guarantee. Registry bases are resolved separately from the toolchain pull policy.
 
-Local images that expose a `RepoDigest` run as `container@sha256:…`; named workspace sources can
-be recorded by the preview `lock` command. Local-only images without a `RepoDigest` run by their
-image `Id` and cannot be pinned in `tailor.lock`.
+Local images with a `RepoDigest` run as `container@sha256:…`; images without one run by local
+image `Id`, which is not portable across machines. Tags, including version-like tags, may move
+between runs. See [Select an Image Customizer tag](../how-to/pin-the-ic-version.md).
 
 A local toolchain image serves the architecture it was built for. tailor reads that architecture
 during resolution and **fails fast, before any container run,** when it cannot provide a selected
@@ -74,9 +73,8 @@ error: toolchain `local-ic` local image is `amd64` but cell `gizmo_arm64_cosi` t
        no local image for that arch and pull policy won't fetch it
 ```
 
-`pull: never` with no local image and no locked digest fails without a registry request. Registry
-base images may still require resolution independently of toolchain pull policy. See
-[Use a locally-built Image Customizer image](../how-to/use-a-local-ic-image.md).
+See [Use a locally-built Image Customizer image](../how-to/use-a-local-ic-image.md) for a
+local-only workflow.
 
 A toolchain entry with every optional key set:
 
@@ -129,9 +127,7 @@ toolsDirSources:
 | `tag` | string | no | Registry tag. Defaults to `latest` when `container` has no tag or digest. |
 | `pull` | `always`\|`missing`\|`never` | no | Pull policy. Defaults to `missing`; see [Pull policy](#pull-policy). |
 
-`tailor lock` (requires a build with the `lock-preview` Cargo feature) can pin named tools-dir
-source digests in `tailor.lock`. Local-only tools-dir images without a registry digest are usable by
-local image `Id`, but are not lockable.
+Local-only tools-dir images without a registry digest are usable by their local image `Id`.
 
 ## Base-image catalogue
 
