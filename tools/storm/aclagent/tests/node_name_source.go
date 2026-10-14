@@ -41,12 +41,17 @@ const explicitOverrideNodeName = "node-name-source-hostname-override-node"
 
 // RunNodeNameSource proves TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE
 // (microsoft/trident#839) actually switches which identity
-// trident-acl-agent resolves node_name from, entirely through one-shot
-// `trident-acl-agent --validate-connection kubernetes` invocations - no
-// service restart or reboot needed, since validate-connection is a
-// standalone CLI invocation of the same binary, not a call into the
-// long-running trident-acl-agent.service. That keeps this test fast
-// relative to the rest of this VM-based scenario.
+// trident-acl-agent resolves node_name from. Shared setup
+// (prepareVmForAclAgent) does restart trident-acl-agent.service once, but
+// every actual assertion below is made through a one-shot
+// `trident-acl-agent --validate-connection kubernetes` invocation -
+// a standalone CLI invocation of the same binary, not a call into the
+// restarted long-running service - so no further restart or reboot is
+// needed per phase. That keeps this test fast relative to the rest of
+// this VM-based scenario, though it does mean the background
+// trident-acl-agent.service process is left running and able to reconnect
+// to whichever phase-specific fake apiserver is current at any given
+// moment; it is not exercised or asserted on by this test.
 //
 // The fake apiserver (see proxies.NewAPIServer) only ever serves a single
 // Node name - whatever its own nodeName argument is - so this test runs
@@ -71,12 +76,15 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	defer cancel()
 
 	// Delivers the fake kubeconfig pointing trident-acl-agent's compiled-in
-	// default kubeconfig path at HostEndpointIP:APIServerPort. That address
-	// stays constant across every phase below - only which single Node the
-	// fake apiserver bound there currently serves changes - so this only
-	// needs to happen once, up front. trident-acl-agent.service itself is
-	// never touched by this test, since every check is a direct one-shot
-	// CLI invocation.
+	// default kubeconfig path at HostEndpointIP:APIServerPort, and (as part
+	// of prepareVmForAclAgent's shared setup) restarts
+	// trident-acl-agent.service once so it picks up that kubeconfig. That
+	// address stays constant across every phase below - only which single
+	// Node the fake apiserver bound there currently serves changes - so
+	// this only needs to happen once, up front. Every check below is still
+	// a direct one-shot `--validate-connection` CLI invocation, independent
+	// of the restarted service; the background service itself is left
+	// running in the meantime but is not exercised or asserted on here.
 	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nil); err != nil {
 		return err
 	}
