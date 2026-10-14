@@ -6,7 +6,7 @@ base:
     ref: core_selinux
 config:
   storage:
-    $include: ./include/storage-grub-verity.yaml
+    $include: ./include/storage-grub-verity-azure.yaml
   os:
     hostname: trident-vm-testimg
     selinux:
