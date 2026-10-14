@@ -69,10 +69,11 @@ pub const DEFAULT_STATE_PATH: &str = formatcp!("/var/lib/trident-acl-agent/{STAT
 pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
 /// Default path to kubelet's own client certificate, used to derive
 /// `node_name` when `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` is
-/// `kubelet-cert`. Not configurable via `TRIDENT_ACL_AGENT_*` env vars -
-/// only `KubernetesConfig::kubelet_cert_path` (test-only override) can
-/// point elsewhere, so tests don't depend on this host's real kubelet
-/// state.
+/// `kubelet-cert`. Overridable via
+/// `TRIDENT_ACL_AGENT_KUBERNETES_KUBELET_CERT_PATH` (e.g. for deployments
+/// where kubelet's cert lives somewhere other than this standard path), and
+/// also used as a test-only override via `KubernetesConfig::kubelet_cert_path`
+/// so tests don't depend on this host's real kubelet state.
 const DEFAULT_KUBELET_CLIENT_CERT: &str = "/var/lib/kubelet/pki/kubelet-client-current.pem";
 
 fn default_kubelet_cert_path() -> PathBuf {
@@ -144,7 +145,9 @@ impl AgentConfig {
                 annotation_prefix: kubernetes
                     .annotation_prefix
                     .unwrap_or_else(|| DEFAULT_ANNOTATION_PREFIX.to_string()),
-                kubelet_cert_path: default_kubelet_cert_path(),
+                kubelet_cert_path: kubernetes
+                    .kubelet_cert_path
+                    .unwrap_or_else(default_kubelet_cert_path),
             },
             trident: TridentConfig {
                 socket: trident
@@ -218,6 +221,8 @@ struct RawKubernetesConfig {
     node_name_source: Option<NodeNameSource>,
     #[serde(deserialize_with = "empty_string_as_none")]
     annotation_prefix: Option<String>,
+    #[serde(deserialize_with = "empty_path_as_none")]
+    kubelet_cert_path: Option<PathBuf>,
 }
 
 /// Mirrors [`TridentConfig`] (see [`RawNebraskaConfig`]).
@@ -378,10 +383,9 @@ pub struct KubernetesConfig {
     pub annotation_prefix: String,
     /// Path to kubelet's client certificate, consulted by
     /// [`Self::resolve_node_name_once`] when `node_name_source` is
-    /// `KubeletCert`. Always [`DEFAULT_KUBELET_CLIENT_CERT`] in production,
-    /// not configurable via `TRIDENT_ACL_AGENT_*` env vars. Exists as a
-    /// struct field (rather than a hardcoded path in `default_node_name`)
-    /// purely so tests can point it at a guaranteed-missing or
+    /// `KubeletCert`. Defaults to [`DEFAULT_KUBELET_CLIENT_CERT`],
+    /// overridable via `TRIDENT_ACL_AGENT_KUBERNETES_KUBELET_CERT_PATH`.
+    /// Also lets tests point it at a guaranteed-missing or
     /// guaranteed-present path instead of depending on whether this host
     /// happens to have a real kubelet cert.
     pub(crate) kubelet_cert_path: PathBuf,
@@ -977,6 +981,28 @@ UaP9zf1GQx6rGJqs8dfHOeg=
             !default_node_name(NodeNameSource::Hostname, Path::new("/nonexistent"))
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn kubelet_cert_path_defaults_to_default_kubelet_client_cert() {
+        let config = AgentConfig::from_vars(vec![]).unwrap();
+        assert_eq!(
+            config.kubernetes.kubelet_cert_path,
+            default_kubelet_cert_path()
+        );
+    }
+
+    #[test]
+    fn kubelet_cert_path_overridable_via_env_var() {
+        let config = AgentConfig::from_vars(vars(&[(
+            "TRIDENT_ACL_AGENT_KUBERNETES_KUBELET_CERT_PATH",
+            "/custom/kubelet-client-current.pem",
+        )]))
+        .unwrap();
+        assert_eq!(
+            config.kubernetes.kubelet_cert_path,
+            PathBuf::from("/custom/kubelet-client-current.pem")
         );
     }
 
