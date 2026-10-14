@@ -208,7 +208,8 @@ confext merged afterwards would reach 3 and fail.
 
 Creating N symlinks exposes a prefix of the intended set if it fails partway,
 which matters where a driver and its userspace libraries must move together.
-The loader prepares the complete set and commits it with a single rename.
+The loader prepares the complete set out of the way and activates it with a
+single rename, so the set becomes visible all at once or not at all.
 
 ## Public API Design
 
@@ -361,7 +362,7 @@ are excluded.
 
 | Change | Design | Impl | Risk | Notes |
 | --- | :-: | :-: | :-: | --- |
-| `trident-sysext-loader` crate, slot detection and set commit | S | M | Low | std plus `anyhow`; pure given cmdline, store and inventory, so unit-testable without root or a VM |
+| `trident-sysext-loader` crate, slot detection and atomic set activation | S | M | Low | std plus `anyhow`; pure given cmdline, store and inventory, so unit-testable without root or a VM |
 | `/etc` layer mounting and lowerdir emission | M | M | Med | Loop-mount in the initrd; interaction with the existing overlay needs care |
 
 ### Trident
@@ -499,7 +500,7 @@ extensions silently stop matching and are not loaded.
 
 1. **Is the initrd per-slot or shared?** Decides whether a staged rollout is
    needed at all, and changes the estimates above.
-2. **Whole-directory selection or a prepared set?** Both commit atomically. The
+2. **Whole-directory selection or a prepared set?** Both activate atomically. The
    former is simpler; the latter allows shared and slotted extensions to share a
    search path.
 3. **Retention.** Nothing prunes a slot directory when an entry leaves the
