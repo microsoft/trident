@@ -194,17 +194,15 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                 )?;
                 let resolved_signing_profile =
                     tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())?;
-                if let Some((profile_id, profile)) = &resolved_signing_profile {
-                    claim_ca_cert_path(
-                        profile_id,
-                        profile,
-                        &target.root,
-                        output_dir,
-                        cell.slug.as_ref(),
-                        seen_artifacts,
-                        seen_ca_cert_paths,
-                    )?;
-                }
+                claim_cell_output_paths(
+                    &cell,
+                    &target.root,
+                    output_dir,
+                    clones,
+                    resolved_signing_profile.as_ref(),
+                    seen_artifacts,
+                    seen_ca_cert_paths,
+                )?;
                 let signing_profile_descriptor_value = resolved_signing_profile
                     .as_ref()
                     .map(|(id, profile)| signing_profile_descriptor(id, profile));
@@ -248,61 +246,6 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     cell.output.format,
                     cell.output.compression,
                 ));
-                // Claim both the final published path and the uncompressed path Image Customizer
-                // actually writes: with the same slug/format, a compressed and an uncompressed
-                // output both execute through the same IC-written `artifact_name`, so checking only
-                // the (possibly different) published path misses that collision. Also claim every
-                // `--clones N` variant's own suffixed paths (`output_slug` -- `<slug>_cloneN`), not
-                // just the bare slug: execution publishes each clone under its own suffixed path, so
-                // a `publishCaCert` set to a clone-suffixed path would otherwise pass this check
-                // unnoticed and collide with that clone's image at build time. The loop alone
-                // already covers the unsuffixed path too -- `output_slug` returns the bare slug when
-                // `clone_count == 1` -- so nothing extra needs claiming before it; claiming the bare
-                // path unconditionally would over-reserve it when `clone_count > 1`, when execution
-                // only ever writes the suffixed variants and the bare path is genuinely free.
-                let clone_count = clones.max(1);
-                let mut claims: BTreeSet<PathBuf> = BTreeSet::new();
-                for clone in 0..clone_count {
-                    let clone_slug =
-                        output_slug(cell.slug.as_ref(), (clone_count > 1).then_some(clone));
-                    claims.insert(output_dir.join(published_artifact_name(
-                        &clone_slug,
-                        cell.output.format,
-                        cell.output.compression,
-                    )));
-                    claims.insert(output_dir.join(artifact_name(&clone_slug, cell.output.format)));
-                    // A signed build's first IC pass writes this raw intermediate before signing and
-                    // the inject pass run (`run_signed_passes`); claim it too, or a `publishCaCert`
-                    // matching it would get overwritten by the CA write before the inject pass reads
-                    // it, corrupting the in-progress build instead of being caught here.
-                    if resolved_signing_profile.is_some() {
-                        claims.insert(output_dir.join(intermediate_artifact_name(&clone_slug)));
-                    }
-                }
-                for claim in claims {
-                    // Resolve as far as the filesystem allows before comparing: a claim that doesn't
-                    // exist yet can't be mis-detected by a stale cached value, and resolving the
-                    // longest *existing* ancestor catches a real symlink planted in the output tree
-                    // (e.g. by a prior incremental build) that a purely lexical path could miss.
-                    let resolved_claim = resolve_for_collision_check(&claim);
-                    if let Some((_, ca_profile)) =
-                        find_collision(&resolved_claim, seen_ca_cert_paths)
-                    {
-                        return Err(CoreError::CaCertPathCollidesWithArtifact {
-                            path: claim,
-                            profile: ca_profile.clone(),
-                            slug: cell.slug.to_string(),
-                        });
-                    }
-                    if let Some((_, first_slug)) = find_collision(&resolved_claim, seen_artifacts) {
-                        return Err(CoreError::DuplicateOutputPath {
-                            path: claim,
-                            first: first_slug.clone(),
-                            second: cell.slug.to_string(),
-                        });
-                    }
-                    seen_artifacts.insert(resolved_claim, cell.slug.to_string());
-                }
                 let up_to_date =
                     stamp::is_up_to_date(output_dir, cell.slug.as_ref(), print, &artifact);
                 let runtime = runtime_config(tool, lock, &target.root);
@@ -317,6 +260,51 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
             }
         }
         Ok(BuildPlan { cells: planned })
+    }
+
+    /// Claim every output path (artifact, CA cert, signed intermediate) for every cell across the
+    /// **whole** selected closure, before any node is planned or built, and fail on the first
+    /// collision found anywhere in it.
+    ///
+    /// Without this, a caller that plans-then-builds one node at a time in topological order (a
+    /// consumer must be planned *after* its producer builds, so its base hash reflects the fresh
+    /// producer artifact -- see `tailor/src/run.rs`) only accumulates collision claims one node at
+    /// a time too: an earlier node's signed build can write its CA cert over a path that happens to
+    /// equal a *later* node's output before that later node ever contributes its own claim, so the
+    /// collision is only ever reported once the later node is reached -- by which point the earlier
+    /// node has already executed and potentially clobbered something. Calling this once, up front,
+    /// over the full closure makes the check fail-fast for the entire build instead of fail-late
+    /// for whichever node happens to come second.
+    ///
+    /// Uses only statically-known cell config (slug, output format/compression, signing profile) --
+    /// no base resolution, no toolchain/digest lookups, no network -- so it is cheap, synchronous,
+    /// and independent of topological/producer ordering.
+    pub fn preflight_claims(
+        &self,
+        targets: &[Arc<Target>],
+        tool: &ToolConfig,
+        selection: &BuildSelection<'_>,
+        output_dir: &Path,
+        clones: u32,
+    ) -> Result<(), CoreError> {
+        let mut seen_artifacts = BTreeMap::new();
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        for target in targets {
+            for cell in selection.cells_for(target)? {
+                let resolved_signing_profile =
+                    tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())?;
+                claim_cell_output_paths(
+                    &cell,
+                    &target.root,
+                    output_dir,
+                    clones,
+                    resolved_signing_profile.as_ref(),
+                    &mut seen_artifacts,
+                    &mut seen_ca_cert_paths,
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// Execute the stale cells of a plan, writing a build stamp after each success. `progress`
@@ -576,6 +564,92 @@ fn signing_key_hashes(
         hash_one(profile.key.as_deref())?,
         hash_one(profile.cert.as_deref())?,
     ))
+}
+
+/// Claim every filesystem path a single cell's build (across every `--clones N` variant) will
+/// write to: its CA-cert destination (if signed) via [`claim_ca_cert_path`], its final published
+/// artifact, the uncompressed intermediate Image Customizer itself writes, and -- for a signed
+/// cell -- the raw intermediate the first IC pass writes before signing. One function, called from
+/// both [`Orchestrator::plan`]'s own per-node loop and [`Orchestrator::preflight_claims`]'s
+/// whole-closure pass, so there is exactly one place that has to know "everything a cell writes" --
+/// adding a new path kind here automatically covers both callers instead of needing a second,
+/// easy-to-forget update.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "every parameter is a distinct, necessary claiming input"
+)]
+fn claim_cell_output_paths(
+    cell: &Cell,
+    workspace_root: &Path,
+    output_dir: &Path,
+    clones: u32,
+    resolved_signing_profile: Option<&(String, &tailor_config::SigningProfile)>,
+    seen_artifacts: &mut BTreeMap<PathBuf, String>,
+    seen_ca_cert_paths: &mut BTreeMap<PathBuf, String>,
+) -> Result<(), CoreError> {
+    if let Some((profile_id, profile)) = resolved_signing_profile {
+        claim_ca_cert_path(
+            profile_id,
+            profile,
+            workspace_root,
+            output_dir,
+            cell.slug.as_ref(),
+            seen_artifacts,
+            seen_ca_cert_paths,
+        )?;
+    }
+    // Claim both the final published path and the uncompressed path Image Customizer actually
+    // writes: with the same slug/format, a compressed and an uncompressed output both execute
+    // through the same IC-written `artifact_name`, so checking only the (possibly different)
+    // published path misses that collision. Also claim every `--clones N` variant's own suffixed
+    // paths (`output_slug` -- `<slug>_cloneN`), not just the bare slug: execution publishes each
+    // clone under its own suffixed path, so a `publishCaCert` set to a clone-suffixed path would
+    // otherwise pass this check unnoticed and collide with that clone's image at build time. The
+    // loop alone already covers the unsuffixed path too -- `output_slug` returns the bare slug when
+    // `clone_count == 1` -- so nothing extra needs claiming before it; claiming the bare path
+    // unconditionally would over-reserve it when `clone_count > 1`, when execution only ever writes
+    // the suffixed variants and the bare path is genuinely free.
+    let clone_count = clones.max(1);
+    let mut claims: BTreeSet<PathBuf> = BTreeSet::new();
+    for clone in 0..clone_count {
+        let clone_slug = output_slug(cell.slug.as_ref(), (clone_count > 1).then_some(clone));
+        claims.insert(output_dir.join(published_artifact_name(
+            &clone_slug,
+            cell.output.format,
+            cell.output.compression,
+        )));
+        claims.insert(output_dir.join(artifact_name(&clone_slug, cell.output.format)));
+        // A signed build's first IC pass writes this raw intermediate before signing and the
+        // inject pass run (`run_signed_passes`); claim it too, or a `publishCaCert` matching it
+        // would get overwritten by the CA write before the inject pass reads it, corrupting the
+        // in-progress build instead of being caught here.
+        if resolved_signing_profile.is_some() {
+            claims.insert(output_dir.join(intermediate_artifact_name(&clone_slug)));
+        }
+    }
+    for claim in claims {
+        // Resolve as far as the filesystem allows before comparing: a claim that doesn't exist yet
+        // can't be mis-detected by a stale cached value, and resolving the longest *existing*
+        // ancestor catches a real symlink planted in the output tree (e.g. by a prior incremental
+        // build) that a purely lexical path could miss.
+        let resolved_claim = resolve_for_collision_check(&claim);
+        if let Some((_, ca_profile)) = find_collision(&resolved_claim, seen_ca_cert_paths) {
+            return Err(CoreError::CaCertPathCollidesWithArtifact {
+                path: claim,
+                profile: ca_profile.clone(),
+                slug: cell.slug.to_string(),
+            });
+        }
+        if let Some((_, first_slug)) = find_collision(&resolved_claim, seen_artifacts) {
+            return Err(CoreError::DuplicateOutputPath {
+                path: claim,
+                first: first_slug.clone(),
+                second: cell.slug.to_string(),
+            });
+        }
+        seen_artifacts.insert(resolved_claim, cell.slug.to_string());
+    }
+    Ok(())
 }
 
 /// Claim a `local-test-ca` profile's resolved CA-cert destination, rejecting a collision with
@@ -2727,6 +2801,67 @@ mod tests {
             plan.cells.len(),
             1,
             "a publishCaCert at the unused bare path must plan successfully under --clones 2"
+        );
+    }
+
+    #[test]
+    fn preflight_claims_catches_a_collision_across_two_targets() {
+        // Regression: a caller that plans one node at a time in topological order (required so a
+        // consumer's base hash reflects a freshly-built producer) only accumulates claims
+        // incrementally -- an earlier node's signed build can write its CA cert over a path that
+        // collides with a *later* node's output before that later node ever contributes its own
+        // claim. `preflight_claims` must catch this across the whole closure up front, independent
+        // of which node would be planned first.
+        let out = TempDir::new().unwrap();
+        // "node_a" signed, publishing its CA cert directly at "node_b"'s own artifact path.
+        let colliding_path = out.path().join("node_b_amd64_cosi.cosi");
+        let (_tmp_a, target_a) = target_with(indoc! {"
+            name: node_a
+            base:
+              path: ./b.img
+            signing: release
+            config:
+              os:
+                hostname: node-a
+        "});
+        let (_tmp_b, target_b) = target_with(indoc! {"
+            name: node_b
+            base:
+              path: ./b.img
+            config:
+              os:
+                hostname: node-b
+        "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(&format!(
+            indoc! {"
+                schemaVersion: 1
+                toolchains:
+                  default: ic
+                  entries:
+                    - name: ic
+                      container: registry.example/imagecustomizer
+                      version: 1.0.0
+                signing:
+                  default: release
+                  profiles:
+                    release:
+                      backend: local-test-ca
+                      publishCaCert: {}
+            "},
+            colliding_path.display()
+        ))
+        .unwrap();
+
+        let orchestrator = Orchestrator::new(FakeExecutor::default(), FakeResolver);
+        let default_selector = Selector::default();
+        let selection = BuildSelection::from_selector(&default_selector);
+        let err = orchestrator
+            .preflight_claims(&[target_a, target_b], &tool, &selection, out.path(), 1)
+            .unwrap_err();
+        assert!(
+            matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
+            "preflight must catch a signed node's CA path colliding with a different node's \
+             artifact, even though neither node has been planned or built yet: {err:?}"
         );
     }
 

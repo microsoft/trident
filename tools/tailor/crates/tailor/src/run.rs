@@ -1618,9 +1618,20 @@ async fn build(
     let clones = args.clones.max(1);
     let mut built = 0usize;
     let mut selected_cells = 0usize;
+    // Claim every output path for the *whole* selected closure before planning or building any one
+    // node: the per-node loop below plans-then-builds one node at a time (required so a consumer's
+    // base hash reflects a freshly-built producer), which means a node's own claims only exist once
+    // that node has been reached -- an earlier node's signed build could otherwise write its CA
+    // cert over a path that collides with a later node's output before the later node ever
+    // contributes its claim. This pass is independent of topological order and touches no network,
+    // so it can run once, up front, over every node.
+    orchestrator.preflight_claims(&ordered, &tool, &build_selection, &output_dir, clones)?;
     // Threaded across every per-node `plan()` call below (not reset each iteration) so a collision
     // between two different targets' output paths is still caught -- a map scoped to one call only
-    // sees that target's own cells (`orchestrator.rs::plan`).
+    // sees that target's own cells (`orchestrator.rs::plan`). Redundant with the preflight pass
+    // above (which already covers the whole closure) but kept as a second, independent check with
+    // its own accumulators -- cheap, and it costs nothing to verify the per-node incremental view
+    // agrees with the whole-closure one.
     let mut seen_artifacts = BTreeMap::new();
     // Same cross-call accumulation, for a `local-test-ca` profile's resolved `publishCaCert` path.
     let mut seen_ca_cert_paths = BTreeMap::new();
