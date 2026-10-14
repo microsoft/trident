@@ -16,6 +16,7 @@ outputs:
 
 rpmSources:
   - ../../../bin/RPMS
+  - ../../../artifacts/rpm-overrides
 
 extraDependencies:
   - ./base
