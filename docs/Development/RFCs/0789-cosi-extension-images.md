@@ -22,7 +22,7 @@ available for content released independently.
 ### Requirements
 
 - COSI revision 1.3 adds optional `extensions.sysexts` and
-  `extensions.confexts` arrays, each entry `{ image, path? }`.
+  `extensions.confexts` arrays, each entry `{ id, image, path? }`.
 - Clean Install and A/B Update deploy the effective set from COSI and Host
   Configuration; collisions fail.
 - An extension-only change can use Runtime Update without rewriting partitions
@@ -66,7 +66,7 @@ Older readers ignore the additional tar members.
 ### Metadata Schema
 
 The two arrays mirror Host Configuration and determine the kind; each entry
-contains only an `image` and optional `path`. This is the proposed addition to
+contains an `id`, an `image` and optional `path`. This is the proposed addition to
 the [1.2 schema](../../Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json):
 
 ```json
@@ -84,8 +84,9 @@ the [1.2 schema](../../Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.j
     },
     "ExtensionImage": {
       "type": "object",
-      "required": ["image"],
+      "required": ["id", "image"],
       "properties": {
+        "id": { "type": "string", "minLength": 1 },
         "image": { "$ref": "#/$defs/ImageFile" },
         "path": { "type": "string", "pattern": "^/.+\\.raw$" }
       }
@@ -99,6 +100,7 @@ Example (`extensions` fragment of `metadata.json`):
 ```json
 {
   "sysexts": [{
+    "id": "gpu-driver",
     "image": {
       "path": "images/extensions/gpu-driver.rawzst",
       "compressedSize": 41943040,
@@ -107,6 +109,7 @@ Example (`extensions` fragment of `metadata.json`):
     }
   }],
   "confexts": [{
+    "id": "fleet-config",
     "image": {
       "path": "images/extensions/fleet-config.rawzst",
       "compressedSize": 262144,
@@ -117,6 +120,16 @@ Example (`extensions` fragment of `metadata.json`):
   }]
 }
 ```
+
+`id` is the extension's stable logical identity, not the COSI root `id`, the
+host OS's `ID=`, or the image filename. For a sysext it must equal `SYSEXT_ID=` inside
+`/usr/lib/extension-release.d/extension-release.{name}`; for a confext it
+must equal `CONFEXT_ID=` inside
+`/etc/extension-release.d/extension-release.{name}`. Trident already requires
+those fields in DDIs. `(kind, id)` identifies an extension across COSI versions;
+its compressed hash triggers replacement. IDs must be unique within each
+array. Metadata can now match old and new extensions before reading their
+payloads, but Trident must still verify the declared ID against the DDI.
 
 `ImageFile` supplies the tar path, compressed size for ranged reads,
 uncompressed size for output bounds, and SHA-384 of the compressed member.
@@ -137,8 +150,10 @@ handles `/etc` layers separately. How bundled extensions select such a policy
 is unresolved; omitting `path` alone must not opt in.
 
 There is no `url` (the tar is the source), `kind` (the array supplies it), or
-separate name, ID, enable flag or compatibility fields (the DDI supplies them,
-or systemd merges all discovered images).
+separate name, enable flag or compatibility fields (the DDI supplies them, or
+systemd merges all discovered images). The name determines the required
+`{name}.raw` filename and can affect systemd's merge precedence; it is not
+Trident's update identity.
 
 ### Versioning
 
@@ -153,9 +168,11 @@ required extensions when reader versions cannot be controlled.
 ### Trident-Side Consumption
 
 Compute an effective set from COSI and Host Configuration entries, retaining
-each entry's source. The extensions subsystem reads bundled members instead of
-downloading them; `update_host_configuration` writes resolved paths back only
-for Host Configuration entries. `osconfig` enables the sysext/confext merge
+each entry's source. Match old and new entries by `(kind, id)`; replace when
+content changes, and reconcile changes to placement or filename. The extensions
+subsystem reads bundled members instead of downloading them;
+`update_host_configuration` writes resolved paths back only for Host
+Configuration entries. `osconfig` enables the sysext/confext merge
 units for the effective set. Move the SELinux check into validation that also
 runs for Runtime Updates; its current `configure` hook does not.
 
@@ -247,22 +264,24 @@ rollback needs longer retention or must be refused.
 Merge both sources. Reject duplicate extension IDs per kind or destination
 collisions after resolving placement, including omitted `path`. Silent
 precedence could run an unvalidated combination; identical entries still
-collide. The Host Configuration's documented ID-uniqueness rule must also be
-enforced.
+collide. COSI ID duplicates can be rejected from metadata; Host Configuration
+IDs still require reading their DDIs. Enforce the Host Configuration's
+documented ID-uniqueness rule too.
 
 ### Validation
 
 In `cosi/validation.rs`, add `V1_3` error kinds for invalid explicit paths
-(absolute, `.raw`, allowed directory), duplicate explicit destinations, reused
-tar members and collisions with disk-region images. Reuse
+(absolute, `.raw`, allowed directory), duplicate `(kind, id)` pairs, duplicate
+explicit destinations, reused tar members and collisions with disk-region
+images. Reuse
 `Extension::validate_sysext`/`validate_confext` path rules. A missing member is
 detected when read: `Cosi::new` only scans as far as `metadata.json`.
 
 After decompressing and mounting the DDI, check actual compressed and
 uncompressed sizes, the compressed SHA-384, exactly one `extension-release`
-with the kind's ID, the `{name}.raw` destination suffix, resolved placement,
-and duplicate destinations/IDs across both sources. Omitted paths cannot be
-collision-checked from metadata alone.
+whose `SYSEXT_ID` or `CONFEXT_ID` equals the metadata `id`, the `{name}.raw`
+destination suffix, resolved placement, and duplicate destinations/IDs across
+both sources. Omitted paths cannot be collision-checked from metadata alone.
 
 Warn on definite OS `ID` mismatch with COSI `osRelease`, not `VERSION_ID`:
 systemd may accept a version mismatch via `SYSEXT_LEVEL` or `CONFEXT_LEVEL`.
@@ -276,13 +295,15 @@ validation for every servicing type, not only the Host Configuration lists in
 
 ## Testing and Metrics
 
-- v1.3 schema and valid/invalid samples; semantic path rules in Rust tests.
+- v1.3 schema and valid/invalid samples, including missing or empty IDs;
+  semantic path and duplicate-ID rules in Rust tests.
 - Clean Install and A/B Update with both kinds, merge-unit activation and
   rollback (including absent `path` and slotted placement once supported).
 - Runtime Update with identical region images, distinct stage/finalize and
   auto-rollback; same-ID/same-path replacement and historical rollback refusal.
 - Reject mixed-source collisions, invalid destinations, enforcing SELinux,
-  changed OS summaries under requested Runtime Update, and disk streaming.
+  mismatched metadata/DDI IDs, changed OS summaries under requested Runtime
+  Update, and disk streaming.
 
 ## Implementation Plan
 
