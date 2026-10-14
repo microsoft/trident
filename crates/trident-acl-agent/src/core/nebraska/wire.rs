@@ -6,6 +6,8 @@
 //! protocol's invariants (whitelisted events, mandatory `track`, unbraced
 //! machine id) can only be satisfied through the validated builders.
 
+use std::collections::BTreeMap;
+
 use quick_xml::{
     events::{BytesDecl, Event},
     Writer,
@@ -344,17 +346,26 @@ pub(super) struct Package {
     #[serde(default, rename = "@required")]
     pub(super) required: bool,
 
-    /// Primary source for the COSI metadata SHA-384: a `<labels>` child
-    /// element holding one or more `<label key="..." value="..."/>`
-    /// children. See [`Package::cosi_sha384_base64`].
-    #[serde(default, rename = "labels")]
-    pub(super) labels: Option<Labels>,
+    /// Arbitrary key/value labels from the `<labels>` child element (e.g.
+    /// the `cosi.metadata.sha384` key used by
+    /// [`Package::cosi_sha384_base64`]). A flat map rather than a `Vec` of
+    /// key/value pairs since callers only ever look labels up by key; see
+    /// [`deserialize_labels`].
+    #[serde(default, rename = "labels", deserialize_with = "deserialize_labels")]
+    pub(super) labels: BTreeMap<String, String>,
 }
 
 impl Package {
     /// The label key under which the COSI metadata SHA-384 is reported in
     /// the `<labels>` child element.
     const COSI_SHA384_LABEL_KEY: &'static str = "cosi.metadata.sha384";
+
+    /// Looks up a single label by key. Generic on purpose: this wire module
+    /// has no opinion on which labels matter, that's up to callers like
+    /// [`cosi_sha384_base64`](Self::cosi_sha384_base64).
+    pub(super) fn label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(String::as_str)
+    }
 
     /// Resolves this package's base64-encoded COSI metadata SHA-384 using a
     /// 2-tier precedence:
@@ -365,36 +376,44 @@ impl Package {
     ///
     /// Returns `None` only when neither source is present.
     pub(super) fn cosi_sha384_base64(&self) -> Option<String> {
-        if let Some(value) = self.labels.as_ref().and_then(|labels| {
-            labels
-                .labels
-                .iter()
-                .find(|label| label.key == Self::COSI_SHA384_LABEL_KEY)
-                .map(|label| label.value.clone())
-        }) {
-            return Some(value);
-        }
-
-        self.hash.clone()
+        self.label(Self::COSI_SHA384_LABEL_KEY)
+            .map(str::to_string)
+            .or_else(|| self.hash.clone())
     }
 }
 
-/// A `<labels>` child element of a `<package>`, holding key/value `<label>`
-/// children (the primary COSI metadata SHA-384 source).
-#[derive(Debug, Deserialize)]
-pub(super) struct Labels {
-    #[serde(default, rename = "label")]
-    pub(super) labels: Vec<Label>,
-}
+/// Deserializes a `<labels>` child element (`<label key="..." value="..."/>`
+/// repeated children) into a flat key/value map.
+fn deserialize_labels<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Debug, Deserialize)]
+    struct LabelsWire {
+        #[serde(default, rename = "label")]
+        labels: Vec<LabelWire>,
+    }
 
-/// A single `<label key="..." value="..."/>` child of `<labels>`.
-#[derive(Debug, Deserialize)]
-pub(super) struct Label {
-    #[serde(rename = "@key")]
-    pub(super) key: String,
+    #[derive(Debug, Deserialize)]
+    struct LabelWire {
+        #[serde(rename = "@key")]
+        key: String,
 
-    #[serde(rename = "@value")]
-    pub(super) value: String,
+        #[serde(rename = "@value")]
+        value: String,
+    }
+
+    // Option<LabelsWire> so a missing <labels> element (the
+    // #[serde(default, ...)] case on the field above) deserializes cleanly
+    // as `None` instead of erroring on the absent unit value.
+    let wire = Option::<LabelsWire>::deserialize(deserializer)?
+        .unwrap_or(LabelsWire { labels: Vec::new() });
+
+    // Last duplicate key wins: Nebraska has no documented uniqueness
+    // guarantee for label keys, and silently preferring the last-in-document
+    // value is simpler than failing deserialization over a case that isn't
+    // expected to occur in practice.
+    Ok(wire.labels.into_iter().map(|l| (l.key, l.value)).collect())
 }
 
 /// Parses a Nebraska response body.
