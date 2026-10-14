@@ -69,9 +69,15 @@ pub const DEFAULT_STATE_PATH: &str = formatcp!("/var/lib/trident-acl-agent/{STAT
 pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
 /// Default path to kubelet's own client certificate, used to derive
 /// `node_name` when `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` is
-/// `kubelet-cert`. Not independently overridable (yet) - only the source
-/// selection is.
+/// `kubelet-cert`. Not configurable via `TRIDENT_ACL_AGENT_*` env vars -
+/// only `KubernetesConfig::kubelet_cert_path` (test-only override) can
+/// point elsewhere, so tests don't depend on this host's real kubelet
+/// state.
 const DEFAULT_KUBELET_CLIENT_CERT: &str = "/var/lib/kubelet/pki/kubelet-client-current.pem";
+
+fn default_kubelet_cert_path() -> PathBuf {
+    PathBuf::from(DEFAULT_KUBELET_CLIENT_CERT)
+}
 /// Prefix kubelet's client cert Subject CN always carries
 /// (`system:node:<node-name>`), per the Kubernetes TLS bootstrapping spec.
 const KUBELET_CERT_CN_NODE_PREFIX: &str = "system:node:";
@@ -138,6 +144,7 @@ impl AgentConfig {
                 annotation_prefix: kubernetes
                     .annotation_prefix
                     .unwrap_or_else(|| DEFAULT_ANNOTATION_PREFIX.to_string()),
+                kubelet_cert_path: default_kubelet_cert_path(),
             },
             trident: TridentConfig {
                 socket: trident
@@ -369,6 +376,15 @@ pub struct KubernetesConfig {
     /// `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` so a deployment can
     /// pick its own namespace instead.
     pub annotation_prefix: String,
+    /// Path to kubelet's client certificate, consulted by
+    /// [`Self::resolve_node_name_once`] when `node_name_source` is
+    /// `KubeletCert`. Always [`DEFAULT_KUBELET_CLIENT_CERT`] in production,
+    /// not configurable via `TRIDENT_ACL_AGENT_*` env vars. Exists as a
+    /// struct field (rather than a hardcoded path in `default_node_name`)
+    /// purely so tests can point it at a guaranteed-missing or
+    /// guaranteed-present path instead of depending on whether this host
+    /// happens to have a real kubelet cert.
+    pub(crate) kubelet_cert_path: PathBuf,
 }
 
 impl KubernetesConfig {
@@ -385,7 +401,7 @@ impl KubernetesConfig {
     pub fn resolve_node_name_once(&self) -> Result<String, Error> {
         match &self.node_name_override {
             Some(name) => Ok(name.clone()),
-            None => default_node_name(self.node_name_source),
+            None => default_node_name(self.node_name_source, &self.kubelet_cert_path),
         }
     }
 }
@@ -399,6 +415,7 @@ impl Default for KubernetesConfig {
             node_name_source: NodeNameSource::default(),
             watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
             annotation_prefix: DEFAULT_ANNOTATION_PREFIX.to_string(),
+            kubelet_cert_path: default_kubelet_cert_path(),
         }
     }
 }
@@ -549,7 +566,7 @@ fn default_nebraska_endpoint() -> Url {
         .expect("invariant: DEFAULT_NEBRASKA_ENDPOINT is a compile-time-valid URL")
 }
 
-fn default_node_name(source: NodeNameSource) -> Result<String, Error> {
+fn default_node_name(source: NodeNameSource, kubelet_cert_path: &Path) -> Result<String, Error> {
     match source {
         NodeNameSource::Hostname => Ok(hostname_node_name()),
         // No fallback to Hostname on failure here, by design - see
@@ -558,9 +575,7 @@ fn default_node_name(source: NodeNameSource) -> Result<String, Error> {
         // The caller (AgentConfig::from_vars) propagates this as a fatal
         // config error, the same severity as any other unsatisfiable
         // TRIDENT_ACL_AGENT_* setting.
-        NodeNameSource::KubeletCert => {
-            node_name_from_kubelet_cert(Path::new(DEFAULT_KUBELET_CLIENT_CERT))
-        }
+        NodeNameSource::KubeletCert => node_name_from_kubelet_cert(kubelet_cert_path),
     }
 }
 
@@ -591,11 +606,12 @@ fn node_name_from_kubelet_cert(cert_path: &Path) -> Result<String, Error> {
         .map(|cn| cn.to_string())
         .ok_or_else(|| anyhow!("certificate at {cert_path:?} has no Subject CN"))?;
     cn.strip_prefix(KUBELET_CERT_CN_NODE_PREFIX)
+        .filter(|suffix| !suffix.is_empty())
         .map(ToString::to_string)
         .ok_or_else(|| {
             anyhow!(
-                "certificate at {cert_path:?} has Subject CN {cn:?}, \
-                 which doesn't start with {KUBELET_CERT_CN_NODE_PREFIX:?}"
+                "certificate at {cert_path:?} has Subject CN {cn:?}, which doesn't start with \
+                 {KUBELET_CERT_CN_NODE_PREFIX:?} followed by a non-empty node name"
             )
         })
 }
@@ -895,6 +911,43 @@ gf0TbLqnNti3MeMftKcEa8VQ2rE6Np02EETxr94lsiNK
     }
 
     #[test]
+    fn node_name_from_kubelet_cert_errors_on_empty_node_name() {
+        // A CN of exactly "system:node:" (no suffix) must be rejected, not
+        // resolved to an empty node_name - an empty Node name would let the
+        // agent proceed to watch/patch an invalid Kubernetes Node resource.
+        const TEST_CERT_EMPTY_NODE_CN: &str = "-----BEGIN CERTIFICATE-----
+MIIDPTCCAiWgAwIBAgIUGFoyZXQNHNbFrvJjQQ5Yegz6ONEwDQYJKoZIhvcNAQEL
+BQAwLjEVMBMGA1UECgwMc3lzdGVtOm5vZGVzMRUwEwYDVQQDDAxzeXN0ZW06bm9k
+ZTowHhcNMjYxMDE0MTYxMzU0WhcNMzYxMDExMTYxMzU0WjAuMRUwEwYDVQQKDAxz
+eXN0ZW06bm9kZXMxFTATBgNVBAMMDHN5c3RlbTpub2RlOjCCASIwDQYJKoZIhvcN
+AQEBBQADggEPADCCAQoCggEBAKUYZ2z6hO8DFqFc5RnNlTTPCVsQ7ZjrwDcqyMel
+nZkfk1vdIeMazpwRwkgpHOExcYT9eEzML8yVVmQzqy2HMVmutLfDqHGqa7b0L1qB
+pBsen4rXRFFHUcW0akiyvmTe1tek3cuYe/nIazcF6EZhKUofrtqE50uPx8qLguOv
+6RsWBykZIa7AeFIOMmP10ACvqiK03vzrAm4lArU0S/difOl2NZrCWVedHBiPupUy
+qj9gL4Hs/0t+DRCnMpARWhujYPcE6wa0bJ4SSfJuqehJ+fR3xChNaQlQ99AwdKV/
+OgaT8wbb2Gc8Ut2raUFT5ORaoto07bTT/F9Fuhg+iSbeeC8CAwEAAaNTMFEwHQYD
+VR0OBBYEFKB1miB/F/41j+Uc8KurPVJQFeoUMB8GA1UdIwQYMBaAFKB1miB/F/41
+j+Uc8KurPVJQFeoUMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEB
+AFB3ug8e+9OO/9zF8Bq8M0BCOwonCSnEqr8VgCIGNAXYHC/is58SNkjlfiHbv+lt
+Atb1JmtVF88IwbaPQp8e3i62nIg9WSwG5ofsVYymI3z3u3XWfrYNJTWHRlvFb6Jq
+U1Rt+DHw4el/6cGiThicqe28wBtqK4mG69NkWKjUDhpZh6z52QyuGrpMmY3S3p05
+wkozj4RIiCMqxumtgG9nJKox9nKb8PjO0PpjbN4goNGq7F//8nHxHhzLj0FoctxT
+yNwXW0t99Shl2r9W/Yq04Tf69CpRfmeaVUCepY1cNSN8qRKlA7nJLCkSSLQKfRQx
+UaP9zf1GQx6rGJqs8dfHOeg=
+-----END CERTIFICATE-----
+";
+        let dir = tempfile::tempdir().unwrap();
+        let cert_path = dir.path().join("empty-node-name.pem");
+        std::fs::write(&cert_path, TEST_CERT_EMPTY_NODE_CN).unwrap();
+
+        let err = node_name_from_kubelet_cert(&cert_path).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("non-empty node name"),
+            "{err:#}"
+        );
+    }
+
+    #[test]
     fn node_name_from_kubelet_cert_errors_on_missing_file() {
         let err = node_name_from_kubelet_cert(Path::new("/nonexistent/kubelet-client-current.pem"))
             .unwrap_err();
@@ -903,18 +956,26 @@ gf0TbLqnNti3MeMftKcEa8VQ2rE6Np02EETxr94lsiNK
 
     #[test]
     fn default_node_name_errors_when_cert_source_requested_but_unreadable() {
-        // DEFAULT_KUBELET_CLIENT_CERT won't exist on a dev/test machine, so
-        // requesting KubeletCert must error out - no silent fallback to
-        // Hostname (see NodeNameSource::KubeletCert's doc comment for why).
-        let err = default_node_name(NodeNameSource::KubeletCert).unwrap_err();
+        // Uses a guaranteed-missing path in a fresh tempdir instead of
+        // DEFAULT_KUBELET_CLIENT_CERT, so this doesn't depend on whether
+        // the real kubelet cert happens to be absent on the host running
+        // this test (e.g. as root on an actual Kubernetes node). Requesting
+        // KubeletCert must error out - no silent fallback to Hostname (see
+        // NodeNameSource::KubeletCert's own doc comment for why).
+        let dir = tempfile::tempdir().unwrap();
+        let missing_cert = dir.path().join("kubelet-client-current.pem");
+        let err = default_node_name(NodeNameSource::KubeletCert, &missing_cert).unwrap_err();
         assert!(format!("{err:#}").contains("failed to read"), "{err:#}");
     }
 
     #[test]
     fn default_node_name_hostname_source_always_succeeds() {
-        assert!(!default_node_name(NodeNameSource::Hostname)
-            .unwrap()
-            .is_empty());
+        // Cert path is irrelevant for the Hostname source.
+        assert!(
+            !default_node_name(NodeNameSource::Hostname, Path::new("/nonexistent"))
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -938,16 +999,18 @@ gf0TbLqnNti3MeMftKcEa8VQ2rE6Np02EETxr94lsiNK
 
     #[test]
     fn resolve_node_name_once_errors_when_kubelet_cert_is_unreadable() {
-        // DEFAULT_KUBELET_CLIENT_CERT won't exist on a dev/test machine, so
-        // requesting kubelet-cert source with no override must error out -
-        // no silent fallback to hostname (see NodeNameSource::KubeletCert's
-        // doc comment for why).
-        let config = AgentConfig::from_vars(vars(&[(
-            "TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE",
-            "kubelet-cert",
-        )]))
-        .unwrap();
-        let err = config.kubernetes.resolve_node_name_once().unwrap_err();
+        // Built directly (not via AgentConfig::from_vars) so kubelet_cert_path
+        // can point at a guaranteed-missing tempdir path - requesting
+        // kubelet-cert source with no override must error out regardless of
+        // this host's real kubelet state, with no silent fallback to
+        // hostname (see NodeNameSource::KubeletCert's doc comment for why).
+        let dir = tempfile::tempdir().unwrap();
+        let kubernetes = KubernetesConfig {
+            node_name_source: NodeNameSource::KubeletCert,
+            kubelet_cert_path: dir.path().join("kubelet-client-current.pem"),
+            ..Default::default()
+        };
+        let err = kubernetes.resolve_node_name_once().unwrap_err();
         assert!(format!("{err:#}").contains("failed to read"), "{err:#}");
     }
 

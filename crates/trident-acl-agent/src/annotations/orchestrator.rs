@@ -2282,16 +2282,20 @@ mod tests {
     /// first failed resolution attempt - the whole point of treating an
     /// unreadable kubelet-cert as a transient startup race, analogous to
     /// the Node object itself not existing yet, rather than a fatal
-    /// condition. DEFAULT_KUBELET_CLIENT_CERT won't exist on this test
-    /// machine, so KubeletCert source fails deterministically every
-    /// attempt; cancelling shutdown shortly after starting (well under
-    /// NODE_READ_BACKOFF's 2s initial interval) and asserting Ok(None) -
-    /// not an Err - proves the loop was still patiently retrying (parked
-    /// in its backoff sleep) rather than having already given up.
+    /// condition. Points kubelet_cert_path at a guaranteed-missing tempdir
+    /// path rather than relying on DEFAULT_KUBELET_CLIENT_CERT being absent
+    /// on whatever machine runs this test, so KubeletCert source fails
+    /// deterministically every attempt regardless of host state; cancelling
+    /// shutdown shortly after starting (well under NODE_READ_BACKOFF's 2s
+    /// initial interval) and asserting Ok(None) - not an Err - proves the
+    /// loop was still patiently retrying (parked in its backoff sleep)
+    /// rather than having already given up.
     #[tokio::test]
     async fn resolve_node_name_with_retry_keeps_retrying_instead_of_erroring() {
+        let dir = tempfile::tempdir().unwrap();
         let kubernetes = KubernetesConfig {
             node_name_source: NodeNameSource::KubeletCert,
+            kubelet_cert_path: dir.path().join("kubelet-client-current.pem"),
             ..Default::default()
         };
         let shutdown = CancellationToken::new();
