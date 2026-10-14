@@ -69,18 +69,12 @@ pub(crate) async fn remove_paths<R: ContainerRuntime>(
     }
     let mut args = vec![RM_BINARY.to_owned(), "-rf".to_owned(), "--".to_owned()];
     args.extend(existing.iter().map(|path| path_arg(path)));
-    // Bind each target's PARENT, not the target itself. If we identity-bound the target, it would be
-    // an active mountpoint inside the janitor container: `rm -rf` clears its contents but cannot
-    // `rmdir` a busy mountpoint, so the top directory survives and rm exits non-zero (EBUSY) — the
-    // recurring "cannot remove '<dir>': Device or resource busy" that failed every successful build.
-    // With the parent bound, the target is an ordinary child directory that rm removes top-and-all.
+    // Binding the target makes it a mountpoint that `rm` cannot remove (EBUSY).
     let binds = removal_binds(&existing)?;
     run_janitor(runtime, config, args, binds, cancel).await
 }
 
-/// Bind sources for a removal: each distinct target **parent**, guarded so the janitor never binds
-/// `/`, an ancestor of the working directory, or another unsafe directory. The target itself is then
-/// an ordinary child under its bound parent (see [`remove_paths`]).
+/// Bind each target's parent for removal; refuse binding `/`.
 fn removal_binds(paths: &[PathBuf]) -> Result<Vec<String>, ExecError> {
     let mut parents = std::collections::BTreeSet::new();
     for path in paths {

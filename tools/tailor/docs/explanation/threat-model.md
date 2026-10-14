@@ -53,21 +53,14 @@ load-bearing — treat a regression in them as a serious bug:
   artifact are written to a temporary file and renamed into place, so an
   interrupted build cannot leave torn state a later run would trust. See
   `crates/tailor-core/src/atomic.rs`.
-- **Scoped privileged cleanup.** The janitor only chowns/removes the specific
-  paths a build produced (the build directory's children, the image cache, the
-  per-cell log), never arbitrary locations. On SELinux hosts, janitor containers
-  request `SecurityOpt: ["label=disable"]` so cleanup can write to host-labeled
-  output paths without recursively relabeling them. This opts the janitor out
-  of SELinux container separation for its lifetime; it remains unprivileged
-  (`Privileged: false`) and receives only the guarded target/parent binds.
-  Image Customizer containers do not request this opt-out. Run builds with a
-  trusted janitor image and trusted output paths; filesystem permissions,
-  user namespaces, and the daemon's own restrictions still apply. Path guards
-  do not prove cleanup targets are inactive: IC may leave live loop devices
-  backed by build scratch or writable mounts under it. Tailor does not currently
-  check for these before janitor removal; do not clean affected paths until
-  their liveness has been verified outside tailor. Artifact modification times
-  do not establish that a mount is inactive.
+- **Scoped cleanup.** The janitor binds a target for chown or its parent for
+  removal; removal refuses a parent resolving to `/`. A bound parent can still
+  contain unrelated files. On SELinux hosts, janitors request `label=disable`
+  without relabeling host files; IC is unchanged and janitors remain
+  `Privileged: false`. With a rootful daemon, container root can override
+  ordinary file permissions within these writable binds; use a trusted janitor
+  image. Tailor does not check for live loop devices or mounts before removal;
+  do not clean live build trees.
 
 ## Supply-chain pinning
 
