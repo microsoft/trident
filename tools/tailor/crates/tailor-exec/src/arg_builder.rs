@@ -130,13 +130,13 @@ pub fn build_ic_args(cell: &Cell, context: &ExecutionContext) -> Result<Vec<Stri
     // IC's `convert` subcommand does not accept --image-cache-dir (only `customize` downloads/caches
     // OCI/azureLinux base images), so only emit it for a plain customize build - passing it to
     // `convert` makes IC reject the whole invocation and print its own usage.
-    if operation == Operation::Customize {
-        if let Some(cache_dir) = &context.runtime.image_cache_dir {
-            args.extend(flag_value(
-                FLAG_IMAGE_CACHE_DIR,
-                path_translate::to_container_path(cache_dir, &context.runtime.host_root),
-            ));
-        }
+    if operation == Operation::Customize
+        && let Some(cache_dir) = &context.runtime.image_cache_dir
+    {
+        args.extend(flag_value(
+            FLAG_IMAGE_CACHE_DIR,
+            path_translate::to_container_path(cache_dir, &context.runtime.host_root),
+        ));
     }
 
     push_extra_params(&mut args, &cell.extra_params)?;
