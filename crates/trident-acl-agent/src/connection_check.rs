@@ -73,14 +73,23 @@ pub async fn validate_connection(
             // which would make this a "can we get a valid update check" test
             // rather than the pure reachability check documented on
             // ConnectionTarget::Nebraska above.
+            //
+            // Shares the same persisted CookieStore (cookie_path) the
+            // orchestrator uses: this probe talks to the same Nebraska
+            // instance real traffic does, so it must participate in the
+            // affinity-cookie dance too - otherwise every
+            // `--validate-connection nebraska` run is its own permanent
+            // "first contact" that never adopts or persists a cookie.
             let endpoint_for_task = endpoint.clone();
             let track = config.nebraska.track.clone();
+            let cookie_store = nebraska::CookieStore::new(config.orchestration.cookie_path.clone());
             task::spawn_blocking(move || {
                 check_nebraska_reachable(
                     &endpoint_for_task,
                     &app_id,
                     &track,
                     IdSource::MachineIdHashed,
+                    &cookie_store,
                 )
             })
             .await

@@ -14,12 +14,13 @@
 //! both by this crate's agent binary and by a future Trident ACL Agent that
 //! orchestrates updates differently.
 
+use log::warn;
 use semver::Version;
 use url::Url;
 
 use crate::core::{
     error::AgentError,
-    nebraska::{Client, MachineId, NebraskaError},
+    nebraska::{Client, CookieStore, MachineId, NebraskaError},
     version::FALLBACK_ALWAYS_VERSION,
 };
 
@@ -76,18 +77,48 @@ fn build_machine_id(source: IdSource) -> Result<MachineId, AgentError> {
 /// `<ping/>` is *not* a side-effect-free no-op against Nebraska either
 /// (hence this being named `probe`, not `ping`). See [`Client::probe`]'s doc
 /// comment for the full explanation.
+///
+/// Also loads/saves `cookie_store`: this probe talks to the very same
+/// Nebraska instance (and, in production, the same load-balancer-fronted
+/// deployment) that `check_for_update`/`report_progress`/etc. do, so it
+/// must participate in the shared affinity-cookie dance too -- otherwise
+/// every invocation of `--validate-connection nebraska` is itself a fresh
+/// "first contact" that never adopts or persists a cookie, silently
+/// defeating the whole mechanism's point for one more request each time
+/// it's run. Best-effort, like every other cookie_store use: a load/save
+/// failure only logs a warning and the probe proceeds/returns normally.
 pub fn check_nebraska_reachable(
     url: &Url,
     app_id: &str,
     track: &str,
     machine_id_source: IdSource,
+    cookie_store: &CookieStore,
 ) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
-    let client = Client::new(url.clone(), app_id, track, machine_id);
-    match client.probe(
+    let mut client = Client::new(url.clone(), app_id, track, machine_id);
+    let initial_cookie = match cookie_store.load() {
+        Ok(cookie) => cookie,
+        Err(err) => {
+            warn!("failed to load Nebraska cookie, proceeding without one: {err}");
+            None
+        }
+    };
+    if let Some(cookie) = initial_cookie {
+        client = client.with_cookie(cookie);
+    }
+
+    let result = client.probe(
         &Version::parse(FALLBACK_ALWAYS_VERSION)
             .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver"),
-    ) {
+    );
+
+    if let Some(cookie) = client.cookie() {
+        if let Err(err) = cookie_store.save(&cookie) {
+            warn!("failed to persist Nebraska cookie: {err}");
+        }
+    }
+
+    match result {
         Ok(()) => Ok(()),
         // A well-formed response reporting a non-OK app status still proves
         // the server is reachable and speaking Omaha; only a
@@ -104,6 +135,15 @@ mod tests {
     use indoc::indoc;
     use mockito::{Matcher, Server};
     use url::Url;
+
+    /// A `CookieStore` backed by a fresh temp file, for tests that don't
+    /// care about cookie persistence themselves (most of them) but still
+    /// need to satisfy `check_nebraska_reachable`'s now-required parameter.
+    fn temp_cookie_store() -> (tempfile::TempDir, CookieStore) {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let path = dir.path().join("nebraska-cookie");
+        (dir, CookieStore::new(path))
+    }
 
     #[test]
     fn test_check_nebraska_reachable_never_registers_or_updates() {
@@ -122,6 +162,7 @@ mod tests {
         // this mock at all, so mockito would return no matching mock and the
         // call would fail instead of silently passing.
         let mut server = Server::new();
+        let (_dir, cookie_store) = temp_cookie_store();
 
         let bare_app_mock = server
             .mock("POST", "/")
@@ -143,6 +184,7 @@ mod tests {
             "test",
             "track",
             IdSource::MachineIdHashed,
+            &cookie_store,
         )
         .unwrap();
 
@@ -155,6 +197,7 @@ mod tests {
         // server and does it speak Omaha" check: a well-formed response with
         // a non-OK app status should still count as "reachable" here.
         let mut server = Server::new();
+        let (_dir, cookie_store) = temp_cookie_store();
 
         let omaha_mock = server
             .mock("POST", "/")
@@ -173,6 +216,7 @@ mod tests {
             "test",
             "track",
             IdSource::MachineIdHashed,
+            &cookie_store,
         )
         .unwrap();
 
@@ -181,14 +225,78 @@ mod tests {
 
     #[test]
     fn test_check_nebraska_reachable_fails_on_transport_error() {
+        let (_dir, cookie_store) = temp_cookie_store();
         let err = check_nebraska_reachable(
             // Port 0 never accepts a connection.
             &Url::parse("http://127.0.0.1:0/").unwrap(),
             "test",
             "track",
             IdSource::MachineIdHashed,
+            &cookie_store,
         )
         .unwrap_err();
         assert!(matches!(err, AgentError::Nebraska(_)));
+    }
+
+    #[test]
+    fn test_check_nebraska_reachable_persists_and_reuses_cookie() {
+        // Regression test for the real pipeline failure this fixes: a probe
+        // that never participates in cookie_store is itself a permanent
+        // "first contact," silently defeating the whole mechanism for every
+        // `--validate-connection nebraska` invocation.
+        let mut server = Server::new();
+        let (_dir, cookie_store) = temp_cookie_store();
+
+        let first_mock = server
+            .mock("POST", "/")
+            .match_header("cookie", Matcher::Missing)
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=probe123; Path=/")
+            .with_body(indoc! {r#"
+                <?xml version="1.0" encoding="UTF-8"?>
+                <response protocol="3.0" server="mock">
+                    <daystart elapsed_seconds="0"/>
+                    <app appid="test" status="ok"/>
+                </response>"#})
+            .expect(1)
+            .create();
+
+        check_nebraska_reachable(
+            &Url::parse(&server.url()).unwrap(),
+            "test",
+            "track",
+            IdSource::MachineIdHashed,
+            &cookie_store,
+        )
+        .unwrap();
+        first_mock.assert();
+        assert_eq!(
+            cookie_store.load().unwrap().as_deref(),
+            Some("ASLBSA=probe123"),
+            "the cookie Nebraska issued on this probe must be persisted"
+        );
+
+        let second_mock = server
+            .mock("POST", "/")
+            .match_header("cookie", "ASLBSA=probe123")
+            .with_status(200)
+            .with_body(indoc! {r#"
+                <?xml version="1.0" encoding="UTF-8"?>
+                <response protocol="3.0" server="mock">
+                    <daystart elapsed_seconds="0"/>
+                    <app appid="test" status="ok"/>
+                </response>"#})
+            .expect(1)
+            .create();
+
+        check_nebraska_reachable(
+            &Url::parse(&server.url()).unwrap(),
+            "test",
+            "track",
+            IdSource::MachineIdHashed,
+            &cookie_store,
+        )
+        .unwrap();
+        second_mock.assert();
     }
 }
