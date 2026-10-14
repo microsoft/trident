@@ -3723,7 +3723,7 @@ MIT License (MIT)
 
 Used by:
     - hyper-rustls 0.27.9
-    - rustls 0.23.45
+    - rustls 0.23.46
     - rustls-native-certs 0.8.4
     - rustls-pemfile 2.2.0
 
