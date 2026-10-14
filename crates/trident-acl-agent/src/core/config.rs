@@ -60,6 +60,14 @@ const DEFAULT_NODE_GONE_MAX_WAIT: Option<Duration> = None;
 /// File name for the persisted agent state (see `annotations::state`).
 pub const STATE_FILE_NAME: &str = "state.json";
 pub const DEFAULT_STATE_PATH: &str = formatcp!("/var/lib/trident-acl-agent/{STATE_FILE_NAME}");
+/// File name for the persisted Nebraska affinity cookie (see
+/// `core::nebraska::CookieStore`). Deliberately a separate file from
+/// `STATE_FILE_NAME`: the cookie is a host/connection-level attribute with
+/// no relationship to any update operation, unlike everything else in
+/// `state.json`.
+pub const NEBRASKA_COOKIE_FILE_NAME: &str = "nebraska-cookie";
+pub const DEFAULT_NEBRASKA_COOKIE_PATH: &str =
+    formatcp!("/var/lib/trident-acl-agent/{NEBRASKA_COOKIE_FILE_NAME}");
 pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
 /// Default annotation-key prefix.
 /// Override with `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`.
@@ -127,6 +135,9 @@ impl AgentConfig {
                 state_path: orchestration
                     .state_path
                     .unwrap_or_else(|| PathBuf::from(DEFAULT_STATE_PATH)),
+                cookie_path: orchestration
+                    .cookie_path
+                    .unwrap_or_else(|| PathBuf::from(DEFAULT_NEBRASKA_COOKIE_PATH)),
                 stage_timeout: orchestration.stage_timeout.unwrap_or(DEFAULT_STAGE_TIMEOUT),
                 finalize_timeout: orchestration
                     .finalize_timeout
@@ -186,6 +197,8 @@ struct RawOrchestrationConfig {
     mode: Option<Mode>,
     #[serde(deserialize_with = "empty_path_as_none")]
     state_path: Option<PathBuf>,
+    #[serde(deserialize_with = "empty_path_as_none")]
+    cookie_path: Option<PathBuf>,
     #[serde(deserialize_with = "empty_duration_as_none")]
     stage_timeout: Option<Duration>,
     #[serde(deserialize_with = "empty_duration_as_none")]
@@ -361,6 +374,11 @@ impl FromStr for Mode {
 pub struct OrchestrationConfig {
     pub mode: Mode,
     pub state_path: PathBuf,
+    /// Path to the persisted Nebraska affinity cookie (see
+    /// `core::nebraska::CookieStore`). Deliberately a separate file/field
+    /// from `state_path`: the cookie has no relationship to any particular
+    /// update operation, unlike everything `state_path` persists.
+    pub cookie_path: PathBuf,
     /// Placeholder default pending real data from storm aclagent scenario runs.
     pub stage_timeout: Duration,
     /// Placeholder default pending real data from storm aclagent scenario runs.
@@ -388,6 +406,7 @@ impl Default for OrchestrationConfig {
         Self {
             mode: Mode::Annotations,
             state_path: PathBuf::from(DEFAULT_STATE_PATH),
+            cookie_path: PathBuf::from(DEFAULT_NEBRASKA_COOKIE_PATH),
             stage_timeout: DEFAULT_STAGE_TIMEOUT,
             finalize_timeout: DEFAULT_FINALIZE_TIMEOUT,
             heartbeat_interval: DEFAULT_HEARTBEAT_INTERVAL,
@@ -449,6 +468,10 @@ mod tests {
             config.orchestration.state_path,
             PathBuf::from(DEFAULT_STATE_PATH)
         );
+        assert_eq!(
+            config.orchestration.cookie_path,
+            PathBuf::from(DEFAULT_NEBRASKA_COOKIE_PATH)
+        );
         assert_eq!(config.orchestration.stage_timeout, DEFAULT_STAGE_TIMEOUT);
         assert_eq!(
             config.orchestration.finalize_timeout,
@@ -495,6 +518,10 @@ mod tests {
                 "TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH",
                 "/var/lib/trident-acl-agent/custom-state.json",
             ),
+            (
+                "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_PATH",
+                "/var/lib/trident-acl-agent/custom-nebraska-cookie",
+            ),
             ("TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT", "21m"),
             ("TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT", "11m"),
             ("TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL", "45s"),
@@ -526,6 +553,10 @@ mod tests {
         assert_eq!(
             config.orchestration.state_path,
             PathBuf::from("/var/lib/trident-acl-agent/custom-state.json")
+        );
+        assert_eq!(
+            config.orchestration.cookie_path,
+            PathBuf::from("/var/lib/trident-acl-agent/custom-nebraska-cookie")
         );
         assert_eq!(
             config.orchestration.stage_timeout,

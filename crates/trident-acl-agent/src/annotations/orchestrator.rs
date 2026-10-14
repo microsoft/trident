@@ -34,7 +34,7 @@ use crate::{
     },
     core::{
         config::AgentConfig,
-        nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
+        nebraska::{CheckOutcome, Client as NebraskaClient, CookieStore, ProgressEvent},
         trident::{CompletedResponse, TridentClient, TridentClientError},
         version::{current_active_version, FALLBACK_ALWAYS_VERSION},
     },
@@ -108,6 +108,10 @@ pub struct Orchestrator {
     config: AgentConfig,
     k8s: NodeClient,
     state: StateStore,
+    /// Persists Nebraska's load-balancer affinity cookie across requests
+    /// and reboots. Deliberately separate from `state`: see
+    /// `core::nebraska::CookieStore`'s docs for why.
+    nebraska_cookie: CookieStore,
     annotation_keys: AnnotationKeys,
 }
 
@@ -117,6 +121,7 @@ impl Orchestrator {
         let annotation_keys = AnnotationKeys::new(&config.kubernetes.annotation_prefix);
         Ok(Self {
             state: StateStore::new(config.orchestration.state_path.clone()),
+            nebraska_cookie: CookieStore::new(config.orchestration.cookie_path.clone()),
             config,
             k8s,
             annotation_keys,
@@ -667,16 +672,22 @@ impl Orchestrator {
                 Version::parse(FALLBACK_ALWAYS_VERSION)
                     .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver")
             });
-        let outcome = task::spawn_blocking({
+        let initial_cookie = self.load_nebraska_cookie();
+        let (check_result, cookie) = task::spawn_blocking({
             let current_version = current_version.clone();
             move || {
-                let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
-                client.check_for_update(&current_version)
+                let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+                if let Some(cookie) = initial_cookie {
+                    client = client.with_cookie(cookie);
+                }
+                let result = client.check_for_update(&current_version);
+                (result, client.cookie())
             }
         })
         .await
-        .context("Nebraska query task panicked")?
-        .context("Nebraska query failed")?;
+        .context("Nebraska query task panicked")?;
+        self.save_nebraska_cookie(cookie);
+        let outcome = check_result.context("Nebraska query failed")?;
         let offered = match outcome {
             CheckOutcome::UpToDate => {
                 let status = UpdateStatus::new(
@@ -1524,6 +1535,30 @@ impl Orchestrator {
         }
     }
 
+    /// Loads the persisted Nebraska affinity cookie, warning (not failing)
+    /// if the store can't be read. The whole mechanism is a best-effort
+    /// session-affinity hint, never a requirement for talking to Nebraska -
+    /// a load failure just means this round-trip proceeds cookie-less, the
+    /// same as this host's very first-ever contact with Nebraska.
+    fn load_nebraska_cookie(&self) -> Option<String> {
+        match self.nebraska_cookie.load() {
+            Ok(cookie) => cookie,
+            Err(err) => {
+                warn!("failed to load Nebraska cookie, proceeding without one: {err}");
+                None
+            }
+        }
+    }
+
+    /// Persists a cookie a Nebraska round-trip ended up holding, if any.
+    fn save_nebraska_cookie(&self, cookie: Option<String>) {
+        if let Some(cookie) = cookie {
+            if let Err(err) = self.nebraska_cookie.save(&cookie) {
+                warn!("failed to persist Nebraska cookie: {err}");
+            }
+        }
+    }
+
     /// Sends a single Nebraska event report, logging (but never
     /// propagating) failure.
     ///
@@ -1583,9 +1618,13 @@ impl Orchestrator {
             }
         };
         let label = report.label();
+        let initial_cookie = self.load_nebraska_cookie();
         let result = task::spawn_blocking(move || {
-            let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
-            match report {
+            let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+            if let Some(cookie) = initial_cookie {
+                client = client.with_cookie(cookie);
+            }
+            let outcome = match report {
                 NebraskaReport::Progress { version, event } => {
                     client.report_progress(&version, event)
                 }
@@ -1595,12 +1634,18 @@ impl Orchestrator {
                 NebraskaReport::Failed { previous, current } => {
                     client.report_failure(&previous, &current)
                 }
-            }
+            };
+            (outcome, client.cookie())
         })
         .await;
         match result {
-            Ok(Ok(())) => debug!("reported Nebraska '{label}' event"),
-            Ok(Err(err)) => warn!("Nebraska '{label}' event report failed: {err}"),
+            Ok((outcome, cookie)) => {
+                self.save_nebraska_cookie(cookie);
+                match outcome {
+                    Ok(()) => debug!("reported Nebraska '{label}' event"),
+                    Err(err) => warn!("Nebraska '{label}' event report failed: {err}"),
+                }
+            }
             Err(err) => warn!("Nebraska '{label}' event report task panicked: {err}"),
         }
     }
