@@ -23,7 +23,7 @@ const SHA384_LEN_BYTES: usize = 48;
 
 /// Selects which source [`resolve_cosi_sha384`] reads a package's COSI
 /// metadata SHA-384 from. Defaults to [`Labels`](Self::Labels); override via
-/// `TRIDENT_ACL_AGENT_NEBRASKA_COSI_SHA384_SOURCE` (`labels`|`hash`).
+/// `TRIDENT_ACL_AGENT_COSI_SHA384_SOURCE` (`labels`|`hash`).
 ///
 /// There is deliberately no "try labels, then fall back to hash" option: an
 /// ambient, automatic fallback risks silently accepting a stale/wrong hash

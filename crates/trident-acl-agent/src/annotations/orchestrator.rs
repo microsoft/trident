@@ -761,7 +761,7 @@ impl Orchestrator {
         // of reporting a download that will never usefully start.
         let hash = match cosi_sha384::resolve_cosi_sha384(
             &offered.primary,
-            self.config.nebraska.cosi_sha384_source,
+            self.config.cosi_sha384.source,
         )
         .map_err(|err| err.to_string())
         {

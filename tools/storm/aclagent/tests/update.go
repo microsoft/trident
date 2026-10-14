@@ -496,13 +496,6 @@ func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig st
 	//     compiled-in defaults.
 	// trident-acl-agent.conf is simply never written to the VM.
 	//
-	// nebraska.cosi_sha384_source IS overridden at runtime below (a systemd
-	// drop-in, not baked into either VM image): unlike annotation_prefix/
-	// current_version.key below, it only needs to be in effect for the
-	// pre-reboot check_for_update() call during staging, never for the
-	// post-reboot completion event - so it does not need to survive this
-	// usr-verity image's A/B root swap, and a runtime-only drop-in is fine.
-	//
 	// kubernetes.annotation_prefix and current_version.key DO differ from
 	// their compiled-in defaults for this scenario: it pins its
 	// expectations to the AKS-era values (annotation prefix

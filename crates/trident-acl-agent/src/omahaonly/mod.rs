@@ -64,7 +64,7 @@ pub async fn run_omaha_only(config: &AgentConfig) -> Result<(), Error> {
             // failure here rather than a silently-skipped check.
             let hash = cosi_sha384::resolve_cosi_sha384(
                 &offer.primary,
-                config.nebraska.cosi_sha384_source,
+                config.cosi_sha384.source,
             )
             .with_context(|| {
                 format!(
