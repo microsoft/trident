@@ -460,6 +460,40 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		return fmt.Errorf("ACL agent scenario failed Nebraska status validation: %w", err)
 	}
 
+	// Nebraska's own Omaha handler doesn't set the cookie - production's
+	// load-balancer affinity cookie is simulated by this proxy purely to
+	// exercise trident-acl-agent's own pickup/persist/echo behavior (see
+	// crates/trident-acl-agent/src/core/nebraska/cookie_store.rs). It's a
+	// best-effort hint, not something Nebraska requires to drive the update
+	// correctly, so these checks run after - not instead of - the real
+	// pass/fail assertions above.
+	if got := nebraska.RequestsMissingCookie(); got != 1 {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("expected exactly 1 Nebraska request with no affinity cookie (the agent's first-ever contact), got %d", got)
+	}
+	if got := nebraska.RequestsWithWrongCookie(); got != 0 {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("trident-acl-agent sent %d request(s) carrying a stale/wrong Nebraska affinity cookie", got)
+	}
+	if got := nebraska.RequestsWithCorrectCookie(); got == 0 {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("trident-acl-agent never echoed back the Nebraska affinity cookie after its first contact")
+	}
+	// The strongest assertion: the cookie must still be the right value on
+	// disk after the real "systemctl reboot" above, on the same persistent
+	// /var/lib/trident-acl-agent partition the Nebraska CA cert is pinned
+	// to (see prepareVmForAclAgent) - proving cross-reboot persistence, not
+	// just in-process carry-over within a single Client.
+	cookieOnDisk, err := stormssh.SshCommandCombinedOutput(vmConfig.VMConfig, vmIP, "sudo cat /var/lib/trident-acl-agent/nebraska-cookie")
+	if err != nil {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("failed to read persisted Nebraska cookie from VM: %w", err)
+	}
+	if got := strings.TrimSpace(cookieOnDisk); got != nebraska.AffinityCookie() {
+		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
+		return fmt.Errorf("persisted Nebraska cookie on VM is %q, want %q (must survive the finalize reboot above)", got, nebraska.AffinityCookie())
+	}
+
 	return collectAclArtifacts(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
 }
 
