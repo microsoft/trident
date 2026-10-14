@@ -132,6 +132,12 @@ the same filename in each directory (the update loop picks the filename from
 ```bash
 mkdir -p artifacts/update-a artifacts/update-b
 
+# trident-vm-testimage declares artifacts/rpm-overrides as an (optional) RPM
+# source; tailor validates it eagerly, so create it even when empty -- `make`
+# creates this automatically via its own dependency graph, but a direct
+# `cargo run ... tailor ... build` invocation like below bypasses that.
+mkdir -p artifacts/rpm-overrides
+
 # Build two clones of the COSI image
 cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-vm-testimage -s arch=amd64 -s scenario=grub-verity     --output-dir ./artifacts --clones 2
 
