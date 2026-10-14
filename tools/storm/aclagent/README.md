@@ -149,15 +149,17 @@ survive the VM actually going down for a real reboot.
 ## `run-node-name-source`
 
 Proves `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` (microsoft/trident#839)
-actually switches which identity `node_name` resolves from, entirely via
-one-shot `trident-acl-agent --validate-connection kubernetes` CLI
-invocations — it never touches `trident-acl-agent.service` (no restart, no
-reboot), so it runs fast relative to the rest of this scenario. The fake
-apiserver only ever serves a single Node name at a time, so this runs as
-three sequential phases, each with its own apiserver instance seeded with
-exactly the one identity that phase expects, and asserts the *exact*
-resolved Node name reported in `--validate-connection`'s own success output
-(not just pass/fail):
+actually switches which identity `node_name` resolves from. Shared setup
+restarts `trident-acl-agent.service` once (to pick up the delivered fake
+kubeconfig), but every assertion below is still a one-shot
+`trident-acl-agent --validate-connection kubernetes` CLI invocation,
+independent of that restarted service — no further restart or reboot is
+needed per phase, so this still runs fast relative to the rest of this
+scenario. The fake apiserver only ever serves a single Node name at a time,
+so this runs as three sequential phases, each with its own apiserver
+instance seeded with exactly the one identity that phase expects, and
+asserts the *exact* resolved Node name reported in
+`--validate-connection`'s own success output (not just pass/fail):
 
 - **kubelet-cert phase**: a self-signed fake kubelet client cert (Subject CN
   `system:node:<name>`) is uploaded to
