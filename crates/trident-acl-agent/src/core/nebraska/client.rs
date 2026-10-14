@@ -797,6 +797,7 @@ mod tests {
     use std::cell::{Cell, RefCell};
 
     use super::*;
+    use crate::core::cosi_sha384::{resolve_cosi_sha384, CosiSha384Error, CosiSha384Source};
 
     /// Stands in for the updater version a real caller would supply.
     const TEST_CLIENT_VERSION: &str = "test-updater-1.2.3";
@@ -967,6 +968,87 @@ mod tests {
         );
         match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
             CheckOutcome::UpdateAvailable(offer) => assert_eq!(offer.primary.size, None),
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    // Regression coverage for the full pipeline a populated/absent/empty
+    // <labels> element goes through: XML -> wire::Package -> PackageFile
+    // (both parsed via a real Client::check_for_update(), not a hand-built
+    // PackageFile) -> core::cosi_sha384::resolve_cosi_sha384(). The unit
+    // tests in core::cosi_sha384 cover the resolver's own logic in
+    // isolation; these confirm nothing is lost on the way there.
+
+    #[test]
+    fn check_offer_labels_resolve_via_default_source() {
+        // Digest generated with:
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384
+        const BASE64_DIGEST: &str =
+            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
+        const HEX_DIGEST: &str =
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
+        let client = client_with(&format!(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true">
+                <labels>
+                  <label key="cosi.metadata.sha384" value="{BASE64_DIGEST}"/>
+                </labels>
+              </package>
+            </packages></manifest></updatecheck></app></response>"#
+        ));
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap(),
+                    HEX_DIGEST
+                );
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_absent_labels_default_source_is_missing() {
+        // No <labels> element at all, but a legacy hash is present - the
+        // default source (Labels) must not fall back to it.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true"/>
+            </packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                let err =
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap_err();
+                assert!(matches!(
+                    err,
+                    CosiSha384Error::Missing(CosiSha384Source::Labels)
+                ));
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_empty_labels_default_source_is_missing() {
+        // A <labels> element is present but has no <label> children - must
+        // behave the same as it being absent entirely, not as an error or
+        // as a fallback to the legacy hash.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true"><labels></labels></package>
+            </packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                let err =
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap_err();
+                assert!(matches!(
+                    err,
+                    CosiSha384Error::Missing(CosiSha384Source::Labels)
+                ));
+            }
             other => panic!("expected an offer, got {other:?}"),
         }
     }
