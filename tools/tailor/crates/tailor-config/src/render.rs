@@ -219,7 +219,7 @@ fn render_cell(
         .iter()
         .flat_map(|f| f.doc.extra_params.clone())
         .collect();
-    let signing = resolve_signing_ref(image, &tuple, &matched)?;
+    let signing = resolve_signing_ref(image, &tuple, &matched);
 
     // Resolve `skip` last-wins over the matched fragments (base → most-specific). When the winning
     // value is `true`, remember that fragment's predicate coordinates as the pins that can override
@@ -354,14 +354,14 @@ fn resolve_signing_ref(
     _image: &ImageDefinition,
     _tuple: &AxisTuple,
     matched: &[&LoadedFragment],
-) -> Result<Option<SigningRef>, ConfigError> {
+) -> Option<SigningRef> {
     let mut signing: Option<SigningRef> = None;
     for fragment in matched {
         if let Some(value) = fragment.doc.signing.clone() {
             signing = Some(value);
         }
     }
-    Ok(signing)
+    signing
 }
 
 /// Reject `compression:` on formats where it makes no sense: `cosi` (IC already compresses it),
