@@ -1054,6 +1054,37 @@ mod tests {
     }
 
     #[test]
+    fn check_offer_duplicate_label_key_last_one_wins() {
+        // Two <label> children share the same key: deserialize_labels
+        // documents last-in-document-wins for this case (Nebraska has no
+        // uniqueness guarantee on label keys), so the second value must be
+        // the one the resolver sees, end to end through real XML.
+        const BASE64_DIGEST: &str =
+            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
+        const HEX_DIGEST: &str =
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
+        let client = client_with(&format!(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" size="10" required="true">
+                <labels>
+                  <label key="cosi.metadata.sha384" value="FIRST-NOT-VALID-BASE64!!"/>
+                  <label key="cosi.metadata.sha384" value="{BASE64_DIGEST}"/>
+                </labels>
+              </package>
+            </packages></manifest></updatecheck></app></response>"#
+        ));
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap(),
+                    HEX_DIGEST
+                );
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn check_offer_codebase_without_trailing_slash_keeps_directory() {
         // Relative resolution would replace the last segment and yield
         // https://updates.example.com/x.cosi, silently pointing elsewhere.
