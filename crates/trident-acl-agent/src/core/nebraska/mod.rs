@@ -76,6 +76,7 @@
 //! ```
 
 mod client;
+mod cookie_store;
 mod error;
 mod event;
 mod id;
@@ -84,6 +85,7 @@ mod transport;
 mod wire;
 
 pub use client::{redacted, CheckOutcome, Client, PackageFile, PackageHash, UpdateOffer};
+pub use cookie_store::CookieStore;
 pub use error::NebraskaError;
 pub use event::ProgressEvent;
 pub use id::MachineId;
