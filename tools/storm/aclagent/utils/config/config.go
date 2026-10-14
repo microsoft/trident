@@ -18,5 +18,4 @@ type TestConfig struct {
 	HostEndpointIP        string `help:"Host IP the VM can reach the fake apiserver/Nebraska endpoints at" default:"192.168.122.1"`
 	ExpectedInitialVolume string `help:"Expected active volume immediately after deployment" default:"volume-a"`
 	PostgresImage         string `help:"Container image for the ephemeral Postgres instance backing the fake Nebraska endpoint; override with an internal registry mirror on network-restricted CI pools" default:"postgres:16-alpine"`
-	CosiSha384Source      string `help:"Value for trident-acl-agent's TRIDENT_ACL_AGENT_NEBRASKA_COSI_SHA384_SOURCE (labels|hash); \"hash\" pins the harness to the legacy path explicitly, since the ephemeral Nebraska backend here (github.com/flatcar/nebraska, unforked) has no <labels> support to produce" default:"hash"`
 }

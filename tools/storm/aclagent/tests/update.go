@@ -557,39 +557,6 @@ users:
 		return fmt.Errorf("failed to upload fake kubeconfig to VM: %w", err)
 	}
 
-	// trident-acl-agent has no config file otherwise (see this function's doc
-	// comment) - pin TRIDENT_ACL_AGENT_NEBRASKA_COSI_SHA384_SOURCE explicitly
-	// via a systemd drop-in rather than relying on the agent's own default
-	// ("labels"): this harness's ephemeral Nebraska backend
-	// (github.com/flatcar/nebraska, unforked) can only ever populate the
-	// legacy `hash` attribute, never a <labels> element, so leaving the
-	// agent's default in place here would make every update offer resolve
-	// to no hash at all (CosiSha384Source::Labels finding nothing) rather
-	// than failing loudly or working - testConfig.CosiSha384Source makes
-	// that explicit and overridable per scenario run instead.
-	localDropInFile, err := os.CreateTemp("", "trident-acl-agent-cosi-sha384-source-*.conf")
-	if err != nil {
-		return fmt.Errorf("failed to create local temp file for cosi-sha384-source drop-in: %w", err)
-	}
-	defer os.Remove(localDropInFile.Name())
-	dropIn := fmt.Sprintf("[Service]\nEnvironment=TRIDENT_ACL_AGENT_NEBRASKA_COSI_SHA384_SOURCE=%s\n", testConfig.CosiSha384Source)
-	if _, err := localDropInFile.WriteString(dropIn); err != nil {
-		localDropInFile.Close()
-		return fmt.Errorf("failed to write local temp cosi-sha384-source drop-in: %w", err)
-	}
-	if err := localDropInFile.Close(); err != nil {
-		return fmt.Errorf("failed to close local temp cosi-sha384-source drop-in: %w", err)
-	}
-	if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo mkdir -p /etc/systemd/system/trident-acl-agent.service.d"); err != nil {
-		return fmt.Errorf("failed to create trident-acl-agent.service.d on VM: %w", err)
-	}
-	if err := stormssh.ScpUploadFileWithSudo(cfg, vmIP, localDropInFile.Name(), "/etc/systemd/system/trident-acl-agent.service.d/cosi-sha384-source.conf"); err != nil {
-		return fmt.Errorf("failed to upload cosi-sha384-source drop-in to VM: %w", err)
-	}
-	if _, err := stormssh.SshCommandCombinedOutput(cfg, vmIP, "sudo systemctl daemon-reload && sudo systemctl restart trident-acl-agent.service"); err != nil {
-		return fmt.Errorf("failed to reload/restart trident-acl-agent.service after cosi-sha384-source drop-in: %w", err)
-	}
-
 	// Trust the fake Nebraska/image server's ephemeral TLS cert into the
 	// VM's system trust store, when this scenario uses Nebraska at all
 	// (RunRollback doesn't - it never queries Nebraska/image-server, see
