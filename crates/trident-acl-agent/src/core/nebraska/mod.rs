@@ -83,9 +83,7 @@ mod status;
 mod transport;
 mod wire;
 
-pub use client::{
-    redacted, CheckOutcome, Client, CosiSha384Source, PackageFile, PackageHash, UpdateOffer,
-};
+pub use client::{redacted, CheckOutcome, Client, PackageFile, UpdateOffer};
 pub use error::NebraskaError;
 pub use event::ProgressEvent;
 pub use id::MachineId;

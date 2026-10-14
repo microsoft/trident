@@ -346,22 +346,13 @@ pub(super) struct Package {
     #[serde(default, rename = "@required")]
     pub(super) required: bool,
 
-    /// Arbitrary key/value labels from the `<labels>` child element (e.g.
-    /// the `cosi.metadata.sha384` key resolved by
-    /// `nebraska::client::Client::resolve_cosi_sha384`). A flat map rather
-    /// than a `Vec` of key/value pairs since callers only ever look labels
-    /// up by key; see [`deserialize_labels`].
+    /// Arbitrary key/value labels from the `<labels>` child element,
+    /// copied as-is into `nebraska::client::PackageFile` for callers to
+    /// interpret (this protocol layer has no opinion on which labels
+    /// matter). A flat map rather than a `Vec` of key/value pairs since
+    /// lookups are always by key; see [`deserialize_labels`].
     #[serde(default, rename = "labels", deserialize_with = "deserialize_labels")]
     pub(super) labels: BTreeMap<String, String>,
-}
-
-impl Package {
-    /// Looks up a single label by key. Generic on purpose: this wire module
-    /// has no opinion on which labels matter - that's for callers to decide
-    /// (see `nebraska::client::Client::resolve_cosi_sha384`).
-    pub(super) fn label(&self, key: &str) -> Option<&str> {
-        self.labels.get(key).map(String::as_str)
-    }
 }
 
 /// Deserializes a `<labels>` child element (`<label key="..." value="..."/>`

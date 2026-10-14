@@ -32,7 +32,7 @@ use serde::{de::Error as _, Deserialize, Deserializer};
 use trident_proto::TRIDENT_DEFAULT_SOCKET_URI;
 use url::Url;
 
-use crate::{nebraska::CosiSha384Source, DEFAULT_NEBRASKA_APP_ID, DEFAULT_NEBRASKA_TRACK};
+use crate::{cosi_sha384::CosiSha384Source, DEFAULT_NEBRASKA_APP_ID, DEFAULT_NEBRASKA_TRACK};
 
 const ENV_PREFIX_NEBRASKA: &str = "TRIDENT_ACL_AGENT_NEBRASKA_";
 const ENV_PREFIX_KUBERNETES: &str = "TRIDENT_ACL_AGENT_KUBERNETES_";
