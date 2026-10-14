@@ -1,2 +1,3 @@
 rpmSources:
   - ../../../bin/RPMS
+  - ../../../artifacts/rpm-overrides

@@ -8,6 +8,7 @@ outputs:
 
 rpmSources:
   - ../../../bin/RPMS
+  - ../../../artifacts/rpm-overrides
 
 extraDependencies:
   - ./installer-iso.yaml
