@@ -347,38 +347,20 @@ pub(super) struct Package {
     pub(super) required: bool,
 
     /// Arbitrary key/value labels from the `<labels>` child element (e.g.
-    /// the `cosi.metadata.sha384` key used by
-    /// [`Package::cosi_sha384_base64`]). A flat map rather than a `Vec` of
-    /// key/value pairs since callers only ever look labels up by key; see
-    /// [`deserialize_labels`].
+    /// the `cosi.metadata.sha384` key resolved by
+    /// `nebraska::client::Client::resolve_cosi_sha384`). A flat map rather
+    /// than a `Vec` of key/value pairs since callers only ever look labels
+    /// up by key; see [`deserialize_labels`].
     #[serde(default, rename = "labels", deserialize_with = "deserialize_labels")]
     pub(super) labels: BTreeMap<String, String>,
 }
 
 impl Package {
-    /// The label key under which the COSI metadata SHA-384 is reported in
-    /// the `<labels>` child element.
-    const COSI_SHA384_LABEL_KEY: &'static str = "cosi.metadata.sha384";
-
     /// Looks up a single label by key. Generic on purpose: this wire module
-    /// has no opinion on which labels matter, that's up to callers like
-    /// [`cosi_sha384_base64`](Self::cosi_sha384_base64).
+    /// has no opinion on which labels matter - that's for callers to decide
+    /// (see `nebraska::client::Client::resolve_cosi_sha384`).
     pub(super) fn label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(String::as_str)
-    }
-
-    /// Resolves this package's base64-encoded COSI metadata SHA-384 using a
-    /// 2-tier precedence:
-    ///
-    /// 1. The `cosi.metadata.sha384` key in the `<labels>` child element.
-    /// 2. The legacy `@hash` attribute (Nebraska's `sha1` field, repurposed
-    ///    by our deployment to carry this same base64 SHA-384 value).
-    ///
-    /// Returns `None` only when neither source is present.
-    pub(super) fn cosi_sha384_base64(&self) -> Option<String> {
-        self.label(Self::COSI_SHA384_LABEL_KEY)
-            .map(str::to_string)
-            .or_else(|| self.hash.clone())
     }
 }
 

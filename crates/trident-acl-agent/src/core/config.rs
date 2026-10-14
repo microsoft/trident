@@ -32,7 +32,7 @@ use serde::{de::Error as _, Deserialize, Deserializer};
 use trident_proto::TRIDENT_DEFAULT_SOCKET_URI;
 use url::Url;
 
-use crate::{DEFAULT_NEBRASKA_APP_ID, DEFAULT_NEBRASKA_TRACK};
+use crate::{nebraska::CosiSha384Source, DEFAULT_NEBRASKA_APP_ID, DEFAULT_NEBRASKA_TRACK};
 
 const ENV_PREFIX_NEBRASKA: &str = "TRIDENT_ACL_AGENT_NEBRASKA_";
 const ENV_PREFIX_KUBERNETES: &str = "TRIDENT_ACL_AGENT_KUBERNETES_";
@@ -105,6 +105,7 @@ impl AgentConfig {
                 track: nebraska
                     .track
                     .unwrap_or_else(|| DEFAULT_NEBRASKA_TRACK.to_string()),
+                cosi_sha384_source: nebraska.cosi_sha384_source.unwrap_or_default(),
             },
             kubernetes: KubernetesConfig {
                 api_server: kubernetes.api_server,
@@ -154,6 +155,19 @@ struct RawNebraskaConfig {
     app_id: Option<String>,
     #[serde(deserialize_with = "empty_string_as_none")]
     track: Option<String>,
+    #[serde(deserialize_with = "empty_cosi_sha384_source_as_none")]
+    cosi_sha384_source: Option<CosiSha384Source>,
+}
+
+fn empty_cosi_sha384_source_as_none<'de, D>(
+    deserializer: D,
+) -> Result<Option<CosiSha384Source>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    empty_as_none(String::deserialize(deserializer)?)
+        .map(|value| value.parse::<CosiSha384Source>().map_err(D::Error::custom))
+        .transpose()
 }
 
 /// Mirrors [`KubernetesConfig`] (see [`RawNebraskaConfig`]).
@@ -259,6 +273,7 @@ pub struct NebraskaConfig {
     pub endpoint: Option<Url>,
     pub app_id: String,
     pub track: String,
+    pub cosi_sha384_source: CosiSha384Source,
 }
 
 impl Default for NebraskaConfig {
@@ -267,6 +282,7 @@ impl Default for NebraskaConfig {
             endpoint: Some(default_nebraska_endpoint()),
             app_id: DEFAULT_NEBRASKA_APP_ID.to_string(),
             track: DEFAULT_NEBRASKA_TRACK.to_string(),
+            cosi_sha384_source: CosiSha384Source::default(),
         }
     }
 }
@@ -435,6 +451,7 @@ mod tests {
         );
         assert_eq!(config.nebraska.app_id, DEFAULT_NEBRASKA_APP_ID);
         assert_eq!(config.nebraska.track, DEFAULT_NEBRASKA_TRACK);
+        assert_eq!(config.nebraska.cosi_sha384_source, CosiSha384Source::Labels);
         assert_eq!(
             config.kubernetes.api_server, None,
             "api_server should default to unset so the kubeconfig's own server is used as-is"
@@ -477,6 +494,7 @@ mod tests {
             ),
             ("TRIDENT_ACL_AGENT_NEBRASKA_APP_ID", "custom-app"),
             ("TRIDENT_ACL_AGENT_NEBRASKA_TRACK", "custom-track"),
+            ("TRIDENT_ACL_AGENT_NEBRASKA_COSI_SHA384_SOURCE", "hash"),
             (
                 "TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER",
                 "https://cluster.example.invalid",
@@ -512,6 +530,7 @@ mod tests {
         );
         assert_eq!(config.nebraska.app_id, "custom-app");
         assert_eq!(config.nebraska.track, "custom-track");
+        assert_eq!(config.nebraska.cosi_sha384_source, CosiSha384Source::Hash);
         assert_eq!(
             config.kubernetes.api_server.unwrap().as_str(),
             "https://cluster.example.invalid/"

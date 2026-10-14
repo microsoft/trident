@@ -42,8 +42,10 @@ pub async fn run_omaha_only(config: &AgentConfig) -> Result<(), Error> {
         );
         Version::parse(FALLBACK_ALWAYS_VERSION).expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver")
     });
+    let cosi_sha384_source = config.nebraska.cosi_sha384_source;
     let outcome = task::spawn_blocking(move || {
-        let client = Client::new(endpoint, app_id, track, machine_id);
+        let client = Client::new(endpoint, app_id, track, machine_id)
+            .with_cosi_sha384_source(cosi_sha384_source);
         client.check_for_update(&current_version)
     })
     .await

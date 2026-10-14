@@ -662,6 +662,7 @@ impl Orchestrator {
             )
         })?;
         let machine_id = crate::build_machine_id(NEBRASKA_MACHINE_ID_SOURCE)?;
+        let cosi_sha384_source = self.config.nebraska.cosi_sha384_source;
         let current_version = parse_nebraska_version(&from_version, "stage current version")
             .unwrap_or_else(|| {
                 Version::parse(FALLBACK_ALWAYS_VERSION)
@@ -670,7 +671,8 @@ impl Orchestrator {
         let outcome = task::spawn_blocking({
             let current_version = current_version.clone();
             move || {
-                let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+                let client = NebraskaClient::new(endpoint, app_id, track, machine_id)
+                    .with_cosi_sha384_source(cosi_sha384_source);
                 client.check_for_update(&current_version)
             }
         })
