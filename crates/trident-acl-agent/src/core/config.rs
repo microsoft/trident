@@ -536,9 +536,11 @@ fn default_node_name(source: NodeNameSource, kubelet_cert_path: &Path) -> Result
         // No fallback to Hostname on failure here, by design - see
         // NodeNameSource::KubeletCert's own doc comment for why resolving
         // to the *wrong* Node silently is worse than refusing to start.
-        // The caller (AgentConfig::from_vars) propagates this as a fatal
-        // config error, the same severity as any other unsatisfiable
-        // TRIDENT_ACL_AGENT_* setting.
+        // Resolution is no longer eager at config-load time: the caller is
+        // either resolve_node_name_once's own fail-fast diagnostic use
+        // (--validate-connection), which propagates this error directly,
+        // or Orchestrator::resolve_node_name_with_retry, which retries it
+        // with backoff like any other transient startup race.
         NodeNameSource::KubeletCert => node_name_from_kubelet_cert(kubelet_cert_path),
     }
 }
