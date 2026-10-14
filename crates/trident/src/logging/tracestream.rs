@@ -18,14 +18,12 @@ use tracing::{
 };
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 
+use crate::{TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
 use osutils::{
     dmi, files,
     osrelease::{OsRelease, OS_RELEASE_PATH},
     uname,
 };
-use sysdefs::osuuid::OsUuid;
-
-use crate::{TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
 
 lazy_static::lazy_static! {
     static ref ADDITIONAL_FIELDS: BTreeMap<String, Value> = populate_additional_fields();
@@ -351,8 +349,15 @@ where
 /// Obtain product uuid of the hardware Trident is running on. Falls back to
 /// "unknown" (rather than failing) since this value is purely informational
 /// metadata attached to trace entries.
-fn product_uuid_or_unknown(uuid: Result<OsUuid, Error>) -> String {
-    uuid.map(|uuid| uuid.to_string()).unwrap_or_else(|err| {
+///
+/// Takes the raw string from [`dmi::read_product_uuid_raw`], not the typed
+/// [`OsUuid`] from [`dmi::read_product_uuid`]: `OsUuid`'s `Display`
+/// canonicalizes a well-formed UUID to lowercase, which would silently
+/// change this `asset_id`'s representation (and break continuity with prior
+/// telemetry for the same asset) on any host whose BIOS reports
+/// `product_uuid` in uppercase.
+fn product_uuid_or_unknown(uuid: Result<String, Error>) -> String {
+    uuid.unwrap_or_else(|err| {
         debug!("Failed to read product uuid: {err:#}");
         "unknown".into()
     })
@@ -391,7 +396,7 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
     sys.refresh_all();
     platform_info.insert(
         "asset_id".to_string(),
-        json!(product_uuid_or_unknown(dmi::read_product_uuid())),
+        json!(product_uuid_or_unknown(dmi::read_product_uuid_raw())),
     );
     platform_info.insert("os_release".to_string(), json!(get_os_release()));
     platform_info.insert("total_cpu".to_string(), json!(sys.cpus().len()));
@@ -465,8 +470,16 @@ mod tests {
 
     #[test]
     fn test_read_product_uuid_exists() {
-        let uuid = product_uuid_or_unknown(Ok(OsUuid::from("test_uuid")));
+        let uuid = product_uuid_or_unknown(Ok("test_uuid".to_string()));
         assert_eq!(uuid, "test_uuid");
+    }
+
+    #[test]
+    fn test_read_product_uuid_preserves_case() {
+        // Regression test: must not canonicalize/lowercase a well-formed
+        // uppercase UUID, unlike OsUuid's Display.
+        let uuid = product_uuid_or_unknown(Ok("6BA7B810-9DAD-11D1-80B4-00C04FD430C8".to_string()));
+        assert_eq!(uuid, "6BA7B810-9DAD-11D1-80B4-00C04FD430C8");
     }
 }
 
@@ -528,7 +541,7 @@ mod functional_test {
         let mut expected_platform_info = BTreeMap::new();
         expected_platform_info.insert(
             "asset_id".to_string(),
-            json!(product_uuid_or_unknown(dmi::read_product_uuid())),
+            json!(product_uuid_or_unknown(dmi::read_product_uuid_raw())),
         );
         expected_platform_info.insert("os_release".to_string(), json!(get_os_release()));
         expected_platform_info.insert("total_cpu".to_string(), json!(4));
