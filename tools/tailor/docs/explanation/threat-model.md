@@ -57,7 +57,9 @@ load-bearing — treat a regression in them as a serious bug:
   removal; removal refuses a parent resolving to `/`. A bound parent can still
   contain unrelated files. On SELinux hosts, janitors request `label=disable`
   without relabeling host files; IC is unchanged and janitors remain
-  `Privileged: false`. With a rootful daemon, container root can override
+  `Privileged: false`. A Fedora 43/Docker 29.8.2 probe with the janitor image
+  ran as `system_u:system_r:spc_t:s0`, not `unconfined_t`; other engines may
+  assign a different type. With a rootful daemon, container root can override
   ordinary file permissions within these writable binds; use a trusted janitor
   image. Tailor does not check for live loop devices or mounts before removal;
   do not clean live build trees.
