@@ -213,6 +213,13 @@ def extract_and_mount_cosi(
             members = []
             total_size = 0
             for member in tar:
+                if member.size < 0:
+                    raise ValueError(
+                        f"COSI archive member '{member.name}' declares a "
+                        f"negative size ({member.size}); refusing to "
+                        "extract (possible decompression bomb attempting "
+                        "to bypass the extracted-size safety limit)."
+                    )
                 total_size += member.size
                 if max_member_count and len(members) + 1 > max_member_count:
                     raise ValueError(
