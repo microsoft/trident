@@ -78,21 +78,15 @@ pub struct PackageFile {
     /// host than the Nebraska server itself, which serves only metadata.
     pub url: Url,
 
-    /// The hash of the file as reported by Nebraska, if any.
+    /// The hash(es) of the file as reported by Nebraska, if any. `None` when
+    /// the manifest carries no hash for this file, which the protocol
+    /// permits.
     ///
-    /// **This is a hash of the file, not of any content inside it.** Nebraska
-    /// reports a base64-encoded SHA-1 (with an optional SHA-256), for integrity
-    /// checking the downloaded artifact. `None` when the manifest carries no
-    /// hash for this file, which the protocol permits.
-    ///
-    /// Our Nebraska deployment repurposes this field to carry a COSI
-    /// metadata SHA-384 instead of a real SHA-1 (see
+    /// Our Nebraska deployment repurposes [`PackageHash::sha1`] to carry a
+    /// COSI metadata SHA-384 instead of a real SHA-1 (see
     /// `core::cosi_sha384::resolve_cosi_sha384`); this module forwards it
     /// as-is and has no opinion on that convention.
-    pub hash: Option<String>,
-
-    /// The optional second hash Nebraska provides, when present.
-    pub hash_sha256: Option<String>,
+    pub hash: Option<PackageHash>,
 
     /// The file size in bytes, when reported by Nebraska.
     pub size: Option<u64>,
@@ -111,6 +105,26 @@ impl PackageFile {
     pub fn label(&self, key: &str) -> Option<&str> {
         self.labels.get(key).map(String::as_str)
     }
+}
+
+/// The hash(es) of a file, as reported by Nebraska.
+///
+/// Both values are base64-encoded content hashes of the file: upstream
+/// Nebraska reports a SHA-1, and `sha256` is present only when the file was
+/// registered with one. This is a plain protocol-faithful data holder - see
+/// `core::cosi_sha384` for how our deployment's repurposing of `sha1` is
+/// interpreted and converted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageHash {
+    /// Base64-encoded SHA-1 of the file, per the Omaha wire format - but see
+    /// [`PackageFile::hash`]'s docs: our Nebraska deployment actually puts a
+    /// base64-encoded SHA-384 here, not a SHA-1.
+    pub sha1: String,
+
+    /// Base64-encoded SHA-256 of the file, when Nebraska provides it. Our
+    /// deployment does not repurpose this field, so it carries a real
+    /// SHA-256 (or is absent) same as upstream Omaha/Nebraska.
+    pub sha256: Option<String>,
 }
 
 /// The bounded exponential-backoff policy used by
@@ -780,11 +794,15 @@ impl<T: Transport> Client<T> {
             .and_then(|s| s.parse::<u64>().ok())
             .filter(|size| *size != 0);
 
+        let hash = package.hash.as_ref().map(|sha1| PackageHash {
+            sha1: sha1.clone(),
+            sha256: package.hash_sha256.clone(),
+        });
+
         Ok(PackageFile {
             name: package.name.clone(),
             url,
-            hash: package.hash.clone(),
-            hash_sha256: package.hash_sha256.clone(),
+            hash,
             size,
             required: package.required,
             labels: package.labels.clone(),
@@ -898,7 +916,10 @@ mod tests {
                 );
                 assert_eq!(
                     offer.primary.hash,
-                    Some("AAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string())
+                    Some(PackageHash {
+                        sha1: "AAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string(),
+                        sha256: None,
+                    })
                 );
                 assert_eq!(offer.primary.size, Some(1024));
                 assert!(offer.primary.required);
@@ -1122,8 +1143,13 @@ mod tests {
                     sig.url.as_str(),
                     "https://updates.example.com/os-image-2.0.0.sig"
                 );
-                assert_eq!(sig.hash, Some("SIG1".to_string()));
-                assert_eq!(sig.hash_sha256, Some("SIG256".to_string()));
+                assert_eq!(
+                    sig.hash,
+                    Some(PackageHash {
+                        sha1: "SIG1".to_string(),
+                        sha256: Some("SIG256".to_string()),
+                    })
+                );
                 assert_eq!(sig.size, Some(20));
                 assert!(!sig.required);
 

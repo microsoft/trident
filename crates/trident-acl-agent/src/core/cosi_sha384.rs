@@ -91,7 +91,7 @@ pub fn resolve_cosi_sha384(
 ) -> Result<String, CosiSha384Error> {
     let raw = match source {
         CosiSha384Source::Labels => package.label(COSI_SHA384_LABEL_KEY),
-        CosiSha384Source::Hash => package.hash.as_deref(),
+        CosiSha384Source::Hash => package.hash.as_ref().map(|h| h.sha1.as_str()),
     }
     .ok_or(CosiSha384Error::Missing(source))?;
 
@@ -119,6 +119,7 @@ mod tests {
     use url::Url;
 
     use super::*;
+    use crate::core::nebraska::PackageHash;
 
     // Digest generated with:
     //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
@@ -131,8 +132,10 @@ mod tests {
         PackageFile {
             name: "os.cosi".to_string(),
             url: Url::parse("https://updates.example.com/os.cosi").unwrap(),
-            hash: hash.map(str::to_string),
-            hash_sha256: None,
+            hash: hash.map(|sha1| PackageHash {
+                sha1: sha1.to_string(),
+                sha256: None,
+            }),
             size: Some(10),
             required: true,
             labels: labels
