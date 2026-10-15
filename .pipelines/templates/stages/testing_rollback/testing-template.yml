@@ -33,23 +33,8 @@ parameters:
     type: string
     default: "trident-ubuntu-1es-pool-eastus2"
 
-  - name: skipExtensionTesting
-    displayName: "Skip extension testing"
-    type: string
-    default: "false"
-
   - name: skipManualRollbackTesting
     displayName: "Skip manual rollback testing"
-    type: string
-    default: "false"
-
-  - name: skipRuntimeUpdateTesting
-    displayName: "Skip runtime update testing"
-    type: string
-    default: "false"
-
-  - name: skipNetplanRuntimeTesting
-    displayName: "Skip netplan runtime testing"
     type: string
     default: "false"
 
@@ -67,14 +52,6 @@ parameters:
     type: string
     default: "*.*.*"
 
-  - name: isUki
-    displayName: "Is the image UKI or not"
-    type: string
-    default: "false"
-
-  # Define whether to run tests using SecureBoot or not. This impacts both
-  # which tests run (many encryption-related tests only run with SecureBoot enabled) and
-  # how the test machines are configured.
   - name: testSecureBoot
     type: boolean
     default: true
@@ -92,6 +69,12 @@ jobs:
       ob_outputDirectory: /tmp/deployment_logs_${{ parameters.flavor }}
       ob_artifactBaseName: "rollback-testing-${{ parameters.flavor }}"
       TEST_RESOURCE_GROUP: trident-vm-servicing-validation-$(Build.BuildId)
+      # Only the dev MIC build overrides the image customizer; every other
+      # build type uses storm's default, so the flag is omitted entirely.
+      ${{ if eq(parameters.micBuildType, 'dev') }}:
+        imageCustomizerFlag: "--image-customizer-image imagecustomizer:dev"
+      ${{ else }}:
+        imageCustomizerFlag: ""
 
     steps:
       - template: ../common_tasks/checkout_trident.yml
@@ -136,15 +119,6 @@ jobs:
           ls -l ~/.ssh/
         displayName: Set up SSH Keys and setup output directory
 
-      - bash: |
-          set -eux
-          ./bin/storm-trident script build-extension-images --build-sysexts --num-clones 3
-          mv ./test-sysext-*.raw $(Build.ArtifactStagingDirectory)/
-
-          find $(Build.ArtifactStagingDirectory)
-        displayName: "Create extensions for test"
-        workingDirectory: $(TRIDENT_SOURCE_DIR)
-
       - template: common/mic-download-template.yaml@platform-pipelines
         parameters:
           buildType: ${{ parameters.micBuildType }}
@@ -154,39 +128,13 @@ jobs:
       - bash: |
           set -eux
 
-          STORM_DYNAMIC_FLAGS=""
-          if [ "${{ parameters.verboseLogging }}" == "True" ]; then
-            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --verbose"
-          fi
-          if [ "${{ parameters.flavor }}" != "uki" ]; then
-            if [[ "${{ parameters.testSecureBoot }}" == 'True' ]]; then
-              STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
-            fi
-          fi
-          if [ "${{ parameters.skipManualRollbackTesting }}" == "true" ]; then
-            # skip manual rollback testing
-            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-manual-rollbacks"
-          fi
-          if [ "${{ parameters.skipRuntimeUpdateTesting }}" == "true" ]; then
-            # skip runtime update testing
-            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-runtime-updates"
-          fi
-          if [ "${{ parameters.skipExtensionTesting }}" == "true" ]; then
-            # Allow testing for non-extension scenarios
-            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-extension-testing"
-          fi
-          if [ "${{ parameters.skipNetplanRuntimeTesting }}" == "true" ]; then
-            # skip netplan runtime testing
-            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --skip-netplan-runtime-testing"
-          fi
-          if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
-            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --image-customizer-image imagecustomizer:dev"
-          fi
-          if [[ "${{ parameters.isUki }}" == "true" ]]; then
-            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --uki"
-          fi
-
-          sudo ./bin/storm-trident run rollback -a $STORM_DYNAMIC_FLAGS \
+          sudo ./bin/storm-trident run rollback -a \
+            -j $(ob_outputDirectory)/storm-rollback.junit.xml \
+            --flavor ${{ parameters.flavor }} \
+            --verbose=${{ parameters.verboseLogging }} \
+            --secure-boot=${{ parameters.testSecureBoot }} \
+            --skip-manual-rollbacks=${{ parameters.skipManualRollbackTesting }} \
+            $(imageCustomizerFlag) \
             --artifacts-dir $(Build.ArtifactStagingDirectory) \
             --output-path $(ob_outputDirectory) \
             --platform ${{ parameters.platform }} \
@@ -196,6 +144,37 @@ jobs:
         displayName: "Rollback test (${{ parameters.platform }})"
         workingDirectory: $(TRIDENT_SOURCE_DIR)
         timeoutInMinutes: 5
+
+      # storm copies serial-console output verbatim into the JUnit system-out
+      # CDATA, which can contain C0 control bytes that XML 1.0 forbids;
+      # PublishTestResults@2 rejects the whole file if they survive. Keep the
+      # only C0 bytes XML allows (tab/LF/CR) and qualify the empty classname
+      # storm emits so the flavors do not collide in the Tests tab. A byte
+      # filter is used rather than an XML parser precisely because the document
+      # is not well-formed until this runs.
+      - bash: |
+          set -eu
+          JUNIT="$(ob_outputDirectory)/storm-rollback.junit.xml"
+          if [ ! -f "$JUNIT" ]; then
+            echo "No JUnit file at $JUNIT; skipping sanitization."
+            exit 0
+          fi
+          sudo chown "$USER" "$JUNIT"
+          tr -d '\000-\010\013\014\016-\037' < "$JUNIT" > "${JUNIT}.clean"
+          mv "${JUNIT}.clean" "$JUNIT"
+          sed -i "/<testcase /s/ classname=\"\"/ classname=\"rollback-${{ parameters.flavor }}\"/" "$JUNIT"
+        displayName: "Sanitize + qualify JUnit for ADO"
+        condition: succeededOrFailed()
+        workingDirectory: $(TRIDENT_SOURCE_DIR)
+
+      # Surfaces per-test-case rollback results in the build's Tests tab.
+      # Without this the whole stage is a single opaque pass/fail exit code.
+      - template: ../junit/handle-junit-test-results.yml
+        parameters:
+          testRunName: "storm-rollback ${{ parameters.flavor }}"
+          junitTestFile: "$(ob_outputDirectory)/storm-rollback.junit.xml"
+          displayNameSpecifier: "storm rollback ${{ parameters.flavor }}"
+          artifactName: "junit_storm_rollback_${{ parameters.flavor }}"
 
       - bash: |
           set -eux
