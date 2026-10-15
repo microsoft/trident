@@ -305,10 +305,19 @@ def get_host_status(connection: fabric.Connection, tridentCommand: str) -> dict:
     # Structure output
     output = result.stdout.strip()
 
+    # Use SafeLoader, not FullLoader: FullLoader still permits constructing
+    # some non-trivial Python objects (CVE-2020-14343 affected versions
+    # before PyYAML 5.4), and this parses output returned by `trident get`
+    # over SSH from a remote test node -- if that node or the agent running
+    # on it is ever compromised, this is attacker-controlled input. The
+    # custom "!" constructor must be registered on SafeLoader explicitly,
+    # since add_multi_constructor only targets the base Loader by default.
     yaml.add_multi_constructor(
-        "!", lambda loader, _, node: loader.construct_mapping(node)
+        "!",
+        lambda loader, _, node: loader.construct_mapping(node),
+        Loader=yaml.SafeLoader,
     )
-    return yaml.load(output, Loader=yaml.FullLoader)
+    return yaml.load(output, Loader=yaml.SafeLoader)
 
 
 # Runs 'mount' and returns the name of the block device mounted at root /
