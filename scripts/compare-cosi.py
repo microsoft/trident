@@ -25,7 +25,9 @@ import gzip
 import hashlib
 import logging
 import json
+import resource
 import shutil
+import signal
 from pathlib import Path
 import tarfile
 import tempfile
@@ -140,47 +142,46 @@ def decompress_zstd_with_limit(
     src_path: Path, dst_path: Path, max_bytes: "Optional[int]"
 ) -> int:
     """
-    Decompresses `src_path` (a zstd-compressed file) to `dst_path`, aborting
-    once the decompressed output would exceed `max_bytes` -- rather than
-    `zstd -d -o <file>` writing an unbounded amount of data to disk. A
-    crafted, highly compressible zstd payload can expand far beyond its
-    compressed on-disk size, independent of (and after) any check on the
-    archive's declared/compressed member sizes.
+    Decompresses `src_path` (a zstd-compressed file) to `dst_path`, letting
+    zstd write directly to disk exactly as `zstd -d -o <file>` normally
+    would -- but with a kernel-enforced cap (RLIMIT_FSIZE) on how large
+    `dst_path` is allowed to grow. A crafted, highly compressible zstd
+    payload can expand far beyond its compressed on-disk size (a
+    decompression bomb), independent of (and after) any check on the
+    archive's declared/compressed member sizes. Enforcing the cap via
+    RLIMIT_FSIZE rather than streaming/checking bytes from Python adds no
+    overhead: zstd keeps using its normal direct-to-file I/O, and the
+    kernel simply kills it with SIGXFSZ the moment it would write past the
+    limit.
     :param src_path: Path to the zstd-compressed input file.
     :param dst_path: Path to write the decompressed output to.
-    :param max_bytes: Abort if more than this many bytes would be written.
-        None disables the limit.
+    :param max_bytes: Abort if the decompressed output would exceed this
+        many bytes. None disables the limit.
     :return: The number of bytes actually written.
     """
-    proc = subprocess.Popen(["zstd", "-d", "-f", str(src_path), "-c"], stdout=subprocess.PIPE)
-    written = 0
+
+    def _apply_fsize_limit():
+        if max_bytes is not None:
+            resource.setrlimit(resource.RLIMIT_FSIZE, (max_bytes, max_bytes))
+
     try:
-        with open(dst_path, "wb") as out_file:
-            while True:
-                chunk = proc.stdout.read(1024 * 1024)
-                if not chunk:
-                    break
-                written += len(chunk)
-                if max_bytes is not None and written > max_bytes:
-                    proc.kill()
-                    proc.wait()
-                    raise ValueError(
-                        f"Decompressing '{src_path}' exceeded the safety "
-                        f"limit of {max_bytes} remaining bytes; refusing to "
-                        "continue (possible decompression bomb). Raise the "
-                        "limit with --max-extracted-size-gib, or pass 0 to "
-                        "disable the check."
-                    )
-                out_file.write(chunk)
-    finally:
-        if proc.poll() is None:
-            proc.kill()
-        proc.wait()
+        subprocess.run(
+            ["zstd", "-d", "-f", str(src_path), "-o", str(dst_path)],
+            check=True,
+            preexec_fn=_apply_fsize_limit,
+        )
+    except subprocess.CalledProcessError as e:
+        if e.returncode == -signal.SIGXFSZ:
+            dst_path.unlink(missing_ok=True)
+            raise ValueError(
+                f"Decompressing '{src_path}' exceeded the safety limit of "
+                f"{max_bytes} remaining bytes; refusing to continue "
+                "(possible decompression bomb). Raise the limit with "
+                "--max-extracted-size-gib, or pass 0 to disable the check."
+            ) from e
+        raise
 
-    if proc.returncode not in (0, None) and proc.returncode > 0:
-        raise subprocess.CalledProcessError(proc.returncode, "zstd")
-
-    return written
+    return dst_path.stat().st_size
 
 
 def extract_and_mount_cosi(
