@@ -122,3 +122,8 @@ steps:
         "$(Pipeline.Workspace)/s/platform-telemetry"
     displayName: "📈 Upload metrics to Kusto"
     condition: eq(variables['UploadMetrics'], 'True')
+    env:
+      # Marking AZ_TOKEN as secret (issecret=true, above) stops ADO from
+      # auto-exporting it as an environment variable to this step, so it
+      # must be mapped explicitly for kusto_ingestor.py to pick it up.
+      AZ_TOKEN: $(AZ_TOKEN)
