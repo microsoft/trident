@@ -136,6 +136,53 @@ def cosi_extractor(
                 subprocess.run(unmount_command, check=True)
 
 
+def decompress_zstd_with_limit(
+    src_path: Path, dst_path: Path, max_bytes: "Optional[int]"
+) -> int:
+    """
+    Decompresses `src_path` (a zstd-compressed file) to `dst_path`, aborting
+    once the decompressed output would exceed `max_bytes` -- rather than
+    `zstd -d -o <file>` writing an unbounded amount of data to disk. A
+    crafted, highly compressible zstd payload can expand far beyond its
+    compressed on-disk size, independent of (and after) any check on the
+    archive's declared/compressed member sizes.
+    :param src_path: Path to the zstd-compressed input file.
+    :param dst_path: Path to write the decompressed output to.
+    :param max_bytes: Abort if more than this many bytes would be written.
+        None disables the limit.
+    :return: The number of bytes actually written.
+    """
+    proc = subprocess.Popen(["zstd", "-d", "-f", str(src_path), "-c"], stdout=subprocess.PIPE)
+    written = 0
+    try:
+        with open(dst_path, "wb") as out_file:
+            while True:
+                chunk = proc.stdout.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if max_bytes is not None and written > max_bytes:
+                    proc.kill()
+                    proc.wait()
+                    raise ValueError(
+                        f"Decompressing '{src_path}' exceeded the safety "
+                        f"limit of {max_bytes} remaining bytes; refusing to "
+                        "continue (possible decompression bomb). Raise the "
+                        "limit with --max-extracted-size-gib, or pass 0 to "
+                        "disable the check."
+                    )
+                out_file.write(chunk)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+
+    if proc.returncode not in (0, None) and proc.returncode > 0:
+        raise subprocess.CalledProcessError(proc.returncode, "zstd")
+
+    return written
+
+
 def extract_and_mount_cosi(
     mounted: List[Path],
     cosi_file_path: Path,
@@ -149,29 +196,42 @@ def extract_and_mount_cosi(
     extract_path = work_path / "extracted"
     decompression_path = work_path / "decompressed"
 
+    max_extracted_size_bytes = (
+        max_extracted_size_gib * 1024 * 1024 * 1024 if max_extracted_size_gib else None
+    )
+
     with open(cosi_file_path, "rb") as cosi_file:
         with tarfile.open(fileobj=cosi_file, mode="r:*") as tar:
-            members = tar.getmembers()
-            if max_member_count and len(members) > max_member_count:
-                raise ValueError(
-                    f"COSI archive contains {len(members)} members, exceeding "
-                    f"the safety limit of {max_member_count}; refusing to "
-                    "extract (possible decompression bomb). Raise the limit "
-                    "with --max-member-count, or pass 0 to disable the check."
-                )
-            if max_extracted_size_gib:
-                max_extracted_size_bytes = max_extracted_size_gib * 1024 * 1024 * 1024
-                total_size = sum(member.size for member in members)
-                if total_size > max_extracted_size_bytes:
+            # Iterate and check running totals member-by-member, bailing out
+            # as soon as either limit is exceeded, rather than calling
+            # tar.getmembers() (which parses every header in the archive up
+            # front) and only checking the totals afterward -- a crafted
+            # archive with an enormous number of tiny members could
+            # otherwise exhaust memory/time during that initial full scan,
+            # before either limit check ever ran.
+            members = []
+            total_size = 0
+            for member in tar:
+                total_size += member.size
+                if max_member_count and len(members) + 1 > max_member_count:
                     raise ValueError(
-                        f"COSI archive claims {total_size} bytes of extracted "
-                        f"content, exceeding the safety limit of "
-                        f"{max_extracted_size_bytes} bytes; refusing to "
+                        f"COSI archive contains more than {max_member_count} "
+                        "members, exceeding the safety limit; refusing to "
+                        "extract (possible decompression bomb). Raise the "
+                        "limit with --max-member-count, or pass 0 to disable "
+                        "the check."
+                    )
+                if max_extracted_size_bytes and total_size > max_extracted_size_bytes:
+                    raise ValueError(
+                        f"COSI archive claims more than "
+                        f"{max_extracted_size_bytes} bytes of extracted "
+                        "content, exceeding the safety limit; refusing to "
                         "extract (possible decompression bomb). Raise the "
                         "limit with --max-extracted-size-gib, or pass 0 to "
                         "disable the check."
                     )
-            tar.extractall(path=extract_path, filter="data")
+                members.append(member)
+            tar.extractall(members=members, path=extract_path, filter="data")
 
     metadata_path = extract_path / "metadata.json"
     if not metadata_path.exists():
@@ -194,6 +254,14 @@ def extract_and_mount_cosi(
 
     extract_path_resolved = extract_path.resolve()
     root_path_resolved = root_path.resolve()
+
+    # Shared across every image's decompression below: each image's
+    # compressed `member.size` (checked above) is not a bound on its
+    # *decompressed* size -- COSI images are zstd-compressed, and a small,
+    # highly compressible payload can expand far beyond its on-disk size.
+    # Decremented after each image so several individually-under-the-cap
+    # images can't collectively exceed it either.
+    remaining_decompression_budget = max_extracted_size_bytes
 
     for mount_point, image_path in image_mount:
         # VERY IMPORTANT SAFETY CHECK TO AVOID WEIRD ISSUES!
@@ -226,10 +294,11 @@ def extract_and_mount_cosi(
         ).with_suffix(".raw")
 
         decompressed_image_path.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            ["zstd", "-d", "-f", str(image_path), "-o", str(decompressed_image_path)],
-            check=True,
+        bytes_written = decompress_zstd_with_limit(
+            image_path, decompressed_image_path, remaining_decompression_budget
         )
+        if remaining_decompression_budget is not None:
+            remaining_decompression_budget -= bytes_written
 
         log.debug(f"Mounting {decompressed_image_path} to {effective_mount_point}")
 
