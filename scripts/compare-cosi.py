@@ -38,15 +38,18 @@ from io import StringIO
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger("compare-cosi")
 
-# Safety limits for extracting a COSI file (which is just a tar archive).
-# `tarfile.extractall(filter="data")` protects against path traversal and
-# special files, but not against a maliciously crafted archive that claims
-# a small compressed size while expanding to an enormous one on disk (a
-# decompression bomb). These limits are generous relative to real COSI
-# files (which are a handful of GiB at most) while still bounding the
-# damage from a crafted input.
-MAX_COSI_EXTRACTED_SIZE_BYTES = 20 * 1024 * 1024 * 1024  # 20 GiB
-MAX_COSI_MEMBER_COUNT = 100_000
+# Default safety limits for extracting a COSI file (which is just a tar
+# archive). `tarfile.extractall(filter="data")` protects against path
+# traversal and special files, but not against a maliciously crafted
+# archive that claims a small compressed size while expanding to an
+# enormous one on disk (a decompression bomb). These are defaults only --
+# this is a manually-invoked developer tool working with self-selected
+# input, not an automated pipeline processing untrusted files, so a
+# legitimate large COSI must never be silently unusable. Both limits are
+# overridable via --max-extracted-size-gib / --max-member-count (0 means
+# "no limit").
+DEFAULT_MAX_COSI_EXTRACTED_SIZE_GIB = 20
+DEFAULT_MAX_COSI_MEMBER_COUNT = 100_000
 
 try:
     import pefile
@@ -80,11 +83,32 @@ def parse_args():
         default=None,
         help="Optional directory to write the extracted COSI file or the comparison results to.",
     )
+    parser.add_argument(
+        "--max-extracted-size-gib",
+        type=int,
+        default=DEFAULT_MAX_COSI_EXTRACTED_SIZE_GIB,
+        help="Safety limit (in GiB) on total extracted content from a COSI "
+        "archive, to guard against decompression bombs. Raise this for a "
+        "legitimately large COSI file, or set to 0 to disable the check "
+        f"entirely. Default: {DEFAULT_MAX_COSI_EXTRACTED_SIZE_GIB} GiB.",
+    )
+    parser.add_argument(
+        "--max-member-count",
+        type=int,
+        default=DEFAULT_MAX_COSI_MEMBER_COUNT,
+        help="Safety limit on the number of members (files) a COSI archive "
+        "may contain. Set to 0 to disable the check entirely. Default: "
+        f"{DEFAULT_MAX_COSI_MEMBER_COUNT}.",
+    )
     return parser.parse_args()
 
 
 @contextmanager
-def cosi_extractor(cosi_file_path: Path) -> "Generator[Path, None, None]":
+def cosi_extractor(
+    cosi_file_path: Path,
+    max_extracted_size_gib: int = DEFAULT_MAX_COSI_EXTRACTED_SIZE_GIB,
+    max_member_count: int = DEFAULT_MAX_COSI_MEMBER_COUNT,
+) -> "Generator[Path, None, None]":
     """
     Extracts the given COSI file (assumed to be a zip archive) to the specified mount path.
     If the mount path does not exist, it will be created.
@@ -97,7 +121,13 @@ def cosi_extractor(cosi_file_path: Path) -> "Generator[Path, None, None]":
         mounted = []
 
         try:
-            yield extract_and_mount_cosi(mounted, cosi_file_path, work_path)
+            yield extract_and_mount_cosi(
+                mounted,
+                cosi_file_path,
+                work_path,
+                max_extracted_size_gib=max_extracted_size_gib,
+                max_member_count=max_member_count,
+            )
         finally:
             for mount_point in reversed(mounted):
                 log.debug(f"Unmounting {mount_point}")
@@ -110,6 +140,8 @@ def extract_and_mount_cosi(
     mounted: List[Path],
     cosi_file_path: Path,
     work_path: Path,
+    max_extracted_size_gib: int = DEFAULT_MAX_COSI_EXTRACTED_SIZE_GIB,
+    max_member_count: int = DEFAULT_MAX_COSI_MEMBER_COUNT,
 ) -> Path:
     if not work_path.exists():
         raise FileNotFoundError(f"Work path does not exist: {work_path}")
@@ -120,20 +152,25 @@ def extract_and_mount_cosi(
     with open(cosi_file_path, "rb") as cosi_file:
         with tarfile.open(fileobj=cosi_file, mode="r:*") as tar:
             members = tar.getmembers()
-            if len(members) > MAX_COSI_MEMBER_COUNT:
+            if max_member_count and len(members) > max_member_count:
                 raise ValueError(
                     f"COSI archive contains {len(members)} members, exceeding "
-                    f"the safety limit of {MAX_COSI_MEMBER_COUNT}; refusing to "
-                    "extract (possible decompression bomb)"
+                    f"the safety limit of {max_member_count}; refusing to "
+                    "extract (possible decompression bomb). Raise the limit "
+                    "with --max-member-count, or pass 0 to disable the check."
                 )
-            total_size = sum(member.size for member in members)
-            if total_size > MAX_COSI_EXTRACTED_SIZE_BYTES:
-                raise ValueError(
-                    f"COSI archive claims {total_size} bytes of extracted "
-                    f"content, exceeding the safety limit of "
-                    f"{MAX_COSI_EXTRACTED_SIZE_BYTES} bytes; refusing to "
-                    "extract (possible decompression bomb)"
-                )
+            if max_extracted_size_gib:
+                max_extracted_size_bytes = max_extracted_size_gib * 1024 * 1024 * 1024
+                total_size = sum(member.size for member in members)
+                if total_size > max_extracted_size_bytes:
+                    raise ValueError(
+                        f"COSI archive claims {total_size} bytes of extracted "
+                        f"content, exceeding the safety limit of "
+                        f"{max_extracted_size_bytes} bytes; refusing to "
+                        "extract (possible decompression bomb). Raise the "
+                        "limit with --max-extracted-size-gib, or pass 0 to "
+                        "disable the check."
+                    )
             tar.extractall(path=extract_path, filter="data")
 
     metadata_path = extract_path / "metadata.json"
@@ -449,13 +486,22 @@ def compare_ukis(
                 report_file.write(report)
 
 
-def cmd_extract_cosi(cosi_file: Path, output_dir: Path):
+def cmd_extract_cosi(
+    cosi_file: Path,
+    output_dir: Path,
+    max_extracted_size_gib: int = DEFAULT_MAX_COSI_EXTRACTED_SIZE_GIB,
+    max_member_count: int = DEFAULT_MAX_COSI_MEMBER_COUNT,
+):
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     log.info(f"COSI file will be extracted to: {output_dir}/")
 
-    with cosi_extractor(cosi_file) as cosi_root:
+    with cosi_extractor(
+        cosi_file,
+        max_extracted_size_gib=max_extracted_size_gib,
+        max_member_count=max_member_count,
+    ) as cosi_root:
         log.info(f"Extracted COSI file to: {cosi_root}")
 
         copied_files: List[Path] = []
@@ -491,7 +537,13 @@ def cmd_extract_cosi(cosi_file: Path, output_dir: Path):
         print(f"COSI file extracted to: {output_dir}")
 
 
-def cmd_compare_cosi(cosi_file_a: Path, cosi_file_b: Path, output_dir: Optional[Path]):
+def cmd_compare_cosi(
+    cosi_file_a: Path,
+    cosi_file_b: Path,
+    output_dir: Optional[Path],
+    max_extracted_size_gib: int = DEFAULT_MAX_COSI_EXTRACTED_SIZE_GIB,
+    max_member_count: int = DEFAULT_MAX_COSI_MEMBER_COUNT,
+):
     if not cosi_file_b.exists():
         log.error(f"COSI file B does not exist: {cosi_file_b}")
         exit(1)
@@ -516,8 +568,14 @@ def cmd_compare_cosi(cosi_file_a: Path, cosi_file_b: Path, output_dir: Optional[
         cosi_a_workdir.mkdir(parents=True, exist_ok=True)
         cosi_b_workdir.mkdir(parents=True, exist_ok=True)
 
-        with cosi_extractor(cosi_file_a) as cosi_a_root, cosi_extractor(
-            cosi_file_b
+        with cosi_extractor(
+            cosi_file_a,
+            max_extracted_size_gib=max_extracted_size_gib,
+            max_member_count=max_member_count,
+        ) as cosi_a_root, cosi_extractor(
+            cosi_file_b,
+            max_extracted_size_gib=max_extracted_size_gib,
+            max_member_count=max_member_count,
         ) as cosi_b_root:
             # Compare the two COSI files
             log.info(f"Comparing {cosi_file_a} and {cosi_file_b}")
@@ -557,6 +615,8 @@ def main():
     cosi_file_a: Path = args.cosi_file_a
     cosi_file_b: Optional[Path] = args.cosi_file_b
     output: Optional[Path] = args.output
+    max_extracted_size_gib: int = args.max_extracted_size_gib
+    max_member_count: int = args.max_member_count
 
     if not cosi_file_a.exists():
         log.error(f"COSI file A does not exist: {cosi_file_a}")
@@ -567,9 +627,20 @@ def main():
         if output is None:
             log.error("Output directory must be specified for extraction.")
             exit(1)
-        cmd_extract_cosi(cosi_file_a, output / cosi_file_a.name)
+        cmd_extract_cosi(
+            cosi_file_a,
+            output / cosi_file_a.name,
+            max_extracted_size_gib=max_extracted_size_gib,
+            max_member_count=max_member_count,
+        )
     else:
-        cmd_compare_cosi(cosi_file_a, cosi_file_b, output)
+        cmd_compare_cosi(
+            cosi_file_a,
+            cosi_file_b,
+            output,
+            max_extracted_size_gib=max_extracted_size_gib,
+            max_member_count=max_member_count,
+        )
 
 
 if __name__ == "__main__":
