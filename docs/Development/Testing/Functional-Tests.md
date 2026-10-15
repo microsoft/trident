@@ -47,19 +47,19 @@ and a base image also from MCR.
 1. **Download the base image:**
 
    ```bash
-   cargo run --manifest-path tools/tailor/Cargo.toml --      --manifest tests/tailor-images/tailor.yaml      bases download baremetal
+   cargo run --manifest-path tools/tailor/Cargo.toml --      --manifest tests/images/tailor.yaml      bases download baremetal
    ```
 
 2. **Build the functional test image:**
 
    ```bash
-   cargo run --manifest-path tools/tailor/Cargo.toml --      --manifest tests/tailor-images/tailor.yaml      build trident-functest --output-dir ./artifacts
+   cargo run --manifest-path tools/tailor/Cargo.toml --      --manifest tests/images/tailor.yaml      build trident-functest --output-dir ./artifacts
    ```
 
    This produces `artifacts/trident-functest_amd64_qcow2.qcow2` (tailor
    publishes under the cell's slug; use `make artifacts/trident-functest.qcow2`
    for the legacy-named compatibility output). The image is selected from
-   the `trident-functest` family in `tests/tailor-images/tailor.yaml`.
+   the `trident-functest` family in `tests/images/tailor.yaml`.
 
 ## Building Test Dependencies
 

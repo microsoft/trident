@@ -17,7 +17,7 @@ It also includes openssh-server to allow for remote access.
 From the repo root, run:
 
 ```bash
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-testimage -s arch=amd64 --output-dir ./artifacts
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   build trident-testimage -s arch=amd64 --output-dir ./artifacts
 ```
 
 Use `-s arch=arm64` for the ARM64 variant.
