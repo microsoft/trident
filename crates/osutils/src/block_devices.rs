@@ -298,6 +298,25 @@ mod tests {
             format!("Failed to canonicalize target path '{}'", target.display())
         );
     }
+
+    #[test]
+    fn test_partx_update_failure() {
+        let disk_path = Path::new("/dev/does-not-exist");
+        let err_out = partx_update(disk_path).unwrap_err();
+        // Check contextual error message
+        assert_eq!(
+            err_out.to_string(),
+            format!(
+                "Failed to re-read partition table for disk '{}'",
+                disk_path.display()
+            )
+        );
+        // Check DependencyError in root cause
+        assert!(err_out
+            .root_cause()
+            .to_string()
+            .contains("Dependency 'partx' finished unsuccessfully"));
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -331,25 +350,6 @@ mod functional_test {
             get_disk_for_partition(partition).unwrap_err().to_string(),
             "Failed to get partition metadata for '/dev/sdc1'",
         );
-    }
-
-    #[functional_test]
-    fn test_partx_update_failure() {
-        let disk_path = Path::new("/dev/does-not-exist");
-        let err_out = partx_update(disk_path).unwrap_err();
-        // Check contextual error message
-        assert_eq!(
-            err_out.to_string(),
-            format!(
-                "Failed to re-read partition table for disk '{}'",
-                disk_path.display()
-            )
-        );
-        // Check DependencyError in root cause
-        assert!(err_out
-            .root_cause()
-            .to_string()
-            .contains("Dependency 'partx' finished unsuccessfully"));
     }
 
     #[functional_test]

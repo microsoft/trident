@@ -189,16 +189,13 @@ fn write_config(path: &std::path::Path, lines: &[String]) -> Result<(), Error> {
     atomic_write_file(path, &content)
 }
 
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
+#[cfg(test)]
+mod tests {
     use super::*;
     use std::collections::HashMap;
     use tempfile::tempdir;
 
-    use pytest_gen::functional_test;
     use trident_api::config::LoadMode;
-
-    use crate::OsModifierContext;
 
     fn make_ctx(tmp: &tempfile::TempDir) -> OsModifierContext {
         OsModifierContext {
@@ -206,7 +203,7 @@ mod functional_test {
         }
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_configure_modules_always_load() {
         let tmp = tempdir().unwrap();
         let ctx = make_ctx(&tmp);
@@ -227,7 +224,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_configure_modules_disable() {
         let tmp = tempdir().unwrap();
         let ctx = make_ctx(&tmp);
@@ -256,7 +253,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_configure_modules_with_options() {
         let tmp = tempdir().unwrap();
         let ctx = make_ctx(&tmp);
@@ -280,7 +277,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core", negative = true)]
+    #[test]
     fn test_configure_modules_disable_with_options_fails() {
         let tmp = tempdir().unwrap();
         let ctx = make_ctx(&tmp);
@@ -301,7 +298,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_configure_modules_idempotent() {
         let tmp = tempdir().unwrap();
         let ctx = make_ctx(&tmp);
@@ -322,7 +319,7 @@ mod functional_test {
         assert_eq!(count, 1, "Module should appear exactly once, got {count}");
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_configure_modules_disable_removes_from_load() {
         let tmp = tempdir().unwrap();
         let ctx = make_ctx(&tmp);
@@ -358,7 +355,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core", negative = true)]
+    #[test]
     fn test_configure_modules_inherit_disabled_with_options_fails() {
         let tmp = tempdir().unwrap();
         let ctx = make_ctx(&tmp);
@@ -388,7 +385,7 @@ mod functional_test {
         );
     }
 
-    #[functional_test(feature = "core")]
+    #[test]
     fn test_configure_modules_options_preserve_existing() {
         let tmp = tempdir().unwrap();
         let ctx = make_ctx(&tmp);

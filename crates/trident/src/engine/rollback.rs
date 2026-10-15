@@ -1026,12 +1026,42 @@ mod tests {
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
         );
     }
+
+    #[test]
+    fn test_compare_root_device_paths() {
+        // Test case #0: If current root device path is the same as the expected root device path,
+        // should return true.
+        assert!(compare_root_device_paths(
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
+        )
+        .unwrap());
+
+        // Test case #1: If current root device path is NOT the same as the expected root device
+        // path, should return false.
+        assert!(!compare_root_device_paths(
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
+        )
+        .unwrap());
+    }
 }
 
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
     use super::*;
+
+    #[functional_test]
+    fn test_construct_by_partuuid_path() {
+        // Test with a valid device path having a part_uuid
+        let device_path = PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
+        construct_by_partuuid_path(&device_path).unwrap();
+
+        // Test with an invalid device path
+        let device_path = PathBuf::from("/dev/invalid");
+        assert_eq!(construct_by_partuuid_path(&device_path), None);
+    }
 
     use std::path::PathBuf;
 
@@ -1052,36 +1082,6 @@ mod functional_test {
         error::ErrorKind,
         status::AbVolumeSelection,
     };
-
-    #[functional_test]
-    fn test_compare_root_device_paths() {
-        // Test case #0: If current root device path is the same as the expected root device path,
-        // should return true.
-        assert!(compare_root_device_paths(
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
-        )
-        .unwrap());
-
-        // Test case #1: If current root device path is NOT the same as the expected root device
-        // path, should return false.
-        assert!(!compare_root_device_paths(
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
-            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
-        )
-        .unwrap());
-    }
-
-    #[functional_test]
-    fn test_construct_by_partuuid_path() {
-        // Test with a valid device path having a part_uuid
-        let device_path = PathBuf::from(formatcp!("{OS_DISK_DEVICE_PATH}1"));
-        construct_by_partuuid_path(&device_path).unwrap();
-
-        // Test with an invalid device path
-        let device_path = PathBuf::from("/dev/invalid");
-        assert_eq!(construct_by_partuuid_path(&device_path), None);
-    }
 
     /// Validates that validate_ab_active_volume_internal() works as a expected.
     #[functional_test]

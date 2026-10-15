@@ -1286,6 +1286,16 @@ mod tests {
         };
         assert_eq!(bd.device_path(), PathBuf::from("/dev/sda"));
     }
+
+    #[test]
+    fn test_get_fail_on_non_block_file() {
+        assert!(super::get(Path::new("/dev/null")).unwrap_err().root_cause().to_string().contains("stdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/null: not a block device\n\n"));
+    }
+
+    #[test]
+    fn test_get_fail_on_missing_file() {
+        assert!(super::get(Path::new("/dev/does-not-exist")).unwrap_err().root_cause().to_string().contains("stdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/does-not-exist: not a block device\n\n"));
+    }
 }
 
 #[cfg(feature = "functional-test")]
@@ -1337,15 +1347,5 @@ mod functional_test {
 
         assert_eq!(block_device.name, "/dev/sda");
         assert_eq!(block_device.children.len(), 5);
-    }
-
-    #[functional_test(feature = "helpers", negative = true)]
-    fn test_get_fail_on_non_block_file() {
-        assert!(super::get(Path::new("/dev/null")).unwrap_err().root_cause().to_string().contains("stdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/null: not a block device\n\n"));
-    }
-
-    #[functional_test(feature = "helpers", negative = true)]
-    fn test_get_fail_on_missing_file() {
-        assert!(super::get(Path::new("/dev/does-not-exist")).unwrap_err().root_cause().to_string().contains("stdout:\n{\n   \"blockdevices\": [\n\n   ]\n}\n\n\nstderr:\nlsblk: /dev/does-not-exist: not a block device\n\n"));
     }
 }
