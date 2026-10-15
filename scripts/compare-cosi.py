@@ -38,6 +38,16 @@ from io import StringIO
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger("compare-cosi")
 
+# Safety limits for extracting a COSI file (which is just a tar archive).
+# `tarfile.extractall(filter="data")` protects against path traversal and
+# special files, but not against a maliciously crafted archive that claims
+# a small compressed size while expanding to an enormous one on disk (a
+# decompression bomb). These limits are generous relative to real COSI
+# files (which are a handful of GiB at most) while still bounding the
+# damage from a crafted input.
+MAX_COSI_EXTRACTED_SIZE_BYTES = 20 * 1024 * 1024 * 1024  # 20 GiB
+MAX_COSI_MEMBER_COUNT = 100_000
+
 try:
     import pefile
 except ImportError:
@@ -109,6 +119,21 @@ def extract_and_mount_cosi(
 
     with open(cosi_file_path, "rb") as cosi_file:
         with tarfile.open(fileobj=cosi_file, mode="r:*") as tar:
+            members = tar.getmembers()
+            if len(members) > MAX_COSI_MEMBER_COUNT:
+                raise ValueError(
+                    f"COSI archive contains {len(members)} members, exceeding "
+                    f"the safety limit of {MAX_COSI_MEMBER_COUNT}; refusing to "
+                    "extract (possible decompression bomb)"
+                )
+            total_size = sum(member.size for member in members)
+            if total_size > MAX_COSI_EXTRACTED_SIZE_BYTES:
+                raise ValueError(
+                    f"COSI archive claims {total_size} bytes of extracted "
+                    f"content, exceeding the safety limit of "
+                    f"{MAX_COSI_EXTRACTED_SIZE_BYTES} bytes; refusing to "
+                    "extract (possible decompression bomb)"
+                )
             tar.extractall(path=extract_path, filter="data")
 
     metadata_path = extract_path / "metadata.json"
