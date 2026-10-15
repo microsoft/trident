@@ -7,11 +7,12 @@ use std::{
 use chrono::Utc;
 use log::{debug, info, trace, warn};
 
-use osutils::path::join_relative;
+use osutils::{overlay::LayeredOverlay, path::join_relative};
+use sysdefs::acl::{ACL_ETC_LOWER_DIR, ACL_ETC_OVERLAY_OPTIONS, ACL_ETC_WORK_DIR};
 use trident_api::{
     config::Storage,
     constants,
-    error::{InternalError, TridentError, TridentResultExt},
+    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
     is_default,
     status::{ServicingState, ServicingType},
     storage_graph::graph::StorageGraph,
@@ -323,6 +324,66 @@ fn prepare(subsystems: &mut [Box<dyn Subsystem>], ctx: &EngineContext) -> Result
     }
     debug!("Finished step 'Prepare'");
     Ok(())
+}
+
+/// Directory the OS configuration lives in, relative to a mounted root.
+const ETC_PATH: &str = "/etc";
+
+/// Mounts ACL's `/etc` overlay over the new root, if the image needs it.
+///
+/// ACL ships no `/etc` on its root filesystem: its initrd assembles one at boot
+/// as an overlay, with the factory contents on the sealed `/usr` as the lower
+/// layer and the root filesystem's own `/etc` as the upper. Servicing runs
+/// before any of that has happened, so a chroot into the new root sees an empty
+/// `/etc`, and anything that rewrites a file the image provides -- the user
+/// database above all -- writes a replacement rather than an edit. At boot that
+/// replacement becomes the upper layer and hides the factory file.
+///
+/// Mounting the same overlay here makes the chroot see what the booted system
+/// will. Writes still land in the root filesystem's `/etc`, exactly as before,
+/// but a modified file is copied up from the factory version first, so it stays
+/// complete.
+///
+/// Returns `None` when the image does not use this layout, in which case the
+/// new root's `/etc` is used directly.
+pub(super) fn mount_etc_overlay(
+    ctx: &EngineContext,
+    newroot_path: &Path,
+) -> Result<Option<LayeredOverlay>, TridentError> {
+    if !ctx.image_distro().is_acl() {
+        return Ok(None);
+    }
+
+    let etc_path = join_relative(newroot_path, ETC_PATH);
+    let lower_dir = join_relative(newroot_path, ACL_ETC_LOWER_DIR);
+    if !lower_dir.exists() {
+        // An ACL image that does not ship the factory directory has nothing to
+        // overlay; leave /etc alone rather than inventing a layer.
+        debug!(
+            "Image reports as ACL but has no '{}', using '{}' directly",
+            lower_dir.display(),
+            etc_path.display()
+        );
+        return Ok(None);
+    }
+
+    let work_dir = join_relative(newroot_path, ACL_ETC_WORK_DIR);
+    debug!(
+        "Mounting ACL /etc overlay on '{}' with lower layer '{}'",
+        etc_path.display(),
+        lower_dir.display()
+    );
+
+    LayeredOverlay::mount(
+        &etc_path,
+        &lower_dir,
+        &etc_path,
+        &work_dir,
+        Some(ACL_ETC_OVERLAY_OPTIONS),
+    )
+    .structured(ServicingError::MountNewroot)
+    .message("Failed to mount the /etc overlay on the new root")
+    .map(Some)
 }
 
 fn provision(
