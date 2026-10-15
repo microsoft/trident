@@ -135,7 +135,7 @@ steps:
         displayName: Copy SSH Keys
 
   - script: |
-      echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING the tailor workspace under tests/tailor-images."
+      echo "##[warning]THE PIPELINE TEMPLATE trident-testimg-template.yaml IS DEPRECATED. PLEASE SWITCH TO USING the tailor workspace under tests/images."
       cat /etc/os-release
     displayName: "Report Host Info"
 
@@ -325,9 +325,9 @@ steps:
   # downloadable artifact too) is still available for diagnosing the failure.
   - script: |
       set -ex
-      if [ -d "tests/tailor-images/artifacts/tailor-logs" ]; then
+      if [ -d "tests/images/artifacts/tailor-logs" ]; then
         mkdir -p "${{ parameters.outputDirectory }}/tailor-logs"
-        sudo cp -rv tests/tailor-images/artifacts/tailor-logs/. "${{ parameters.outputDirectory }}/tailor-logs/"
+        sudo cp -rv tests/images/artifacts/tailor-logs/. "${{ parameters.outputDirectory }}/tailor-logs/"
       fi
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: "Copy tailor logs to output directory"
