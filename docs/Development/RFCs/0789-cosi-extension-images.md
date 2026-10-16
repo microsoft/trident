@@ -31,6 +31,8 @@ available for content released independently.
 - Changes to the Host Configuration API, DDIs, SELinux support or signing.
 - The Image Customizer API and implementation for producing these COSIs;
   separate work.
+- Persisting COSI extensions in Host Configuration; covered by
+  [RFC 0838](https://github.com/microsoft/trident/pull/838).
 - Partition-less COSI files.
 - Extension-only Runtime Updates. Any change to a COSI, including only its
   extensions, requires an A/B update.
@@ -46,7 +48,9 @@ disk streaming.
 ## Dependencies
 
 A separately defined [Image Customizer](https://github.com/microsoft/azure-linux-image-tools)
-API must produce COSIs with embedded extensions.
+API must produce COSIs with embedded extensions. RFC 0838 must also persist
+bundled extensions in Host Configuration for subsequent A/B updates and
+rollback.
 
 ## Implementation
 
@@ -140,9 +144,8 @@ Trident-managed extensions. Today Trident derives `{name}.raw` from
 `extension-release.{name}` and uses `/var/lib/extensions/` or
 `/var/lib/confexts/`. An explicit `path` must use a permitted directory and
 match that name. [RFC 0838](https://github.com/microsoft/trident/pull/838)
-proposes fully Trident-managed, slotted sysext storage without `path`; it
-handles `/etc` layers separately. How bundled extensions select such a policy
-is unresolved; omitting `path` alone must not opt in.
+separately proposes `scope: slotted` for Trident-managed sysext placement; it
+handles `/etc` layers separately. Omitting `path` alone does not opt in.
 
 There is no `url` (the tar is the source), `kind` (the array supplies it), or
 separate name, enable flag or compatibility fields (the DDI supplies them, or
@@ -162,27 +165,29 @@ required extensions when reader versions cannot be controlled.
 
 ### Trident-Side Consumption
 
-Compute an effective set from COSI and Host Configuration entries, retaining
-each entry's source. Match old and new entries by `(kind, id)`; replace when
-content changes, and reconcile changes to placement or filename. The extensions
-subsystem reads bundled members instead of downloading them;
-`update_host_configuration` writes resolved paths back only for Host
-Configuration entries. `osconfig` enables the sysext/confext merge units for
-the effective set. Validate SELinux compatibility against that set before
-provisioning; the current check reads only Host Configuration entries.
+Compute an effective set from COSI and operator-provided Host Configuration
+entries, retaining each entry's source. Match old and new entries by
+`(kind, id)`; replace when content changes, and reconcile placement or filename
+changes. The extensions subsystem reads bundled members instead of downloading
+them. `osconfig` enables the sysext/confext merge units for the effective set.
+Validate SELinux compatibility against that set before provisioning; the
+current check reads only Host Configuration entries.
 
 [Disk streaming](../../Explanation/Disk-Streaming.md) must reject bundled
 extensions: `osconfig` skips stream-image configuration, leaving the merge
 units disabled.
 
-#### Deployed Extension Inventory
+#### Host Configuration Persistence
 
-Host Configuration does not record bundled extensions. Persist an inventory
-(kind, ID, name, resolved placement, source and source hash) in Host Status so
-Trident can compare old/new sets and resume separate stage/finalize calls.
-Retain deployed and pending inventories alongside `spec_old` and `spec`.
-Promote after post-boot commit and discard pending data on rollback. Extend
-`ManualRollbackChainItem` to carry the historical inventory for A/B rollback.
+RFC 0838 owns inserting bundled extensions into the persisted Host
+Configuration, whether `path` is explicit or Trident chooses placement. Use
+`spec` and `spec_old` for new and previous sets instead of adding a separate
+Host Status inventory. Keep generated entries distinct from operator-provided
+ones so they do not collide with their own COSI source.
+
+Host Configuration's `Extension` requires a URL and a SHA-384 of the raw DDI;
+COSI `ImageFile.sha384` covers compressed bytes. Materialization must provide
+a durable source reference and the raw hash, not copy the compressed hash.
 
 #### Destination Validation
 
@@ -254,7 +259,8 @@ not only the Host Configuration lists, before Clean Install or A/B provisioning.
 ## Implementation Plan
 
 1. Publish COSI 1.3 schema and samples.
-2. Read, validate and install bundled extensions; persist the effective set.
+2. Read, validate and install bundled extensions; use RFC 0838 to persist them
+   in Host Configuration.
 
 ## Counter-Arguments
 
@@ -280,9 +286,6 @@ OCI transport. Bundling optimises for extensions that must move with it.
 
 ## Open Questions
 
-- **Slotted placement:** how does a COSI entry request the policy in
-  [RFC 0838](https://github.com/microsoft/trident/pull/838)? Omitting `path`
-  cannot silently change an existing image's placement or imply loader support.
 - **Operator override:** retain the hard error on bundled/Host Configuration
   collisions, or permit an explicit override when a hotfix is needed?
 
