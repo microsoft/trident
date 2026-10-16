@@ -99,7 +99,13 @@ steps:
         set -e
         az account show
         azToken=$(az account get-access-token --resource "https://api.kusto.windows.net" | jq -r '.accessToken')
-        echo "##vso[task.setvariable variable=AZ_TOKEN]$azToken"
+        # issecret=true: without it, ADO neither masks this value in logs
+        # (including "Enable system diagnostics" reruns, which print all
+        # non-secret pipeline variables) nor avoids auto-exporting it as a
+        # plain AZ_TOKEN env var into every later step's process --
+        # including the separately checked-out platform-telemetry repo's
+        # upload_metrics.sh.
+        echo "##vso[task.setvariable variable=AZ_TOKEN;issecret=true]$azToken"
     condition: eq(variables['UploadMetrics'], 'True')
     retryCountOnTaskFailure: 3
 
@@ -116,3 +122,8 @@ steps:
         "$(Pipeline.Workspace)/s/platform-telemetry"
     displayName: "📈 Upload metrics to Kusto"
     condition: eq(variables['UploadMetrics'], 'True')
+    env:
+      # Marking AZ_TOKEN as secret (issecret=true, above) stops ADO from
+      # auto-exporting it as an environment variable to this step, so it
+      # must be mapped explicitly for kusto_ingestor.py to pick it up.
+      AZ_TOKEN: $(AZ_TOKEN)
