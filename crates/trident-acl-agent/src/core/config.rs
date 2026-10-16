@@ -537,7 +537,7 @@ mod tests {
             "heartbeat_interval",
             "node_gone_max_wait",
         ] {
-            assert!(summary.contains(expected), "missing {expected}: {summary}");
+            assert!(summary.contains(expected), "missing {expected}");
         }
     }
 
@@ -565,7 +565,7 @@ mod tests {
             "node-42",
             "stage_timeout: 1260s",
         ] {
-            assert!(summary.contains(expected), "missing {expected}: {summary}");
+            assert!(summary.contains(expected), "missing {expected}");
         }
         for secret in [
             "nebraska-user",
@@ -578,9 +578,15 @@ mod tests {
             "socket-user",
             "socket-password",
         ] {
-            assert!(!summary.contains(secret), "exposed {secret}: {summary}");
+            assert!(
+                !summary.contains(secret),
+                "startup summary contains a sensitive URL component"
+            );
         }
-        assert_eq!(config, original);
+        assert!(
+            config == original,
+            "formatting the startup summary changed the configuration"
+        );
     }
 
     #[test]
