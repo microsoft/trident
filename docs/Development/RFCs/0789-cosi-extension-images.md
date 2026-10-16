@@ -25,8 +25,6 @@ available for content released independently.
   `extensions.confexts` arrays, each entry `{ id, image, path? }`.
 - Clean Install and A/B Update deploy the effective set from COSI and Host
   Configuration; collisions fail.
-- An extension-only change can use Runtime Update without rewriting partitions
-  or rebooting.
 
 ### Out of Scope
 
@@ -34,26 +32,21 @@ available for content released independently.
 - The Image Customizer API and implementation for producing these COSIs;
   separate work.
 - Partition-less COSI files.
+- Extension-only Runtime Updates. Any change to a COSI, including only its
+  extensions, requires an A/B update.
 - Bundled extensions under [disk streaming](../../Explanation/Disk-Streaming.md);
   refuse them until streaming can enable the merge units.
 
 ### Exit Criteria
 
 Publish the 1.3 schema and samples. Deploy sysexts and confexts on Clean Install
-and A/B Update with slot-correct rollback; apply a verified extension-only
-change by Runtime Update. Reject collisions and unsupported disk streaming.
+and A/B Update with slot-correct rollback. Reject collisions and unsupported
+disk streaming.
 
 ## Dependencies
 
 A separately defined [Image Customizer](https://github.com/microsoft/azure-linux-image-tools)
-API must produce COSIs with embedded extensions. Extension-only updates also
-need a COSI-to-COSI writer that copies region images verbatim and an explicit
-Runtime Update request (including its precedence over `forceAbUpdate`).
-
-Fix the existing `set_up_extensions` replacement bug first: with the same ID
-and destination but different content, it installs the new file then deletes
-that path as the old file. Runtime stage/finalize also needs durable payloads;
-finalize and rollback construct their context with `image: None`.
+API must produce COSIs with embedded extensions.
 
 ## Implementation
 
@@ -174,9 +167,9 @@ each entry's source. Match old and new entries by `(kind, id)`; replace when
 content changes, and reconcile changes to placement or filename. The extensions
 subsystem reads bundled members instead of downloading them;
 `update_host_configuration` writes resolved paths back only for Host
-Configuration entries. `osconfig` enables the sysext/confext merge
-units for the effective set. Move the SELinux check into validation that also
-runs for Runtime Updates; its current `configure` hook does not.
+Configuration entries. `osconfig` enables the sysext/confext merge units for
+the effective set. Validate SELinux compatibility against that set before
+provisioning; the current check reads only Host Configuration entries.
 
 [Disk streaming](../../Explanation/Disk-Streaming.md) must reject bundled
 extensions: `osconfig` skips stream-image configuration, leaving the merge
@@ -187,14 +180,9 @@ units disabled.
 Host Configuration does not record bundled extensions. Persist an inventory
 (kind, ID, name, resolved placement, source and source hash) in Host Status so
 Trident can compare old/new sets and resume separate stage/finalize calls.
-Retain deployed and pending inventories and image summaries alongside
-`spec_old` and `spec`. Promote after successful Runtime Update, or after
-post-boot commit for A/B; discard pending data on rollback. Extend
-`ManualRollbackChainItem` to carry historical inventory and summary.
-
-Manual runtime rollback also needs the old DDI bytes. Either retain them while
-the rollback chain references them or refuse rollback across a bundled
-extension change; metadata alone cannot restore them.
+Retain deployed and pending inventories alongside `spec_old` and `spec`.
+Promote after post-boot commit and discard pending data on rollback. Extend
+`ManualRollbackChainItem` to carry the historical inventory for A/B rollback.
 
 #### Destination Validation
 
@@ -209,8 +197,7 @@ its loader capability; `path` omission alone must not bypass the A/B check.
 #### Where Images Are Written
 
 Clean Install and A/B Update place files in the target root (the inactive slot
-for A/B). Runtime Update places them in the running root without provisioning
-partitions. Stage temporary files on the destination filesystem for atomic
+for A/B). Stage temporary files on the destination filesystem for atomic
 placement; the current fixed `/var/lib/extensions/.staging` falls back to a
 non-atomic cross-filesystem copy.
 
@@ -219,47 +206,6 @@ non-atomic cross-filesystem copy.
 An A/B rollback restores the previous extension set only when placement is
 slot-scoped. Writing a bundled image to a shared volume would change the running
 slot and defeat rollback; see [Destination Validation](#destination-validation).
-
-#### Extension-Only Updates
-
-Today any change to the COSI metadata hash forces A/B servicing, including an
-extension-only change. A partition-less COSI is not an option: `os.image`
-describes a complete OS. Compare the new COSI against a stored summary of the
-deployed OS instead.
-
-##### Deployed Image Summary
-
-Store each region's hash, uncompressed size and identity (partition number,
-mount point, `fsType`, `fsUuid`, `partType`, verity root hash), plus disk geometry,
-`osArch`, `osRelease` and `bootloader`. Exclude extensions, packages, compression
-settings and `id`: none changes the deployed OS. A structured summary identifies
-which region differs. If missing or of an unknown summary version, fall back to
-the existing metadata-hash comparison.
-
-Equal summaries and equal extension sets require no servicing; equal summaries
-with changed extensions permit Runtime Update; a changed summary requires A/B.
-Other subsystems can still require A/B. A no-op needs a metadata-only Host Status
-update, since `update` currently returns without recording the accepted image.
-
-##### Constructing an Extension-Only Update
-
-Copy an existing COSI's region images and metadata entries verbatim; replace
-only the extension members and metadata (and `compression.maxWindowLog` or `id`
-if needed). Rebuilding filesystems changes bytes and hashes, even for the same
-files, and safely selects A/B instead of skipping an OS change.
-
-##### Requested and Verified, Never Inferred
-
-Runtime Update requires an explicit request, matching OS summaries, a
-committed/active source slot, and no A/B requirement from any other subsystem.
-If any condition fails, report an error; do not partially apply changes or
-silently switch to A/B.
-
-##### Rollback on This Path
-
-Runtime Update changes the running slot. Retain the old DDI until finalize and
-auto-rollback complete; both can run with `image: None`. Historical manual
-rollback needs longer retention or must be refused.
 
 #### Interaction With Host Configuration `sysexts` and `confexts`
 
@@ -291,9 +237,8 @@ Do not warn on `ID=_any`; it declares compatibility, not delivery method.
 
 ### SELinux
 
-Still unsupported in enforcing mode on systemd 255. Check the effective set in
-validation for every servicing type, not only the Host Configuration lists in
-`configure`, which skips Runtime Updates.
+Still unsupported in enforcing mode on systemd 255. Check the effective set,
+not only the Host Configuration lists, before Clean Install or A/B provisioning.
 
 ## Testing and Metrics
 
@@ -301,28 +246,24 @@ validation for every servicing type, not only the Host Configuration lists in
   semantic path and duplicate-ID rules in Rust tests.
 - Clean Install and A/B Update with both kinds, merge-unit activation and
   rollback (including absent `path` and slotted placement once supported).
-- Runtime Update with identical region images, distinct stage/finalize and
-  auto-rollback; same-ID/same-path replacement and historical rollback refusal.
+- A COSI differing only in bundled extensions still selects A/B and restores
+  the previous extension set on rollback.
 - Reject mixed-source collisions, invalid destinations, enforcing SELinux,
-  mismatched metadata/DDI IDs, changed OS summaries under requested Runtime
-  Update, and disk streaming.
+  mismatched metadata/DDI IDs, and disk streaming.
 
 ## Implementation Plan
 
-1. Fix [prerequisites](#dependencies); publish COSI 1.3 schema and samples.
+1. Publish COSI 1.3 schema and samples.
 2. Read, validate and install bundled extensions; persist the effective set.
-3. Add the image summary and verified Runtime Update path after the separate
-   copy-based writer is available.
-
-Step 2 can ship before step 3, but the RFC is not complete without both.
 
 ## Counter-Arguments
 
 ### Drawbacks
 
-Bundling still ties distribution to a new COSI, increases its size and gives
-hosts no per-extension opt-out. Use Host Configuration for extensions that must
-move independently. Older readers silently omit bundled extensions.
+Bundling still ties distribution to a new COSI; even extension-only changes
+require an A/B update and reboot. It increases image size and gives hosts no
+per-extension opt-out. Use Host Configuration for extensions that must move
+independently. Older readers silently omit bundled extensions.
 
 ### Alternatives
 
@@ -342,9 +283,11 @@ OCI transport. Bundling optimises for extensions that must move with it.
 - **Slotted placement:** how does a COSI entry request the policy in
   [RFC 0838](https://github.com/microsoft/trident/pull/838)? Omitting `path`
   cannot silently change an existing image's placement or imply loader support.
-- **Runtime request:** where is the explicit request recorded across
-  stage/finalize, and how does it interact with `forceAbUpdate`?
-- **Manual runtime rollback:** keep historical DDIs as long as the rollback
-  chain needs them, or refuse rollback across bundled extension changes?
 - **Operator override:** retain the hard error on bundled/Host Configuration
   collisions, or permit an explicit override when a hotfix is needed?
+
+## Future Work
+
+Avoiding an A/B update when only bundled extensions change would require
+distinguishing OS content from extension content and preserving the previous
+DDIs for runtime rollback. This RFC does neither.
