@@ -1,6 +1,6 @@
 //! The high-level [`Client`] for talking to a Nebraska server.
 
-use std::{collections::BTreeMap, thread, time::Duration};
+use std::{cell::RefCell, collections::BTreeMap, thread, time::Duration};
 
 use log::{debug, trace, warn};
 use semver::Version;
@@ -309,6 +309,17 @@ pub struct Client<T: Transport = ReqwestTransport> {
     track: String,
     machine_id: MachineId,
     client_version: Option<String>,
+    /// Nebraska's load-balancer affinity cookie (e.g. an App-Service-style
+    /// `ASLBSA` cookie), carried on every request once known and updated
+    /// from every response that sets one. `RefCell` because every method
+    /// here takes `&self` (see the type docs), but a single `Client` still
+    /// needs to pick up a cookie mid-sequence (e.g. during
+    /// [`check_for_update`](Client::check_for_update)) and carry it into its
+    /// own later calls. Seeding it across *separate* `Client`s - including
+    /// across a reboot - is the caller's job: see [`with_cookie`](Client::with_cookie)
+    /// and [`cookie`](Client::cookie).
+    cookie: RefCell<Option<String>>,
+    cookie_enabled: bool,
     transport: T,
 }
 
@@ -342,8 +353,41 @@ impl<T: Transport> Client<T> {
             track: track.into(),
             machine_id,
             client_version: None,
+            cookie: RefCell::new(None),
+            cookie_enabled: true,
             transport,
         }
+    }
+
+    /// Enables or disables affinity cookies, including response adoption
+    /// and retries. Disabling also discards any previously seeded cookie.
+    pub fn with_cookie_enabled(mut self, enabled: bool) -> Self {
+        self.cookie_enabled = enabled;
+        if !enabled {
+            *self.cookie.borrow_mut() = None;
+        }
+        self
+    }
+
+    /// Seeds this client with a previously-persisted Nebraska affinity
+    /// cookie (see the [`cookie`](Client::cookie) getter), so it is sent on
+    /// this client's very first request rather than only picked up from a
+    /// response. Ignored when cookies are disabled.
+    pub fn with_cookie(self, cookie: impl Into<String>) -> Self {
+        if self.cookie_enabled {
+            *self.cookie.borrow_mut() = Some(cookie.into());
+        }
+        self
+    }
+
+    /// The most recent Nebraska affinity cookie this client has seen, if
+    /// any - either seeded via [`with_cookie`](Client::with_cookie) or
+    /// picked up from a response. Callers that need the cookie to outlive
+    /// this `Client` (across a reboot, or just a later process invocation)
+    /// must read this after use and persist it themselves; nothing here
+    /// does that automatically.
+    pub fn cookie(&self) -> Option<String> {
+        self.cookie.borrow().clone()
     }
 
     /// Names the **updater** — the program driving the update — in
@@ -599,7 +643,21 @@ impl<T: Transport> Client<T> {
             redacted(&self.endpoint),
             String::from_utf8_lossy(&body)
         );
-        let text = self.transport.post_xml(&self.endpoint, &body)?;
+        // Deliberately never logged: this is a session-affinity credential,
+        // not protocol content.
+        let cookie = if self.cookie_enabled {
+            self.cookie.borrow().clone()
+        } else {
+            None
+        };
+        let (text, set_cookie) =
+            self.transport
+                .post_xml(&self.endpoint, &body, cookie.as_deref())?;
+        if self.cookie_enabled {
+            if let Some(set_cookie) = set_cookie {
+                *self.cookie.borrow_mut() = Some(set_cookie);
+            }
+        }
         trace!("Nebraska response: {} bytes", text.len());
         let response = wire::parse_response(&text).map_err(NebraskaError::Parse)?;
         trace!("Nebraska response: {}", summarize(&response));
@@ -820,11 +878,14 @@ mod tests {
     /// Stands in for the updater version a real caller would supply.
     const TEST_CLIENT_VERSION: &str = "test-updater-1.2.3";
 
-    /// A canned transport: records the last request body and returns a fixed
-    /// response, so client logic is exercised without a network.
+    /// A canned transport: records the last request body/cookie and returns
+    /// a fixed response (optionally with a canned `Set-Cookie`), so client
+    /// logic is exercised without a network.
     struct MockTransport {
         response: String,
         last_body: RefCell<Option<String>>,
+        last_cookie_sent: RefCell<Option<String>>,
+        set_cookie: RefCell<Option<String>>,
     }
 
     impl MockTransport {
@@ -832,14 +893,29 @@ mod tests {
             Self {
                 response: response.into(),
                 last_body: RefCell::new(None),
+                last_cookie_sent: RefCell::new(None),
+                set_cookie: RefCell::new(None),
             }
+        }
+
+        /// Makes every subsequent `post_xml` call return `cookie` as the
+        /// captured `Set-Cookie` value, as if the server had just issued one.
+        fn with_set_cookie(self, cookie: impl Into<String>) -> Self {
+            *self.set_cookie.borrow_mut() = Some(cookie.into());
+            self
         }
     }
 
     impl Transport for MockTransport {
-        fn post_xml(&self, _endpoint: &Url, body: &[u8]) -> Result<String, NebraskaError> {
+        fn post_xml(
+            &self,
+            _endpoint: &Url,
+            body: &[u8],
+            cookie: Option<&str>,
+        ) -> Result<(String, Option<String>), NebraskaError> {
             *self.last_body.borrow_mut() = Some(String::from_utf8_lossy(body).into_owned());
-            Ok(self.response.clone())
+            *self.last_cookie_sent.borrow_mut() = cookie.map(str::to_string);
+            Ok((self.response.clone(), self.set_cookie.borrow().clone()))
         }
     }
 
@@ -859,13 +935,23 @@ mod tests {
     struct ScriptedTransport {
         responses: Vec<String>,
         calls: Cell<u32>,
+        set_cookie: Option<String>,
+        cookies_sent: RefCell<Vec<Option<String>>>,
     }
 
     impl Transport for ScriptedTransport {
-        fn post_xml(&self, _endpoint: &Url, _body: &[u8]) -> Result<String, NebraskaError> {
+        fn post_xml(
+            &self,
+            _endpoint: &Url,
+            _body: &[u8],
+            cookie: Option<&str>,
+        ) -> Result<(String, Option<String>), NebraskaError> {
             let index = (self.calls.get() as usize).min(self.responses.len() - 1);
             self.calls.set(self.calls.get() + 1);
-            Ok(self.responses[index].clone())
+            self.cookies_sent
+                .borrow_mut()
+                .push(cookie.map(str::to_string));
+            Ok((self.responses[index].clone(), self.set_cookie.clone()))
         }
     }
 
@@ -878,6 +964,8 @@ mod tests {
             ScriptedTransport {
                 responses: responses.into_iter().map(String::from).collect(),
                 calls: Cell::new(0),
+                set_cookie: None,
+                cookies_sent: RefCell::new(Vec::new()),
             },
         )
     }
@@ -1332,6 +1420,50 @@ mod tests {
     }
 
     #[test]
+    fn completion_retries_honor_cookie_enabled() {
+        for enabled in [true, false] {
+            let mut client = client_with_responses(vec![IN_PROGRESS, NO_UPDATE])
+                .with_cookie("ASLBSA=seeded")
+                .with_cookie_enabled(enabled);
+            client.transport.set_cookie = Some("ASLBSA=fresh".to_string());
+
+            let outcome = client
+                .complete_after_reboot_with_policy(
+                    fast_policy(),
+                    &Version::new(1, 0, 0),
+                    &Version::new(2, 0, 0),
+                )
+                .unwrap();
+
+            assert_eq!(outcome, CheckOutcome::UpToDate);
+            assert_eq!(client.transport.calls.get(), 2);
+            let expected = if enabled {
+                vec![
+                    Some("ASLBSA=seeded".to_string()),
+                    Some("ASLBSA=fresh".to_string()),
+                ]
+            } else {
+                vec![None, None]
+            };
+            assert_eq!(*client.transport.cookies_sent.borrow(), expected);
+            assert_eq!(
+                client.cookie().as_deref(),
+                enabled.then_some("ASLBSA=fresh")
+            );
+        }
+    }
+
+    #[test]
+    fn disabled_cookies_cannot_be_seeded() {
+        let client = client_with(NO_UPDATE)
+            .with_cookie_enabled(false)
+            .with_cookie("ASLBSA=seeded");
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(client.cookie(), None);
+    }
+
+    #[test]
     fn complete_after_reboot_fails_when_completion_never_lands() {
         let client = client_with_responses(vec![IN_PROGRESS]);
         let err = client
@@ -1490,6 +1622,53 @@ mod tests {
     }
 
     #[test]
+    fn no_cookie_is_sent_until_one_is_known() {
+        let client = client_with(NO_UPDATE);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(client.cookie(), None);
+    }
+
+    #[test]
+    fn with_cookie_seeds_the_first_request() {
+        let client = client_with(NO_UPDATE).with_cookie("ASLBSA=seeded");
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=seeded")
+        );
+    }
+
+    #[test]
+    fn cookie_from_a_response_is_echoed_on_the_next_request() {
+        // Two sequential calls on the *same* Client, mirroring what happens
+        // mid-operation (e.g. check_for_update picking up a cookie that a
+        // later report_progress on the same Client must then carry).
+        let client = Client::with_transport(
+            Url::parse("https://nebraska.example/v1/update/").unwrap(),
+            "app-1",
+            "stable",
+            MachineId::new("mid-1").unwrap(),
+            MockTransport::new(NO_UPDATE).with_set_cookie("ASLBSA=fresh"),
+        );
+
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().clone(),
+            None,
+            "first request has no cookie to send yet"
+        );
+        assert_eq!(client.cookie().as_deref(), Some("ASLBSA=fresh"));
+
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=fresh"),
+            "second request must echo back the cookie the first response set"
+        );
+    }
+
+    #[test]
     fn redacted_endpoint_drops_path_and_query() {
         let url = Url::parse("https://nebraska.example:8443/v1/update/?secret=hunter2").unwrap();
         let logged = redacted(&url);
@@ -1585,7 +1764,12 @@ mod tests {
             calls: Cell<u32>,
         }
         impl Transport for AlwaysFails {
-            fn post_xml(&self, _endpoint: &Url, _body: &[u8]) -> Result<String, NebraskaError> {
+            fn post_xml(
+                &self,
+                _endpoint: &Url,
+                _body: &[u8],
+                _cookie: Option<&str>,
+            ) -> Result<(String, Option<String>), NebraskaError> {
                 self.calls.set(self.calls.get() + 1);
                 Err(NebraskaError::Transport("down".into()))
             }

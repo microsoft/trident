@@ -101,6 +101,41 @@ func postEvent(t *testing.T, client *http.Client, addr, appID, machineID string,
 	return string(body)
 }
 
+// postUpdateCheckWithCookie is like postUpdateCheck but lets the caller set
+// an explicit Cookie header (empty means none), and returns the response
+// headers rather than the body - for asserting Set-Cookie/affinity-cookie
+// behavior without needing a cookie-jar-enabled client (trident-acl-agent's
+// own Client decides per request, not via a jar, whether it has a cookie to
+// send yet - see crates/trident-acl-agent/src/core/nebraska/client.rs).
+func postUpdateCheckWithCookie(t *testing.T, client *http.Client, addr, appID, machineID, cookie string) http.Header {
+	t.Helper()
+	body := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<request protocol="3.0">
+  <app appid="%s" version="1.0.0" track="west-us" machineid="%s">
+    <updatecheck/>
+  </app>
+</request>`, appID, machineID)
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("https://%s/", addr), strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("building request: %v", err)
+	}
+	req.Header.Set("Content-Type", "text/xml")
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST updatecheck: %v", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", resp.StatusCode, respBody)
+	}
+	return resp.Header
+}
+
 // TestNebraskaProxy exercises NebraskaProxy against the real
 // github.com/flatcar/nebraska/backend Omaha handler and an ephemeral
 // Postgres container (started/torn down per subtest), rather than a
@@ -197,6 +232,59 @@ func TestNebraskaProxy(t *testing.T) {
 		// accepted - otherwise ValidateStatusHistory would be a no-op check.
 		if err := p.ValidateStatusHistory([]int{api.InstanceStatusUpdateGranted}); err == nil {
 			t.Fatal("expected ValidateStatusHistory to reject a truncated status sequence")
+		}
+	})
+
+	// This simulated affinity cookie exists purely for storm's own
+	// assertions (see RunABUpdate in tools/storm/aclagent/tests/update.go) -
+	// real Nebraska's own Omaha handler, exercised by every other subtest
+	// above, never sets one itself.
+	t.Run("affinity-cookie-issued-and-echoed", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+
+		p, client := newTestNebraskaProxy(t, &NebraskaScenario{Available: false})
+		listener, stop, err := p.ListenAndServe(ctx, "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("ListenAndServe: %v", err)
+		}
+		t.Cleanup(func() { _ = stop() })
+		addr := listener.Addr().String()
+
+		// First contact: no Cookie header sent, so the proxy must issue one.
+		firstHeaders := postUpdateCheckWithCookie(t, client, addr, p.AppID(), "cookie-test-machine", "")
+		issued := firstHeaders.Get("Set-Cookie")
+		if issued == "" {
+			t.Fatal("expected the first cookie-less request to receive a Set-Cookie")
+		}
+		nameValue := strings.SplitN(issued, ";", 2)[0]
+		if nameValue != p.AffinityCookie() {
+			t.Fatalf("Set-Cookie name=value %q does not match AffinityCookie() %q", nameValue, p.AffinityCookie())
+		}
+
+		// Echoing the issued cookie back must not trigger a second Set-Cookie
+		// (real Nebraska's affinity cookie is only (re)issued when the
+		// request doesn't already carry one).
+		secondHeaders := postUpdateCheckWithCookie(t, client, addr, p.AppID(), "cookie-test-machine", nameValue)
+		if got := secondHeaders.Get("Set-Cookie"); got != "" {
+			t.Fatalf("expected no Set-Cookie once the cookie is echoed back, got %q", got)
+		}
+
+		if got := p.RequestsMissingCookie(); got != 1 {
+			t.Fatalf("RequestsMissingCookie() = %d, want 1", got)
+		}
+		if got := p.RequestsWithCorrectCookie(); got != 1 {
+			t.Fatalf("RequestsWithCorrectCookie() = %d, want 1", got)
+		}
+		if got := p.RequestsWithWrongCookie(); got != 0 {
+			t.Fatalf("RequestsWithWrongCookie() = %d, want 0 before any stale cookie is sent", got)
+		}
+
+		// A stale/wrong cookie must be classified as such, not silently
+		// treated as correct.
+		postUpdateCheckWithCookie(t, client, addr, p.AppID(), "cookie-test-machine", "ASLBSA=not-the-real-one")
+		if got := p.RequestsWithWrongCookie(); got != 1 {
+			t.Fatalf("RequestsWithWrongCookie() = %d, want 1 after sending a stale cookie", got)
 		}
 	})
 }
