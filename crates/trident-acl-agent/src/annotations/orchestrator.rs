@@ -681,10 +681,12 @@ impl Orchestrator {
         // continuation and always passes `force_fresh: false`.
         let force_fresh = self.config.orchestration.cookie_lifetime == CookieLifetime::PerUpdate;
         let initial_cookie = self.load_nebraska_cookie(force_fresh);
+        let cookie_enabled = self.config.orchestration.cookie_enabled;
         let (check_result, cookie) = task::spawn_blocking({
             let current_version = current_version.clone();
             move || {
-                let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+                let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id)
+                    .with_cookie_enabled(cookie_enabled);
                 if let Some(cookie) = initial_cookie {
                     client = client.with_cookie(cookie);
                 }
@@ -1543,16 +1545,22 @@ impl Orchestrator {
     /// `cookie_enabled`/`force_fresh`, and warning (not failing) if the
     /// store can't be read. The whole mechanism is a best-effort
     /// session-affinity hint, never a requirement for talking to Nebraska -
-    /// a load failure (or a disabled/force-fresh skip) just means this
+    /// a load failure (or a disabled/fresh session) just means this
     /// round-trip proceeds cookie-less, the same as this host's very
     /// first-ever contact with Nebraska.
     ///
     /// `force_fresh` is set by callers that are the first Nebraska call of
     /// a brand new update (see `CookieLifetime::PerUpdate`'s docs) - when
-    /// true, this returns `None` without even touching disk, deliberately
-    /// not inheriting whatever a prior update left behind.
+    /// enabled, it invalidates the persisted cookie too, so later reports
+    /// cannot reload a prior update's cookie if Nebraska issues no new one.
     fn load_nebraska_cookie(&self, force_fresh: bool) -> Option<String> {
-        if !self.config.orchestration.cookie_enabled || force_fresh {
+        if !self.config.orchestration.cookie_enabled {
+            return None;
+        }
+        if force_fresh {
+            if let Err(err) = self.nebraska_cookie.save("") {
+                warn!("failed to clear Nebraska cookie for new update: {err}");
+            }
             return None;
         }
         match self.nebraska_cookie.load() {
@@ -1644,8 +1652,10 @@ impl Orchestrator {
         // `cookie_lifetime`. See `handle_stage`'s own call for the one place
         // that does force a fresh cookie.
         let initial_cookie = self.load_nebraska_cookie(false);
+        let cookie_enabled = self.config.orchestration.cookie_enabled;
         let result = task::spawn_blocking(move || {
-            let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+            let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id)
+                .with_cookie_enabled(cookie_enabled);
             if let Some(cookie) = initial_cookie {
                 client = client.with_cookie(cookie);
             }
@@ -2288,6 +2298,172 @@ mod tests {
         annotations::{RequestedOperation, SCHEMA_VERSION},
         core::trident::mock::{connect_mock_client, MockTridentdConfig, Outcome},
     };
+
+    async fn cookie_orchestrator(
+        dir: &std::path::Path,
+        enabled: bool,
+        lifetime: CookieLifetime,
+    ) -> Orchestrator {
+        use crate::core::config::{KubernetesConfig, OrchestrationConfig};
+
+        let kubeconfig = dir.join("kubeconfig");
+        std::fs::write(
+            &kubeconfig,
+            "apiVersion: v1\nkind: Config\ncurrent-context: test\ncontexts:\n- name: test\n  context:\n    cluster: test\n    user: test\nclusters:\n- name: test\n  cluster:\n    server: http://127.0.0.1:1\nusers:\n- name: test\n  user: {}\n",
+        )
+        .unwrap();
+        Orchestrator::from_config(AgentConfig {
+            kubernetes: KubernetesConfig {
+                kubeconfig,
+                ..Default::default()
+            },
+            orchestration: OrchestrationConfig {
+                state_path: dir.join("state.json"),
+                cookie_path: dir.join("nebraska-cookie"),
+                cookie_enabled: enabled,
+                cookie_lifetime: lifetime,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn per_update_cookie_is_not_reloaded_when_initial_check_sets_none() {
+        use mockito::Matcher;
+
+        let mut server = mockito::Server::new_async().await;
+        for (enabled, lifetime) in [
+            (true, CookieLifetime::PerUpdate),
+            (true, CookieLifetime::Forever),
+            (false, CookieLifetime::PerUpdate),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let orchestrator = cookie_orchestrator(dir.path(), enabled, lifetime).await;
+            orchestrator
+                .nebraska_cookie
+                .save("ASLBSA=previous")
+                .unwrap();
+            let expected_cookie = if enabled && lifetime == CookieLifetime::Forever {
+                Matcher::Exact("ASLBSA=previous".to_string())
+            } else {
+                Matcher::Missing
+            };
+            let response = r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/><updatecheck status="noupdate"/></app></response>"#;
+            let check = server
+                .mock("POST", "/v1/update/")
+                .match_header("cookie", expected_cookie.clone())
+                .match_body(Matcher::Regex("<updatecheck".to_string()))
+                .with_status(200)
+                .with_body(response)
+                .expect(1)
+                .create_async()
+                .await;
+            let initial_cookie =
+                orchestrator.load_nebraska_cookie(lifetime == CookieLifetime::PerUpdate);
+            let endpoint = Url::parse(&format!("{}/v1/update/", server.url())).unwrap();
+            let check_endpoint = endpoint.clone();
+            let cookie = task::spawn_blocking(move || {
+                let mut client = NebraskaClient::new(
+                    check_endpoint,
+                    "app-1",
+                    "stable",
+                    crate::core::nebraska::MachineId::new("mid-1").unwrap(),
+                )
+                .with_cookie_enabled(enabled);
+                if let Some(cookie) = initial_cookie {
+                    client = client.with_cookie(cookie);
+                }
+                client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+                client.cookie()
+            })
+            .await
+            .unwrap();
+            orchestrator.save_nebraska_cookie(cookie);
+            check.assert_async().await;
+
+            let progress = server
+                .mock("POST", "/v1/update/")
+                .match_header("cookie", expected_cookie)
+                .match_body(Matcher::Regex("<event ".to_string()))
+                .with_status(200)
+                .with_body(response)
+                .expect(1)
+                .create_async()
+                .await;
+            let mut request = request(RequestedOperation::Stage);
+            request.server = Some(endpoint);
+            request.app_id = Some("app-1".to_string());
+            request.track = Some("stable".to_string());
+            orchestrator
+                .report_nebraska_event(
+                    &request,
+                    NebraskaReport::Progress {
+                        version: Version::new(1, 0, 0),
+                        event: ProgressEvent::DownloadStarted,
+                    },
+                )
+                .await;
+            progress.assert_async().await;
+            assert_eq!(
+                orchestrator.nebraska_cookie.load().unwrap().as_deref(),
+                if enabled && lifetime == CookieLifetime::PerUpdate {
+                    None
+                } else {
+                    Some("ASLBSA=previous")
+                },
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn disabled_cookie_is_not_adopted_by_completion_report_retries() {
+        let dir = tempfile::tempdir().unwrap();
+        let orchestrator = cookie_orchestrator(dir.path(), false, CookieLifetime::PerUpdate).await;
+        orchestrator
+            .nebraska_cookie
+            .save("ASLBSA=previous")
+            .unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let first = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=fresh; Path=/")
+            .with_body(r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"><event status="ok"/><updatecheck status="error-internal"/></app></response>"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let retry = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_body(r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/><updatecheck status="noupdate"/></app></response>"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let mut request = request(RequestedOperation::Finalize);
+        request.server = Some(Url::parse(&format!("{}/v1/update/", server.url())).unwrap());
+        request.app_id = Some("app-1".to_string());
+        request.track = Some("stable".to_string());
+        orchestrator
+            .report_nebraska_event(
+                &request,
+                NebraskaReport::Completed {
+                    previous: Version::new(1, 0, 0),
+                    current: Version::new(2, 0, 0),
+                },
+            )
+            .await;
+        first.assert_async().await;
+        retry.assert_async().await;
+        assert_eq!(
+            orchestrator.nebraska_cookie.load().unwrap().as_deref(),
+            Some("ASLBSA=previous"),
+        );
+    }
 
     fn request(operation: RequestedOperation) -> UpdateRequest {
         UpdateRequest {

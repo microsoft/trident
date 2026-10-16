@@ -103,7 +103,8 @@ pub fn check_nebraska_reachable(
     cookie_enabled: bool,
 ) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
-    let mut client = Client::new(url.clone(), app_id, track, machine_id);
+    let mut client =
+        Client::new(url.clone(), app_id, track, machine_id).with_cookie_enabled(cookie_enabled);
     let initial_cookie = cookie_enabled
         .then(|| match cookie_store.load() {
             Ok(cookie) => cookie,
