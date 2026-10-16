@@ -87,22 +87,32 @@ fn build_machine_id(source: IdSource) -> Result<MachineId, AgentError> {
 /// defeating the whole mechanism's point for one more request each time
 /// it's run. Best-effort, like every other cookie_store use: a load/save
 /// failure only logs a warning and the probe proceeds/returns normally.
+///
+/// `cookie_enabled` is the same blanket kill switch
+/// (`OrchestrationConfig::cookie_enabled`) the orchestrator honors: when
+/// `false`, this probe never touches `cookie_store` at all, in either
+/// direction. There's no `CookieLifetime` concept here -- a diagnostic
+/// probe isn't part of any update, so "first call of a new update" never
+/// applies to it.
 pub fn check_nebraska_reachable(
     url: &Url,
     app_id: &str,
     track: &str,
     machine_id_source: IdSource,
     cookie_store: &CookieStore,
+    cookie_enabled: bool,
 ) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
     let mut client = Client::new(url.clone(), app_id, track, machine_id);
-    let initial_cookie = match cookie_store.load() {
-        Ok(cookie) => cookie,
-        Err(err) => {
-            warn!("failed to load Nebraska cookie, proceeding without one: {err}");
-            None
-        }
-    };
+    let initial_cookie = cookie_enabled
+        .then(|| match cookie_store.load() {
+            Ok(cookie) => cookie,
+            Err(err) => {
+                warn!("failed to load Nebraska cookie, proceeding without one: {err}");
+                None
+            }
+        })
+        .flatten();
     if let Some(cookie) = initial_cookie {
         client = client.with_cookie(cookie);
     }
@@ -112,9 +122,11 @@ pub fn check_nebraska_reachable(
             .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver"),
     );
 
-    if let Some(cookie) = client.cookie() {
-        if let Err(err) = cookie_store.save(&cookie) {
-            warn!("failed to persist Nebraska cookie: {err}");
+    if cookie_enabled {
+        if let Some(cookie) = client.cookie() {
+            if let Err(err) = cookie_store.save(&cookie) {
+                warn!("failed to persist Nebraska cookie: {err}");
+            }
         }
     }
 
@@ -185,6 +197,7 @@ mod tests {
             "track",
             IdSource::MachineIdHashed,
             &cookie_store,
+            true,
         )
         .unwrap();
 
@@ -217,6 +230,7 @@ mod tests {
             "track",
             IdSource::MachineIdHashed,
             &cookie_store,
+            true,
         )
         .unwrap();
 
@@ -233,6 +247,7 @@ mod tests {
             "track",
             IdSource::MachineIdHashed,
             &cookie_store,
+            true,
         )
         .unwrap_err();
         assert!(matches!(err, AgentError::Nebraska(_)));
@@ -267,6 +282,7 @@ mod tests {
             "track",
             IdSource::MachineIdHashed,
             &cookie_store,
+            true,
         )
         .unwrap();
         first_mock.assert();
@@ -295,8 +311,51 @@ mod tests {
             "track",
             IdSource::MachineIdHashed,
             &cookie_store,
+            true,
         )
         .unwrap();
         second_mock.assert();
+    }
+
+    #[test]
+    fn test_check_nebraska_reachable_cookie_enabled_false_never_touches_store() {
+        // The blanket kill switch: with cookie_enabled=false, no Cookie
+        // header is ever sent and no Set-Cookie is ever adopted/persisted,
+        // even when the response sets one and even when a cookie is already
+        // on disk from before the toggle was flipped.
+        let mut server = Server::new();
+        let (_dir, cookie_store) = temp_cookie_store();
+        cookie_store.save("ASLBSA=preexisting").unwrap();
+
+        let mock = server
+            .mock("POST", "/")
+            .match_header("cookie", Matcher::Missing)
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=fresh; Path=/")
+            .with_body(indoc! {r#"
+                <?xml version="1.0" encoding="UTF-8"?>
+                <response protocol="3.0" server="mock">
+                    <daystart elapsed_seconds="0"/>
+                    <app appid="test" status="ok"/>
+                </response>"#})
+            .expect(1)
+            .create();
+
+        check_nebraska_reachable(
+            &Url::parse(&server.url()).unwrap(),
+            "test",
+            "track",
+            IdSource::MachineIdHashed,
+            &cookie_store,
+            false,
+        )
+        .unwrap();
+
+        mock.assert();
+        assert_eq!(
+            cookie_store.load().unwrap().as_deref(),
+            Some("ASLBSA=preexisting"),
+            "a disabled probe must not overwrite a pre-existing cookie with a fresh one"
+        );
     }
 }

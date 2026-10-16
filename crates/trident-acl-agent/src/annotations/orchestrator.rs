@@ -33,7 +33,7 @@ use crate::{
         SCHEMA_VERSION,
     },
     core::{
-        config::AgentConfig,
+        config::{AgentConfig, CookieLifetime},
         cosi_sha384,
         nebraska::{CheckOutcome, Client as NebraskaClient, CookieStore, ProgressEvent},
         trident::{CompletedResponse, TridentClient, TridentClientError},
@@ -673,7 +673,14 @@ impl Orchestrator {
                 Version::parse(FALLBACK_ALWAYS_VERSION)
                     .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver")
             });
-        let initial_cookie = self.load_nebraska_cookie();
+        // This is `handle_stage`'s own initial Nebraska call - definitionally
+        // the first one of a brand new update (stage always precedes
+        // finalize/commit) - so it's the one place `CookieLifetime::PerUpdate`
+        // forces a fresh cookie rather than inheriting whatever a prior
+        // update left behind. Every other Nebraska call in this module is a
+        // continuation and always passes `force_fresh: false`.
+        let force_fresh = self.config.orchestration.cookie_lifetime == CookieLifetime::PerUpdate;
+        let initial_cookie = self.load_nebraska_cookie(force_fresh);
         let (check_result, cookie) = task::spawn_blocking({
             let current_version = current_version.clone();
             move || {
@@ -1532,12 +1539,22 @@ impl Orchestrator {
         }
     }
 
-    /// Loads the persisted Nebraska affinity cookie, warning (not failing)
-    /// if the store can't be read. The whole mechanism is a best-effort
+    /// Loads the persisted Nebraska affinity cookie, honoring
+    /// `cookie_enabled`/`force_fresh`, and warning (not failing) if the
+    /// store can't be read. The whole mechanism is a best-effort
     /// session-affinity hint, never a requirement for talking to Nebraska -
-    /// a load failure just means this round-trip proceeds cookie-less, the
-    /// same as this host's very first-ever contact with Nebraska.
-    fn load_nebraska_cookie(&self) -> Option<String> {
+    /// a load failure (or a disabled/force-fresh skip) just means this
+    /// round-trip proceeds cookie-less, the same as this host's very
+    /// first-ever contact with Nebraska.
+    ///
+    /// `force_fresh` is set by callers that are the first Nebraska call of
+    /// a brand new update (see `CookieLifetime::PerUpdate`'s docs) - when
+    /// true, this returns `None` without even touching disk, deliberately
+    /// not inheriting whatever a prior update left behind.
+    fn load_nebraska_cookie(&self, force_fresh: bool) -> Option<String> {
+        if !self.config.orchestration.cookie_enabled || force_fresh {
+            return None;
+        }
         match self.nebraska_cookie.load() {
             Ok(cookie) => cookie,
             Err(err) => {
@@ -1547,8 +1564,14 @@ impl Orchestrator {
         }
     }
 
-    /// Persists a cookie a Nebraska round-trip ended up holding, if any.
+    /// Persists a cookie a Nebraska round-trip ended up holding, if any -
+    /// unless `cookie_enabled` is off, in which case this is a no-op (so a
+    /// mid-flight toggle from enabled to disabled doesn't keep writing a
+    /// file a later re-enable would then pick back up unexpectedly).
     fn save_nebraska_cookie(&self, cookie: Option<String>) {
+        if !self.config.orchestration.cookie_enabled {
+            return;
+        }
         if let Some(cookie) = cookie {
             if let Err(err) = self.nebraska_cookie.save(&cookie) {
                 warn!("failed to persist Nebraska cookie: {err}");
@@ -1615,7 +1638,12 @@ impl Orchestrator {
             }
         };
         let label = report.label();
-        let initial_cookie = self.load_nebraska_cookie();
+        // Always a continuation of an already-started update (a progress or
+        // terminal event report), never the first Nebraska call of a new
+        // one - so `force_fresh` is always false here regardless of
+        // `cookie_lifetime`. See `handle_stage`'s own call for the one place
+        // that does force a fresh cookie.
+        let initial_cookie = self.load_nebraska_cookie(false);
         let result = task::spawn_blocking(move || {
             let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
             if let Some(cookie) = initial_cookie {
