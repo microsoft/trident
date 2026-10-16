@@ -538,7 +538,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: target/release/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/images|tests/azl-installer)'))
+	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/tailor-images|tests/images|tests/azl-installer)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
@@ -627,37 +627,81 @@ run-attendedinstaller-simulator: bin/attendedinstaller-simulator
 
 # Test image paths
 ARTIFACTS_TEST_IMAGE_DIR := artifacts/test-image
-AZL_INSTALLER_DIR := tests/images/azl-installer
+AZL_INSTALLER_DIR := tests/tailor-images/azl-installer
 AZL_INSTALLER_ISO_DIR := $(AZL_INSTALLER_DIR)/iso
 
 # If regular.cosi is not present, download runtime images
 $(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi: download-runtime-images
 
-# Build the installer ISO using the builder
-$(ARTIFACTS_TEST_IMAGE_DIR)/azl-installer.iso: \
-	bin/RPMS \
-	bin/liveinstaller \
-	artifacts/baremetal.vhdx \
-	$(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi \
-	$(AZL_INSTALLER_DIR)/installer-iso.yaml \
-	$(shell find $(AZL_INSTALLER_DIR)/ -type f 2>/dev/null)
-	# Prepare dependencies
-	# Copy runtime image
-	rm -rf $(AZL_INSTALLER_ISO_DIR)/images
-	mkdir -p $(AZL_INSTALLER_ISO_DIR)/images
-	cp $(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi $(AZL_INSTALLER_ISO_DIR)/images/trident-testimage.cosi
-	# Copy installer binary
-	rm -rf $(AZL_INSTALLER_ISO_DIR)/bin
-	mkdir -p $(AZL_INSTALLER_ISO_DIR)/bin
-	cp bin/liveinstaller $(AZL_INSTALLER_ISO_DIR)/bin/
-	# Build ISO
-	./tests/images/testimages.py build azl-installer --output-dir $(ARTIFACTS_TEST_IMAGE_DIR)
+include tests/tailor-images/targets.mk
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) target/release/trident
 	@target/release/trident validate $(TRIDENT_CONFIG) -v info
 
 NETLAUNCH_ISO ?= bin/trident-mos.iso
+
+# Uses the simple E2E test to set up a starter Host Configuration
+.PHONY: starter-configuration
+starter-configuration:
+	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
+	@cp tests/e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
+	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
+	@echo "\033[33mDon't forget to add your SSH public key to the Host Configuration!"
+
+.PHONY: website-clear
+website-clear:
+	cd ./website && \
+		rm -rf ./docs && \
+		rm -rf ./versioned_* && \
+		rm -rf ./versions.json && \
+		rm -rf ./node_modules
+
+.PHONY: website-prereqs
+website-prereqs:
+	cd ./website && npm ci
+
+DOCS_CONTENTS = $(shell find ./docs -type f)
+website/docs: $(DOCS_CONTENTS)
+	rm -rf ./website/docs && \
+		cp -r ./docs ./website
+
+website/versions.json:
+	echo '[]' > website/versions.json
+
+.PHONY: website-build
+website-build: website-prereqs website/docs website/versions.json
+	cd ./website && \
+		npm run build
+
+.PHONY: website-serve
+website-serve: website-build
+	cd ./website && \
+		npm run serve -- --port $(SERVER_PORT)
+
+# Useful if you edit website/docs files in place and want to copy them back to ./docs
+.PHONY: website-reverse
+website-reverse: website/docs
+	rm -rf ./docs
+	cp -r ./website/docs ./
+
+.PHONY: validate-pipeline-website-artifact
+validate-pipeline-website-artifact:
+	if ! which gh > /dev/null; then \
+		sudo apt install gh; \
+	fi
+	$(eval STAGING_DIR := $(shell mktemp -d))
+	cp -r ./website/. $(STAGING_DIR)/
+	rm -rf $(STAGING_DIR)/build && \
+		mkdir -p $(STAGING_DIR)/build
+	$(eval RUN_ID ?= $(shell gh run list --workflow 'Deploy to GitHub Pages' --repo microsoft/trident --json conclusion,databaseId --jq '.[] | select(.conclusion == "success") | .databaseId' | sort -n | tail -n 1))
+	@echo "Downloading GitHub Pages artifact from $(RUN_ID)"
+	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)/build
+	cd $(STAGING_DIR)/build && \
+		tar -xvf ./artifact.tar && \
+		cd $(STAGING_DIR) && \
+		npm install && \
+			npm run serve -- --port $(SERVER_PORT)
 
 input/netlaunch.yaml: tools/vm-netlaunch.yaml
 	@mkdir -p input
@@ -885,184 +929,9 @@ download-trident-container-installer-iso:
 		--path artifacts/ \
 		--artifact-name 'trident-container-installer'
 
-artifacts/trident-container-installer.iso:
-	$(MAKE) download-trident-container-installer-iso; \
-	ls -l artifacts/trident-container-installer.iso
-
-# Copies locally built runtime images from ../test-images/build to ./artifacts/test-image.
-# Expects that both the regular and verity Trident test images have been built.
-.PHONY: copy-runtime-images
-copy-runtime-images: $(TEST_IMAGES_PATH)/build/trident-testimage/*.cosi $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.cosi
-	@test -d $(TEST_IMAGES_PATH) || { \
-		echo "$(TEST_IMAGES_PATH) not found"; \
-		exit 1; \
-	}
-	@test -d $(TEST_IMAGES_PATH)/build/trident-testimage || { \
-		echo "$(TEST_IMAGES_PATH)/build/trident-testimage not found"; \
-		exit 1; \
-	}
-	@test -d $(TEST_IMAGES_PATH)/build/trident-verity-testimage || { \
-		echo "$(TEST_IMAGES_PATH)/build/trident-verity-testimage not found"; \
-		exit 1; \
-	}
-
-	@rm -rf ./artifacts/test-image
-	@mkdir -p ./artifacts/test-image
-
-#	Copy all COSI images from trident-testimage
-	@for file in $(TEST_IMAGES_PATH)/build/trident-testimage/*.cosi; do \
-		cp $$file ./artifacts/test-image/$$(basename $$file); \
-		echo "Copied $$file to ./artifacts/test-image/$$(basename $$file)"; \
-	done
-
-#	Copy all COSI images from trident-verity-testimage
-	@for file in $(TEST_IMAGES_PATH)/build/trident-verity-testimage/*.cosi; do \
-		cp $$file ./artifacts/test-image/$$(basename $$file); \
-		echo "Copied $$file to ./artifacts/test-image/$$(basename $$file)"; \
-	done
-
-# Uses the simple E2E test to set up a starter Host Configuration
-.PHONY: starter-configuration
-starter-configuration:
-	@mkdir -p $$(dirname $(TRIDENT_CONFIG))
-	@cp tests/e2e_tests/trident_configurations/simple/trident-config.yaml $(TRIDENT_CONFIG)
-	@echo "\033[33mCreated \033[36m$(TRIDENT_CONFIG)\033[33m. Please review and modify as needed! :)"
-	@echo "\033[33mDon't forget to add your SSH public key to the Host Configuration!"
-
-bin/trident-mos.iso: \
-	artifacts/baremetal.vhdx \
-	packaging/systemd/trident-install.service \
-	tests/images/trident-mos/iso.yaml \
-	tests/images/trident-mos/files/* \
-	tests/images/trident-mos/post-install.sh \
-	packaging/selinux-policy-trident/* \
-	tools/cmd/rcp-agent/rcp-agent.service \
-	bin/rcp-agent
-	@echo "Rebuilding Trident MOS ISO: $@ from $< because of: $?"
-	@mkdir -p bin
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-		--log-level=debug \
-		--build-dir /build \
-		--image-file /repo/$< \
-		--output-image-file /repo/$@ \
-		--config-file /repo/tests/images/trident-mos/iso.yaml \
-		--output-image-format iso
-
-.PHONY: recreate-verity-image
-recreate-verity-image: bin/trident-rpms.tar.gz
-	$(MAKE) -C $(TEST_IMAGES_PATH) copy-trident-rpms
-	$(MAKE) -C $(TEST_IMAGES_PATH) trident-verity-testimage
-	make copy-runtime-images
-
-.PHONY: website-clear
-website-clear:
-	cd ./website && \
-		rm -rf ./docs && \
-		rm -rf ./versioned_* && \
-		rm -rf ./versions.json && \
-		rm -rf ./node_modules
-
-.PHONY: website-prereqs
-website-prereqs:
-	cd ./website && npm ci
-
-DOCS_CONTENTS = $(shell find ./docs -type f)
-website/docs: $(DOCS_CONTENTS)
-	rm -rf ./website/docs && \
-		cp -r ./docs ./website
-
-website/versions.json:
-	echo '[]' > website/versions.json
-
-.PHONY: website-build
-website-build: website-prereqs website/docs website/versions.json
-	cd ./website && \
-		npm run build
-
-.PHONY: website-serve
-website-serve: website-build
-	cd ./website && \
-		npm run serve -- --port $(SERVER_PORT)
-
-# Useful if you edit website/docs files in place and want to copy them back to ./docs
-.PHONY: website-reverse
-website-reverse: website/docs
-	rm -rf ./docs
-	cp -r ./website/docs ./
-
-.PHONY: validate-pipeline-website-artifact
-validate-pipeline-website-artifact:
-	if ! which gh > /dev/null; then \
-		sudo apt install gh; \
-	fi
-	$(eval STAGING_DIR := $(shell mktemp -d))
-	cp -r ./website/. $(STAGING_DIR)/
-	rm -rf $(STAGING_DIR)/build && \
-		mkdir -p $(STAGING_DIR)/build
-	$(eval RUN_ID ?= $(shell gh run list --workflow 'Deploy to GitHub Pages' --repo microsoft/trident --json conclusion,databaseId --jq '.[] | select(.conclusion == "success") | .databaseId' | sort -n | tail -n 1))
-	@echo "Downloading GitHub Pages artifact from $(RUN_ID)"
-	gh run download $(RUN_ID) --name github-pages --repo microsoft/trident --dir $(STAGING_DIR)/build
-	cd $(STAGING_DIR)/build && \
-		tar -xvf ./artifact.tar && \
-		cd $(STAGING_DIR) && \
-		npm install && \
-			npm run serve -- --port $(SERVER_PORT)
-
-#
-# Generic COSI image build target pattern
-#
-COSI_TARGETS = $(shell ./tests/images/testimages.py list --filter-type cosi)
-
-.PHONY: $(COSI_TARGETS)
-$(COSI_TARGETS): %: artifacts/%.cosi
-
-.PHONY: all-cosi
-all-cosi: $(COSI_TARGETS)
-
-#
-# Generic ISO image build target pattern
-#
-ISO_TARGETS = $(shell ./tests/images/testimages.py list --filter-type iso)
-
-.PHONY: $(ISO_TARGETS)
-$(ISO_TARGETS): %: artifacts/%.iso
-
-.PHONY: all-iso
-all-iso: $(ISO_TARGETS)
-
-# Fun trick to use the stem of the target (%) as a variable ($*) in the
-# prerequisites so that we can use find to get all the files in the directory.
-# https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
-.SECONDEXPANSION:
-artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testimages.py dependencies $$*)
-	@echo "Building '$*' [$@] from $<"
-	@echo "Prerequisites:"
-	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
-	@echo "Building image..."
-	sudo ./tests/images/testimages.py build \
-		$* \
-		--output-dir ./artifacts \
-		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE)) \
-		$(if $(strip $(MIC_ARCHITECTURE)),--image-architecture $(MIC_ARCHITECTURE))
-
-MIC_CONTAINER_IMAGE ?= $(shell ./tests/images/testimages.py show-artifact customizer-container-full)
-artifacts/trident-functest.qcow2: $$(shell ./tests/images/testimages.py dependencies $$(basename $$(notdir $$@)))
-	@echo "Building '$*' [$@] from $<"
-	@echo "Prerequisites:"
-	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
-	@echo "Building image..."
-	sudo ./tests/images/testimages.py build \
-		$(basename $(notdir $@)) \
-		--output-dir ./artifacts \
-		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE))
-
 # TRIDENT VM UPDATE IMAGES
 
-VM_IMAGE_PATH_PREFIX = tests/images/trident-vm-testimage/base
+VM_IMAGE_PATH_PREFIX = tests/tailor-images/trident-vm-testimage/base
 
 artifacts/rpm-overrides:
 	@mkdir -p artifacts/rpm-overrides
@@ -1097,194 +966,30 @@ $(QEMU_GUEST_IMAGE):
 BAREMETAL_IMAGE = artifacts/baremetal.vhdx
 $(BAREMETAL_IMAGE):
 	@mkdir -p artifacts
-	@tests/images/testimages.py download-image baremetal
+	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- --manifest tests/tailor-images/tailor.yaml bases download baremetal
 
 CORE_SELINUX_IMAGE = artifacts/core_selinux.vhdx
 $(CORE_SELINUX_IMAGE):
 	@mkdir -p artifacts
-	@tests/images/testimages.py download-image core_selinux
+	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- --manifest tests/tailor-images/tailor.yaml bases download core_selinux
 
-
-MINIMAL_IMAGE = artifacts/minimal.vhdx
-$(MINIMAL_IMAGE):
+CORE_ARM64_IMAGE_NAME ?= core_vhdx-arm64-3.0-stable
+CORE_ARM64_IMAGE_VERSION ?= *
+CORE_ARM64_IMAGE = artifacts/core_arm64.vhdx
+$(CORE_ARM64_IMAGE):
 	@mkdir -p artifacts
-	@tests/images/testimages.py download-image minimal
+	@tempdir=$$(mktemp -d); 		result=$$(az artifacts universal download 			--organization "https://dev.azure.com/mariner-org/" 			--project "36d030d6-1d99-4ebd-878b-09af1f4f722f" 			--scope project 			--feed "AzureLinuxArtifacts" 			--name '$(CORE_ARM64_IMAGE_NAME)' 			--version '$(CORE_ARM64_IMAGE_VERSION)' 			--path $$tempdir) && 		mv $$tempdir/*.vhdx $(CORE_ARM64_IMAGE) && 		rm -rf $$tempdir && 		echo $$result | jq > $(CORE_ARM64_IMAGE).metadata.json
 
-MINIMAL_IMAGE_AARCH64 = artifacts/minimal_aarch64.vhdx
-$(MINIMAL_IMAGE_AARCH64):
+artifacts/rcp-agent: bin/rcp-agent
 	@mkdir -p artifacts
-	@tests/images/testimages.py download-image minimal_aarch64
+	@cp bin/rcp-agent $@
+	@chmod +x $@
 
-artifacts/trident-vm-grub-testimage.qcow2: \
-	$(QEMU_GUEST_IMAGE) \
-	$(TRIDENT_VM_DEPENDENCIES) \
-	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml \
-	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	artifacts/rpm-overrides
-	@echo "Building $@ from $<"
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level debug \
-			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/artifacts/rpm-overrides \
-			--build-dir /build \
-			--image-file /repo/$< \
-			--output-image-file /repo/$@ \
-			--output-image-format qcow2 \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml
+artifacts/rcp-agent.service: tools/cmd/rcp-agent/rcp-agent.service
+	@mkdir -p artifacts
+	@cp tools/cmd/rcp-agent/rcp-agent.service $@
 
-artifacts/trident-vm-grub-testimage-arm64.qcow2: \
-	base/core_arm64.vhdx \
-	$(TRIDENT_VM_DEPENDENCIES) \
-	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml \
-	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub
-	@echo "Building $@ from $<"
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level debug \
-			--rpm-source /repo/bin/RPMS \
-			--build-dir /build \
-			--image-file /repo/$< \
-			--output-image-file /repo/$@ \
-			--output-image-format qcow2 \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity.yaml
 
-artifacts/trident-vm-grub-verity-testimage.qcow2: \
-	$(QEMU_GUEST_IMAGE) \
-	$(TRIDENT_VM_DEPENDENCIES) \
-	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity.yaml \
-	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.service \
-	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.sh \
-	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	artifacts/rpm-overrides
-	@echo "Building $@ from $<"
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level debug \
-			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/artifacts/rpm-overrides \
-			--build-dir /build \
-			--image-file /repo/$< \
-			--output-image-file /repo/$@ \
-			--output-image-format qcow2 \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity.yaml
-
-artifacts/trident-vm-root-verity-testimage.qcow2: \
-	$(QEMU_GUEST_IMAGE) \
-	$(TRIDENT_VM_DEPENDENCIES) \
-	$(VM_IMAGE_PATH_PREFIX)/baseimg-root-verity.yaml \
-	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	artifacts/rpm-overrides
-	@echo "Building $@ from $<"
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level debug \
-			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/artifacts/rpm-overrides \
-			--build-dir /build \
-			--image-file /repo/$< \
-			--output-image-file /repo/$@ \
-			--output-image-format qcow2 \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-root-verity.yaml
-
-artifacts/trident-vm-verity-testimage-arm64.qcow2: \
-	base/core_arm64.vhdx \
-	$(TRIDENT_VM_DEPENDENCIES) \
-	$(VM_IMAGE_PATH_PREFIX)/baseimg-verity.yaml \
-	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.service \
-	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.sh \
-	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub
-	@echo "Building $@ from $<"
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level debug \
-			--rpm-source /repo/bin/RPMS \
-			--build-dir /build \
-			--image-file /repo/$< \
-			--output-image-file /repo/$@ \
-			--output-image-format qcow2 \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-verity.yaml
-
-artifacts/trident-vm-usr-verity-testimage.qcow2: \
-	$(QEMU_GUEST_IMAGE) \
-	$(TRIDENT_VM_DEPENDENCIES) \
-	$(VM_IMAGE_PATH_PREFIX)/baseimg-usr-verity.yaml \
-	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	artifacts/rpm-overrides
-	@echo "Building $@ from $<"
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level debug \
-			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/artifacts/rpm-overrides \
-			--build-dir /build \
-			--image-file /repo/$< \
-			--output-image-file /repo/$@ \
-			--output-image-format qcow2 \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-usr-verity.yaml
-
-artifacts/trident-vm-acl-agent-testimage.qcow2: \
-	$(QEMU_GUEST_IMAGE) \
-	$(TRIDENT_VM_DEPENDENCIES) \
-	$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml \
-	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	$(VM_IMAGE_PATH_PREFIX)/files/trident-acl-agent-override.conf \
-	artifacts/rpm-overrides
-	@echo "Building $@ from $<"
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level debug \
-			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/artifacts/rpm-overrides \
-			--build-dir /build \
-			--image-file /repo/$< \
-			--output-image-file /repo/$@ \
-			--output-image-format qcow2 \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml
-
-artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
-	$(CORE_SELINUX_IMAGE) \
-	$(TRIDENT_VM_DEPENDENCIES) \
-	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml \
-	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.service \
-	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.sh \
-	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
-	artifacts/rpm-overrides
-	@echo "Building $@ from $<"
-	docker run --rm \
-		--privileged \
-		-v ".:/repo:z" \
-		-v "/dev:/dev" \
-		${MIC_CONTAINER_IMAGE} \
-			--log-level debug \
-			--rpm-source /repo/bin/RPMS \
-			--rpm-source /repo/artifacts/rpm-overrides \
-			--build-dir /build \
-			--image-file /repo/$< \
-			--output-image-file /repo/$@ \
-			--output-image-format vhd-fixed \
-			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
 .PHONY: imagecustomizer-dev-amd64
 imagecustomizer-dev-amd64:
@@ -1315,3 +1020,18 @@ artifacts/ubuntu_2404_arm64.vhdx:
 	curl -LO https://cloud-images.ubuntu.com/releases/server/24.04/release/ubuntu-24.04-server-cloudimg-arm64.img
 	qemu-img convert -O vhdx ubuntu-24.04-server-cloudimg-arm64.img artifacts/ubuntu_2404_arm64.vhdx
 	rm -f ubuntu-24.04-server-cloudimg-arm64.img
+
+# GB200 base image is staged from a private Azure Linux storage account (see
+# .pipelines/templates/stages/trident_images/trident-testimg-template.yml,
+# "Download Base Image - gb200_2404_arm64"), not a public URL, so this rule
+# mirrors the pipeline's az CLI download for local/dev builds that have
+# access to the azlinuxbmpstaging storage account.
+GB200_BLOB_NAME = gb200/arm64/20260318/image.vhdx
+artifacts/gb200_2404_arm64.vhdx:
+	mkdir -p artifacts
+	az storage blob download \
+		--auth-mode login \
+		--account-name azlinuxbmpstaging \
+		--container-name os-image-cache \
+		--name "$(GB200_BLOB_NAME)" \
+		--file artifacts/gb200_2404_arm64.vhdx

@@ -62,6 +62,10 @@ parameters:
 steps:
   - template: ../common_tasks/avoid-pypi-usage.yml
 
+  - template: ../common_tasks/cargo-auth.yml
+    parameters:
+      cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
+
   - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines
 
   - script: |
@@ -82,8 +86,23 @@ steps:
     retryCountOnTaskFailure: 3
 
   - bash: |
-      ./tests/images/testimages.py show-image ${{ parameters.imageName }} base-image --devops-var baseImageType
-    displayName: "Get Image Info"
+      set -euo pipefail
+
+      case '${{ parameters.imageName }}' in
+        azl-installer|trident-container-installer|trident-container-testimage|trident-functest|trident-installer|trident-split-installer|trident-testimage|trident-verity-testimage|trident-usrverity-testimage|trident-container-verity-testimage|trident-container-usrverity-testimage|trident-direct-streaming-installer-amd64)
+          baseImageType=baremetal
+          ;;
+        trident-direct-streaming-installer-arm64|trident-installer-arm64|trident-testimage-arm64)
+          baseImageType=core_arm64
+          ;;
+        *)
+          echo "Unsupported imageName for build-image-template: ${{ parameters.imageName }}"
+          exit 1
+          ;;
+      esac
+
+      echo "##vso[task.setvariable variable=baseImageType]${baseImageType}"
+    displayName: "Resolve image metadata"
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
   - bash: |
@@ -117,10 +136,27 @@ steps:
       azureLinuxVersion: ${{ parameters.azureLinuxVersion }}
       runtimeBuildType: ${{ parameters.baseimgBuildType }}
 
+  - ${{ if eq(parameters.architecture, 'arm64') }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download go-tools for direct-streaming installer"
+      condition: or(eq('${{ parameters.imageName }}', 'trident-direct-streaming-installer-amd64'), eq('${{ parameters.imageName }}', 'trident-direct-streaming-installer-arm64'))
+      inputs:
+        buildType: current
+        artifactName: go-tools-arm64
+        targetPath: "$(Build.ArtifactStagingDirectory)/go-tools"
+  - ${{ if ne(parameters.architecture, 'arm64') }}:
+    - task: DownloadPipelineArtifact@2
+      displayName: "Download go-tools for direct-streaming installer"
+      condition: or(eq('${{ parameters.imageName }}', 'trident-direct-streaming-installer-amd64'), eq('${{ parameters.imageName }}', 'trident-direct-streaming-installer-arm64'))
+      inputs:
+        buildType: current
+        artifactName: go-tools
+        targetPath: "$(Build.ArtifactStagingDirectory)/go-tools"
+
   - bash: |
       set -ex
 
-      # Move base VHDX to artifacts/ (builder expects artifacts/*.vhdx)
+      # Move base VHDX to artifacts/ (tailor baseImages catalogue points at artifacts/*.vhdx)
       mkdir -p artifacts
       if ls "$(Build.ArtifactStagingDirectory)/images" | grep -q ".*\.vhdx$"; then
         mv $(Build.ArtifactStagingDirectory)/images/*.vhdx artifacts/
@@ -130,9 +166,11 @@ steps:
         exit 1
       fi
 
-      # Move dev RPM overrides to artifacts/rpm-overrides/
+      # artifacts/rpm-overrides/ is a declared rpmSources entry for several tailor
+      # image families, so it must exist (even empty) regardless of whether dev
+      # RPM overrides were staged for this build.
+      mkdir -p artifacts/rpm-overrides
       if ls "$(Build.ArtifactStagingDirectory)/rpms/" 2>/dev/null | grep -q "rpms.tar.gz"; then
-        mkdir -p artifacts/rpm-overrides
         tar -xvf $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz \
           --strip-components=2 \
           -C artifacts/rpm-overrides
@@ -144,28 +182,168 @@ steps:
         DISTRO=azl4
       fi
 
-      # Move Trident RPMs to bin/RPMS/ (builder expects bin/RPMS/*.rpm)
+      # Move Trident RPMs to bin/RPMS/ (tailor rpmSources point at bin/RPMS/)
       if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
         mkdir -p bin/RPMS
         find "$(Build.ArtifactStagingDirectory)/trident" -name "*${DISTRO}*.rpm" -exec mv {} bin/RPMS/ \;
         rm -rf "$(Build.ArtifactStagingDirectory)/trident"
       fi
+
+      if [[ "${{ parameters.imageName }}" == trident-direct-streaming-installer-* ]]; then
+        if [ -f "$(Build.ArtifactStagingDirectory)/go-tools/rcp-agent" ]; then
+          cp "$(Build.ArtifactStagingDirectory)/go-tools/rcp-agent" artifacts/rcp-agent
+        elif [ -f bin/rcp-agent ]; then
+          cp bin/rcp-agent artifacts/rcp-agent
+        else
+          echo "Missing rcp-agent for direct-streaming installer"
+          exit 1
+        fi
+        chmod +x artifacts/rcp-agent
+        cp tools/cmd/rcp-agent/rcp-agent.service artifacts/rcp-agent.service
+      fi
     displayName: "Prepare and move requirements"
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
 
   - bash: |
-      set -ex
+      set -euo pipefail
 
-      EXTRA_ARGS=""
+      legacy_name='${{ parameters.imageName }}'
+      export PATH="$HOME/.cargo/bin:$PATH"
+      export CLICOLOR_FORCE=1
 
+      selector_args=()
+      case "$legacy_name" in
+        azl-installer)
+          tailor_image=azl-installer
+          tailor_slug=azl-installer_amd64_iso
+          artifact_ext=iso
+          ;;
+        trident-functest)
+          tailor_image=trident-functest
+          tailor_slug=trident-functest_amd64_qcow2
+          artifact_ext=qcow2
+          ;;
+        trident-installer)
+          tailor_image=trident-installer
+          tailor_slug=trident-installer_amd64_default_iso
+          artifact_ext=iso
+          selector_args=(-s arch=amd64 -s variant=default)
+          ;;
+        trident-split-installer)
+          tailor_image=trident-installer
+          tailor_slug=trident-installer_amd64_split_iso
+          artifact_ext=iso
+          selector_args=(-s arch=amd64 -s variant=split)
+          ;;
+        trident-installer-arm64)
+          tailor_image=trident-installer
+          tailor_slug=trident-installer_arm64_default_iso
+          artifact_ext=iso
+          selector_args=(-s arch=arm64 -s variant=default)
+          ;;
+        trident-direct-streaming-installer-amd64)
+          tailor_image=trident-installer
+          tailor_slug=trident-installer_amd64_direct-streaming_iso
+          artifact_ext=iso
+          selector_args=(-s arch=amd64 -s variant=direct-streaming)
+          ;;
+        trident-direct-streaming-installer-arm64)
+          tailor_image=trident-installer
+          tailor_slug=trident-installer_arm64_direct-streaming_iso
+          artifact_ext=iso
+          selector_args=(-s arch=arm64 -s variant=direct-streaming)
+          ;;
+        trident-container-installer)
+          tailor_image=trident-container-installer
+          tailor_slug=trident-container-installer_amd64_iso
+          artifact_ext=iso
+          ;;
+        trident-testimage)
+          tailor_image=trident-testimage
+          tailor_slug=trident-testimage_amd64_cosi
+          artifact_ext=cosi
+          selector_args=(-s arch=amd64)
+          ;;
+        trident-testimage-arm64)
+          tailor_image=trident-testimage
+          tailor_slug=trident-testimage_arm64_cosi
+          artifact_ext=cosi
+          selector_args=(-s arch=arm64)
+          ;;
+        trident-container-testimage)
+          tailor_image=trident-container-testimage
+          tailor_slug=trident-container-testimage_amd64_cosi
+          artifact_ext=cosi
+          ;;
+        trident-verity-testimage)
+          tailor_image=trident-verity-testimage
+          tailor_slug=trident-verity-testimage_host_root_amd64_cosi
+          artifact_ext=cosi
+          selector_args=(-s deployment=host -s mode=root)
+          ;;
+        trident-container-verity-testimage)
+          tailor_image=trident-verity-testimage
+          tailor_slug=trident-verity-testimage_container_root_amd64_cosi
+          artifact_ext=cosi
+          selector_args=(-s deployment=container -s mode=root)
+          ;;
+        trident-usrverity-testimage)
+          tailor_image=trident-verity-testimage
+          tailor_slug=trident-verity-testimage_host_usr_amd64_cosi
+          artifact_ext=cosi
+          selector_args=(-s deployment=host -s mode=usr)
+          ;;
+        trident-container-usrverity-testimage)
+          tailor_image=trident-verity-testimage
+          tailor_slug=trident-verity-testimage_container_usr_amd64_cosi
+          artifact_ext=cosi
+          selector_args=(-s deployment=container -s mode=usr)
+          ;;
+        *)
+          echo "Unsupported imageName for build-image-template: ${legacy_name}"
+          exit 1
+          ;;
+      esac
+
+      manifest_path=tests/tailor-images/tailor.yaml
       if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
-        EXTRA_ARGS+=" --container imagecustomizer:dev"
+        manifest_path=tests/tailor-images/.tailor.pipeline.yaml
+        python3 - <<'PY'
+      from pathlib import Path
+      text = Path('tests/tailor-images/tailor.yaml').read_text()
+      needle = 'toolchains:\n  default: ic\n  entries:\n    - name: ic\n      container: mcr.microsoft.com/azurelinux/imagecustomizer\n      tag: latest\n'
+      replacement = 'toolchains:\n  default: ic-dev\n  entries:\n    - name: ic\n      container: mcr.microsoft.com/azurelinux/imagecustomizer\n      tag: latest\n    - name: ic-dev\n      container: imagecustomizer\n      tag: dev\n      pull: never\n'
+      Path('tests/tailor-images/.tailor.pipeline.yaml').write_text(text.replace(needle, replacement, 1))
+      PY
       fi
 
-      python3 ./tests/images/testimages.py build \
-          "${{ parameters.imageName }}" $EXTRA_ARGS \
-          --output-dir $(ob_outputDirectory) \
-          --no-download \
-          --clones ${{ parameters.clones }}
+      rm -f tests/tailor-images/artifacts/ca_cert.pem
+      cargo run --manifest-path tools/tailor/Cargo.toml --quiet -- \
+        -vvv \
+        --log-dir $(ob_outputDirectory)/tailor-logs \
+        --manifest "$manifest_path" \
+        build "$tailor_image" \
+        "${selector_args[@]}" \
+        --output-dir $(ob_outputDirectory) \
+        --clones ${{ parameters.clones }}
+
+      if [[ ${{ parameters.clones }} -gt 1 ]]; then
+        for ((i=0; i<${{ parameters.clones }}; i++)); do
+          mv "$(ob_outputDirectory)/${tailor_slug}_clone${i}.${artifact_ext}" \
+             "$(ob_outputDirectory)/${legacy_name}_${i}.${artifact_ext}"
+        done
+      else
+        # Tailor publishes under the cell's slug, not the legacy name; map it here so every
+        # downstream step (and any consumer outside this template) keeps seeing the stable
+        # legacy filename regardless of how tailor names the cell internally.
+        mv "$(ob_outputDirectory)/${tailor_slug}.${artifact_ext}" \
+           "$(ob_outputDirectory)/${legacy_name}.${artifact_ext}"
+      fi
+
+      if [ -f tests/tailor-images/artifacts/ca_cert.pem ]; then
+        cp tests/tailor-images/artifacts/ca_cert.pem "$(ob_outputDirectory)/ca_cert.pem"
+      fi
+
+      rm -f tests/tailor-images/.tailor.pipeline.yaml
     displayName: "Build ${{ parameters.imageName }}"
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
