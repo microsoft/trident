@@ -552,7 +552,6 @@ go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch 
 
 bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/pkg/netlaunch/*
 	@mkdir -p bin
-	cd tools && go generate pkg/rcp/tlscerts/certs.go
 	cd tools && go generate pkg/tridentgrpc/grpc.go
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
@@ -586,13 +585,8 @@ bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtde
 
 bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/proxy/* tools/pkg/rcp/agent/*
 	@mkdir -p bin
-	cd tools && go generate pkg/rcp/tlscerts/certs.go
 	cd tools && go build -o ../bin/rcp-agent ./cmd/rcp-agent/main.go
 
-# Clean generated RCP TLS certificates
-.PHONY: clean-rcp-certs
-clean-rcp-certs:
-	cd tools/pkg/rcp/tlscerts && go run generate.go clean
 
 # An empty target to force rebuilds of anything that depends on it. Useful for
 # tools that are smarter than Make and only rebuild when source files change.
