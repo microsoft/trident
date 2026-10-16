@@ -31,7 +31,7 @@ available for content released independently.
 - Changes to the Host Configuration API, DDIs, SELinux support or signing.
 - The Image Customizer API and implementation for producing these COSIs;
   separate work.
-- Persisting COSI extensions in Host Configuration; covered by
+- Trident placement, activation and Host Configuration persistence; covered by
   [RFC 0838](https://github.com/microsoft/trident/pull/838).
 - Partition-less COSI files.
 - Extension-only Runtime Updates. Any change to a COSI, including only its
@@ -48,9 +48,8 @@ disk streaming.
 ## Dependencies
 
 A separately defined [Image Customizer](https://github.com/microsoft/azure-linux-image-tools)
-API must produce COSIs with embedded extensions. RFC 0838 must also persist
-bundled extensions in Host Configuration for subsequent A/B updates and
-rollback.
+API must produce COSIs with embedded extensions. Deployment depends on the
+separate placement and persistence work.
 
 ## Implementation
 
@@ -120,38 +119,26 @@ Example (`extensions` fragment of `metadata.json`):
 }
 ```
 
-`id` is the extension's stable logical identity, not the COSI root `id`, the
-host OS's `ID=`, or the image filename. For a sysext it must equal `SYSEXT_ID=` inside
-`/usr/lib/extension-release.d/extension-release.{name}`; for a confext it
-must equal `CONFEXT_ID=` inside
-`/etc/extension-release.d/extension-release.{name}`. Trident already requires
-those fields in DDIs. `(kind, id)` identifies an extension across COSI versions;
-its compressed hash triggers replacement. IDs must be unique within each
-array. Metadata can now match old and new extensions before reading their
-payloads, but Trident must still verify the declared ID against the DDI.
+`id` is Trident's stable identity for the extension, not the COSI root `id`
+or the OS's `ID=`. It must match `SYSEXT_ID=` or `CONFEXT_ID=` in the DDI's
+`extension-release` file and be unique within its array. Trident already
+requires these fields in the DDI; metadata makes `(kind, id)` available
+without opening it.
 
-`ImageFile` supplies the tar path, compressed size for ranged reads,
-uncompressed size for output bounds, and SHA-384 of the compressed member.
-Trident checks both sizes and the hash against the bytes read and written.
-It does not reuse Host Configuration's `Extension.sha384`, which hashes the
-uncompressed DDI; a source switch must replace the image, not compare those
-two hashes. Recompression may cause an unnecessary replacement, never a missed
-one.
+`ImageFile` gives the tar path, compressed and uncompressed sizes, and
+SHA-384 of the compressed member. The Host Configuration's `Extension.sha384`
+instead hashes the raw DDI; the two hashes are not interchangeable.
 
-`path` is deliberately optional, **not** a missing piece of metadata. Omission
-leaves placement to Trident and may be the usual case for fully
-Trident-managed extensions. Today Trident derives `{name}.raw` from
-`extension-release.{name}` and uses `/var/lib/extensions/` or
-`/var/lib/confexts/`. An explicit `path` must use a permitted directory and
-match that name. [RFC 0838](https://github.com/microsoft/trident/pull/838)
-separately proposes `scope: slotted` for Trident-managed sysext placement; it
-handles `/etc` layers separately. Omitting `path` alone does not opt in.
+`path` is optional so Trident can own placement. Today omission defaults to
+`/var/lib/extensions/{name}.raw` or `/var/lib/confexts/{name}.raw`; an
+explicit path must use a supported directory and match the
+`extension-release.{name}` suffix. Omitting it does not opt into the
+`scope: slotted` policy proposed in
+[RFC 0838](https://github.com/microsoft/trident/pull/838).
 
-There is no `url` (the tar is the source), `kind` (the array supplies it), or
-separate name, enable flag or compatibility fields (the DDI supplies them, or
-systemd merges all discovered images). The name determines the required
-`{name}.raw` filename and can affect systemd's merge precedence; it is not
-Trident's update identity.
+No other field is needed: the array identifies the kind, the tar replaces
+`url`, and the DDI supplies name and compatibility. The filename affects
+systemd's merge order, but is not Trident's update identity.
 
 ### Versioning
 
@@ -163,104 +150,27 @@ Trident upgrade because the image is already recorded as deployed. Require a
 [health check](../../Reference/Host-Configuration/API-Reference/Health.md) for
 required extensions when reader versions cannot be controlled.
 
-### Trident-Side Consumption
+### Reader Contract
 
-Compute an effective set from COSI and operator-provided Host Configuration
-entries, retaining each entry's source. Match old and new entries by
-`(kind, id)`; replace when content changes, and reconcile placement or filename
-changes. The extensions subsystem reads bundled members instead of downloading
-them. `osconfig` enables the sysext/confext merge units for the effective set.
-Validate SELinux compatibility against that set before provisioning; the
-current check reads only Host Configuration entries.
-
-[Disk streaming](../../Explanation/Disk-Streaming.md) must reject bundled
-extensions: `osconfig` skips stream-image configuration, leaving the merge
-units disabled.
-
-#### Host Configuration Persistence
-
-RFC 0838 owns inserting bundled extensions into the persisted Host
-Configuration, whether `path` is explicit or Trident chooses placement. Use
-`spec` and `spec_old` for new and previous sets instead of adding a separate
-Host Status inventory. Keep generated entries distinct from operator-provided
-ones so they do not collide with their own COSI source.
-
-Host Configuration's `Extension` requires a URL and a SHA-384 of the raw DDI;
-COSI `ImageFile.sha384` covers compressed bytes. Materialization must provide
-a durable source reference and the raw hash, not copy the compressed hash.
-
-#### Destination Validation
-
-Existing A/B location validation reads only Host Configuration entries before
-loading COSI. Validate the *resolved* effective set after reading the image:
-every destination must be writable and, when A/B is configured, slot-scoped.
-A/B volumes qualify; the root-verity `/etc` overlay qualifies during
-provisioning if its backing volume is A/B. Slotted storage from
-[RFC 0838](https://github.com/microsoft/trident/pull/838) qualifies only with
-its loader capability; `path` omission alone must not bypass the A/B check.
-
-#### Where Images Are Written
-
-Clean Install and A/B Update place files in the target root (the inactive slot
-for A/B). Stage temporary files on the destination filesystem for atomic
-placement; the current fixed `/var/lib/extensions/.staging` falls back to a
-non-atomic cross-filesystem copy.
-
-#### Rollback
-
-An A/B rollback restores the previous extension set only when placement is
-slot-scoped. Writing a bundled image to a shared volume would change the running
-slot and defeat rollback; see [Destination Validation](#destination-validation).
-
-#### Interaction With Host Configuration `sysexts` and `confexts`
-
-Merge both sources. Reject duplicate extension IDs per kind or destination
-collisions after resolving placement, including omitted `path`. Silent
-precedence could run an unvalidated combination; identical entries still
-collide. COSI ID duplicates can be rejected from metadata; Host Configuration
-IDs still require reading their DDIs. Enforce the Host Configuration's
-documented ID-uniqueness rule too.
+On Clean Install and A/B Update, Trident deploys COSI extensions with the OS.
+It merges them with operator-provided Host Configuration extensions and rejects
+conflicting IDs or resolved destinations; neither source silently overrides
+the other. A/B placement must follow the target slot so rollback restores the
+previous extension set. Enforcing SELinux remains unsupported.
 
 ### Validation
 
-In `cosi/validation.rs`, add `V1_3` error kinds for invalid explicit paths
-(absolute, `.raw`, allowed directory), duplicate `(kind, id)` pairs, duplicate
-explicit destinations, reused tar members and collisions with disk-region
-images. Reuse
-`Extension::validate_sysext`/`validate_confext` path rules. A missing member is
-detected when read: `Cosi::new` only scans as far as `metadata.json`.
-
-After decompressing and mounting the DDI, check actual compressed and
-uncompressed sizes, the compressed SHA-384, exactly one `extension-release`
-whose `SYSEXT_ID` or `CONFEXT_ID` equals the metadata `id`, the `{name}.raw`
-destination suffix, resolved placement, and duplicate destinations/IDs across
-both sources. Omitted paths cannot be collision-checked from metadata alone.
-
-Warn on definite OS `ID` mismatch with COSI `osRelease`, not `VERSION_ID`:
-systemd may accept a version mismatch via `SYSEXT_LEVEL` or `CONFEXT_LEVEL`.
-Do not warn on `ID=_any`; it declares compatibility, not delivery method.
-
-### SELinux
-
-Still unsupported in enforcing mode on systemd 255. Check the effective set,
-not only the Host Configuration lists, before Clean Install or A/B provisioning.
+Reject duplicate `(kind, id)` values, reused tar paths, invalid explicit
+destinations and missing members. Verify `ImageFile` sizes and the SHA-384 of
+the compressed member, then check that the DDI's `SYSEXT_ID` or `CONFEXT_ID`
+equals the declared `id` and its `extension-release.{name}` matches the
+installed filename. These failures must be reported, not silently skipped.
 
 ## Testing and Metrics
 
-- v1.3 schema and valid/invalid samples, including missing or empty IDs;
-  semantic path and duplicate-ID rules in Rust tests.
-- Clean Install and A/B Update with both kinds, merge-unit activation and
-  rollback (including absent `path` and slotted placement once supported).
-- A COSI differing only in bundled extensions still selects A/B and restores
-  the previous extension set on rollback.
-- Reject mixed-source collisions, invalid destinations, enforcing SELinux,
-  mismatched metadata/DDI IDs, and disk streaming.
-
-## Implementation Plan
-
-1. Publish COSI 1.3 schema and samples.
-2. Read, validate and install bundled extensions; use RFC 0838 to persist them
-   in Host Configuration.
+- Schema samples for both kinds, optional `path` and invalid entries.
+- Reader tests for member integrity and metadata/DDI ID agreement. Deployment
+  and rollback tests belong with downstream implementation.
 
 ## Counter-Arguments
 
@@ -268,8 +178,7 @@ not only the Host Configuration lists, before Clean Install or A/B provisioning.
 
 Bundling still ties distribution to a new COSI; even extension-only changes
 require an A/B update and reboot. It increases image size and gives hosts no
-per-extension opt-out. Use Host Configuration for extensions that must move
-independently. Older readers silently omit bundled extensions.
+per-extension opt-out.
 
 ### Alternatives
 
@@ -284,13 +193,7 @@ hosting artefacts over HTTP with a `SHA256SUMS` manifest. Like `os.sysexts`, it
 optimises for extensions that move independently of the OS, though without an
 OCI transport. Bundling optimises for extensions that must move with it.
 
-## Open Questions
-
-- **Operator override:** retain the hard error on bundled/Host Configuration
-  collisions, or permit an explicit override when a hotfix is needed?
-
 ## Future Work
 
-Avoiding an A/B update when only bundled extensions change would require
-distinguishing OS content from extension content and preserving the previous
-DDIs for runtime rollback. This RFC does neither.
+Extension-only Runtime Updates and explicit operator overrides of bundled
+extensions need separate designs.
