@@ -5,8 +5,6 @@ Wants=network-online.target tridentd.socket
 
 [Service]
 ExecStart=/usr/bin/trident-acl-agent
-# Let the synchronous reboot client finish before cleaning up child processes.
-KillMode=mixed
 Restart=on-failure
 RestartSec=5
 

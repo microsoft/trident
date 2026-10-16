@@ -15,23 +15,6 @@ annotation-driven trident ACL agent protocol.
 
 There is intentionally no fake `tridentd`.
 
-## Pipeline diagnostics
-
-The validation stage runs 30 independent jobs, each executing the full
-scenario against the same build's images and binaries. Each job publishes
-its own `aclagent-storm-test-<job position>` artifact to keep results separate.
-On failure, the artifact also includes `booted.qcow2.zst`, matching the
-servicing and rollback tests. The pipeline enables `--force-cleanup` to stop
-the VM before compression; failures before disk creation emit a warning.
-The disk retains both A/B roots for offline inspection of former-slot journals.
-
-Agent journals include the startup process/boot IDs, reboot invocation and
-result with elapsed time and operation/boot IDs, and the full command error
-chain on failure (including captured exit status/stdout/stderr when available).
-Signal and orchestrator-exit logs help distinguish a requested shutdown from
-a reboot-command failure. A successful command return alone does not confirm
-that the machine rebooted.
-
 ## Test cases
 
 - `deploy-vm`

@@ -76,13 +76,6 @@ async fn main() -> Result<(), Error> {
 
     let config = AgentConfig::from_env()?;
     log::info!("Effective AgentConfig: {:?}", config.redacted_for_logging());
-    match osutils::machine_id::boot_id() {
-        Ok(boot_id) => log::info!(
-            "agent process started: pid={}, boot_id={boot_id}",
-            std::process::id()
-        ),
-        Err(err) => log::warn!("failed to read startup boot ID: {err:#}"),
-    }
 
     if let Some(target) = args.validate_connection {
         return validate_connection(target, &config).await;
@@ -109,7 +102,6 @@ async fn main() -> Result<(), Error> {
                         );
                         return;
                     }
-                    log::info!("received SIGINT; requesting agent shutdown");
                     shutdown.cancel();
                 });
             }
@@ -120,13 +112,7 @@ async fn main() -> Result<(), Error> {
                     use tokio::signal::unix::{signal, SignalKind};
                     match signal(SignalKind::terminate()) {
                         Ok(mut term) => {
-                            if term.recv().await.is_some() {
-                                log::info!("received SIGTERM; requesting agent shutdown");
-                            } else {
-                                log::warn!(
-                                    "SIGTERM signal stream ended; requesting agent shutdown"
-                                );
-                            }
+                            term.recv().await;
                             shutdown.cancel();
                         }
                         Err(err) => {
@@ -137,12 +123,7 @@ async fn main() -> Result<(), Error> {
                     }
                 });
             }
-            let result = Orchestrator::from_config(config).await?.run(shutdown).await;
-            match &result {
-                Ok(()) => log::info!("annotation orchestrator stopped successfully"),
-                Err(err) => log::error!("annotation orchestrator stopped with an error: {err:#}"),
-            }
-            result
+            Orchestrator::from_config(config).await?.run(shutdown).await
         }
     }
 }
