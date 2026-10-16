@@ -179,6 +179,7 @@ stages:
               # virt-install to create the VM, and virt-install fails
               # without root privileges.
               sudo ./bin/storm-trident run aclagent $FLAGS \
+                --force-cleanup \
                 --output-path $(ob_outputDirectory) \
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --ssh-private-key-path ~/.ssh/id_rsa \
@@ -187,3 +188,22 @@ stages:
                 --cosi-pattern "^trident-vm-acl-agent-update-testimage\.cosi$"
             displayName: "🧪 Run trident-acl-agent A/B update + rollback scenario"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
+
+          - bash: |
+              set -eux
+
+              if [ -f "$(Build.ArtifactStagingDirectory)/booted.qcow2" ]; then
+                sudo zstd -T0 "$(Build.ArtifactStagingDirectory)/booted.qcow2"
+                sudo mv "$(Build.ArtifactStagingDirectory)/booted.qcow2.zst" "$(ob_outputDirectory)/"
+              else
+                echo "##vso[task.logissue type=warning]No booted.qcow2 was created; no failed VM disk to publish."
+              fi
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+            condition: failed()
+            displayName: "Publish logs and OS disk on failure"
+            timeoutInMinutes: 5
+
+          - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+            parameters:
+              outputDir: $(ob_outputDirectory)
+              condition: always()
