@@ -185,6 +185,42 @@ pub enum CoreError {
     CompressedImageBase { image: String, dependency: String },
 
     #[error(
+        "cells `{first}` and `{second}` both publish to `{}` -- give the cells distinct matrix \
+         axis values or output format so their slugs no longer collide (compression alone cannot \
+         fix this: both cells still collide on the shared uncompressed artifact path)",
+        .path.display()
+    )]
+    DuplicateOutputPath {
+        path: PathBuf,
+        first: String,
+        second: String,
+    },
+
+    #[error(
+        "signing profiles `{first}` and `{second}` both publish their CA certificate to `{}` -- \
+         distinct `local-test-ca` profiles mint independent roots, so the second build would \
+         silently invalidate the first image's trust chain; give each profile its own \
+         `publishCaCert` path, or use the same profile id if they are meant to share one CA",
+        .path.display()
+    )]
+    DuplicateCaCertPath {
+        path: PathBuf,
+        first: String,
+        second: String,
+    },
+
+    #[error(
+        "signing profile `{profile}`'s `publishCaCert` path `{}` collides with cell `{slug}`'s \
+         image artifact -- give the profile a `publishCaCert` path that no cell publishes to",
+        .path.display()
+    )]
+    CaCertPathCollidesWithArtifact {
+        path: PathBuf,
+        profile: String,
+        slug: String,
+    },
+
+    #[error(
         "image `{image}` cell `{slug}` depends on `{producer}`, but `{producer}` has axis `{axis}` \
          that `{image}` does not — the producer cell is ambiguous ({axis} ∈ {{{values}}}); pin it \
          with `cell: {{ {axis}: <value> }}`"

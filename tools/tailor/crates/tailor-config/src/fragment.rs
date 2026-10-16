@@ -18,7 +18,7 @@ use serde_yaml_ng::Value;
 
 use crate::{
     error::ConfigError,
-    schema::{AxisValues, ExtraParam},
+    schema::{AxisValues, ExtraParam, SigningRef},
     types::ParamValue,
 };
 
@@ -41,10 +41,19 @@ pub(crate) struct Fragment {
     pub(crate) params: IndexMap<String, ParamValue>,
     #[serde(default)]
     pub(crate) rpm_sources: Vec<PathBuf>,
+    /// Extra local paths (scripts, injected assets referenced only from `config:` text, etc.) that
+    /// invalidate this cell's incremental fingerprint when their content changes; concatenated across
+    /// matched fragments (base -> most-specific), mirroring `rpmSources`. Resolved the same way as the
+    /// image-level `extraDependencies` (relative to the image directory, not this fragment's own).
+    #[serde(default)]
+    pub(crate) extra_dependencies: Vec<PathBuf>,
     /// Extra IC command-line flags this fragment contributes; concatenated across matched fragments
     /// (base → most-specific), mirroring `rpmSources`.
     #[serde(default)]
     pub(crate) extra_params: Vec<ExtraParam>,
+    /// Opt a matched cell into a workspace signing profile.
+    #[serde(default)]
+    pub(crate) signing: Option<SigningRef>,
     /// Drop cells this fragment applies to from bulk selection unless the run pins the fragment's
     /// value or names the cell (`meta/docs/2026-07-22-fragment-skip.md`). Mergeable last-wins; a
     /// more-specific fragment may set `false` to un-skip.

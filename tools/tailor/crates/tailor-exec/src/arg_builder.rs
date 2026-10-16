@@ -4,7 +4,10 @@ use std::{
 };
 
 use tailor_config::{Access, BaseSource, ExtraParam, Operation};
-use tailor_core::{Cell, ExecError, ExecutionContext, RuntimeConfig, artifact_name, output_slug};
+use tailor_core::{
+    Cell, ExecError, ExecutionContext, RuntimeConfig, artifact_name, intermediate_artifact_name,
+    output_slug,
+};
 
 use crate::{guard, path_translate, working_copy};
 
@@ -124,7 +127,12 @@ pub fn build_ic_args(cell: &Cell, context: &ExecutionContext) -> Result<Vec<Stri
         }
     }
 
-    if let Some(cache_dir) = &context.runtime.image_cache_dir {
+    // IC's `convert` subcommand does not accept --image-cache-dir (only `customize` downloads/caches
+    // OCI/azureLinux base images), so only emit it for a plain customize build - passing it to
+    // `convert` makes IC reject the whole invocation and print its own usage.
+    if operation == Operation::Customize
+        && let Some(cache_dir) = &context.runtime.image_cache_dir
+    {
         args.extend(flag_value(
             FLAG_IMAGE_CACHE_DIR,
             path_translate::to_container_path(cache_dir, &context.runtime.host_root),
@@ -259,13 +267,13 @@ fn push_log_flags(args: &mut Vec<String>, cell: &Cell, context: &ExecutionContex
 /// (clone-suffixed so clones never collide).
 pub(crate) fn intermediate_path(cell: &Cell, context: &ExecutionContext) -> PathBuf {
     let slug = output_slug(cell.slug.as_ref(), context.clone_index);
-    context.output_dir.join(format!("{slug}.intermediate.raw"))
+    context.output_dir.join(intermediate_artifact_name(&slug))
 }
 pub(crate) fn artifact_path(cell: &Cell, context: &ExecutionContext) -> PathBuf {
-    let slug = output_slug(cell.slug.as_ref(), context.clone_index);
+    let name = output_slug(cell.slug.as_ref(), context.clone_index);
     context
         .output_dir
-        .join(artifact_name(&slug, cell.output.format))
+        .join(artifact_name(&name, cell.output.format))
 }
 
 /// The host path of the per-cell IC log when on-disk persistence is enabled, else `None`
@@ -656,7 +664,7 @@ pub(crate) fn render_signed_dry_run(
     Ok(format!(
         "# {slug} — signed 3-pass (meta/docs/2026-06-29-signing.md §5)\n\
          # pass 1/3: customize -> raw intermediate ({intermediate})\n{customize}\n\n\
-         # pass 2/3: host-side sign the staged boot artifacts (openssl + sbsign); publish CA -> {ca}\n\
+         # pass 2/3: host-side sign the staged boot artifacts (openssl + sbsign/pesign); publish CA -> {ca}\n\
          # pass 3/3: inject-files -> final {fmt} ({final})",
         slug = cell.slug.as_ref(),
         intermediate = intermediate.display(),
@@ -827,6 +835,10 @@ mod tests {
 
         assert!(!args.iter().any(|arg| arg == FLAG_CONFIG_FILE));
         assert!(!args.iter().any(|arg| arg == FLAG_RPM_SOURCE));
+        // IC's `convert` subcommand has no --image-cache-dir flag (only `customize` downloads/caches
+        // OCI/azureLinux bases) and rejects unknown flags outright, so tailor must never emit it here
+        // even though sample_context() configures a cache dir (as a real workspace would).
+        assert!(!args.iter().any(|arg| arg == FLAG_IMAGE_CACHE_DIR));
         assert_eq!(args[0], SUBCOMMAND_CONVERT);
         assert!(
             args.windows(2)
@@ -1282,9 +1294,11 @@ mod tests {
             base,
             base_image: None,
             rpm_sources: vec![PathBuf::from("/rpms/one")],
+            extra_dependencies: Vec::new(),
             extra_params: Vec::new(),
             input_deps: Vec::new(),
             tools_dir: None,
+            signing: None,
             skip: false,
             skip_pins: Vec::new(),
         }
