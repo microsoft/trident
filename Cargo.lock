@@ -4038,6 +4038,7 @@ dependencies = [
  "log",
  "maplit",
  "mockito",
+ "openssl",
  "osutils",
  "quick-xml",
  "reqwest",

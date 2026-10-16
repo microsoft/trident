@@ -122,7 +122,14 @@ async fn main() -> Result<(), Error> {
                     }
                 });
             }
-            Orchestrator::from_config(config).await?.run(shutdown).await
+            match Orchestrator::from_config(config, &shutdown).await? {
+                Some(orchestrator) => orchestrator.run(shutdown).await,
+                // shutdown fired while retrying node_name resolution (e.g.
+                // waiting on kubelet's cert to be written) - exit cleanly,
+                // mirroring Orchestrator::run's own early-exit behavior for
+                // the same signal.
+                None => Ok(()),
+            }
         }
     }
 }

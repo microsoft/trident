@@ -269,22 +269,43 @@ The scenario runs these test cases in order:
    throughout (i.e. it never crashes or restarts) and that it resumes once
    `NodeStore.RestoreNode` brings the Node back — all before any fake
    Nebraska/image-server mocks or real update/rollback traffic is involved
-4. **run-ab-update** — Starts the fake apiserver and fake Nebraska/Omaha
+4. **run-node-name-source** — Proves
+   `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` (`hostname` vs
+   `kubelet-cert`) actually switches which identity `node_name` resolves
+   from, via one-shot `trident-acl-agent --validate-connection kubernetes`
+   CLI invocations against a self-signed fake kubelet client cert — no
+   service restart or reboot is involved, so this stays fast. Runs as three
+   phases, each with its own single-node fake apiserver seeded with the
+   identity that phase expects, asserting the *exact* resolved Node name:
+   `kubelet-cert` resolves to the cert's Subject CN; `hostname` (and the
+   unset default) resolves to the VM's real hostname; an explicit
+   `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` wins regardless of source; and
+   an unreadable cert with `kubelet-cert` source makes this one-shot
+   diagnostic fail immediately (fail-fast, no fallback to hostname — see
+   [Trident ACL Agent](../../Explanation/Trident-ACL-Agent.md)). The
+   long-running agent's different behavior for that same condition -
+   retrying indefinitely with capped exponential backoff instead of
+   crashing, the same way it already waits out its own Node object not
+   existing yet - is covered by Rust unit tests
+   (`resolve_node_name_with_retry` in `orchestrator.rs`) rather than this
+   VM scenario, since proving an indefinite retry loop needs a controllable
+   cert path, not a real filesystem race
+5. **run-ab-update** — Starts the fake apiserver and fake Nebraska/Omaha
    endpoints in-process (the latter over HTTPS — see [Nebraska/Image Server
    TLS](#nebraskaimage-server-tls)), delivers a fake kubeconfig and restarts
    `trident-acl-agent.service`, patches the `acl.azure.com/update-request`
    annotation, and waits for `trident-acl-agent` to drive a real Trident A/B
    update to completion (including a real reboot)
-5. **run-rollback** — Exercises the `rollback` annotation end-to-end against
+6. **run-rollback** — Exercises the `rollback` annotation end-to-end against
    tridentd's `RollbackService` gRPC API, followed by a real reboot and
    post-reboot commit; must run after `run-ab-update` in the same VM
    lifetime, since it rolls back to the volume active before that update
-6. **collect-logs** — Fetches `trident-acl-agent` and Trident logs from the
+7. **collect-logs** — Fetches `trident-acl-agent` and Trident logs from the
    VM via SSH; also runs automatically (with a `journalctl` dump for
    `trident-acl-agent.service`) if an update/rollback/resilience step times
    out waiting for the service to become active, to make crash-loops
    self-diagnosing
-7. **cleanup-vm** — Destroys the QEMU VM
+8. **cleanup-vm** — Destroys the QEMU VM
 
 ### Flags
 

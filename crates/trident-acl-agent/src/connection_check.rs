@@ -25,24 +25,28 @@ pub async fn validate_connection(
             let client = NodeClient::new(&config.kubernetes)
                 .await
                 .context("failed to build Kubernetes client")?;
+            // Single, fail-fast attempt - appropriate for a one-shot
+            // diagnostic (unlike the long-running orchestrator, which
+            // retries a transient kubelet-cert failure with backoff; see
+            // KubernetesConfig::resolve_node_name_once's doc comment).
+            let node_name = config
+                .kubernetes
+                .resolve_node_name_once()
+                .context("failed to resolve node_name")?;
             // Report the actually-resolved server (kubeconfig's own server,
             // unless overridden by kubernetes.api_server), not a value
             // guessed from config - the two only match when an override is
             // set.
             let cluster_url = client.cluster_url();
             client
-                .get_node(&config.kubernetes.node_name)
+                .get_node(&node_name)
                 .await
                 .with_context(|| {
                     format!(
-                        "failed to reach Kubernetes API server at {cluster_url} (get Node {:?})",
-                        config.kubernetes.node_name
+                        "failed to reach Kubernetes API server at {cluster_url} (get Node {node_name:?})"
                     )
                 })?;
-            info!(
-                "kubernetes: reached API server at {cluster_url} and fetched Node {:?}",
-                config.kubernetes.node_name
-            );
+            info!("kubernetes: reached API server at {cluster_url} and fetched Node {node_name:?}");
         }
         ConnectionTarget::Tridentd => {
             TridentClient::connect(&config.trident.socket)
