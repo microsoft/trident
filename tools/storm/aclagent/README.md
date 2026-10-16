@@ -26,9 +26,10 @@ event-only responses are returned unchanged.
 
 The proxy logs the generated COSI `<package>` XML at INFO, including the
 base64 `cosi.metadata.sha384` label value, without logging download URLs.
-Decode that value to bytes and format them as hex to compare it with the
-SHA-384 in the Trident staging Host Configuration (`tridentd.log` in the
-`aclagent-storm-test` artifact). Both VM images run the agent with
+The same log line includes `metadata_sha384=<96 lowercase hex characters>`,
+decoded from that label, for direct comparison with the SHA-384 in the
+Trident staging Host Configuration (`tridentd.log` in the `aclagent-storm-test`
+artifact). Both VM images run the agent with
 `--verbosity trace --network-verbosity warn`; agent journals are also
 collected in that artifact, not echoed into the task log.
 

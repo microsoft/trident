@@ -2,6 +2,7 @@ package proxies
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ func labelCosiPackage(response []byte, packageName string) ([]byte, error) {
 	var buf bytes.Buffer
 	encoder := xml.NewEncoder(&buf)
 	var path []string
+	var metadataSHA384 []byte
 	packages, matched := 0, 0
 	packageStart, packageEnd, packageDepth := 0, 0, 0
 	for {
@@ -66,6 +68,13 @@ func labelCosiPackage(response []byte, packageName string) ([]byte, error) {
 			path = path[:len(path)-1]
 		}
 		if hash != "" {
+			metadataSHA384, err = base64.StdEncoding.DecodeString(hash)
+			if err != nil {
+				return nil, fmt.Errorf("decode COSI metadata SHA-384: %w", err)
+			}
+			if len(metadataSHA384) != 48 {
+				return nil, fmt.Errorf("COSI metadata SHA-384 must be 48 bytes, got %d", len(metadataSHA384))
+			}
 			if err := encoder.Flush(); err != nil {
 				return nil, fmt.Errorf("flush Omaha response: %w", err)
 			}
@@ -106,6 +115,6 @@ func labelCosiPackage(response []byte, packageName string) ([]byte, error) {
 	if err := encoder.Flush(); err != nil {
 		return nil, fmt.Errorf("flush Omaha response: %w", err)
 	}
-	logrus.Infof("Nebraska COSI package XML: %s", buf.Bytes()[packageStart:packageEnd])
+	logrus.Infof("Nebraska COSI package XML: %s; metadata_sha384=%x", buf.Bytes()[packageStart:packageEnd], metadataSHA384)
 	return buf.Bytes(), nil
 }

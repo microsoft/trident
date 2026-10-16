@@ -111,6 +111,9 @@ func TestLabelCosiPackage(t *testing.T) {
 		"malformed-xml":    `<response><app></response>`,
 		"missing-hash":     wrap(`<package name="acl.cosi"/>`),
 		"empty-hash":       wrap(`<package name="acl.cosi" hash=""/>`),
+		"invalid-base64":   wrap(`<package name="acl.cosi" hash="not-valid-base64!!"/>`),
+		"short-hash":       wrap(fmt.Sprintf(`<package name="acl.cosi" hash="%s"/>`, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xab}, 47)))),
+		"oversized-hash":   wrap(fmt.Sprintf(`<package name="acl.cosi" hash="%s"/>`, base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xab}, 49)))),
 		"missing-package":  wrap(`<package name="wrong.cosi" hash="digest"/>`),
 		"duplicate-target": wrap(cosi + cosi),
 	} {
@@ -162,7 +165,8 @@ func TestLabelCosiPackageLogging(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(entries) != 1 || entries[0].Level != logrus.InfoLevel || entries[0].Message != "Nebraska COSI package XML: "+pkg {
+			expected := "Nebraska COSI package XML: " + pkg + "; metadata_sha384=" + strings.Repeat("ab", 48)
+			if len(entries) != 1 || entries[0].Level != logrus.InfoLevel || entries[0].Message != expected {
 				t.Fatalf("expected only the labeled package XML at INFO, got: %+v", entries)
 			}
 			if !bytes.Contains(output, []byte(pkg)) {
@@ -170,4 +174,22 @@ func TestLabelCosiPackageLogging(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("matches-trident-hex-digest", func(t *testing.T) {
+		hook.Reset()
+		const encoded = "gibyPdJdlEOCtzjtn/RFaPDh9LzBALL6tRPldOl0PIQaoUD1eRbBJs+gZ/BJhW/z"
+		const decoded = "8226f23dd25d944382b738ed9ff44568f0e1f4bcc100b2fab513e574e9743c841aa140f57916c126cfa067f049856ff3"
+		input := wrap(strings.Replace(inputPackage, testMetadataSHA384, encoded, 1))
+		output, err := labelCosiPackage([]byte(input), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertCosiMetadataLabel(t, string(output), "acl.cosi", encoded)
+		expectedPackage := strings.Replace(pkg, testMetadataSHA384, encoded, 1)
+		expected := "Nebraska COSI package XML: " + expectedPackage + "; metadata_sha384=" + decoded
+		entries := hook.AllEntries()
+		if len(entries) != 1 || entries[0].Level != logrus.InfoLevel || entries[0].Message != expected {
+			t.Fatalf("expected package XML and matching Trident hex digest at INFO, got: %+v", entries)
+		}
+	})
 }
