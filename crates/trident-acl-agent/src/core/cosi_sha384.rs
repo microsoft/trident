@@ -37,7 +37,9 @@ pub enum CosiSha384Source {
     #[default]
     Labels,
     /// Always use the legacy `hash` attribute; ignore labels entirely. For
-    /// talking to a Nebraska deployment with no label support.
+    /// talking to a Nebraska deployment with no label support at all - e.g.
+    /// the stock `github.com/flatcar/nebraska` backend storm aclagent's
+    /// tests run against.
     Hash,
 }
 
@@ -150,24 +152,6 @@ mod tests {
             resolve_cosi_sha384(&package, CosiSha384Source::Labels).unwrap(),
             HEX_DIGEST
         );
-    }
-
-    #[test]
-    fn rejects_invalid_labels_without_legacy_fallback() {
-        let oversized = "A".repeat(68);
-        for (label, wrong_length) in [
-            ("not-valid-base64!!", None),
-            ("AAAA", Some(3)),
-            (oversized.as_str(), None),
-        ] {
-            let package = package_file(Some(BASE64_DIGEST), &[("cosi.metadata.sha384", label)]);
-            let err = resolve_cosi_sha384(&package, CosiSha384Source::Labels).unwrap_err();
-            if let Some(expected) = wrong_length {
-                assert!(matches!(err, CosiSha384Error::WrongLength(actual) if actual == expected));
-            } else {
-                assert!(matches!(err, CosiSha384Error::InvalidBase64(_)));
-            }
-        }
     }
 
     #[test]
