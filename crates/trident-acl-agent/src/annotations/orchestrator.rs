@@ -34,6 +34,7 @@ use crate::{
     },
     core::{
         config::AgentConfig,
+        cosi_sha384,
         nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
         trident::{CompletedResponse, TridentClient, TridentClientError},
         version::{current_active_version, FALLBACK_ALWAYS_VERSION},
@@ -755,18 +756,14 @@ impl Orchestrator {
         // Nebraska's reported hash is required, not optional: it is Trident's
         // only signal to verify the downloaded image's identity before
         // installing it, so a missing/unusable hash is a hard failure here
-        // rather than a silently-skipped check. See
-        // `PackageHash::to_cosi_sha384` for why this needs converting (our
-        // Nebraska deployment stores a base64 SHA-384 in the field Omaha
-        // calls `sha1`) rather than being forwarded as-is. Checked before the
+        // rather than a silently-skipped check. Checked before the
         // DownloadStarted event below so a bad hash fails the request instead
         // of reporting a download that will never usefully start.
-        let hash = match offered
-            .primary
-            .hash
-            .as_ref()
-            .ok_or_else(|| "Nebraska offered no package hash".to_string())
-            .and_then(|h| h.to_cosi_sha384().map_err(|err| err.to_string()))
+        let hash = match cosi_sha384::resolve_cosi_sha384(
+            &offered.primary,
+            self.config.cosi_sha384.source,
+        )
+        .map_err(|err| err.to_string())
         {
             Ok(hash) => hash,
             Err(err) => {

@@ -1,8 +1,7 @@
 //! The high-level [`Client`] for talking to a Nebraska server.
 
-use std::{thread, time::Duration};
+use std::{collections::BTreeMap, thread, time::Duration};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use log::{debug, trace, warn};
 use semver::Version;
 use url::Url;
@@ -79,12 +78,14 @@ pub struct PackageFile {
     /// host than the Nebraska server itself, which serves only metadata.
     pub url: Url,
 
-    /// The hash of the file as reported by Nebraska, if any.
+    /// The hash(es) of the file as reported by Nebraska, if any. `None` when
+    /// the manifest carries no hash for this file, which the protocol
+    /// permits.
     ///
-    /// **This is a hash of the file, not of any content inside it.** Nebraska
-    /// reports a base64-encoded SHA-1 (with an optional SHA-256), for integrity
-    /// checking the downloaded artifact. `None` when the manifest carries no
-    /// hash for this file, which the protocol permits.
+    /// Our Nebraska deployment repurposes [`PackageHash::sha1`] to carry a
+    /// COSI metadata SHA-384 instead of a real SHA-1 (see
+    /// `core::cosi_sha384::resolve_cosi_sha384`); this module forwards it
+    /// as-is and has no opinion on that convention.
     pub hash: Option<PackageHash>,
 
     /// The file size in bytes, when reported by Nebraska.
@@ -92,77 +93,38 @@ pub struct PackageFile {
 
     /// Whether the manifest marks this file as required.
     pub required: bool,
+
+    /// Arbitrary key/value labels from this package's `<labels>` child
+    /// element (see `wire::Package::labels`). Generic: this protocol layer
+    /// has no opinion on which labels matter to callers.
+    pub(crate) labels: BTreeMap<String, String>,
+}
+
+impl PackageFile {
+    /// Looks up a single label by key.
+    pub fn label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(String::as_str)
+    }
 }
 
 /// The hash(es) of a file, as reported by Nebraska.
 ///
 /// Both values are base64-encoded content hashes of the file: upstream
 /// Nebraska reports a SHA-1, and `sha256` is present only when the file was
-/// registered with one.
-///
-/// **Our Nebraska deployment does not follow that naming.** By internal
-/// convention, our server puts a base64-encoded **SHA-384** of the COSI
-/// image's metadata section into the `sha1` field instead of a real SHA-1 -
-/// the same value Trident itself computes and validates as `image.sha384`
-/// (see `crates/trident/src/osimage/cosi/mod.rs`). So despite the field's
-/// Omaha-inherited name, treat [`sha1`](PackageHash::sha1) as "the value our
-/// Nebraska calls `hash`", not as an actual SHA-1 digest - use
-/// [`to_cosi_sha384`](PackageHash::to_cosi_sha384) to get the value in the
-/// form Trident's gRPC API expects, rather than forwarding this field as-is.
+/// registered with one. This is a plain protocol-faithful data holder - see
+/// `core::cosi_sha384` for how our deployment's repurposing of `sha1` is
+/// interpreted and converted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageHash {
     /// Base64-encoded SHA-1 of the file, per the Omaha wire format - but see
-    /// this struct's docs: our Nebraska deployment actually puts a
+    /// [`PackageFile::hash`]'s docs: our Nebraska deployment actually puts a
     /// base64-encoded SHA-384 here, not a SHA-1.
     pub sha1: String,
 
-    /// Base64-encoded SHA-256 of the file, when Nebraska provides it. Not
-    /// used by [`to_cosi_sha384`](PackageHash::to_cosi_sha384); our
-    /// deployment does not repurpose this field, so it carries a real SHA-256
-    /// (or is absent) same as upstream Omaha/Nebraska.
+    /// Base64-encoded SHA-256 of the file, when Nebraska provides it. Our
+    /// deployment does not repurpose this field, so it carries a real
+    /// SHA-256 (or is absent) same as upstream Omaha/Nebraska.
     pub sha256: Option<String>,
-}
-
-impl PackageHash {
-    /// Converts this hash into the hex-encoded SHA-384 checksum string that
-    /// Trident's gRPC `image.sha384` Host Configuration field expects.
-    ///
-    /// This is a straight re-encode (base64 -> raw bytes -> hex), not a real
-    /// hash-family conversion: per this struct's docs, our Nebraska
-    /// deployment already stores a SHA-384 digest in
-    /// [`sha1`](PackageHash::sha1), just base64-encoded instead of hex, so
-    /// there is no cryptographic conversion between algorithms happening
-    /// here - only a change of text encoding.
-    ///
-    /// Returns an error if the field does not decode to valid base64, or
-    /// decodes to something other than 48 bytes (the fixed size of a SHA-384
-    /// digest) - either means our "this field holds a SHA-384" assumption
-    /// does not hold for this response, and forwarding a wrong-sized/garbage
-    /// value on to Trident as an integrity check would be worse than failing
-    /// loudly here.
-    pub fn to_cosi_sha384(&self) -> Result<String, NebraskaError> {
-        const SHA384_LEN_BYTES: usize = 48;
-
-        // Decode straight into a fixed-size stack buffer instead of
-        // `Engine::decode`'s allocating `Vec<u8>` output: a malicious or
-        // buggy Nebraska response could otherwise send an arbitrarily large
-        // base64 string, forcing a large allocation before we ever get to
-        // checking the decoded length below. `decode_slice` rejects any
-        // input that would decode to more than `SHA384_LEN_BYTES` without
-        // allocating proportionally to the (untrusted) input size.
-        let mut raw = [0u8; SHA384_LEN_BYTES];
-        let decoded_len = STANDARD.decode_slice(&self.sha1, &mut raw).map_err(|err| {
-            NebraskaError::UnexpectedResponse(format!(
-                "Nebraska-reported hash is not valid base64, or does not fit in {SHA384_LEN_BYTES} bytes (SHA-384): {err}"
-            ))
-        })?;
-        if decoded_len != SHA384_LEN_BYTES {
-            return Err(NebraskaError::UnexpectedResponse(format!(
-                "Nebraska-reported hash decodes to {decoded_len} bytes, expected {SHA384_LEN_BYTES} (SHA-384)"
-            )));
-        }
-        Ok(hex::encode(raw))
-    }
 }
 
 /// The bounded exponential-backoff policy used by
@@ -822,11 +784,6 @@ impl<T: Transport> Client<T> {
             )));
         }
 
-        let hash = package.hash.as_ref().map(|sha1| PackageHash {
-            sha1: sha1.clone(),
-            sha256: package.hash_sha256.clone(),
-        });
-
         // Size is a string on the wire, and the attribute is not optional there:
         // a package registered without a size is serialized as `size="0"`, which
         // means "unknown" rather than an empty file. Treat that — and an
@@ -837,12 +794,18 @@ impl<T: Transport> Client<T> {
             .and_then(|s| s.parse::<u64>().ok())
             .filter(|size| *size != 0);
 
+        let hash = package.hash.as_ref().map(|sha1| PackageHash {
+            sha1: sha1.clone(),
+            sha256: package.hash_sha256.clone(),
+        });
+
         Ok(PackageFile {
             name: package.name.clone(),
             url,
             hash,
             size,
             required: package.required,
+            labels: package.labels.clone(),
         })
     }
 }
@@ -852,6 +815,7 @@ mod tests {
     use std::cell::{Cell, RefCell};
 
     use super::*;
+    use crate::core::cosi_sha384::{resolve_cosi_sha384, CosiSha384Error, CosiSha384Source};
 
     /// Stands in for the updater version a real caller would supply.
     const TEST_CLIENT_VERSION: &str = "test-updater-1.2.3";
@@ -1029,6 +993,118 @@ mod tests {
         }
     }
 
+    // Regression coverage for the full pipeline a populated/absent/empty
+    // <labels> element goes through: XML -> wire::Package -> PackageFile
+    // (both parsed via a real Client::check_for_update(), not a hand-built
+    // PackageFile) -> core::cosi_sha384::resolve_cosi_sha384(). The unit
+    // tests in core::cosi_sha384 cover the resolver's own logic in
+    // isolation; these confirm nothing is lost on the way there.
+
+    #[test]
+    fn check_offer_labels_resolve_via_default_source() {
+        // Digest generated with:
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384
+        const BASE64_DIGEST: &str =
+            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
+        const HEX_DIGEST: &str =
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
+        let client = client_with(&format!(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true">
+                <labels>
+                  <label key="cosi.metadata.sha384" value="{BASE64_DIGEST}"/>
+                </labels>
+              </package>
+            </packages></manifest></updatecheck></app></response>"#
+        ));
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap(),
+                    HEX_DIGEST
+                );
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_absent_labels_default_source_is_missing() {
+        // No <labels> element at all, but a legacy hash is present - the
+        // default source (Labels) must not fall back to it.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true"/>
+            </packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                let err =
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap_err();
+                assert!(matches!(
+                    err,
+                    CosiSha384Error::Missing(CosiSha384Source::Labels)
+                ));
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_empty_labels_default_source_is_missing() {
+        // A <labels> element is present but has no <label> children - must
+        // behave the same as it being absent entirely, not as an error or
+        // as a fallback to the legacy hash.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true"><labels></labels></package>
+            </packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                let err =
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap_err();
+                assert!(matches!(
+                    err,
+                    CosiSha384Error::Missing(CosiSha384Source::Labels)
+                ));
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_duplicate_label_key_last_one_wins() {
+        // Two <label> children share the same key: deserialize_labels
+        // documents last-in-document-wins for this case (Nebraska has no
+        // uniqueness guarantee on label keys), so the second value must be
+        // the one the resolver sees, end to end through real XML.
+        const BASE64_DIGEST: &str =
+            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
+        const HEX_DIGEST: &str =
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
+        let client = client_with(&format!(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" size="10" required="true">
+                <labels>
+                  <label key="cosi.metadata.sha384" value="FIRST-NOT-VALID-BASE64!!"/>
+                  <label key="cosi.metadata.sha384" value="{BASE64_DIGEST}"/>
+                </labels>
+              </package>
+            </packages></manifest></updatecheck></app></response>"#
+        ));
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap(),
+                    HEX_DIGEST
+                );
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
     #[test]
     fn check_offer_codebase_without_trailing_slash_keeps_directory() {
         // Relative resolution would replace the last segment and yield
@@ -1047,8 +1123,8 @@ mod tests {
 
     #[test]
     fn check_offer_surfaces_extra_files() {
-        // Nebraska renders extra files as additional <package> entries after the
-        // main one; the offer exposes them as extra_files in order.
+        // Nebraska renders extra files as additional <package> entries after
+        // the main one; the offer exposes them as extra_files in order.
         let client = client_with(
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
               <package name="os-image-2.0.0.cosi" hash="MAIN" size="10" required="true"/>
@@ -1528,74 +1604,5 @@ mod tests {
             .unwrap_err();
         assert!(err.is_retryable());
         assert_eq!(client.transport.calls.get(), 1);
-    }
-
-    #[test]
-    fn to_cosi_sha384_converts_base64_to_hex() {
-        // 48 zero bytes, base64-encoded - a well-formed (if not realistic)
-        // SHA-384 digest.
-        let hash = PackageHash {
-            sha1: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
-            sha256: None,
-        };
-        assert_eq!(hash.to_cosi_sha384().unwrap(), "0".repeat(96));
-    }
-
-    #[test]
-    fn to_cosi_sha384_round_trips_real_digest() {
-        // Generated with:
-        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
-        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384
-        // i.e. a real SHA-384 digest of a known input (not synthetic bytes),
-        // confirming the base64 -> hex re-encode matches an independently
-        // computed value.
-        let hash = PackageHash {
-            sha1: "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx".to_string(),
-            sha256: None,
-        };
-        assert_eq!(
-            hash.to_cosi_sha384().unwrap(),
-            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471"
-        );
-    }
-
-    #[test]
-    fn to_cosi_sha384_rejects_invalid_base64() {
-        let hash = PackageHash {
-            sha1: "not-valid-base64!!".to_string(),
-            sha256: None,
-        };
-        let err = hash.to_cosi_sha384().unwrap_err();
-        assert!(matches!(err, NebraskaError::UnexpectedResponse(_)));
-    }
-
-    #[test]
-    fn to_cosi_sha384_rejects_wrong_length() {
-        // Valid base64, but decodes to far fewer than the 48 bytes a SHA-384
-        // digest requires - e.g. a real SHA-1 (20 bytes), confirming this
-        // check would catch a Nebraska deployment that (unlike ours) puts an
-        // actual SHA-1 in this field.
-        let hash = PackageHash {
-            sha1: "AAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string(),
-            sha256: None,
-        };
-        let err = hash.to_cosi_sha384().unwrap_err();
-        assert!(matches!(err, NebraskaError::UnexpectedResponse(_)));
-    }
-
-    #[test]
-    fn to_cosi_sha384_rejects_oversized_input() {
-        // Valid base64 that decodes to more than the 48 bytes a SHA-384
-        // digest requires. This must be rejected via the fixed-size decode
-        // buffer rather than by first allocating a `Vec` sized to the
-        // (potentially attacker-controlled) input.
-        // 68 base64 chars (no padding needed, 68 % 4 == 0) decode to 51
-        // bytes - more than the 48 a SHA-384 digest requires.
-        let hash = PackageHash {
-            sha1: "A".repeat(68),
-            sha256: None,
-        };
-        let err = hash.to_cosi_sha384().unwrap_err();
-        assert!(matches!(err, NebraskaError::UnexpectedResponse(_)));
     }
 }
