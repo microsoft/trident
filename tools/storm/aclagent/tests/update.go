@@ -758,17 +758,6 @@ func collectAclArtifacts(cfg stormvmconfig.VMConfig, vmIP string, outputPath str
 	for _, remote := range []string{"/tmp/trident-acl-agent.log", "/tmp/tridentd.log"} {
 		if err := stormssh.ScpDownloadFile(cfg, vmIP, remote, filepath.Join(outputPath, filepath.Base(remote))); err != nil {
 			logrus.Warnf("failed to download %s: %v", remote, err)
-			continue
-		}
-		if filepath.Base(remote) == "trident-acl-agent.log" {
-			journal, err := os.ReadFile(filepath.Join(outputPath, filepath.Base(remote)))
-			if err != nil {
-				logrus.Warnf("failed to read ACL agent diagnostics: %v", err)
-				continue
-			}
-			for _, line := range nebraskaDiagnosticLines(string(journal)) {
-				logrus.Infof("ACL agent journal: %s", line)
-			}
 		}
 	}
 	return nil

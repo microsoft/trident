@@ -24,14 +24,13 @@ default `labels` source without a usable legacy fallback. Other packages
 and Nebraska's grant/event state machine are preserved; no-update and
 event-only responses are returned unchanged.
 
-Both VM images run `trident-acl-agent --verbosity trace --network-verbosity warn`.
-Storm's own `--verbose` does not change the agent's verbosity. Agent logs go to
-the guest journal; artifact collection downloads them and echoes Nebraska and
-resolved-checksum message lines into the pipeline log. Raw XML continuation
-lines are not echoed. HTTP traces include status, byte counts, and timing;
-package summaries include hash presence and label keys, never label values
-or signed download URLs. The checksum resolver traces the selected source
-and full metadata digest.
+The proxy logs the generated COSI `<package>` XML at INFO, including the
+base64 `cosi.metadata.sha384` label value, without logging download URLs.
+Decode that value to bytes and format them as hex to compare it with the
+SHA-384 in the Trident staging Host Configuration (`tridentd.log` in the
+`aclagent-storm-test` artifact). Both VM images run the agent with
+`--verbosity trace --network-verbosity warn`; agent journals are also
+collected in that artifact, not echoed into the task log.
 
 ## Test cases
 

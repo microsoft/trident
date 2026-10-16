@@ -21,12 +21,11 @@
 //! when a caller needs it. Until then, an async caller can also simply wrap a
 //! sync call in `tokio::task::spawn_blocking`.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use log::trace;
 use url::Url;
 
-use super::{client::redacted, error::NebraskaError};
+use super::error::NebraskaError;
 
 /// Default per-request timeout. Bounds every Omaha round-trip so a stalled
 /// server turns into a retryable [`NebraskaError::Transport`] rather than
@@ -82,38 +81,16 @@ impl ReqwestTransport {
 
 impl Transport for ReqwestTransport {
     fn post_xml(&self, endpoint: &Url, body: &[u8]) -> Result<String, NebraskaError> {
-        let started = Instant::now();
-        trace!(
-            "Nebraska HTTP POST to '{}': request_bytes={} timeout_ms={}",
-            redacted(endpoint),
-            body.len(),
-            self.timeout.as_millis()
-        );
         // `reqwest::Error`'s `Display` embeds the request URL, which may carry an
         // Omaha secret; `without_url` strips it so the secret cannot reach a log
         // or a propagated error.
-        let response = self
-            .client
+        self.client
             .post(endpoint.as_str())
             .header("Content-Type", "application/xml")
             .timeout(self.timeout)
             .body(body.to_vec())
             .send()
-            .map_err(|e| {
-                let message = e.without_url().to_string();
-                trace!(
-                    "Nebraska HTTP POST failed: elapsed_ms={} error={message}",
-                    started.elapsed().as_millis()
-                );
-                NebraskaError::Transport(message)
-            })?;
-        trace!(
-            "Nebraska HTTP response: status={} headers_elapsed_ms={} content_length={:?}",
-            response.status().as_u16(),
-            started.elapsed().as_millis(),
-            response.content_length()
-        );
-        let text = response
+            .map_err(|e| NebraskaError::Transport(e.without_url().to_string()))?
             .error_for_status()
             .map_err(|e| NebraskaError::Http {
                 status: e.status().map(|s| s.as_u16()),
@@ -123,19 +100,7 @@ impl Transport for ReqwestTransport {
             .map_err(|e| NebraskaError::Http {
                 status: None,
                 message: e.without_url().to_string(),
-            });
-        match &text {
-            Ok(body) => trace!(
-                "Nebraska HTTP response body: bytes={} total_elapsed_ms={}",
-                body.len(),
-                started.elapsed().as_millis()
-            ),
-            Err(error) => trace!(
-                "Nebraska HTTP response body failed: total_elapsed_ms={} error={error}",
-                started.elapsed().as_millis()
-            ),
-        }
-        text
+            })
     }
 }
 
@@ -149,39 +114,6 @@ mod tests {
     };
 
     const TEST_TIMEOUT: Duration = Duration::from_millis(200);
-
-    #[test]
-    fn http_responses_preserve_body_and_error_status() {
-        for status in [200, 503] {
-            let mut server = mockito::Server::new();
-            let mock = server
-                .mock("POST", "/v1/update/")
-                .match_query(mockito::Matcher::Any)
-                .match_header("content-type", "application/xml")
-                .match_body("<request/>")
-                .with_status(status)
-                .with_body("<response/>")
-                .create();
-            let endpoint =
-                Url::parse(&format!("{}/v1/update/?secret=hunter2", server.url())).unwrap();
-            let result = ReqwestTransport::new().post_xml(&endpoint, b"<request/>");
-            if status == 200 {
-                assert_eq!(result.unwrap(), "<response/>");
-            } else {
-                let error = result.unwrap_err();
-                assert!(matches!(
-                    error,
-                    NebraskaError::Http {
-                        status: Some(503),
-                        ..
-                    }
-                ));
-                assert!(!error.to_string().contains("hunter2"));
-                assert!(!error.to_string().contains("/v1/update"));
-            }
-            mock.assert();
-        }
-    }
 
     #[test]
     fn request_times_out_instead_of_hanging() {

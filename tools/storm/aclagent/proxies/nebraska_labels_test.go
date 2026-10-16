@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
+	logrustest "github.com/sirupsen/logrus/hooks/test"
 )
 
 var testMetadataSHA384 = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xab}, 48))
@@ -114,6 +117,56 @@ func TestLabelCosiPackage(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			if output, err := labelCosiPackage([]byte(input), ""); err == nil {
 				t.Fatalf("expected adaptation to fail, got: %s", output)
+			}
+		})
+	}
+}
+
+func TestLabelCosiPackageLogging(t *testing.T) {
+	logger := logrus.StandardLogger()
+	previousHooks := logger.ReplaceHooks(make(logrus.LevelHooks))
+	previousLevel := logger.GetLevel()
+	logger.SetLevel(logrus.InfoLevel)
+	hook := logrustest.NewGlobal()
+	t.Cleanup(func() {
+		logger.ReplaceHooks(previousHooks)
+		logger.SetLevel(previousLevel)
+	})
+
+	pkg := fmt.Sprintf(`<package name="acl.cosi" size="1234"><labels><label key="cosi.metadata.sha384" value="%s"></label></labels></package>`, testMetadataSHA384)
+	inputPackage := fmt.Sprintf(`<package name="acl.cosi" hash="%s" size="1234"/>`, testMetadataSHA384)
+	wrap := func(packages string) string {
+		return `<response><app><updatecheck><urls><url codebase="https://user:password@example.invalid/images/?sig=secret"/></urls><manifest><packages>` + packages + `</packages></manifest></updatecheck></app></response>`
+	}
+	for _, tc := range []struct {
+		name     string
+		response string
+		wantLog  bool
+	}{
+		{"labeled-package-only", wrap(inputPackage + `<package name="extra.txt" hash="extra-hash"/>`), true},
+		{"no-update", `<response><app><updatecheck status="noupdate"/></app></response>`, false},
+		{"event-only", `<response><app><event status="ok"/></app></response>`, false},
+		{"duplicate-target", wrap(inputPackage + inputPackage), false},
+		{"malformed-after-package", strings.TrimSuffix(wrap(inputPackage), `</response>`), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hook.Reset()
+			output, err := labelCosiPackage([]byte(tc.response), "")
+			entries := hook.AllEntries()
+			if !tc.wantLog {
+				if len(entries) != 0 {
+					t.Fatalf("unexpected package log: %+v", entries)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Level != logrus.InfoLevel || entries[0].Message != "Nebraska COSI package XML: "+pkg {
+				t.Fatalf("expected only the labeled package XML at INFO, got: %+v", entries)
+			}
+			if !bytes.Contains(output, []byte(pkg)) {
+				t.Fatalf("logged package differs from the actual response: %s", output)
 			}
 		})
 	}

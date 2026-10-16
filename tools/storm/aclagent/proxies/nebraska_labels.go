@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 )
 
 // labelCosiPackage adapts upstream Nebraska's hash-only package format without
@@ -20,6 +22,7 @@ func labelCosiPackage(response []byte, packageName string) ([]byte, error) {
 	encoder := xml.NewEncoder(&buf)
 	var path []string
 	packages, matched := 0, 0
+	packageStart, packageEnd, packageDepth := 0, 0, 0
 	for {
 		token, err := decoder.Token()
 		if err == io.EOF {
@@ -29,6 +32,7 @@ func labelCosiPackage(response []byte, packageName string) ([]byte, error) {
 			return nil, fmt.Errorf("decode Omaha response: %w", err)
 		}
 		hash := ""
+		packageEnded := false
 		switch element := token.(type) {
 		case xml.StartElement:
 			path = append(path, element.Name.Local)
@@ -58,10 +62,25 @@ func labelCosiPackage(response []byte, packageName string) ([]byte, error) {
 				}
 			}
 		case xml.EndElement:
+			packageEnded = packageDepth != 0 && len(path) == packageDepth
 			path = path[:len(path)-1]
+		}
+		if hash != "" {
+			if err := encoder.Flush(); err != nil {
+				return nil, fmt.Errorf("flush Omaha response: %w", err)
+			}
+			packageStart = buf.Len()
+			packageDepth = len(path)
 		}
 		if err := encoder.EncodeToken(token); err != nil {
 			return nil, fmt.Errorf("encode Omaha response: %w", err)
+		}
+		if packageEnded {
+			if err := encoder.Flush(); err != nil {
+				return nil, fmt.Errorf("flush Omaha response: %w", err)
+			}
+			packageEnd = buf.Len()
+			packageDepth = 0
 		}
 		if hash != "" {
 			labels := struct {
@@ -87,5 +106,6 @@ func labelCosiPackage(response []byte, packageName string) ([]byte, error) {
 	if err := encoder.Flush(); err != nil {
 		return nil, fmt.Errorf("flush Omaha response: %w", err)
 	}
+	logrus.Infof("Nebraska COSI package XML: %s", buf.Bytes()[packageStart:packageEnd])
 	return buf.Bytes(), nil
 }
