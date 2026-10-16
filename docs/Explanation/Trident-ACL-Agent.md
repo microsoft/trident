@@ -29,7 +29,7 @@ files. Installing the package does not by itself enable or start the
 service — a deployment decides when that happens, e.g. by running
 `systemctl enable --now trident-acl-agent.service` on the node, or by
 baking that enablement into the image build (as this repo's own
-`tests/tailor-images/trident-vm-testimage/by-scenario/acl-agent.yaml` Tailor image config does via
+`tests/images/trident-vm-testimage/by-scenario/acl-agent.yaml` Tailor image config does via
 Image Customizer's `services: enable` list).
 
 The shipped unit carries no `Environment=` lines beyond `ExecStart`, so

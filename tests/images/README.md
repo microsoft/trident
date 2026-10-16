@@ -1,6 +1,6 @@
 # Test images with tailor
 
-`tests/tailor-images/` is a [tailor](../../tools/tailor/README.md) workspace.
+`tests/images/` is a [tailor](../../tools/tailor/README.md) workspace.
 It replaces the legacy `testimages.py` / `builder/` flow -- no Make target or
 pipeline invokes it anymore, though its files remain on disk until a follow-up
 cleanup PR removes them.
@@ -10,7 +10,7 @@ cleanup PR removes them.
 Use the in-tree tailor binary via Cargo:
 
 ```bash
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   matrix trident-installer --format json
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   matrix trident-installer --format json
 ```
 
 Build examples:
@@ -22,31 +22,31 @@ Build examples:
 mkdir -p artifacts/rpm-overrides
 
 # trident-testimage
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-testimage -s arch=amd64 --output-dir ./artifacts
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   build trident-testimage -s arch=amd64 --output-dir ./artifacts
 
 # trident-testimage-arm64
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-testimage -s arch=arm64 --output-dir ./artifacts
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   build trident-testimage -s arch=arm64 --output-dir ./artifacts
 
 # trident-direct-streaming-installer-arm64
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-installer -s arch=arm64 -s variant=direct-streaming --output-dir ./artifacts
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   build trident-installer -s arch=arm64 -s variant=direct-streaming --output-dir ./artifacts
 
 # trident-container-usrverity-testimage (signed)
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-verity-testimage -s deployment=container -s mode=usr --output-dir ./artifacts
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   build trident-verity-testimage -s deployment=container -s mode=usr --output-dir ./artifacts
 ```
 
 ## Base images
 
-The workspace uses a `baseImages:` catalogue in `tests/tailor-images/tailor.yaml`.
+The workspace uses a `baseImages:` catalogue in `tests/images/tailor.yaml`.
 For the Azure Linux base slots you can materialize the defaults locally with:
 
 ```bash
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   bases download baremetal core_arm64 core_selinux qemu_guest
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   bases download baremetal core_arm64 core_selinux qemu_guest
 ```
 
 Verify that every referenced base file exists:
 
 ```bash
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   bases verify
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/images/tailor.yaml   bases verify
 ```
 
 Ubuntu / GB200 direct-streaming inputs still come from the pipeline-managed blob
