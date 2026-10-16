@@ -17,7 +17,7 @@ There is intentionally no fake `tridentd`.
 
 ## Pipeline diagnostics
 
-The validation stage runs 20 independent jobs, each executing the full
+The validation stage runs 30 independent jobs, each executing the full
 scenario against the same build's images and binaries. Each job publishes
 its own `aclagent-storm-test-<job position>` artifact to keep results separate.
 On failure, the artifact also includes `booted.qcow2.zst`, matching the

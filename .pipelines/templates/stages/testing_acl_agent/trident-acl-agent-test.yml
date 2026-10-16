@@ -93,7 +93,7 @@ stages:
           hostArchitecture: amd64
 
         strategy:
-          parallel: 20
+          parallel: 30
         variables:
           ob_outputDirectory: /tmp/output
           ob_artifactBaseName: "aclagent-storm-test-$(System.JobPositionInPhase)"
