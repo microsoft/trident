@@ -24,6 +24,15 @@ default `labels` source without a usable legacy fallback. Other packages
 and Nebraska's grant/event state machine are preserved; no-update and
 event-only responses are returned unchanged.
 
+Both VM images run `trident-acl-agent --verbosity trace --network-verbosity warn`.
+Storm's own `--verbose` does not change the agent's verbosity. Agent logs go to
+the guest journal; artifact collection downloads them and echoes Nebraska and
+resolved-checksum message lines into the pipeline log. Raw XML continuation
+lines are not echoed. HTTP traces include status, byte counts, and timing;
+package summaries include hash presence and label keys, never label values
+or signed download URLs. The checksum resolver traces the selected source
+and full metadata digest.
+
 ## Test cases
 
 - `deploy-vm`

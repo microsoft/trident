@@ -107,7 +107,13 @@ pub fn resolve_cosi_sha384(
     if decoded_len != SHA384_LEN_BYTES {
         return Err(CosiSha384Error::WrongLength(decoded_len));
     }
-    Ok(hex::encode(buf))
+    let hash = hex::encode(buf);
+    let source = match source {
+        CosiSha384Source::Labels => "labels (cosi.metadata.sha384)",
+        CosiSha384Source::Hash => "hash",
+    };
+    log::trace!("Resolved COSI metadata SHA-384: source={source} metadata_sha384={hash}");
+    Ok(hash)
 }
 
 #[cfg(test)]
