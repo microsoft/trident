@@ -33,6 +33,13 @@ artifact). Both VM images run the agent with
 `--verbosity trace --network-verbosity warn`; agent journals are also
 collected in that artifact, not echoed into the task log.
 
+On pipeline failure, the job also publishes `booted.qcow2.zst` in its
+`aclagent-storm-test` failure artifact, matching the servicing and rollback
+tests. The pipeline enables `--force-cleanup` to stop the VM before the disk
+is compressed. The disk retains both A/B slots, including the former root's
+journal, for offline diagnosis. Failures before disk creation emit a warning
+instead of an archive.
+
 ## Test cases
 
 - `deploy-vm`
