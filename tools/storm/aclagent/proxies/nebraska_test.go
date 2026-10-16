@@ -121,7 +121,7 @@ func TestNebraskaProxy(t *testing.T) {
 			Available:   true,
 			Version:     "5.0.0",
 			URL:         "http://example.invalid/images/",
-			SHA384:      "deadbeef",
+			SHA384:      strings.Repeat("ab", 48),
 			PackageName: "acl.cosi",
 		})
 		listener, stop, err := p.ListenAndServe(ctx, "127.0.0.1:0")
@@ -140,6 +140,29 @@ func TestNebraskaProxy(t *testing.T) {
 		}
 		if !strings.Contains(body, "5.0.0") {
 			t.Fatalf("expected manifest version 5.0.0 in response, got: %s", body)
+		}
+		assertCosiMetadataLabel(t, body, "acl.cosi", testMetadataSHA384)
+	})
+
+	t.Run("invalid-metadata-sha384", func(t *testing.T) {
+		for _, digest := range []string{"not-hex", strings.Repeat("ab", 47), strings.Repeat("ab", 49)} {
+			t.Run(fmt.Sprintf("length-%d", len(digest)), func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				p, _ := newTestNebraskaProxy(t, &NebraskaScenario{
+					Available: true,
+					Version:   "5.0.0",
+					SHA384:    digest,
+				})
+				_, stop, err := p.ListenAndServe(ctx, "127.0.0.1:0")
+				if err == nil {
+					_ = stop()
+					t.Fatal("expected invalid metadata SHA384 to fail seeding")
+				}
+				if !strings.Contains(err.Error(), "SHA384") {
+					t.Fatalf("expected SHA384 validation error, got: %v", err)
+				}
+			})
 		}
 	})
 
@@ -168,7 +191,7 @@ func TestNebraskaProxy(t *testing.T) {
 			Available:   true,
 			Version:     "5.0.0",
 			URL:         "http://example.invalid/images/",
-			SHA384:      "deadbeef",
+			SHA384:      strings.Repeat("ab", 48),
 			PackageName: "acl.cosi",
 		})
 		listener, stop, err := p.ListenAndServe(ctx, "127.0.0.1:0")

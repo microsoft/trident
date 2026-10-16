@@ -1,0 +1,120 @@
+package proxies
+
+import (
+	"bytes"
+	"encoding/base64"
+	"encoding/xml"
+	"fmt"
+	"strings"
+	"testing"
+)
+
+var testMetadataSHA384 = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xab}, 48))
+
+type labeledOmahaPackage struct {
+	Name     string `xml:"name,attr"`
+	Hash     string `xml:"hash,attr"`
+	SHA256   string `xml:"hash_sha256,attr"`
+	Size     string `xml:"size,attr"`
+	Required bool   `xml:"required,attr"`
+	Labels   []struct {
+		Key   string `xml:"key,attr"`
+		Value string `xml:"value,attr"`
+	} `xml:"labels>label"`
+}
+
+func omahaPackages(t *testing.T, body string) []labeledOmahaPackage {
+	t.Helper()
+	var response struct {
+		Packages []labeledOmahaPackage `xml:"app>updatecheck>manifest>packages>package"`
+	}
+	if err := xml.Unmarshal([]byte(body), &response); err != nil {
+		t.Fatalf("decode adapted response: %v", err)
+	}
+	return response.Packages
+}
+
+func assertCosiMetadataLabel(t *testing.T, body, name, digest string) {
+	t.Helper()
+	for _, pkg := range omahaPackages(t, body) {
+		if pkg.Name != name {
+			continue
+		}
+		if pkg.Hash != "" {
+			t.Fatalf("COSI package still has a legacy hash: %q", pkg.Hash)
+		}
+		if len(pkg.Labels) != 1 || pkg.Labels[0].Key != "cosi.metadata.sha384" || pkg.Labels[0].Value != digest {
+			t.Fatalf("unexpected COSI labels: %+v", pkg.Labels)
+		}
+		return
+	}
+	t.Fatalf("response has no package %q: %s", name, body)
+}
+
+func TestLabelCosiPackage(t *testing.T) {
+	wrap := func(packages string) string {
+		return `<response protocol="3.0"><daystart elapsed_seconds="123"/><app appid="test" status="ok"><updatecheck status="ok"><urls><url codebase="https://example.invalid/a?x=1&amp;y=2"/></urls><manifest version="5.0.0"><packages>` +
+			packages + `</packages><actions><action event="postinstall" run="true"/></actions></manifest></updatecheck><event status="ok"/></app></response>`
+	}
+	cosi := fmt.Sprintf(`<package name="acl.cosi" hash="%s" hash_sha256="other-digest" size="1234" required="true"/>`, testMetadataSHA384)
+
+	t.Run("labels-only-and-preserves-backend-fields", func(t *testing.T) {
+		input := wrap(cosi + `<package name="extra.txt" hash="extra-hash" size="99"/>`)
+		output, err := labelCosiPackage([]byte(input), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(output)
+		assertCosiMetadataLabel(t, body, "acl.cosi", testMetadataSHA384)
+		packages := omahaPackages(t, body)
+		if len(packages) != 2 || packages[0].Size != "1234" || !packages[0].Required || packages[0].SHA256 != "other-digest" {
+			t.Fatalf("package attributes changed: %+v", packages)
+		}
+		if packages[1].Name != "extra.txt" || packages[1].Hash != "extra-hash" || len(packages[1].Labels) != 0 {
+			t.Fatalf("extra package changed: %+v", packages[1])
+		}
+		for _, expected := range []string{`protocol="3.0"`, `elapsed_seconds="123"`, `appid="test"`, `version="5.0.0"`, `codebase="https://example.invalid/a?x=1&amp;y=2"`, `<event status="ok">`, `<action event="postinstall" run="true">`} {
+			if !strings.Contains(body, expected) {
+				t.Errorf("response lost %s: %s", expected, body)
+			}
+		}
+	})
+
+	t.Run("custom-package-name-and-escaping", func(t *testing.T) {
+		input := wrap(strings.Replace(cosi, `name="acl.cosi"`, `name="custom&amp;image.cosi"`, 1))
+		output, err := labelCosiPackage([]byte(input), "custom&image.cosi")
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertCosiMetadataLabel(t, string(output), "custom&image.cosi", testMetadataSHA384)
+	})
+
+	for name, input := range map[string]string{
+		"no-update":  `<response><app><updatecheck status="noupdate"/></app></response>`,
+		"event-only": `<response><app><event status="ok"/></app></response>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			output, err := labelCosiPackage([]byte(input), "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(output) != input {
+				t.Fatalf("response changed: %s", output)
+			}
+		})
+	}
+
+	for name, input := range map[string]string{
+		"malformed-xml":    `<response><app></response>`,
+		"missing-hash":     wrap(`<package name="acl.cosi"/>`),
+		"empty-hash":       wrap(`<package name="acl.cosi" hash=""/>`),
+		"missing-package":  wrap(`<package name="wrong.cosi" hash="digest"/>`),
+		"duplicate-target": wrap(cosi + cosi),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if output, err := labelCosiPackage([]byte(input), ""); err == nil {
+				t.Fatalf("expected adaptation to fail, got: %s", output)
+			}
+		})
+	}
+}

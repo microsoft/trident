@@ -15,6 +15,15 @@ annotation-driven trident ACL agent protocol.
 
 There is intentionally no fake `tridentd`.
 
+The Nebraska proxy runs the upstream backend against ephemeral Postgres.
+Since upstream cannot emit package labels, a test-only XML response adapter
+moves the offered COSI package's base64 metadata digest from `hash` to
+`<labels><label key="cosi.metadata.sha384" value="..."/></labels>`.
+It removes the legacy `hash` attribute, so the VM exercises the agent's
+default `labels` source without a usable legacy fallback. Other packages
+and Nebraska's grant/event state machine are preserved; no-update and
+event-only responses are returned unchanged.
+
 ## Test cases
 
 - `deploy-vm`
