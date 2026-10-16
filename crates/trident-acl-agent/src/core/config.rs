@@ -445,7 +445,7 @@ impl FromStr for Mode {
 }
 
 /// Controls whether a persisted Nebraska affinity cookie is reused across
-/// updates, or deliberately dropped at the start of each new one. See
+/// staging attempts, or reset before each attempt's initial check. See
 /// [`OrchestrationConfig::cookie_lifetime`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum CookieLifetime {
@@ -453,15 +453,15 @@ pub enum CookieLifetime {
     /// replaces it. This is the originally-shipped behavior.
     #[default]
     Forever,
-    /// Force a fresh cookie at the start of every update: the very first
-    /// Nebraska call of a new update (`handle_stage`'s `check_for_update` -
-    /// definitionally the first call of any update, since stage always
-    /// precedes finalize/commit) never sends whatever cookie is currently
-    /// persisted, so Nebraska issues/re-confirms one for this update
-    /// specifically. Every later call within that same update (progress
-    /// events, finalize, the post-reboot commit) still reuses whatever that
-    /// first call established - this is "don't inherit a prior update's
-    /// session," not "never persist at all."
+    /// Start each staging attempt without a cookie: clear persisted
+    /// affinity before `handle_stage`'s initial Nebraska check, then persist
+    /// and reuse any cookie it establishes for progress, finalize, and
+    /// post-reboot completion.
+    ///
+    /// Restarting an unfinished stage starts a new attempt, even when the
+    /// target version, `nodeUpdateId`, and `operationId` are unchanged.
+    /// Its initial check also starts cookie-less; affinity is not preserved
+    /// across staging attempts. Resuming finalize/commit does not reset it.
     PerUpdate,
 }
 
@@ -496,7 +496,7 @@ pub struct OrchestrationConfig {
     /// `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED`.
     pub cookie_enabled: bool,
     /// Whether a persisted cookie is reused forever, or deliberately
-    /// dropped at the start of every new update. See [`CookieLifetime`].
+    /// reset before every staging attempt. See [`CookieLifetime`].
     /// Override with `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME`
     /// (`"forever"` or `"per-update"`).
     pub cookie_lifetime: CookieLifetime,

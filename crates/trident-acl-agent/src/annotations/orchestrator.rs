@@ -706,12 +706,9 @@ impl Orchestrator {
                 Version::parse(FALLBACK_ALWAYS_VERSION)
                     .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver")
             });
-        // This is `handle_stage`'s own initial Nebraska call - definitionally
-        // the first one of a brand new update (stage always precedes
-        // finalize/commit) - so it's the one place `CookieLifetime::PerUpdate`
-        // forces a fresh cookie rather than inheriting whatever a prior
-        // update left behind. Every other Nebraska call in this module is a
-        // continuation and always passes `force_fresh: false`.
+        // Every staging attempt starts fresh in PerUpdate, including a
+        // restart with unchanged request IDs. Progress/finalize/commit
+        // reuse this attempt's cookie rather than resetting it again.
         let force_fresh = self.config.orchestration.cookie_lifetime == CookieLifetime::PerUpdate;
         let initial_cookie = self.load_nebraska_cookie(force_fresh);
         let cookie_enabled = self.config.orchestration.cookie_enabled;
@@ -1597,17 +1594,17 @@ impl Orchestrator {
     /// round-trip proceeds cookie-less, the same as this host's very
     /// first-ever contact with Nebraska.
     ///
-    /// `force_fresh` is set by callers that are the first Nebraska call of
-    /// a brand new update (see `CookieLifetime::PerUpdate`'s docs) - when
-    /// enabled, it invalidates the persisted cookie too, so later reports
-    /// cannot reload a prior update's cookie if Nebraska issues no new one.
+    /// `force_fresh` marks the initial check of a staging attempt, including
+    /// a restarted stage (see `CookieLifetime::PerUpdate`). When enabled,
+    /// it invalidates the persisted cookie too, so later reports cannot
+    /// reload a previous attempt's cookie if Nebraska issues no new one.
     fn load_nebraska_cookie(&self, force_fresh: bool) -> Option<String> {
         if !self.config.orchestration.cookie_enabled {
             return None;
         }
         if force_fresh {
             if let Err(err) = self.nebraska_cookie.save("") {
-                warn!("failed to clear Nebraska cookie for new update: {err}");
+                warn!("failed to clear Nebraska cookie for staging attempt: {err}");
             }
             return None;
         }
@@ -1694,11 +1691,8 @@ impl Orchestrator {
             }
         };
         let label = report.label();
-        // Always a continuation of an already-started update (a progress or
-        // terminal event report), never the first Nebraska call of a new
-        // one - so `force_fresh` is always false here regardless of
-        // `cookie_lifetime`. See `handle_stage`'s own call for the one place
-        // that does force a fresh cookie.
+        // Reports continue the current attempt, including across reboot,
+        // so only handle_stage's initial check resets affinity.
         let initial_cookie = self.load_nebraska_cookie(false);
         let cookie_enabled = self.config.orchestration.cookie_enabled;
         let result = task::spawn_blocking(move || {
@@ -2464,6 +2458,32 @@ mod tests {
                 },
             );
         }
+    }
+
+    #[tokio::test]
+    async fn per_update_cookie_resets_when_an_unfinished_stage_restarts() {
+        let dir = tempfile::tempdir().unwrap();
+        let orchestrator = cookie_orchestrator(dir.path(), true, CookieLifetime::PerUpdate).await;
+        assert_eq!(orchestrator.load_nebraska_cookie(true), None);
+        orchestrator.save_nebraska_cookie(Some("ASLBSA=first-attempt".to_string()));
+        assert_eq!(
+            orchestrator.load_nebraska_cookie(false).as_deref(),
+            Some("ASLBSA=first-attempt"),
+        );
+        drop(orchestrator);
+
+        let restarted = cookie_orchestrator(dir.path(), true, CookieLifetime::PerUpdate).await;
+        assert_eq!(
+            restarted.nebraska_cookie.load().unwrap().as_deref(),
+            Some("ASLBSA=first-attempt"),
+        );
+        assert_eq!(restarted.load_nebraska_cookie(true), None);
+        assert_eq!(restarted.nebraska_cookie.load().unwrap(), None);
+        restarted.save_nebraska_cookie(Some("ASLBSA=second-attempt".to_string()));
+        assert_eq!(
+            restarted.load_nebraska_cookie(false).as_deref(),
+            Some("ASLBSA=second-attempt"),
+        );
     }
 
     #[tokio::test]
