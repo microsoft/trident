@@ -30,10 +30,12 @@ available for content released independently.
 
 ### Out of Scope
 
-Changing the Host Configuration API, DDIs, SELinux support or signing;
-partition-less COSI files; and bundled extensions under
-[disk streaming](../../Explanation/Disk-Streaming.md), which must be refused
-until streaming can enable the merge units.
+- Changes to the Host Configuration API, DDIs, SELinux support or signing.
+- The Image Customizer API and implementation for producing these COSIs;
+  separate work.
+- Partition-less COSI files.
+- Bundled extensions under [disk streaming](../../Explanation/Disk-Streaming.md);
+  refuse them until streaming can enable the merge units.
 
 ### Exit Criteria
 
@@ -43,9 +45,9 @@ change by Runtime Update. Reject collisions and unsupported disk streaming.
 
 ## Dependencies
 
-[Image Customizer](https://github.com/microsoft/azure-linux-image-tools), or
-another writer, must emit the section. Extension-only updates also need a
-COSI-to-COSI writer that copies region images verbatim and an explicit
+A separately defined [Image Customizer](https://github.com/microsoft/azure-linux-image-tools)
+API must produce COSIs with embedded extensions. Extension-only updates also
+need a COSI-to-COSI writer that copies region images verbatim and an explicit
 Runtime Update request (including its precedence over `forceAbUpdate`).
 
 Fix the existing `set_up_extensions` replacement bug first: with the same ID
@@ -309,7 +311,8 @@ validation for every servicing type, not only the Host Configuration lists in
 
 1. Fix [prerequisites](#dependencies); publish COSI 1.3 schema and samples.
 2. Read, validate and install bundled extensions; persist the effective set.
-3. Add the image summary, copy-based writer and verified Runtime Update path.
+3. Add the image summary and verified Runtime Update path after the separate
+   copy-based writer is available.
 
 Step 2 can ship before step 3, but the RFC is not complete without both.
 
