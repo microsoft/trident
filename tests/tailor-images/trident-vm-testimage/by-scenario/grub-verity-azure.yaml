@@ -1,0 +1,24 @@
+outputs:
+  $replace:
+    - format: cosi
+base:
+  $set:
+    ref: core_selinux
+config:
+  storage:
+    $include: ./include/storage-grub-verity-azure.yaml
+  os:
+    hostname: trident-vm-testimg
+    selinux:
+      mode:
+        $set: permissive
+    packages:
+      install:
+        $append:
+          - selinux-policy
+          - WALinuxAgent
+    users:
+      $replace:
+        - name: testuser
+          secondaryGroups:
+            - wheel

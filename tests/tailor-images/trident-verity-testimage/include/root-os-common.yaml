@@ -1,0 +1,42 @@
+bootloader:
+  resetType: hard-reset
+selinux:
+  mode: disabled
+kernelCommandLine:
+  extraCommandLine:
+    - console=tty0
+    - console=ttyS0
+    - rd.info
+    - log_buf_len=1M
+packages:
+  install:
+    - grub2-efi-binary-noprefix
+    - curl
+    - device-mapper
+    - dosfstools
+    - dracut-overlayfs
+    - efibootmgr
+    - iproute
+    - iptables
+    - lsof
+    - lvm2
+    - mdadm
+    - netplan
+    - openssh-server
+    - systemd-udev
+    - tpm2-tools
+    - veritysetup
+    - vim
+  remove:
+    - grub2-efi-binary
+additionalFiles:
+  - source: base/etc-mount.service
+    destination: /etc/systemd/system/etc-mount.service
+  - source: base/etc-mount.sh
+    destination: /usr/local/bin/etc-mount.sh
+  - source: ../common/files/sudoers-wheel
+    destination: /etc/sudoers.d/wheel
+services:
+  enable:
+    - etc-mount
+    - sshd
