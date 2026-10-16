@@ -97,7 +97,7 @@ Example (`extensions` fragment of `metadata.json`):
   "sysexts": [{
     "id": "gpu-driver",
     "image": {
-      "path": "images/extensions/gpu-driver.rawzst",
+      "path": "images/extensions/gpu-driver.raw.zst",
       "compressedSize": 41943040,
       "uncompressedSize": 134217728,
       "sha384": "3a1f9c0d4e5b6a7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e"
@@ -106,7 +106,7 @@ Example (`extensions` fragment of `metadata.json`):
   "confexts": [{
     "id": "fleet-config",
     "image": {
-      "path": "images/extensions/fleet-config.rawzst",
+      "path": "images/extensions/fleet-config.raw.zst",
       "compressedSize": 262144,
       "uncompressedSize": 1048576,
       "sha384": "c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2"
