@@ -115,6 +115,7 @@ pub(super) fn derive_host_configuration_inner(
                 name: verity_name,
                 data_device_id: partition_id.clone(),
                 hash_device_id: hash_partition_id.clone(),
+                hash_signature_device_id: None,
                 corruption_option: Default::default(),
             });
 
