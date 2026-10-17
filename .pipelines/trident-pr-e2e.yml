@@ -8,6 +8,12 @@
 # Support:        https://aka.ms/onebranchsup                                   #
 #################################################################################
 
+parameters:
+  - name: aclAgentTestParallelJobs
+    displayName: Number of parallel ACL-agent test jobs
+    type: number
+    default: 1
+
 trigger: none
 
 resources:
@@ -38,3 +44,4 @@ extends:
         parameters:
           targetStage: pr-e2e
           blockPublishing: true
+          aclAgentTestParallelJobs: ${{ parameters.aclAgentTestParallelJobs }}
