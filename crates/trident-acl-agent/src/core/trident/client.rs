@@ -35,6 +35,8 @@ use trident_proto::v1::{
 };
 use url::Url;
 
+use crate::core::nebraska;
+
 #[derive(Debug, Clone)]
 pub struct CompletedResponse {
     pub reboot_status: RebootStatus,
@@ -107,18 +109,27 @@ pub struct TridentClient {
     rollback_client: RollbackServiceClient<Channel>,
 }
 
+pub fn redacted_socket(socket: &str) -> String {
+    match Url::parse(socket) {
+        Ok(url) if url.scheme() == "unix" => format!("unix://{}", url.path()),
+        Ok(url) => nebraska::redacted(&url),
+        Err(_) => "<invalid URI>".to_string(),
+    }
+}
+
 impl TridentClient {
     pub async fn connect(socket: &str) -> Result<Self, TridentClientError> {
+        let socket_for_error = redacted_socket(socket);
         let endpoint =
             Endpoint::new(socket.to_string()).map_err(|source| TridentClientError::Connect {
-                socket: socket.to_string(),
+                socket: socket_for_error.clone(),
                 source,
             })?;
         let channel = endpoint
             .connect()
             .await
             .map_err(|source| TridentClientError::Connect {
-                socket: socket.to_string(),
+                socket: socket_for_error,
                 source,
             })?;
 
@@ -414,4 +425,76 @@ async fn consume_servicing_stream(
     }
 
     Err(TridentClientError::MissingCompletion { operation })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redacted_socket_preserves_local_path_and_drops_uri_secrets() {
+        for (socket, expected) in [
+            (
+                "unix:///run/trident/custom.sock?token=socket-token#fragment",
+                "unix:///run/trident/custom.sock",
+            ),
+            (
+                "https://socket-user:socket-password@trident.example:8443/private-path?token=private-query#private-fragment",
+                "https://trident.example:8443/<redacted>",
+            ),
+            ("invalid-socket-secret", "<invalid URI>"),
+        ] {
+            assert!(redacted_socket(socket) == expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_endpoint_error_redacts_socket_uri() {
+        let socket =
+            "http://socket-user:socket-password@127.0.0.1/private path?token=private-query";
+        let error = TridentClient::connect(socket)
+            .await
+            .err()
+            .expect("invalid endpoint should fail");
+        assert!(matches!(
+            &error,
+            TridentClientError::Connect { socket, .. }
+                if socket == "http://127.0.0.1/<redacted>"
+        ));
+        let diagnostic = format!("{error:#}\n{error:?}");
+        for secret in [
+            "socket-user",
+            "socket-password",
+            "private path",
+            "private-query",
+        ] {
+            assert!(!diagnostic.contains(secret));
+        }
+    }
+
+    #[tokio::test]
+    async fn connection_failure_redacts_socket_uri() {
+        // Port zero cannot host a listening TCP service.
+        let socket =
+            "http://socket-user:socket-password@127.0.0.1:0/private-path?token=private-query";
+        let error = time::timeout(Duration::from_secs(5), TridentClient::connect(socket))
+            .await
+            .expect("connection attempt did not complete")
+            .err()
+            .expect("connection to port zero should fail");
+        assert!(matches!(
+            &error,
+            TridentClientError::Connect { socket, .. }
+                if socket == "http://127.0.0.1:0/<redacted>"
+        ));
+        let diagnostic = format!("{error:#}\n{error:?}");
+        for secret in [
+            "socket-user",
+            "socket-password",
+            "private-path",
+            "private-query",
+        ] {
+            assert!(!diagnostic.contains(secret));
+        }
+    }
 }

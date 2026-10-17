@@ -75,6 +75,7 @@ async fn main() -> Result<(), Error> {
     }
 
     let config = AgentConfig::from_env()?;
+    log::info!("Effective AgentConfig: {:?}", config.redacted_for_logging());
 
     if let Some(target) = args.validate_connection {
         return validate_connection(target, &config).await;

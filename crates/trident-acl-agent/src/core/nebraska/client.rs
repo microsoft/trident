@@ -238,14 +238,36 @@ fn summarize(response: &wire::Response) -> String {
                 Some(check) => {
                     let manifest = match &check.manifest {
                         None => String::new(),
-                        Some(manifest) => format!(
-                            ", manifest {} with {} package(s)",
-                            manifest.version,
-                            manifest
-                                .packages
-                                .as_ref()
-                                .map_or(0, |packages| packages.packages.len())
-                        ),
+                        Some(manifest) => {
+                            let packages =
+                                manifest
+                                    .packages
+                                    .as_ref()
+                                    .map_or_else(String::new, |packages| {
+                                        packages
+                                            .packages
+                                            .iter()
+                                            .map(|package| {
+                                                let hash_present = package.hash.is_some();
+                                                let hash_sha256_present = package.hash_sha256.is_some();
+                                                let label_keys =
+                                                    package.labels.keys().collect::<Vec<_>>();
+                                                format!(
+                                                    "hash_present={hash_present} hash_sha256_present={hash_sha256_present} label_keys={label_keys:?}"
+                                                )
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join("; ")
+                                    });
+                            format!(
+                                ", manifest {} with {} package(s) [{packages}]",
+                                manifest.version,
+                                manifest
+                                    .packages
+                                    .as_ref()
+                                    .map_or(0, |packages| packages.packages.len())
+                            )
+                        }
                     };
                     format!(", updatecheck {}{manifest}", check.status)
                 }
@@ -1450,6 +1472,29 @@ mod tests {
             join_file(&codebase, "2.0.0/os.cosi").unwrap().as_str(),
             "https://updates.example.com/packages/2.0.0/os.cosi"
         );
+    }
+
+    #[test]
+    fn summarize_reports_package_fields_without_label_values_or_download_secrets() {
+        let xml = OFFER.replace(
+            r#"codebase="https://updates.example.com/""#,
+            r#"codebase="https://updates.example.com/?sig=download-secret""#,
+        ).replace(
+            r#"hash="AAAAAAAAAAAAAAAAAAAAAAAAAAA=" size="1024" required="true"/>"#,
+            r#"size="1024" required="true"><labels><label key="cosi.metadata.sha384" value="private-label-value"/></labels></package>"#,
+        );
+        let response = wire::parse_response(&xml).unwrap();
+        let summary = summarize(&response);
+        assert!(summary.contains("hash_present=false"), "{summary}");
+        assert!(summary.contains("hash_sha256_present=false"), "{summary}");
+        assert!(summary.contains("cosi.metadata.sha384"), "{summary}");
+        for secret in [
+            "private-label-value",
+            "download-secret",
+            "updates.example.com",
+        ] {
+            assert!(!summary.contains(secret), "{summary}");
+        }
     }
 
     #[test]

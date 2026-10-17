@@ -242,6 +242,11 @@ node that never reports a terminal `commit` status within its SLA.
 
 ## Configuration
 
+At startup, the agent logs its effective `AgentConfig` at INFO after applying
+environment overrides and defaults, including for `--validate-connection`.
+Network URL credentials, paths, query strings, and fragments are redacted.
+Kubeconfig and state paths are logged, but their contents are not read for logging.
+
 There is no config file. Every setting is an environment variable prefixed
 `TRIDENT_ACL_AGENT_`, systemd-style: set it in the unit's own
 `Environment=` lines, via a drop-in override, or by any other means that
