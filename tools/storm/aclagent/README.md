@@ -104,7 +104,6 @@ above. `prepareVmForAclAgent` writes only the fake kubeconfig, then enables
 and restarts `trident-acl-agent.service`. Before that runs, the service
 simply isn't started -- no crash-looping, no log noise.
 
-
 ## Local usage
 
 The VM image (`make artifacts/trident-vm-acl-agent-testimage.qcow2`) bakes in
