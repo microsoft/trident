@@ -1,20 +1,20 @@
 # Base images
 
-A base image is the OS image Image Customizer modifies. tailor offers four ways to declare one, but
-they split into two fundamentally different acquisition models — and the choice matters more for
-reproducibility than for convenience.
+A base image is the OS image Image Customizer modifies. tailor supports five sources. Registry
+images resolve to digests for a run; file and workspace-image sources consume local artifacts.
 
 ## Registry bases vs. file bases
 
-| Kind | Who fetches | Build input | Reproducible everywhere |
+| Kind | Who supplies it | Build input | Portability |
 | --- | --- | --- | --- |
-| `oci`, `azureLinux` | Image Customizer, at build time | a registry digest (`--image`) | needs the `input-image-oci` preview + a cache dir |
-| `path` | you | a local file (`--image-file`) | yes, but the path is repeated per image |
-| `ref` (catalogue) | `tailor bases download` **or** a CI feed | a local file (`--image-file`) | yes, file-based, CI-parity |
+| `oci`, `azureLinux` | Image Customizer, at build time | resolved registry digest (`--image`) | requires IC's `input-image-oci` preview flag and a cache dir |
+| `path` | you | local file (`--image-file`) | requires the same file at the declared path on each machine |
+| `ref` (catalogue) | `tailor bases download` **or** a CI feed | local file (`--image-file`) | requires the same file in the named slot |
+| `image` | another workspace image | paired producer artifact (`--image-file`) | requires the producer build; see [dependent images](../how-to/build-dependent-images.md) |
 
-The `oci`/`azureLinux` kinds are great for a quick dev build straight off a registry. But they pull
-*at build time*, behind an IC preview feature, into a writable cache — exactly what a locked-down
-pipeline cannot do, and not pinned to one verified artifact. A `path` base avoids that, but every
+The `oci`/`azureLinux` kinds are useful for dev builds straight from a registry, but may require
+registry access during build and can resolve a newer digest on a later run. A `path` base avoids
+that, but every
 image repeats the same `../../../artifacts/<name>.vhdx`, and the `../` count breaks when the layout
 moves.
 
@@ -22,7 +22,8 @@ moves.
 
 For local file bases (`path` and catalogue `ref` slots), tailor computes an **XXH3-128** content
 hash plus the file size before planning. This hash is only for rebuild/change detection; it is not a
-security or provenance digest, and local files are not pinned in `tailor.lock`.
+security or provenance digest. Supply identical bytes separately on each builder; a matching
+path alone is no provenance guarantee.
 
 Large bases are cached on the build path. After the first hash, `tailor build` stores a versioned
 entry under `<output>/.tailor/base-hashes/` keyed by the base path and guarded by the stored absolute
@@ -30,8 +31,8 @@ path, size, and mtime. If the size and mtime still match, the cached XXH3-128 va
 the base file is not re-read (run with `-v` to see a `reusing cached hash, skipping read` line); if
 anything is missing, malformed, unwritable, or changed, tailor just hashes the file again.
 
-`tailor build --force` deliberately ignores all incremental checks, so it re-hashes the base every
-time — omit `--force` for fast back-to-back iterations on an unchanged base.
+`tailor build --force` rebuilds even when a stamp says the artifact is current; it does **not**
+disable the base hash cache. An unchanged base may still reuse its cached hash.
 
 ## The catalogue model
 

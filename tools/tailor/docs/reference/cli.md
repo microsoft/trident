@@ -4,16 +4,21 @@ Global options:
 
 | Option | Meaning |
 | --- | --- |
-| `--manifest <PATH>` | Path to `tailor.yaml`, or a directory to search from. Default: walk up from the current directory. |
+| `--manifest <PATH>` | Path to `tailor.yaml` (uses its parent as the search start), or a directory to search upward from. Default: current directory. |
 | `--engine <docker\|podman\|auto>` | Container engine for this invocation. Overrides `runtime.engine`. See [Select a container engine](../how-to/select-a-container-engine.md). |
 | `--host <ENDPOINT>` | Engine endpoint for this invocation (`unix://…` or `tcp://…`). Overrides `runtime.host` and `DOCKER_HOST` / `CONTAINER_HOST`. |
 | `--log-dir <PATH>` | Persist each cell's full IC debug log to `<PATH>/<slug>.log`. |
-| `--ic-log-level <panic\|fatal\|error\|warn\|info\|debug\|trace>` | Set IC's own log level, independent of `-v`/`-q`. |
-| `--strict` | Promote authority/confinement warnings to errors. |
+| `--ic-log-level <panic\|fatal\|error\|warn\|info\|debug\|trace>` | Set IC's own log level, independent of `-v`/`-q` (default: `debug`; overrides `runtime.logLevel`). |
+| `--strict` | Accepted, but currently unused; does **not** promote warnings to errors. |
 | `-v`, `--verbose` | Increase verbosity; repeatable. |
 | `-q`, `--quiet` | Decrease verbosity; repeatable. |
 | `--timestamps <elapsed\|time\|off>` | Leading timestamp on status/log lines (default elapsed). |
 | `--version` | Print version, including commit/build metadata. |
+
+These options are global. `--engine`/`--host` take precedence over manifest and environment
+engine settings; `--log-dir` takes precedence over `TAILOR_LOG_DIR`, then `runtime.logDir`.
+Without a manifest, a standalone `image.yaml` in the search directory is used. Run
+`tailor <command> --help` for the installed binary's command-specific flags.
 
 ## `tailor init <name> [base|simple|advanced]`
 
@@ -46,13 +51,15 @@ name the image and pass `--cell` — `tailor build <slug>` is shorthand for
 | --- | --- |
 | `-s`, `--select AXIS=VALUE` | Constrain matrix axes. Repeatable. Comma-separated axis pairs are accepted, for example `-s variant=full,arch=amd64`. |
 | `--cell SLUG` | Select exact cells by slug. Repeatable. |
-| `--locked` | *(preview, `lock-preview` feature)* Require a complete `tailor.lock`; fail on missing entries or registry drift. Absent from default builds — see [`tailor lock`](#tailor-lock-preview). |
 | `--force` | Ignore incremental up-to-date checks. |
 | `--arch ARCH` | Restrict build to architecture(s). Repeatable. |
 | `--output-dir PATH` | Output directory. Default: `<workspace>/artifacts`. |
-| `--build-dir-base PATH` | Override `runtime.buildDirBase`: place each cell's build scratch under this directory (which must not be `/`, a system directory, or `$HOME`). Lets CI point scratch at a specific filesystem without editing the committed `tailor.yaml`. |
+| `--build-dir-base PATH` | Override `runtime.buildDirBase`: per-cell scratch under this directory; rejects `/`, protected system dirs, `$HOME`, and ancestors of the current directory. A separate filesystem is not required. |
 | `--dry-run` | Render each selected container/IC invocation without running it. |
 | `--clones N` | Build N clones of each cell — distinct artifacts sharing all meaningful content but differing in incidental details (fresh UUIDs, timestamps), each published as `<slug>_clone<n>`. Default: `1`. |
+
+Builds run sequentially. A hidden `--jobs` argument is accepted but has no scheduling effect; do
+not use it to request parallel builds.
 
 ## `tailor convert <input> --to <format>`
 
@@ -65,7 +72,7 @@ config required. Writes the output beside the input by default (or to `-o`), own
 | `-o`, `--output PATH` | Output path. Default: the input's name with the target extension, beside the input. |
 | `--container REF` | The Image Customizer image to run. Default: `mcr.microsoft.com/azurelinux/imagecustomizer:latest`. |
 | `--arch ARCH` | `amd64` (default) or `arm64` — drives `--platform linux/<arch>`. |
-| `--build-dir-base PATH` | Host base for IC scratch. Default: a unique dir under the system temp dir. Must not be `/`. |
+| `--build-dir-base PATH` | Explicit host base for IC scratch; without it, IC uses container-internal `/tmp`. Host paths must pass the same safety guard as build scratch. |
 | `--dry-run` | Render the container invocation without running it. |
 
 See [Convert an image format](../how-to/convert-an-image-format.md).
@@ -94,9 +101,10 @@ Print one selected cell slug per line. Equivalent to `tailor matrix --format slu
 
 ## `tailor explain <image|slug>`
 
-Print the **merge order** for each selected cell: the ordered list of fragment files that merge into it
-(base first, later files win), each annotated with why it applies and any `$include`d libraries. This makes
-the fragment precedence model legible. Add `--with-config` to also print the merged Image Customizer
+Print the **merge order** for each selected cell: the ordered list of applicable fragment files
+(base first), each annotated with its *path* predicate and any `$include`d libraries. An inline
+`match:` filters applicability but does not appear in the reason label or change precedence. Add
+`--with-config` to also print the merged Image Customizer
 config. Pass an image name to explain its selected cells, or a cell slug to explain that cell
 directly. Accepts `-s/--select` and `--cell`; read-only and offline.
 
@@ -122,7 +130,8 @@ List images and toolchains.
 
 ## `tailor render [images...]`
 
-Write golden snapshots for selected cells. Accepts `-s/--select` and `--cell`.
+Write merged IC config snapshots to `<image-dir>/.rendered/<slug>.yaml` for selected cells.
+Offline; does not run IC. Accepts `-s/--select` and `--cell`.
 
 ## `tailor export [images...]`
 
@@ -148,34 +157,26 @@ export:
 | `--cell SLUG` | Select exact cells by slug. Repeatable. |
 
 `tailor export` writes each `<slug>.yaml` and prunes any stale `*.yaml` in the output directory that no
-selected cell produces. Only static cells are exportable — the config YAML itself carries no
-tools-dir, base, rpm-source, or signing details (those are Image Customizer invocation arguments the
-consuming pipeline supplies).
-
-## `tailor lock` *(preview)*
-
-> **Preview feature.** `lock`, `update`, and `build --locked` are gated behind the `lock-preview`
-> Cargo feature and are **absent from default builds** (lockfile *enforcement* is not yet
-> implemented). Build with `cargo install --features lock-preview` (or `cargo build --features
-> lock-preview`) to enable them.
-
-Resolve registry inputs and write `tailor.lock` without building. Inputs already pinned in the
-current lock **keep their digests** — only new or unpinned inputs are resolved, so re-running `lock`
-is idempotent and never silently moves an existing pin. Use it to freeze a reproducible set.
-
-## `tailor update` *(preview)*
-
-Re-resolve **every** input to its latest digest and rewrite `tailor.lock`, ignoring the existing
-pins. Use it to deliberately refresh to newer base images / toolchains. Preview feature — see
-[`tailor lock`](#tailor-lock-preview).
+selected cell produces. The config YAML carries no tools-dir, base, rpm-source, or signing arguments
+(the pipeline must supply those). `${inputs.<name>}` producer paths are **not** resolved by export;
+avoid exporting those configs unchanged to a pipeline without substituting concrete paths.
 
 ## `tailor resolve [images...]`
 
-Resolve digests/hashes and print the lockfile content without writing it.
+Inspect the selected images' inputs and print a YAML summary of resolved toolchain, named
+tools-dir, and registry-base digests (plus an explicitly configured janitor image). Requires a
+reachable container engine and may contact registries. Prints to stdout without building or
+writing a file; local-only images without registry digests are omitted from the summary.
 
 ## `tailor clean [images...]`
 
-Remove generated artifacts and build stamps for selected cells. Accepts `-s/--select` and `--cell`.
+Use the container janitor to remove selected cells' default, **uncompressed** artifacts from
+`<workspace>/artifacts` (and the default `<slug>.ca_cert.pem` path for signed cells).
+An explicit signing profile `publishCaCert` path is **not** removed. Accepts `-s/--select` and
+`--cell`.
+Requires a reachable engine. It does **not** remove build stamps, clones, compressed `.zst` outputs,
+managed `.artifacts` directories, or outputs from `build --output-dir`; delete those separately.
+To regenerate after cleaning, use `build --force` if the stamp still marks a cell up to date.
 
 ## `tailor bases list`
 

@@ -13,6 +13,7 @@ base:
 outputs:
   - format: cosi
 config:
+  previewFeatures: [input-image-oci]  # required by IC for the edge cell's OCI base
   os:
     hostname: gizmo
 ```

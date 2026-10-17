@@ -54,17 +54,35 @@ base:
     version: "3.0"
     variant: minimal-os
 config:
+  previewFeatures:
+    - input-image-oci
   os:
     hostname: solo
+    bootloader:
+      resetType: hard-reset
     packages:
       install:
         - openssh-server
     services:
       enable:
         - sshd
+  storage:
+    bootType: efi
+    disks:
+      - partitionTableType: gpt
+        maxSize: 4G
+        partitions:
+          - { id: esp, type: esp, size: 8M }
+          - { id: rootfs, size: grow }
+    filesystems:
+      - { deviceId: esp, type: fat32, mountPoint: { path: /boot/efi, options: "umask=0077" } }
+      - { deviceId: rootfs, type: ext4, mountPoint: { path: / } }
 ```
 
-Top-level keys are tailor's. Everything under `config:` is Image Customizer configuration and is passed through opaquely.
+This is the complete scaffold, with the storage lists shown in compact YAML. The
+`input-image-oci` opt-in lets IC fetch the Azure Linux base; the growing root partition and
+`hard-reset` bootloader setting support package installation. Top-level keys are tailor's;
+`config:` passes through to IC.
 
 ## 4. Validate
 
@@ -88,11 +106,33 @@ Expected shape:
 
 ```text
 1 cell(s) (dry-run)
-...
-imagecustomizer ... --config-file ... --output-image-format cosi ...
+
+docker run \
+  ...
+  mcr.microsoft.com/azurelinux/imagecustomizer:latest \
+  customize \
+  --config-file ... \
+  ...
+  --output-image-format cosi \
+  ...
 ```
 
-`--dry-run` renders the build plan — the container/Image Customizer invocation — and prints it without starting a container. It contacts no container engine, so it works with no Docker daemon. Remove `--dry-run` when you have Docker daemon access and want to build the artifact.
+`--dry-run` prints the container/IC invocation without starting a container or contacting an
+engine. The host paths depend on your directory.
+
+## 6. Build the image (optional)
+
+With a reachable Docker daemon and registry access, run:
+
+```bash
+tailor build
+```
+
+The generated output is `artifacts/solo_amd64_cosi.cosi`. To check it:
+
+```bash
+test -f artifacts/solo_amd64_cosi.cosi
+```
 
 ## Next step
 
