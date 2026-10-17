@@ -1,0 +1,39 @@
+[package]
+name = "installer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85.0"
+publish = false
+license = "MIT"
+
+[[bin]]
+name = "trident-installer"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+crossterm = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+ratatui = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tar = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tonic = { workspace = true }
+url = { workspace = true }
+
+# Local Crate Dependencies
+osutils = { path = "../osutils" }
+trident_api = { path = "../trident_api" }
+trident-proto = { path = "../trident-proto", features = ["grpc-preview"] }
+
+[dev-dependencies]
+indoc = { workspace = true }
+tempfile = { workspace = true }
+tokio-stream = { workspace = true }
+trident-proto = { path = "../trident-proto", features = ["server", "grpc-preview"] }

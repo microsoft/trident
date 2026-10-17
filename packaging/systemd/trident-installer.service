@@ -1,0 +1,18 @@
+[Unit]
+Description=Trident Linux Installer
+Wants=tridentd.socket systemd-udev-settle.service
+After=tridentd.socket systemd-udev-settle.service network.target
+Conflicts=trident-install.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/trident-installer --system-console
+StandardInput=null
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=infinity
+Restart=no
+SendSIGHUP=yes
+
+[Install]
+WantedBy=multi-user.target

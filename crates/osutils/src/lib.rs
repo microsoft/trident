@@ -39,6 +39,7 @@ pub mod sfdisk;
 pub mod swap;
 pub mod systemd;
 pub mod tabfile;
+pub mod terminal;
 pub mod tune2fs;
 pub mod udevadm;
 pub mod uki;
