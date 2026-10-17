@@ -489,7 +489,7 @@ func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig st
 	//   - kubernetes.node_name is also left unset (its own default: the
 	//     node's real hostname, lowercased). testConfig.NodeName is set to
 	//     match the VM image's Image Customizer 'hostname' setting
-	//     (baseimg-acl-agent.yaml), so the agent's own hostname-derived
+	//     (acl-agent-base.yaml), so the agent's own hostname-derived
 	//     default already agrees with the fake apiserver's seeded Node -
 	//     no override needed, exactly like a real deployment.
 	//   - kubernetes.kubeconfig and trident.socket are also already their
@@ -503,7 +503,7 @@ func prepareVmForAclAgent(cfg stormvmconfig.VMConfig, vmIP string, testConfig st
 	// "IMAGE_VERSION"), which used to be trident-acl-agent's own compiled-in
 	// defaults and so needed no override at all. Now that the defaults have
 	// moved to the generic "acl.microsoft.com"/"VERSION_ID", both VM images
-	// (baseimg-acl-agent.yaml and updateimg-acl-agent.yaml) bake in a
+	// (acl-agent-base.yaml and acl-agent.yaml) bake in a
 	// systemd drop-in setting them explicitly - not done here at runtime,
 	// because a drop-in written under /etc/systemd/system after boot would
 	// live only on the currently-active root and not survive this
