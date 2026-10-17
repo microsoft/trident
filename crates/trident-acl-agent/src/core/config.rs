@@ -161,11 +161,6 @@ struct RedactedAgentConfig<'a>(&'a AgentConfig);
 impl fmt::Debug for RedactedAgentConfig<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let config = self.0;
-        let socket = match Url::parse(&config.trident.socket) {
-            Ok(url) if url.scheme() == "unix" => format!("unix://{}", url.path()),
-            Ok(url) => super::nebraska::redacted(&url),
-            Err(_) => "<invalid URI>".to_string(),
-        };
         f.debug_struct("AgentConfig")
             .field(
                 "nebraska.endpoint",
@@ -196,7 +191,10 @@ impl fmt::Debug for RedactedAgentConfig<'_> {
                 "kubernetes.annotation_prefix",
                 &config.kubernetes.annotation_prefix,
             )
-            .field("trident.socket", &socket)
+            .field(
+                "trident.socket",
+                &super::trident::redacted_socket(&config.trident.socket),
+            )
             .field("orchestration", &config.orchestration)
             .finish()
     }
