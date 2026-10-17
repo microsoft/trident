@@ -1,0 +1,7 @@
+base:
+  $set:
+    ref: gb200_2404_arm64
+
+outputs:
+  $replace:
+    - format: baremetal-image

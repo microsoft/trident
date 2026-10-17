@@ -1,0 +1,53 @@
+bootloader:
+  resetType: hard-reset
+hostname: trident-vm-verity-testimg
+selinux:
+  mode: disabled
+kernelCommandLine:
+  extraCommandLine:
+    - console=tty0
+    - console=tty1
+    - console=ttyS0
+    - rd.debug
+    - loglevel=6
+    - log_buf_len=1M
+    - systemd.journald.forward_to_console=1
+packages:
+  install:
+    - device-mapper
+    - dnf
+    - efibootmgr
+    - grub2-efi-binary
+    - iproute
+    - iptables
+    - jq
+    - kexec-tools
+    - lvm2
+    - openssh-server
+    - systemd-udev
+    - trident
+    - veritysetup
+    - vim
+    - netplan
+additionalFiles:
+  - source: base/files/etc-mount-mic.service
+    destination: /etc/systemd/system/etc-mount.service
+  - source: base/files/etc-mount.sh
+    destination: /usr/local/bin/etc-mount.sh
+  - source: base/files/sshd-keygen.service
+    destination: /usr/lib/systemd/system/sshd-keygen.service
+  - source: base/files/99-dhcp-eth0.network
+    destination: /etc/systemd/network/99-dhcp-eth0.network
+  - source: ../common/files/sudoers-wheel
+    destination: /etc/sudoers.d/wheel
+services:
+  enable:
+    - etc-mount
+    - kdump
+    - tridentd.socket
+users:
+  - name: testuser
+    sshPublicKeyPaths:
+      - base/files/id_rsa.pub
+    secondaryGroups:
+      - wheel

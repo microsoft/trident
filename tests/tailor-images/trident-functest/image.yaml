@@ -1,0 +1,10 @@
+name: trident-functest
+
+base:
+  ref: baremetal
+
+outputs:
+  - format: qcow2
+
+config:
+  $include: ./tailor/baseimg.yaml
