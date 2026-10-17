@@ -94,6 +94,63 @@ fn unsafe_dir(path: PathBuf, reason: String) -> ExecError {
     ExecError::UnsafeDir { path, reason }
 }
 
+/// Guard a per-cell scratch directory that the build-dir reap removes **recursively**: on top of the
+/// generic [`ensure_safe_build_dir`] checks, it must be a *strict* descendant of its scratch `base`,
+/// so a `.`/`..` slug cannot normalize to the base or its parent and delete unrelated files. Symlinks
+/// are resolved throughout. Overlap with inputs/outputs is prevented at the base level by
+/// [`ensure_build_dir_base_isolated`].
+pub(crate) fn ensure_safe_scratch_dir(scratch: &Path, base: &Path) -> Result<(), ExecError> {
+    ensure_safe_build_dir(scratch)?;
+    let scratch = resolve_path(scratch)?;
+    let base = resolve_path(base)?;
+    if scratch == base || !scratch.starts_with(&base) {
+        return Err(unsafe_dir(
+            scratch,
+            format!(
+                "must be a strict subdirectory of the build-dir base `{}`",
+                base.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Validate a `--build-dir-base` against the obvious footguns, since the reap removes `<base>/<slug>`
+/// recursively. The base must be either **outside the workspace** or **under the output directory**
+/// (where the default scratch base lives), and must not **contain** the workspace root or the output
+/// directory. This keeps the reap away from in-workspace inputs (image definitions, local base
+/// images, RPM sources) and the artifacts/cache/log tree, while allowing the default
+/// `<output>/.tailor/build`. `--build-dir-base` is an advanced flag contracted to be a dedicated
+/// directory: inputs supplied as absolute paths *outside* the workspace that a user parks under the
+/// base are deliberately not covered. Symlinks are resolved.
+pub fn ensure_build_dir_base_isolated(
+    base: &Path,
+    workspace: &Path,
+    output: &Path,
+) -> Result<(), ExecError> {
+    let base = resolve_path(base)?;
+    let workspace = resolve_path(workspace)?;
+    let output = resolve_path(output)?;
+    if workspace.starts_with(&base) || output.starts_with(&base) {
+        return Err(unsafe_dir(
+            base,
+            "the build-dir base must not contain the workspace or output directory".to_owned(),
+        ));
+    }
+    if base.starts_with(&workspace) && !base.starts_with(&output) {
+        return Err(unsafe_dir(
+            base,
+            format!(
+                "the build-dir base must be outside the workspace `{}` or under the output \
+                 directory `{}`",
+                workspace.display(),
+                output.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Absolutize and lexically collapse `.`/`..`, then **resolve symlinks** on the deepest existing
 /// ancestor, re-attaching any not-yet-created leaf lexically. A purely lexical check treats a
 /// symlinked build/scratch dir like `/tmp/tailor-build -> /` as safe; resolving the existing
@@ -164,6 +221,60 @@ mod tests {
     fn rejects_filesystem_root() {
         let err = ensure_safe_build_dir(Path::new(ROOT_PATH)).unwrap_err();
         assert!(matches!(err, ExecError::UnsafeDir { .. }));
+    }
+
+    #[test]
+    fn scratch_dir_enforces_strict_descent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().join("scratch");
+        let child = base.join("cell");
+        std::fs::create_dir_all(&child).unwrap();
+
+        // A strict child of the base is fine.
+        ensure_safe_scratch_dir(&child, &base).unwrap();
+
+        // The base itself (a `.` slug) and its parent (a `..` slug) are not strict descendants.
+        assert!(matches!(
+            ensure_safe_scratch_dir(&base, &base).unwrap_err(),
+            ExecError::UnsafeDir { .. }
+        ));
+        assert!(matches!(
+            ensure_safe_scratch_dir(tmp.path(), &base).unwrap_err(),
+            ExecError::UnsafeDir { .. }
+        ));
+    }
+
+    #[test]
+    fn build_dir_base_rejects_containing_or_nesting_in_workspace() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("ws");
+        let output = workspace.join("artifacts");
+        std::fs::create_dir_all(&output).unwrap();
+
+        // The default layout — scratch base under the output dir — is allowed.
+        let default_base = output.join(".tailor").join("build");
+        std::fs::create_dir_all(&default_base).unwrap();
+        ensure_build_dir_base_isolated(&default_base, &workspace, &output).unwrap();
+
+        // A base outside the workspace entirely is allowed.
+        let external = tmp.path().join("scratch");
+        std::fs::create_dir_all(&external).unwrap();
+        ensure_build_dir_base_isolated(&external, &workspace, &output).unwrap();
+
+        // A base inside the workspace but NOT under the output dir is rejected (in-workspace sources
+        // at `<base>/<slug>` would be reaped).
+        let in_ws = workspace.join("scratch");
+        std::fs::create_dir_all(&in_ws).unwrap();
+        assert!(matches!(
+            ensure_build_dir_base_isolated(&in_ws, &workspace, &output).unwrap_err(),
+            ExecError::UnsafeDir { .. }
+        ));
+
+        // A base that CONTAINS the workspace (or output) is rejected.
+        assert!(matches!(
+            ensure_build_dir_base_isolated(tmp.path(), &workspace, &output).unwrap_err(),
+            ExecError::UnsafeDir { .. }
+        ));
     }
 
     #[test]
