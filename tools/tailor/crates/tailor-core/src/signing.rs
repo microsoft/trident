@@ -6,7 +6,7 @@
 //! is cheap and side-effect-free.
 //!
 //! This module is the **foundation** (config + preflight). The signing *execution* — cert minting via
-//! `rcgen`, PE signing via `sbsign`, and the `inject-files` IC pass — is a later milestone
+//! `rcgen`, PE signing via `sbsign`/`pesign`, and the `inject-files` IC pass — is a later milestone
 //! (`meta/docs/2026-06-29-signing.md` §11, S1-remainder). Until it lands, `tailor` refuses a signed build rather
 //! than silently emit an unsigned image.
 
@@ -42,7 +42,7 @@ pub enum SignError {
     /// Preflight found unmet prerequisites — a missing tool binary, an unreadable key, etc. Reported
     /// in aggregate, before any (slow, privileged) IC run.
     Preflight { missing: Vec<MissingPrerequisite> },
-    /// A signing step failed during execution (openssl/sbsign, `inject-files.yaml` handling, or IO).
+    /// A signing step failed during execution (openssl/sbsign/pesign, `inject-files.yaml` handling, or IO).
     Execution { detail: String },
 }
 

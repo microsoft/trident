@@ -48,13 +48,14 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
     ) -> Result<ExecutionResult, ExecError> {
         // Image Customizer writes the uncompressed artifact; when `compression:` is set, tailor
         // compresses it into `published_path` after the build (`ic_output_path` is then removed).
-        // The output slug carries the clone index, so each `--clones` run publishes a distinct file.
-        let out_slug = output_slug(cell.slug.as_ref(), context.clone_index);
+        // The published artifact name carries the clone index, so each `--clones` run still yields
+        // a distinct file.
+        let out_name = output_slug(cell.slug.as_ref(), context.clone_index);
         let ic_output_path = context
             .output_dir
-            .join(artifact_name(&out_slug, cell.output.format));
+            .join(artifact_name(&out_name, cell.output.format));
         let published_path = context.output_dir.join(published_artifact_name(
-            &out_slug,
+            &out_name,
             cell.output.format,
             cell.output.compression,
         ));
@@ -799,9 +800,11 @@ mod tests {
             },
             base_image: None,
             rpm_sources: Vec::new(),
+            extra_dependencies: Vec::new(),
             extra_params: Vec::new(),
             input_deps: Vec::new(),
             tools_dir: None,
+            signing: None,
             skip: false,
             skip_pins: Vec::new(),
         }

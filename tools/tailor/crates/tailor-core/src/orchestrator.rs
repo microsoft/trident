@@ -4,7 +4,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -89,6 +89,23 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
 
     /// Plan a build: render and resolve every selected cell of every target, fingerprint it, and
     /// decide whether it is up to date against its build stamp.
+    ///
+    /// `seen_artifacts` accumulates claimed output paths across *every* call for a build run (the
+    /// caller plans one node at a time, `run.rs`'s per-node scheduling loop) -- a map scoped to a
+    /// single call only catches collisions within one target, not across the whole dependency
+    /// closure, letting two different images silently publish to the same path.
+    ///
+    /// `seen_ca_cert_paths` is the same kind of cross-call accumulator, but for a `local-test-ca`
+    /// signing profile's resolved `publishCaCert` destination (keyed by path, valued by profile id):
+    /// two cells publishing their self-signed CA to the same path is only safe when they share the
+    /// same profile id (and therefore are expected to converge on the same CA); across different
+    /// profile ids each `build_signer` call mints an independent root, so the second write silently
+    /// invalidates the first image's trust chain.
+    ///
+    /// `clones` is the `--clones N` count the caller will execute with (1 for a normal build):
+    /// claims cover every clone's own suffixed output path (`output_slug`), not just the bare slug,
+    /// so a `publishCaCert` set to a clone-suffixed path is still caught as a collision here instead
+    /// of silently colliding with that clone's image at build time.
     #[allow(
         clippy::too_many_arguments,
         reason = "planning needs config, lock, pre-resolved images, selection, and output root"
@@ -104,6 +121,9 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
         selection: &BuildSelection<'_>,
         output_dir: &Path,
         hash_cache_dir: Option<&Path>,
+        clones: u32,
+        seen_artifacts: &mut BTreeMap<PathBuf, String>,
+        seen_ca_cert_paths: &mut BTreeMap<PathBuf, String>,
     ) -> Result<BuildPlan, CoreError> {
         let mut planned = Vec::new();
         for target in targets {
@@ -144,9 +164,13 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                 let resolved_tools_dir = resolved_tools_dir(tools_dir_sources, &cell)?;
                 // Hash the cell's declared local dependencies so an edit to an IC-config-referenced
                 // asset (an `additionalFiles` script, a local RPM) invalidates the incremental
-                // fingerprint — the config text only *names* these files (`deps.rs`).
+                // fingerprint — the config text only *names* these files (`deps.rs`). `image.yaml`
+                // is itself parsed as the first matched fragment, so `cell.extra_dependencies`
+                // already is the full base + matched-fragment merge (base -> most-specific) -- no
+                // separate image-level set needs to be chained in here, that would just hash the
+                // base document's own paths a second time.
                 let extra_dependency_hashes = deps::hash_dependencies(
-                    &cell.target.definition.extra_dependencies,
+                    &cell.extra_dependencies,
                     &cell.target.dir,
                     None,
                     hash_cache_dir,
@@ -168,6 +192,24 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     hash_cache_dir,
                     target.name(),
                 )?;
+                let resolved_signing_profile =
+                    tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())?;
+                claim_cell_output_paths(
+                    &cell,
+                    &target.root,
+                    output_dir,
+                    clones,
+                    resolved_signing_profile.as_ref(),
+                    seen_artifacts,
+                    seen_ca_cert_paths,
+                )?;
+                let signing_profile_descriptor_value = resolved_signing_profile
+                    .as_ref()
+                    .map(|(id, profile)| signing_profile_descriptor(id, profile));
+                let (signing_key_hash, signing_cert_hash) = match &resolved_signing_profile {
+                    Some((_, profile)) => signing_key_hashes(profile, &target.root, target.name())?,
+                    None => (None, None),
+                };
                 let print = fingerprint(&FingerprintInputs {
                     slug: cell.slug.as_ref(),
                     toolchain_digest: &resolved_toolchain.ic_image_ref,
@@ -181,6 +223,23 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     extra_params: &cell.extra_params,
                     compression: cell.output.compression,
                     cosi_compression_level: cell.output.cosi_compression_level,
+                    signing_profile_id: signing_profile_descriptor_value
+                        .as_ref()
+                        .map(|d| d.id.as_str()),
+                    signing_backend: signing_profile_descriptor_value
+                        .as_ref()
+                        .map(|d| d.backend.as_str()),
+                    signing_vault: signing_profile_descriptor_value
+                        .as_ref()
+                        .map(|d| d.vault.as_str()),
+                    signing_certificate: signing_profile_descriptor_value
+                        .as_ref()
+                        .map(|d| d.certificate.as_str()),
+                    signing_publish_ca_cert: signing_profile_descriptor_value
+                        .as_ref()
+                        .map(|d| d.publish_ca_cert.as_str()),
+                    signing_key_hash,
+                    signing_cert_hash,
                 });
                 let artifact = output_dir.join(published_artifact_name(
                     cell.slug.as_ref(),
@@ -201,6 +260,51 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
             }
         }
         Ok(BuildPlan { cells: planned })
+    }
+
+    /// Claim every output path (artifact, CA cert, signed intermediate) for every cell across the
+    /// **whole** selected closure, before any node is planned or built, and fail on the first
+    /// collision found anywhere in it.
+    ///
+    /// Without this, a caller that plans-then-builds one node at a time in topological order (a
+    /// consumer must be planned *after* its producer builds, so its base hash reflects the fresh
+    /// producer artifact -- see `tailor/src/run.rs`) only accumulates collision claims one node at
+    /// a time too: an earlier node's signed build can write its CA cert over a path that happens to
+    /// equal a *later* node's output before that later node ever contributes its own claim, so the
+    /// collision is only ever reported once the later node is reached -- by which point the earlier
+    /// node has already executed and potentially clobbered something. Calling this once, up front,
+    /// over the full closure makes the check fail-fast for the entire build instead of fail-late
+    /// for whichever node happens to come second.
+    ///
+    /// Uses only statically-known cell config (slug, output format/compression, signing profile) --
+    /// no base resolution, no toolchain/digest lookups, no network -- so it is cheap, synchronous,
+    /// and independent of topological/producer ordering.
+    pub fn preflight_claims(
+        &self,
+        targets: &[Arc<Target>],
+        tool: &ToolConfig,
+        selection: &BuildSelection<'_>,
+        output_dir: &Path,
+        clones: u32,
+    ) -> Result<(), CoreError> {
+        let mut seen_artifacts = BTreeMap::new();
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        for target in targets {
+            for cell in selection.cells_for(target)? {
+                let resolved_signing_profile =
+                    tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())?;
+                claim_cell_output_paths(
+                    &cell,
+                    &target.root,
+                    output_dir,
+                    clones,
+                    resolved_signing_profile.as_ref(),
+                    &mut seen_artifacts,
+                    &mut seen_ca_cert_paths,
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// Execute the stale cells of a plan, writing a build stamp after each success. `progress`
@@ -386,6 +490,274 @@ fn resolved_tools_dir<'a>(
         .ok_or(CoreError::MissingResolvedToolsDir { reference: key })
 }
 
+/// Deterministic, domain-separated descriptors of a signing profile's build-affecting *reference*
+/// settings -- everything except local key/cert file contents, which are content-hashed separately
+/// (`signing_key_hashes`) since a path alone doesn't change when the file it names is edited in
+/// place. Returned as separate owned fields -- each hashed under its own domain-separated tag in
+/// `fingerprint()` -- rather than one concatenated string: joining fields with a plain `:` is not
+/// collision-free (e.g. `certificate: "ignored"` + `publishCaCert: "a:b"` produces the same string
+/// as `certificate: "ignored:a"` + `publishCaCert: "b"`).
+struct SigningProfileDescriptor {
+    id: String,
+    backend: String,
+    vault: String,
+    certificate: String,
+    publish_ca_cert: String,
+}
+
+fn signing_profile_descriptor(
+    id: &str,
+    profile: &tailor_config::SigningProfile,
+) -> SigningProfileDescriptor {
+    SigningProfileDescriptor {
+        id: id.to_owned(),
+        backend: profile.backend.as_str().to_owned(),
+        vault: profile.vault.clone().unwrap_or_default(),
+        certificate: profile.certificate.clone().unwrap_or_default(),
+        publish_ca_cert: profile
+            .publish_ca_cert
+            .as_deref()
+            .map(Path::to_string_lossy)
+            .unwrap_or_default()
+            .into_owned(),
+    }
+}
+
+/// Separate `(key_hash, cert_hash)` -- not a single merged-and-sorted set -- so the fingerprint
+/// never confuses which file is the key and which is the certificate (see `signing_key_hashes`).
+type SigningKeyHashes = (Option<[u8; 16]>, Option<[u8; 16]>);
+
+/// Content-hash a signing profile's local key and certificate files, keeping their roles distinct
+/// (`keypair` backend only -- other backends ignore `key`/`cert` in `tailor_sign::build_signer`,
+/// so stray values on a non-`keypair` profile are intentionally not hashed, and never required to
+/// exist). Returned as `(key_hash, cert_hash)` rather than a single merged-and-sorted set: folding
+/// both into one sorted set would make swapping the two files produce an identical fingerprint.
+/// Uses [`deps::hash_one_uncached`] (not [`deps::hash_one`] or [`deps::hash_dependencies`]) so a
+/// symlinked key/cert is both (a) hashed by its resolved target content -- the same file
+/// `tailor_sign::build_signer` actually reads -- instead of being silently skipped the way a
+/// directory-walk dependency would be, and (b) never served a stale cached hash: the `(size, mtime)`
+/// cache's key is the symlink's own path plus the *resolved target's* size/mtime, so rotating the
+/// symlink to a different target with a coincidentally equal size and mtime would otherwise return
+/// the previous target's cached hash.
+fn signing_key_hashes(
+    profile: &tailor_config::SigningProfile,
+    workspace_root: &Path,
+    image: &str,
+) -> Result<SigningKeyHashes, CoreError> {
+    if profile.backend != tailor_config::SigningBackend::Keypair {
+        return Ok((None, None));
+    }
+    let hash_one = |path: Option<&Path>| -> Result<Option<[u8; 16]>, CoreError> {
+        let Some(path) = path else {
+            return Ok(None);
+        };
+        let absolute = tailor_config::absolutize(path, workspace_root);
+        if !absolute.exists() {
+            return Err(CoreError::MissingDependency {
+                image: image.to_owned(),
+                path: path.to_owned(),
+            });
+        }
+        Ok(Some(deps::hash_one_uncached(&absolute, workspace_root)?))
+    };
+    Ok((
+        hash_one(profile.key.as_deref())?,
+        hash_one(profile.cert.as_deref())?,
+    ))
+}
+
+/// Claim every filesystem path a single cell's build (across every `--clones N` variant) will
+/// write to: its CA-cert destination (if signed) via [`claim_ca_cert_path`], its final published
+/// artifact, the uncompressed intermediate Image Customizer itself writes, and -- for a signed
+/// cell -- the raw intermediate the first IC pass writes before signing. One function, called from
+/// both [`Orchestrator::plan`]'s own per-node loop and [`Orchestrator::preflight_claims`]'s
+/// whole-closure pass, so there is exactly one place that has to know "everything a cell writes" --
+/// adding a new path kind here automatically covers both callers instead of needing a second,
+/// easy-to-forget update.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "every parameter is a distinct, necessary claiming input"
+)]
+fn claim_cell_output_paths(
+    cell: &Cell,
+    workspace_root: &Path,
+    output_dir: &Path,
+    clones: u32,
+    resolved_signing_profile: Option<&(String, &tailor_config::SigningProfile)>,
+    seen_artifacts: &mut BTreeMap<PathBuf, String>,
+    seen_ca_cert_paths: &mut BTreeMap<PathBuf, String>,
+) -> Result<(), CoreError> {
+    if let Some((profile_id, profile)) = resolved_signing_profile {
+        claim_ca_cert_path(
+            profile_id,
+            profile,
+            workspace_root,
+            output_dir,
+            cell.slug.as_ref(),
+            seen_artifacts,
+            seen_ca_cert_paths,
+        )?;
+    }
+    // Claim both the final published path and the uncompressed path Image Customizer actually
+    // writes: with the same slug/format, a compressed and an uncompressed output both execute
+    // through the same IC-written `artifact_name`, so checking only the (possibly different)
+    // published path misses that collision. Also claim every `--clones N` variant's own suffixed
+    // paths (`output_slug` -- `<slug>_cloneN`), not just the bare slug: execution publishes each
+    // clone under its own suffixed path, so a `publishCaCert` set to a clone-suffixed path would
+    // otherwise pass this check unnoticed and collide with that clone's image at build time. The
+    // loop alone already covers the unsuffixed path too -- `output_slug` returns the bare slug when
+    // `clone_count == 1` -- so nothing extra needs claiming before it; claiming the bare path
+    // unconditionally would over-reserve it when `clone_count > 1`, when execution only ever writes
+    // the suffixed variants and the bare path is genuinely free.
+    let clone_count = clones.max(1);
+    let mut claims: BTreeSet<PathBuf> = BTreeSet::new();
+    for clone in 0..clone_count {
+        let clone_slug = output_slug(cell.slug.as_ref(), (clone_count > 1).then_some(clone));
+        claims.insert(output_dir.join(published_artifact_name(
+            &clone_slug,
+            cell.output.format,
+            cell.output.compression,
+        )));
+        claims.insert(output_dir.join(artifact_name(&clone_slug, cell.output.format)));
+        // A signed build's first IC pass writes this raw intermediate before signing and the
+        // inject pass run (`run_signed_passes`); claim it too, or a `publishCaCert` matching it
+        // would get overwritten by the CA write before the inject pass reads it, corrupting the
+        // in-progress build instead of being caught here.
+        if resolved_signing_profile.is_some() {
+            claims.insert(output_dir.join(intermediate_artifact_name(&clone_slug)));
+        }
+    }
+    for claim in claims {
+        // Resolve as far as the filesystem allows before comparing: a claim that doesn't exist yet
+        // can't be mis-detected by a stale cached value, and resolving the longest *existing*
+        // ancestor catches a real symlink planted in the output tree (e.g. by a prior incremental
+        // build) that a purely lexical path could miss.
+        let resolved_claim = resolve_for_collision_check(&claim);
+        if let Some((_, ca_profile)) = find_collision(&resolved_claim, seen_ca_cert_paths) {
+            return Err(CoreError::CaCertPathCollidesWithArtifact {
+                path: claim,
+                profile: ca_profile.clone(),
+                slug: cell.slug.to_string(),
+            });
+        }
+        if let Some((_, first_slug)) = find_collision(&resolved_claim, seen_artifacts) {
+            return Err(CoreError::DuplicateOutputPath {
+                path: claim,
+                first: first_slug.clone(),
+                second: cell.slug.to_string(),
+            });
+        }
+        seen_artifacts.insert(resolved_claim, cell.slug.to_string());
+    }
+    Ok(())
+}
+
+/// Claim a `local-test-ca` profile's resolved CA-cert destination, rejecting a collision with
+/// either an already-claimed image artifact path or another profile's CA path. Two cells sharing
+/// the exact same profile id are allowed to resolve to the same path (expected to converge on the
+/// same CA); across different profile ids, `build_signer` mints an independent self-signed root
+/// per call, so the second write would silently invalidate the first image's trust chain. A
+/// profile with no `publishCaCert` set still writes a CA cert -- at the executor's slug-scoped
+/// default, `<output_dir>/<slug>.ca_cert.pem` -- so that default must be claimed too, or a
+/// *different* profile's explicit `publishCaCert` could alias it and silently overwrite this
+/// cell's CA undetected. An explicit override is a workspace-relative config value and resolves
+/// against `workspace_root`; the default is not configurable and is exactly where the executor
+/// writes it, so it resolves against `output_dir` instead -- these two roots can differ (the
+/// default `output_dir` is `<workspace_root>/artifacts`), and conflating them previously let the
+/// default-path claim land somewhere execution never actually writes.
+fn claim_ca_cert_path(
+    profile_id: &str,
+    profile: &tailor_config::SigningProfile,
+    workspace_root: &Path,
+    output_dir: &Path,
+    slug: &str,
+    seen_artifacts: &BTreeMap<PathBuf, String>,
+    seen_ca_cert_paths: &mut BTreeMap<PathBuf, String>,
+) -> Result<(), CoreError> {
+    if profile.backend != tailor_config::SigningBackend::LocalTestCa {
+        return Ok(());
+    }
+    let resolved = match profile.publish_ca_cert.as_deref() {
+        Some(p) => resolve_for_collision_check(&tailor_config::absolutize(p, workspace_root)),
+        None => resolve_for_collision_check(&output_dir.join(ca_cert_name(slug))),
+    };
+    if let Some((_, artifact_slug)) = find_collision(&resolved, seen_artifacts) {
+        return Err(CoreError::CaCertPathCollidesWithArtifact {
+            path: resolved,
+            profile: profile_id.to_owned(),
+            slug: artifact_slug.clone(),
+        });
+    }
+    match find_collision(&resolved, seen_ca_cert_paths) {
+        // Only an *exact* match on the same profile id is the expected "two cells sharing one CA"
+        // case; a same-profile claim that merely overlaps (but isn't identical) is still a
+        // misconfiguration -- two different declared paths were never meant to alias.
+        Some((existing_path, existing_profile))
+            if existing_profile == profile_id && *existing_path == resolved =>
+        {
+            Ok(())
+        }
+        Some((_, existing_profile)) => Err(CoreError::DuplicateCaCertPath {
+            path: resolved,
+            first: existing_profile.clone(),
+            second: profile_id.to_owned(),
+        }),
+        None => {
+            seen_ca_cert_paths.insert(resolved, profile_id.to_owned());
+            Ok(())
+        }
+    }
+}
+
+/// Resolves `path` as far as the filesystem allows, for collision-detection purposes:
+/// canonicalizes the longest *existing* ancestor (following any real symlinks -- relevant on an
+/// incremental rebuild, where a prior build's output may already be on disk), then lexically
+/// re-appends whatever doesn't exist yet. A path component that doesn't exist cannot itself be a
+/// symlink, so this is a complete resolution for comparison purposes even though the full path may
+/// not exist yet (these are artifact/CA-cert paths being checked *before* a build creates them).
+/// Falls back to the (already lexically-normalized) input unchanged if nothing on the path exists
+/// yet, e.g. a brand-new output directory.
+fn resolve_for_collision_check(path: &Path) -> PathBuf {
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut candidate = path;
+    loop {
+        if let Ok(real) = candidate.canonicalize() {
+            let mut resolved = real;
+            for component in tail.into_iter().rev() {
+                resolved.push(component);
+            }
+            return resolved;
+        }
+        match (candidate.file_name(), candidate.parent()) {
+            (Some(name), Some(parent)) => {
+                tail.push(name.to_owned());
+                candidate = parent;
+            }
+            _ => return path.to_path_buf(),
+        }
+    }
+}
+
+/// Whether two already-resolved paths would collide on a real filesystem: identical, or one nested
+/// inside the other. A directory can't coexist with a file at the same path, so an ancestor claim
+/// and a descendant claim are just as fatal as an exact match (`<slug>.cosi` as a file vs.
+/// `<slug>.cosi/ca.pem` needing `<slug>.cosi` to be a directory).
+fn paths_collide(a: &Path, b: &Path) -> bool {
+    a == b || a.starts_with(b) || b.starts_with(a)
+}
+
+/// Scans `claimed` for any path that collides (by [`paths_collide`]) with `candidate`, returning the
+/// first match found. `claimed`'s keys are themselves already resolved via
+/// [`resolve_for_collision_check`], so this is a like-for-like comparison.
+fn find_collision<'a>(
+    candidate: &Path,
+    claimed: &'a BTreeMap<PathBuf, String>,
+) -> Option<(&'a PathBuf, &'a String)> {
+    claimed
+        .iter()
+        .find(|(path, _)| paths_collide(candidate, path))
+}
+
 fn resolve_tools_dir(target: &Target) -> Result<Option<CellToolsDir>, CoreError> {
     let Some(tools_dir) = &target.definition.tools_dir else {
         return Ok(None);
@@ -555,7 +927,9 @@ pub fn cells(target: &Arc<Target>) -> Result<Vec<Cell>, CoreError> {
                     base: base.clone(),
                     base_image: base_image.clone(),
                     rpm_sources: rc.rpm_sources.clone(),
+                    extra_dependencies: rc.extra_dependencies.clone(),
                     extra_params: rc.extra_params.clone(),
+                    signing: rc.signing.clone(),
                     input_deps: Vec::new(),
                     tools_dir,
                     skip: rc.skip,
@@ -900,9 +1274,9 @@ pub fn output_slug(slug: &str, clone_index: Option<u32>) -> String {
     }
 }
 
-/// The artifact filename for a cell slug + format (a directory for `pxe-dir`). This is what Image
-/// Customizer writes — the **uncompressed** name; see [`published_artifact_name`] for the final
-/// artifact tailor publishes when `compression:` is set.
+/// The artifact filename for a published basename + format (a directory for `pxe-dir`). This is
+/// what Image Customizer writes — the **uncompressed** name; see [`published_artifact_name`] for the
+/// final artifact tailor publishes when `compression:` is set.
 pub fn artifact_name(slug: &str, format: OutputFormat) -> String {
     let extension = match format {
         OutputFormat::Cosi => "cosi",
@@ -930,6 +1304,24 @@ pub fn published_artifact_name(
         Some(codec) => format!("{base}.{}", codec.suffix()),
         None => base,
     }
+}
+
+/// The per-cell published CA cert filename, `<slug>.ca_cert.pem`. Defined once here (not in
+/// `tailor-exec`, which depends on this crate and not the reverse) so planning's collision claims
+/// and the executor's actual write can never drift apart the way they did before -- `tailor-exec`
+/// re-exports this same function rather than defining its own copy.
+#[must_use]
+pub fn ca_cert_name(slug: &str) -> String {
+    format!("{slug}.ca_cert.pem")
+}
+
+/// The per-cell, per-clone raw intermediate path a signed build's first IC pass writes to
+/// (`customize` -> raw intermediate -> sign -> inject-files), before the inject pass overwrites it
+/// with the final signed image. `slug` should already include the clone suffix (pass the result of
+/// [`output_slug`]). Shared with `tailor-exec`'s executor for the same reason as [`ca_cert_name`].
+#[must_use]
+pub fn intermediate_artifact_name(slug: &str) -> String {
+    format!("{slug}.intermediate.raw")
 }
 
 #[cfg(test)]
@@ -1086,6 +1478,9 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap();
@@ -1150,6 +1545,9 @@ mod tests {
                     &BuildSelection::from_selector(&Selector::default()),
                     out.path(),
                     None,
+                    1,
+                    &mut BTreeMap::new(),
+                    &mut BTreeMap::new(),
                 )
                 .await
                 .unwrap()
@@ -1208,6 +1606,9 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 TempDir::new().unwrap().path(),
                 None,
+                1,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap_err();
@@ -1236,6 +1637,9 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap();
@@ -1275,6 +1679,9 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap();
@@ -1646,6 +2053,9 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap_err();
@@ -1739,6 +2149,9 @@ mod tests {
                 &BuildSelection::from_selector(&Selector::default()),
                 out.path(),
                 None,
+                1,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
             )
             .await
             .unwrap();
@@ -1748,6 +2161,770 @@ mod tests {
             plan.cells[0].base_ref.as_deref(),
             Some("oci:registry.example/base@sha256:lockedbase"),
             "the locked base digest must win over the re-resolved tag"
+        );
+    }
+
+    fn local_test_ca_profile(publish_ca_cert: Option<&str>) -> tailor_config::SigningProfile {
+        tailor_config::SigningProfile {
+            backend: tailor_config::SigningBackend::LocalTestCa,
+            key: None,
+            cert: None,
+            publish_ca_cert: publish_ca_cert.map(PathBuf::from),
+            vault: None,
+            certificate: None,
+        }
+    }
+
+    #[test]
+    fn claim_ca_cert_path_allows_the_same_profile_to_share_a_path() {
+        let root = TempDir::new().unwrap();
+        let profile = local_test_ca_profile(Some("ca.pem"));
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        claim_ca_cert_path(
+            "release",
+            &profile,
+            root.path(),
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+        claim_ca_cert_path(
+            "release",
+            &profile,
+            root.path(),
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn claim_ca_cert_path_rejects_two_profiles_sharing_a_path() {
+        // Regression: distinct `local-test-ca` profiles each mint an independent self-signed root
+        // (`tailor_sign::build_signer`), so if both publish to the same path, the second build
+        // silently invalidates the first image's trust chain.
+        let root = TempDir::new().unwrap();
+        let profile = local_test_ca_profile(Some("ca.pem"));
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        claim_ca_cert_path(
+            "release",
+            &profile,
+            root.path(),
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+        let err = claim_ca_cert_path(
+            "dev",
+            &profile,
+            root.path(),
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CoreError::DuplicateCaCertPath { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn claim_ca_cert_path_rejects_colliding_with_an_image_artifact() {
+        let root = TempDir::new().unwrap();
+        let profile = local_test_ca_profile(Some("artifacts/img.cosi"));
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let mut seen_artifacts = BTreeMap::new();
+        seen_artifacts.insert(
+            root.path().join("artifacts/img.cosi"),
+            "img_amd64_cosi".to_owned(),
+        );
+
+        let err = claim_ca_cert_path(
+            "release",
+            &profile,
+            root.path(),
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
+            "{err:?}"
+        );
+    }
+
+    #[test]
+    fn claim_ca_cert_path_rejects_nesting_inside_an_image_artifact() {
+        // Regression: a publishCaCert *nested inside* an artifact path (not just equal to it) must
+        // also be rejected -- otherwise signing creates the artifact's filename as a directory to
+        // hold the CA cert, and Image Customizer's later write of the real image to that same path
+        // fails with a confusing filesystem error instead of this purpose-built one.
+        let root = TempDir::new().unwrap();
+        let profile = local_test_ca_profile(Some("artifacts/img.cosi/ca.pem"));
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let mut seen_artifacts = BTreeMap::new();
+        seen_artifacts.insert(
+            root.path().join("artifacts/img.cosi"),
+            "img_amd64_cosi".to_owned(),
+        );
+
+        let err = claim_ca_cert_path(
+            "release",
+            &profile,
+            root.path(),
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
+            "a publishCaCert nested inside an artifact path must be rejected: {err:?}"
+        );
+    }
+
+    #[test]
+    fn paths_collide_covers_equality_ancestry_and_rejects_similar_siblings() {
+        let equal = (Path::new("/out/img.cosi"), Path::new("/out/img.cosi"));
+        let ancestor = (
+            Path::new("/out/img.cosi"),
+            Path::new("/out/img.cosi/ca.pem"),
+        );
+        let descendant = (
+            Path::new("/out/img.cosi/ca.pem"),
+            Path::new("/out/img.cosi"),
+        );
+        // "img.cosi" is a string-prefix of "img.cosi-extra" but not a path-component ancestor of
+        // it -- these are unrelated siblings and must NOT be flagged.
+        let similar_sibling = (Path::new("/out/img.cosi"), Path::new("/out/img.cosi-extra"));
+        let unrelated = (Path::new("/out/a.cosi"), Path::new("/out/b.cosi"));
+
+        assert!(
+            paths_collide(equal.0, equal.1),
+            "identical paths must collide"
+        );
+        assert!(
+            paths_collide(ancestor.0, ancestor.1),
+            "ancestor must collide"
+        );
+        assert!(
+            paths_collide(descendant.0, descendant.1),
+            "descendant must collide"
+        );
+        assert!(
+            !paths_collide(similar_sibling.0, similar_sibling.1),
+            "a string-prefix that isn't a real path ancestor must not collide"
+        );
+        assert!(
+            !paths_collide(unrelated.0, unrelated.1),
+            "unrelated paths must not collide"
+        );
+    }
+
+    #[test]
+    fn resolve_for_collision_check_follows_a_real_symlink_in_an_existing_ancestor() {
+        // Regression: lexical normalization alone can't detect that two differently-spelled paths
+        // land on the same real location through a symlink -- only a component that already exists
+        // can possibly be a symlink, so canonicalizing the longest existing ancestor (and only
+        // lexically appending whatever doesn't exist yet) is a complete resolution for
+        // collision-detection purposes.
+        let root = TempDir::new().unwrap();
+        let real_dir = root.path().join("real");
+        fs::create_dir_all(&real_dir).unwrap();
+        let link = root.path().join("link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real_dir, &link).unwrap();
+        #[cfg(not(unix))]
+        {
+            eprintln!("skipping: symlink creation not implemented for this platform in this test");
+            return;
+        }
+
+        // "link" exists (it's the symlink itself); "not-yet-built.cosi" does not.
+        let via_link = link.join("not-yet-built.cosi");
+        let via_real = real_dir.join("not-yet-built.cosi");
+
+        let resolved_via_link = resolve_for_collision_check(&via_link);
+        let resolved_via_real = resolve_for_collision_check(&via_real);
+        assert_eq!(
+            resolved_via_link, resolved_via_real,
+            "two paths reaching the same real location through a symlink must resolve identically"
+        );
+    }
+
+    #[test]
+    fn resolve_for_collision_check_falls_back_to_lexical_when_nothing_exists_yet() {
+        // The common case: a brand-new output directory, nothing built yet. Nothing to
+        // canonicalize, so the already-lexically-normalized input passes through unchanged.
+        let path = Path::new("/definitely/does/not/exist/anywhere/img.cosi");
+        assert_eq!(resolve_for_collision_check(path), path);
+    }
+
+    #[test]
+    fn claim_ca_cert_path_ignores_non_local_test_ca_backends() {
+        let root = TempDir::new().unwrap();
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        // keypair backend: publish_ca_cert is meaningless here, never claimed.
+        let keypair = tailor_config::SigningProfile {
+            backend: tailor_config::SigningBackend::Keypair,
+            key: Some(PathBuf::from("k.pem")),
+            cert: Some(PathBuf::from("c.pem")),
+            publish_ca_cert: Some(PathBuf::from("ca.pem")),
+            vault: None,
+            certificate: None,
+        };
+        claim_ca_cert_path(
+            "a",
+            &keypair,
+            root.path(),
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+        assert!(seen_ca_cert_paths.is_empty());
+    }
+
+    #[test]
+    fn claim_ca_cert_path_claims_the_slug_scoped_default_when_unset() {
+        // A profile with no `publishCaCert` override still writes a CA cert at the executor's
+        // slug-scoped default (`<slug>.ca_cert.pem`); that default must be claimed, not skipped,
+        // or a later profile's *explicit* `publishCaCert` could alias it undetected.
+        let root = TempDir::new().unwrap();
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        let no_publish = local_test_ca_profile(None);
+        claim_ca_cert_path(
+            "b",
+            &no_publish,
+            root.path(),
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+        assert_eq!(
+            seen_ca_cert_paths.len(),
+            1,
+            "the slug-scoped default must be claimed"
+        );
+        assert_eq!(
+            seen_ca_cert_paths.get(&root.path().join("img.ca_cert.pem")),
+            Some(&"b".to_owned())
+        );
+    }
+
+    #[test]
+    fn claim_ca_cert_path_rejects_an_explicit_override_aliasing_another_cells_default() {
+        // Regression: a profile with no override writes to the slug-scoped default
+        // (`<slug>.ca_cert.pem`); a *different* profile explicitly overriding `publishCaCert` to
+        // that exact literal path must be rejected as a collision, not treated as free.
+        let root = TempDir::new().unwrap();
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        let no_publish = local_test_ca_profile(None);
+        claim_ca_cert_path(
+            "release",
+            &no_publish,
+            root.path(),
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+
+        let colliding_override = local_test_ca_profile(Some("img.ca_cert.pem"));
+        let err = claim_ca_cert_path(
+            "dev",
+            &colliding_override,
+            root.path(),
+            root.path(),
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CoreError::DuplicateCaCertPath { .. }),
+            "an explicit override aliasing another cell's slug-scoped default must be rejected: {err:?}"
+        );
+    }
+
+    #[test]
+    fn claim_ca_cert_path_resolves_the_default_against_output_dir_not_workspace_root() {
+        // Regression: the slug-scoped default is exactly where the executor writes it --
+        // `<output_dir>/<slug>.ca_cert.pem` -- which is `<workspace_root>/artifacts/...` by default,
+        // not `<workspace_root>/...`. Resolving the default against `workspace_root` (as an explicit
+        // override correctly does) claimed a path execution never actually writes to, silently
+        // reopening the exact collision this check exists to close whenever an explicit override
+        // elsewhere names the real (`output_dir`-rooted) default path.
+        let workspace_root = TempDir::new().unwrap();
+        let output_dir = workspace_root.path().join("artifacts");
+        let mut seen_ca_cert_paths = BTreeMap::new();
+        let seen_artifacts = BTreeMap::new();
+
+        let no_publish = local_test_ca_profile(None);
+        claim_ca_cert_path(
+            "release",
+            &no_publish,
+            workspace_root.path(),
+            &output_dir,
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap();
+        assert_eq!(
+            seen_ca_cert_paths.get(&output_dir.join("img.ca_cert.pem")),
+            Some(&"release".to_owned()),
+            "the default must be claimed under output_dir, matching where the executor writes it"
+        );
+
+        // An explicit override naming that same real (output_dir-rooted) path must still collide.
+        let colliding_override =
+            local_test_ca_profile(Some(output_dir.join("img.ca_cert.pem").to_str().unwrap()));
+        let err = claim_ca_cert_path(
+            "dev",
+            &colliding_override,
+            workspace_root.path(),
+            &output_dir,
+            "img",
+            &seen_artifacts,
+            &mut seen_ca_cert_paths,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, CoreError::DuplicateCaCertPath { .. }),
+            "an explicit override naming the real output_dir-rooted default path must be rejected: {err:?}"
+        );
+    }
+
+    #[test]
+    fn signing_key_hashes_follows_a_rotated_symlink() {
+        // Regression: a symlinked key/cert (e.g. a `current` symlink repointed at a rotated
+        // credential) must change the hash -- `hash_dependencies`'s directory-walk dispatch skips
+        // symlinks entirely (to avoid cycles), but `tailor_sign::build_signer` reads straight
+        // through them via `fs::read`, so skipping here would let a rotated credential silently
+        // reuse a stale signed artifact.
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new().unwrap();
+        let key_a = dir.path().join("key-a.pem");
+        let key_b = dir.path().join("key-b.pem");
+        fs::write(&key_a, b"key-version-a").unwrap();
+        fs::write(&key_b, b"key-version-b").unwrap();
+        let link = dir.path().join("current.key");
+        symlink(&key_a, &link).unwrap();
+
+        let profile = tailor_config::SigningProfile {
+            backend: tailor_config::SigningBackend::Keypair,
+            key: Some(PathBuf::from("current.key")),
+            cert: None,
+            publish_ca_cert: None,
+            vault: None,
+            certificate: None,
+        };
+
+        let (before_key, _) = signing_key_hashes(&profile, dir.path(), "img").unwrap();
+        assert!(before_key.is_some(), "a symlinked key must still be hashed");
+
+        // Rotate: repoint the symlink at the other key file, as a credential rotation would.
+        fs::remove_file(&link).unwrap();
+        symlink(&key_b, &link).unwrap();
+
+        let (after_key, _) = signing_key_hashes(&profile, dir.path(), "img").unwrap();
+        assert_ne!(
+            before_key, after_key,
+            "rotating the symlink target must change the hash"
+        );
+    }
+
+    #[test]
+    fn signing_key_hashes_detects_a_symlink_rotation_between_equal_size_and_mtime_targets() {
+        // Regression: the shared (size, mtime) hash cache's key for a single-file hash is the
+        // *declared path* plus the *resolved target's* size/mtime -- so if signing_key_hashes used
+        // the cache, rotating a symlink between two targets with an equal size and the same mtime
+        // would return the first target's stale cached hash. signing_key_hashes must always hash
+        // the resolved content fresh (never through the cache) so this can't happen.
+        use std::{
+            os::unix::fs::symlink,
+            time::{Duration, SystemTime},
+        };
+
+        let dir = TempDir::new().unwrap();
+        let key_a = dir.path().join("key-a.pem");
+        let key_b = dir.path().join("key-b.pem");
+        fs::write(&key_a, b"AAAAAAAAAA").unwrap();
+        fs::write(&key_b, b"BBBBBBBBBB").unwrap();
+        assert_eq!(
+            fs::metadata(&key_a).unwrap().len(),
+            fs::metadata(&key_b).unwrap().len(),
+            "test fixture requires equal-size targets"
+        );
+        let shared_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        for path in [&key_a, &key_b] {
+            let file = fs::File::options().write(true).open(path).unwrap();
+            file.set_modified(shared_mtime).unwrap();
+        }
+
+        let link = dir.path().join("current.key");
+        symlink(&key_a, &link).unwrap();
+
+        let profile = tailor_config::SigningProfile {
+            backend: tailor_config::SigningBackend::Keypair,
+            key: Some(PathBuf::from("current.key")),
+            cert: None,
+            publish_ca_cert: None,
+            vault: None,
+            certificate: None,
+        };
+
+        let (before_key, _) = signing_key_hashes(&profile, dir.path(), "img").unwrap();
+
+        fs::remove_file(&link).unwrap();
+        symlink(&key_b, &link).unwrap();
+        let file = fs::File::options().write(true).open(&link).unwrap();
+        file.set_modified(shared_mtime).unwrap();
+
+        let (after_key, _) = signing_key_hashes(&profile, dir.path(), "img").unwrap();
+        assert_ne!(
+            before_key, after_key,
+            "a symlink rotation between equal-size/equal-mtime targets must still change the hash"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_errors_on_an_unknown_signing_profile_instead_of_building_unsigned() {
+        // Regression: `resolve_signing`'s `ConfigError` (unknown profile, missing default,
+        // malformed profile) must propagate, not be swallowed into `None` -- otherwise a typo'd
+        // signing reference silently produces an apparently-valid *unsigned* plan.
+        let (_tmp, target) = target_with(indoc! {"
+                name: solo
+                base:
+                  oci:
+                    uri: registry.example/base:edge
+                    platform: linux/amd64
+                signing: nope
+                config:
+                  os:
+                    hostname: solo
+            "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(indoc! {"
+            schemaVersion: 1
+            toolchains:
+              default: ic
+              entries:
+                - name: ic
+                  container: registry.example/imagecustomizer
+                  version: 1.0.0
+            signing:
+              default: release
+              profiles:
+                release:
+                  backend: local-test-ca
+        "})
+        .unwrap();
+        let toolchains = resolved_toolchains(&tool);
+        let out = TempDir::new().unwrap();
+
+        let err = Orchestrator::new(FakeExecutor::default(), FakeResolver)
+            .plan(
+                &[target],
+                &[],
+                &tool,
+                &Lockfile::default(),
+                &toolchains,
+                &BTreeMap::new(),
+                &BuildSelection::from_selector(&Selector::default()),
+                out.path(),
+                None,
+                1,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                CoreError::Config(tailor_config::ConfigError::UnknownSigningProfile { .. })
+            ),
+            "an unknown signing profile must be a config error, not a silently-unsigned plan: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_rejects_a_publish_ca_cert_path_colliding_with_a_clone_suffixed_artifact() {
+        // Regression: the artifact/CA-path collision check only ever claimed the bare (un-cloned)
+        // `<slug>.<ext>` path, never the `--clones N` clone-suffixed variants (`output_slug` --
+        // `<slug>_cloneN.<ext>`) that execution actually publishes under. A `publishCaCert` set to
+        // one of those clone paths passed planning unnoticed, then collided with that clone's own
+        // image at build time.
+        let out = TempDir::new().unwrap();
+        // "solo" with no axes, default amd64 arch, default cosi output -> slug "solo_amd64_cosi"
+        // (`defaults_to_amd64_with_no_arch_axis_and_no_architectures`), so clone 0's own published
+        // path is "solo_amd64_cosi_clone0.cosi".
+        let colliding_path = out.path().join("solo_amd64_cosi_clone0.cosi");
+        let (_tmp, target) = target_with(indoc! {"
+                name: solo
+                base:
+                  path: ./b.img
+                signing: release
+                config:
+                  os:
+                    hostname: solo
+            "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(&format!(
+            indoc! {"
+                schemaVersion: 1
+                toolchains:
+                  default: ic
+                  entries:
+                    - name: ic
+                      container: registry.example/imagecustomizer
+                      version: 1.0.0
+                signing:
+                  default: release
+                  profiles:
+                    release:
+                      backend: local-test-ca
+                      publishCaCert: {}
+            "},
+            colliding_path.display()
+        ))
+        .unwrap();
+        let toolchains = resolved_toolchains(&tool);
+
+        let err = Orchestrator::new(FakeExecutor::default(), FakeResolver)
+            .plan(
+                &[target],
+                &[],
+                &tool,
+                &Lockfile::default(),
+                &toolchains,
+                &BTreeMap::new(),
+                &BuildSelection::from_selector(&Selector::default()),
+                out.path(),
+                None,
+                2,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
+            "a publishCaCert matching a clone-suffixed artifact path must be rejected: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_accepts_a_publish_ca_cert_path_matching_the_unused_bare_slug_under_clones() {
+        // Regression: planning used to claim the bare (un-cloned) `<slug>.<ext>` path
+        // unconditionally, even when `--clones N` (N > 1) meant execution would only ever write
+        // the clone-suffixed variants -- so a publishCaCert at that genuinely-unused bare path was
+        // incorrectly rejected as colliding with an artifact nothing actually writes there.
+        let out = TempDir::new().unwrap();
+        // Same slug as the sibling test above: "solo_amd64_cosi".
+        let unused_bare_path = out.path().join("solo_amd64_cosi.cosi");
+        let (_tmp, target) = target_with(indoc! {"
+                name: solo
+                base:
+                  path: ./b.img
+                signing: release
+                config:
+                  os:
+                    hostname: solo
+            "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(&format!(
+            indoc! {"
+                schemaVersion: 1
+                toolchains:
+                  default: ic
+                  entries:
+                    - name: ic
+                      container: registry.example/imagecustomizer
+                      version: 1.0.0
+                signing:
+                  default: release
+                  profiles:
+                    release:
+                      backend: local-test-ca
+                      publishCaCert: {}
+            "},
+            unused_bare_path.display()
+        ))
+        .unwrap();
+        let toolchains = resolved_toolchains(&tool);
+
+        let plan = Orchestrator::new(FakeExecutor::default(), FakeResolver)
+            .plan(
+                &[target],
+                &[],
+                &tool,
+                &Lockfile::default(),
+                &toolchains,
+                &BTreeMap::new(),
+                &BuildSelection::from_selector(&Selector::default()),
+                out.path(),
+                None,
+                2,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            plan.cells.len(),
+            1,
+            "a publishCaCert at the unused bare path must plan successfully under --clones 2"
+        );
+    }
+
+    #[test]
+    fn preflight_claims_catches_a_collision_across_two_targets() {
+        // Regression: a caller that plans one node at a time in topological order (required so a
+        // consumer's base hash reflects a freshly-built producer) only accumulates claims
+        // incrementally -- an earlier node's signed build can write its CA cert over a path that
+        // collides with a *later* node's output before that later node ever contributes its own
+        // claim. `preflight_claims` must catch this across the whole closure up front, independent
+        // of which node would be planned first.
+        let out = TempDir::new().unwrap();
+        // "node_a" signed, publishing its CA cert directly at "node_b"'s own artifact path.
+        let colliding_path = out.path().join("node_b_amd64_cosi.cosi");
+        let (_tmp_a, target_a) = target_with(indoc! {"
+            name: node_a
+            base:
+              path: ./b.img
+            signing: release
+            config:
+              os:
+                hostname: node-a
+        "});
+        let (_tmp_b, target_b) = target_with(indoc! {"
+            name: node_b
+            base:
+              path: ./b.img
+            config:
+              os:
+                hostname: node-b
+        "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(&format!(
+            indoc! {"
+                schemaVersion: 1
+                toolchains:
+                  default: ic
+                  entries:
+                    - name: ic
+                      container: registry.example/imagecustomizer
+                      version: 1.0.0
+                signing:
+                  default: release
+                  profiles:
+                    release:
+                      backend: local-test-ca
+                      publishCaCert: {}
+            "},
+            colliding_path.display()
+        ))
+        .unwrap();
+
+        let orchestrator = Orchestrator::new(FakeExecutor::default(), FakeResolver);
+        let default_selector = Selector::default();
+        let selection = BuildSelection::from_selector(&default_selector);
+        let err = orchestrator
+            .preflight_claims(&[target_a, target_b], &tool, &selection, out.path(), 1)
+            .unwrap_err();
+        assert!(
+            matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
+            "preflight must catch a signed node's CA path colliding with a different node's \
+             artifact, even though neither node has been planned or built yet: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_rejects_a_publish_ca_cert_path_colliding_with_a_signed_intermediate() {
+        // Regression: a signed build's first IC pass writes a raw intermediate
+        // (`<slug>.intermediate.raw`) before signing and the inject pass run -- that path was never
+        // claimed, so a `publishCaCert` matching it passed planning unnoticed, then got overwritten
+        // by the CA write mid-build, corrupting the in-progress image before the inject pass could
+        // read it.
+        let out = TempDir::new().unwrap();
+        // Same slug as the sibling clone tests: "solo_amd64_cosi".
+        let intermediate_path = out.path().join("solo_amd64_cosi.intermediate.raw");
+        let (_tmp, target) = target_with(indoc! {"
+                name: solo
+                base:
+                  path: ./b.img
+                signing: release
+                config:
+                  os:
+                    hostname: solo
+            "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(&format!(
+            indoc! {"
+                schemaVersion: 1
+                toolchains:
+                  default: ic
+                  entries:
+                    - name: ic
+                      container: registry.example/imagecustomizer
+                      version: 1.0.0
+                signing:
+                  default: release
+                  profiles:
+                    release:
+                      backend: local-test-ca
+                      publishCaCert: {}
+            "},
+            intermediate_path.display()
+        ))
+        .unwrap();
+        let toolchains = resolved_toolchains(&tool);
+
+        let err = Orchestrator::new(FakeExecutor::default(), FakeResolver)
+            .plan(
+                &[target],
+                &[],
+                &tool,
+                &Lockfile::default(),
+                &toolchains,
+                &BTreeMap::new(),
+                &BuildSelection::from_selector(&Selector::default()),
+                out.path(),
+                None,
+                1,
+                &mut BTreeMap::new(),
+                &mut BTreeMap::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, CoreError::CaCertPathCollidesWithArtifact { .. }),
+            "a publishCaCert matching a signed build's own raw intermediate path must be rejected: {err:?}"
         );
     }
 }
