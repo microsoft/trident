@@ -27,6 +27,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: aclAgentTestParallelJobs
+    displayName: Number of parallel ACL-agent test jobs
+    type: number
+    default: 1
+
   # Define which service connection to use for accessing ACR.
   #   `maritimus-dev-acr-write-umi` is the service connection for the Polar SC
   #   `trident-dev-acr-write-umi-ECF` is the service connection for the ECF SC
@@ -92,9 +97,11 @@ stages:
           name: trident-ubuntu-1es-pool-eastus2
           hostArchitecture: amd64
 
+        strategy:
+          parallel: ${{ parameters.aclAgentTestParallelJobs }}
         variables:
           ob_outputDirectory: /tmp/output
-          ob_artifactBaseName: "aclagent-storm-test"
+          ob_artifactBaseName: "aclagent-storm-test-$(System.JobPositionInPhase)"
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
