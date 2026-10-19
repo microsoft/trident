@@ -14,7 +14,7 @@ use backoff::{backoff::Backoff, ExponentialBackoffBuilder};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use semver::Version;
 use tokio::{pin, select, task, time};
 use tokio_util::sync::CancellationToken;
@@ -194,12 +194,35 @@ impl Orchestrator {
     /// non-zero exit produces the same uniform, actionable error type used
     /// everywhere else in the codebase (see crates/trident/src/reboot.rs for
     /// the same pattern).
-    fn reboot(&self) -> Result<(), Error> {
-        Dependency::Systemctl
+    fn reboot(
+        &self,
+        operation: Operation,
+        operation_id: &str,
+        boot_marker: &str,
+    ) -> Result<(), Error> {
+        info!(
+            "requesting systemctl reboot: operation={operation:?}, \
+             operation_id={operation_id}, boot_id={boot_marker}"
+        );
+        let started = time::Instant::now();
+        let result = Dependency::Systemctl
             .cmd()
             .arg("reboot")
             .run_and_check()
-            .context("failed to issue systemctl reboot")
+            .context("failed to issue systemctl reboot");
+        match &result {
+            Ok(()) => info!(
+                "systemctl reboot returned successfully after {}: operation={operation:?}, \
+                 operation_id={operation_id}, boot_id={boot_marker}",
+                humantime::format_duration(started.elapsed())
+            ),
+            Err(err) => error!(
+                "systemctl reboot failed after {}: operation={operation:?}, \
+                 operation_id={operation_id}, boot_id={boot_marker}: {err:#}",
+                humantime::format_duration(started.elapsed())
+            ),
+        }
+        result
     }
 
     /// Drives the agent until `shutdown` is cancelled (e.g. SIGTERM/SIGINT,
@@ -241,7 +264,12 @@ impl Orchestrator {
             };
             match recovery_result {
                 Ok(Some(LoopControl::Continue)) => {}
-                Ok(Some(LoopControl::ExitForReboot)) => return Ok(()),
+                Ok(Some(LoopControl::ExitForReboot)) => {
+                    info!(
+                        "exiting annotation loop after successful reboot invocation during startup recovery"
+                    );
+                    return Ok(());
+                }
                 Ok(None) => return Ok(()), // shutdown requested while recovering
                 Err(err) => {
                     if self.is_node_gone_error(&err) {
@@ -326,7 +354,12 @@ impl Orchestrator {
                 };
                 match reconcile_result {
                     Ok(LoopControl::Continue) => {}
-                    Ok(LoopControl::ExitForReboot) => return Ok(()),
+                    Ok(LoopControl::ExitForReboot) => {
+                        info!(
+                            "exiting annotation loop after successful reboot invocation during node reconciliation"
+                        );
+                        return Ok(());
+                    }
                     Err(err) => {
                         if self.is_node_gone_error(&err) {
                             node_gone = true;
@@ -966,6 +999,16 @@ impl Orchestrator {
                 client.update_finalize(self.config.orchestration.finalize_timeout),
             )
             .await;
+        match &result {
+            Ok(response) => info!(
+                "Trident update finalize returned: operation_id={}, reboot_status={:?}",
+                request.operation_id, response.reboot_status
+            ),
+            Err(err) => error!(
+                "Trident update finalize failed: operation_id={}: {err:#}",
+                request.operation_id
+            ),
+        }
         if let Some(ref v) = current_ver {
             self.report_nebraska_event(&request, finalize_nebraska_report(v, &result))
                 .await;
@@ -980,7 +1023,7 @@ impl Orchestrator {
                     from_version: from_version.clone(),
                     to_version: to_version.clone(),
                     started_utc: started,
-                    boot_marker,
+                    boot_marker: boot_marker.clone(),
                 })?;
                 let terminal = finalize_success_status(
                     &request,
@@ -992,7 +1035,7 @@ impl Orchestrator {
                     warn!("failed to record finalize completion in state.json: {err}");
                 }
                 self.best_effort_publish_terminal(&terminal).await;
-                match self.reboot() {
+                match self.reboot(Operation::Finalize, &request.operation_id, &boot_marker) {
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
                         if let Some(ref v) = current_ver {
@@ -1137,7 +1180,7 @@ impl Orchestrator {
                     from_version: from_version.clone(),
                     to_version: None,
                     started_utc: started,
-                    boot_marker,
+                    boot_marker: boot_marker.clone(),
                 })?;
                 let terminal =
                     rollback_finalize_success_status(&request, from_version.clone(), started);
@@ -1145,7 +1188,7 @@ impl Orchestrator {
                     warn!("failed to record rollback completion in state.json: {err}");
                 }
                 self.best_effort_publish_terminal(&terminal).await;
-                match self.reboot() {
+                match self.reboot(Operation::Rollback, &request.operation_id, &boot_marker) {
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
                         let status = UpdateStatus::new(
@@ -1178,6 +1221,11 @@ impl Orchestrator {
 
     async fn resume_pending_commit(&self, pending: PendingCommit) -> Result<(), Error> {
         let current_boot = current_boot_marker()?;
+        info!(
+            "recovering pending commit: operation={:?}, operation_id={}, \
+             previous_boot_id={}, current_boot_id={current_boot}",
+            pending.operation, pending.operation_id, pending.boot_marker
+        );
         if current_boot == pending.boot_marker {
             // No reboot has happened since finalize/rollback armed this
             // boot - the agent restarted (crash, watchdog, crash-loop)
@@ -1190,7 +1238,7 @@ impl Orchestrator {
                 "pending commit {} is still waiting for the reboot to happen; re-issuing reboot",
                 pending.operation_id
             );
-            if let Err(err) = self.reboot() {
+            if let Err(err) = self.reboot(pending.operation, &pending.operation_id, &current_boot) {
                 let now = Utc::now();
                 let status = UpdateStatus::new(
                     &pending.request,

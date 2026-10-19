@@ -4392,7 +4392,7 @@ SOFTWARE.
 MIT License (MIT)
 
 Used by:
-    - h2 0.4.7
+    - h2 0.4.20
 
 Copyright (c) 2017 h2 authors
 
@@ -7554,7 +7554,7 @@ SOFTWARE.
 MIT License (MIT)
 
 Used by:
-    - quick-xml 0.39.2
+    - quick-xml 0.41.0
 
 The MIT License (MIT)
 
