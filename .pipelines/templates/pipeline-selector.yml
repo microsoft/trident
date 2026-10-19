@@ -29,6 +29,11 @@ parameters:
     type: number
     default: 3
 
+  - name: aclAgentTestParallelJobs
+    displayName: Number of parallel ACL-agent test jobs
+    type: number
+    default: 1
+
   - name: cratePublishingDryRun
     type: boolean
     displayName: "crate-publishing: Perform a dry run without actually publishing the crates"
@@ -70,6 +75,7 @@ stages:
           # # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
           # includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}
           numberOfUpdateIterations: ${{ parameters.numberOfUpdateIterations }}
+          aclAgentTestParallelJobs: ${{ parameters.aclAgentTestParallelJobs }}
       - template: e2e-arm64-template.yml
         parameters:
           stageType: ${{ parameters.targetStage }}
