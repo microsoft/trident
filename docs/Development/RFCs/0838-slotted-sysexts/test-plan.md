@@ -76,13 +76,15 @@ resolved.
 
 ## 4. Update failure and rollback
 
-On a marked, uncommitted update boot, inject a loader error, crash and timeout.
+On an uncommitted candidate boot, inject a loader error, crash and timeout.
 Each must reboot into the committed OS without re-arming the failed entry.
 A failure on the fallback's normal boot must not create a reboot loop.
 
 Also exercise bootloader fallback, failed commit and power loss. Confirm the
-visible OS and extension markers match after recovery. Fail marker removal
-during commit: the previous persistent boot default must remain unchanged.
+visible OS and extension markers match after recovery. Fail the pending-state
+transition during commit: the previous persistent boot default must remain
+unchanged. Stale context after commit, cancellation or fallback must not cause
+another automatic reboot. Finalize these cases with the pending-context contract.
 
 Read the failure record from the recovered OS and correlate its boot ID and
 reason. Repeat with read-only ROOT, failed diagnostic writes and capture
