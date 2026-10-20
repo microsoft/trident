@@ -67,13 +67,14 @@ it can be reused later.
 
 ### Requirements
 
-- Let users explicitly enable Trident to update bundled extensions alongside the OS.
+- Support ACL's shared storage without new partitions or systemd source changes.
+- Let users explicitly enable Trident to update bundled extensions alongside the
+  OS.
 - A published store must contain valid manifests for every bootable slot; images
   without a store need no initialization.
 - Replace the inactive slot's managed extension set on reuse; do not retain
   older sets for that slot.
 - Preserve each platform's filesystem mutability and user-state persistence.
-- Support ACL's shared storage without new partitions or systemd source changes.
 - Keep the policy reusable on platforms with writable A/B storage.
 
 ### Out of Scope
