@@ -6,7 +6,9 @@ sidebar_position: 16
 
 # ImageSha384
 
-Image SHA384 checksum.
+SHA384 checksum of the COSI metadata.
+
+Use the 96-character hexadecimal checksum of `metadata.json` from the COSI file to verify the image's integrity.
 
 | Characteristic | Value  |
 | -------------- | ------ |
@@ -16,7 +18,7 @@ Image SHA384 checksum.
 
 ### Ignored
 
-You can pass `ignored` to skip the checksum verification.
+Disables checksum verification. Do not use this value in Host Configurations: without verification, Trident cannot detect tampered COSI metadata. Provide the metadata checksum instead.
 
 | Characteristic | Value     |
 | -------------- | --------- |
@@ -25,7 +27,7 @@ You can pass `ignored` to skip the checksum verification.
 
 ### Checksum
 
-The SHA384 checksum of the image.
+The SHA384 checksum of `metadata.json` in the COSI file.
 
 *Details:*
 

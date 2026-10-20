@@ -278,12 +278,22 @@ disk device path is (in this case, /dev/sda), some user data (including the
 public key `$HOME/.ssh/id_rsa.pub`), some network setup, and an SELinux
 configuration:
 
+Calculate the SHA384 checksum of `metadata.json` in the install COSI, not
+of the entire COSI file:
+
+```bash
+tar -xOf "$HOME/staging/osimage.cosi" metadata.json | sha384sum
+```
+
+Set `IMAGE_SHA384` below to the resulting 96-character hexadecimal checksum.
+
 ``` bash
 DISK_DEVICE_PATH="/dev/sda"
+IMAGE_SHA384="<Calculated SHA384 hash>"
 cat << EOF > $HOME/staging/host-config.yaml
 image:
   url: /images/azure-linux.cosi
-  sha384: ignored
+  sha384: $IMAGE_SHA384
 storage:
   disks:
     - id: os
