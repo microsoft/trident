@@ -1,0 +1,66 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 445" role="img" aria-labelledby="architecture-title architecture-desc" width="1000" height="445">
+  <title id="architecture-title">COSI delivery, per-slot storage and two boot-time activation paths</title>
+  <desc id="architecture-desc">Trident replaces the inactive slot's extension files in the
+          shared store, preserving the active slot. At each boot the initrd loader reads acl.slot
+          and that slot's slot-loader.json. It mounts the selected
+          confext as a lower layer in the writable etc overlay, and creates sysext links in run.
+          After switch-root, native systemd-sysext merges the selected system extension into usr.</desc>
+  <style>
+:root {color-scheme:light dark; --bg:#f3f5f8; --panel:#fff; --text:#182432;
+ --muted:#526173; --line:#c7d1dd; --accent:#2357a2; --soft:#eaf1fc;
+ --success:#17633e; --success-bg:#e7f5eb;}
+@media(prefers-color-scheme:dark) {:root {--bg:#111820; --panel:#19232f;
+ --text:#e4ecf4; --muted:#a9b9ca; --line:#43566c; --accent:#96bfff;
+ --soft:#22344c; --success:#9be1b4; --success-bg:#173b2a;}}
+.canvas {fill:var(--bg)}
+.box {fill:var(--panel); stroke:var(--line); stroke-width:1.5}
+.highlight {fill:var(--soft); stroke:var(--accent)}
+.payload {fill:var(--success-bg); stroke:var(--success); stroke-width:1.5}
+text {fill:var(--text); font:15px system-ui,sans-serif}
+.sub {fill:var(--muted); font-size:13px}
+.label {fill:var(--accent); font-size:12px; font-weight:700}
+.heading {font-weight:700}
+.mono {font:12px ui-monospace,monospace}
+.wire {fill:none; stroke:var(--muted); stroke-width:1.7}
+.arrow {fill:var(--muted)}
+</style>
+  <rect class="canvas" width="100%" height="100%" />
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path class="arrow" d="M0 0 L8 4 L0 8 Z" />
+    </marker>
+  </defs>
+  <text class="label" x="20" y="23">DELIVERY AND STAGING</text>
+  <rect class="box" x="20" y="40" width="245" height="80" rx="7" />
+  <text class="heading" x="36" y="69">1. COSI package</text>
+  <text class="sub" x="36" y="95">OS + extension images</text>
+  <path class="wire" d="M265 80 H310" marker-end="url(#arrowhead)" />
+  <rect class="box" x="315" y="40" width="280" height="80" rx="7" />
+  <text class="heading" x="331" y="69">2. Trident update</text>
+  <text class="sub" x="331" y="95">Verify; replace target-slot content</text>
+  <path class="wire" d="M595 80 H640" marker-end="url(#arrowhead)" />
+  <rect class="box highlight" x="645" y="40" width="335" height="80" rx="7" />
+  <text class="heading" x="661" y="69">/var/lib/trident/slots/{a,b}/</text>
+  <text class="sub" x="661" y="95">slot-loader.json + sysexts/ + confexts/</text>
+  <text class="label" x="20" y="176">ON EVERY BOOT, INCLUDING ROLLBACK</text>
+  <rect class="box" x="20" y="194" width="245" height="75" rx="7" />
+  <text class="heading" x="36" y="222">acl.slot=a|b</text>
+  <text class="sub" x="36" y="247">From the per-slot UKI addon</text>
+  <path class="wire" d="M265 232 H310" marker-end="url(#arrowhead)" />
+  <rect class="box highlight" x="315" y="194" width="280" height="75" rx="7" />
+  <text class="heading" x="331" y="222">3. trident-slot-loader</text>
+  <text class="sub" x="331" y="247">Reads acl.slot and slot-loader.json</text>
+  <path class="wire" d="M812 120 V151 H455 V189" marker-end="url(#arrowhead)" />
+  <text class="sub" x="651" y="173">Read the selected slot's payloads</text>
+  <path class="wire" d="M455 269 V298 H242 V329" marker-end="url(#arrowhead)" />
+  <path class="wire" d="M455 298 H755 V329" marker-end="url(#arrowhead)" />
+  <rect class="box" x="20" y="335" width="450" height="96" rx="7" />
+  <text class="heading" x="36" y="361">4. Read-only confext defaults</text>
+  <text class="sub" x="36" y="386">Extra lowers; factory defaults and user upper retained</text>
+  <text class="heading" x="36" y="411">First: initrd assembles writable /etc</text>
+  <rect class="box" x="530" y="335" width="450" height="96" rx="7" />
+  <text class="heading" x="546" y="361">5. Native /usr activation</text>
+  <text class="sub" x="546" y="386">/run/extensions links survive switch-root</text>
+  <text class="heading" x="546" y="411">Later: systemd-sysext merges /usr</text>
+</svg>

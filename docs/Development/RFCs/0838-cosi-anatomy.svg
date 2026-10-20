@@ -1,0 +1,96 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 830" role="img" aria-labelledby="cosi-map-title cosi-map-desc" width="1000" height="830">
+  <title id="cosi-map-title">Exploded view of the PoC COSI archive and its nested filesystem images</title>
+  <desc id="cosi-map-desc">The tar starts with cosi-marker and metadata.json,
+          immediately followed by primary GPT data, then seven source partition images.
+          Two new extension image members come last. Metadata describes their paths,
+          sizes and compressed hashes. Expanding the ESP reveals the UKI and slot addons.
+          Expanding the sysext and confext members reveals separate squashfs filesystems
+          containing usr content and etc defaults. These extension members are not disk
+          partitions and are not nested inside the usr image.</desc>
+  <style>
+:root {color-scheme:light dark; --bg:#f3f5f8; --panel:#fff; --text:#182432;
+ --muted:#526173; --line:#c7d1dd; --accent:#2357a2; --soft:#eaf1fc;
+ --success:#17633e; --success-bg:#e7f5eb;}
+@media(prefers-color-scheme:dark) {:root {--bg:#111820; --panel:#19232f;
+ --text:#e4ecf4; --muted:#a9b9ca; --line:#43566c; --accent:#96bfff;
+ --soft:#22344c; --success:#9be1b4; --success-bg:#173b2a;}}
+.canvas {fill:var(--bg)}
+.box {fill:var(--panel); stroke:var(--line); stroke-width:1.5}
+.highlight {fill:var(--soft); stroke:var(--accent)}
+.payload {fill:var(--success-bg); stroke:var(--success); stroke-width:1.5}
+text {fill:var(--text); font:15px system-ui,sans-serif}
+.sub {fill:var(--muted); font-size:13px}
+.label {fill:var(--accent); font-size:12px; font-weight:700}
+.heading {font-weight:700}
+.mono {font:12px ui-monospace,monospace}
+.wire {fill:none; stroke:var(--muted); stroke-width:1.7}
+.arrow {fill:var(--muted)}
+</style>
+  <rect class="canvas" width="100%" height="100%" />
+  <defs>
+    <marker id="cosi-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path class="arrow" d="M0 0 L8 4 L0 8 Z" />
+    </marker>
+  </defs>
+  <rect class="box" x="12" y="12" width="350" height="762" rx="9" />
+  <text class="heading" x="28" y="41">b.cosi</text>
+  <text class="sub" x="28" y="65">12 tar members, shown in archive order</text>
+  <rect class="box" x="28" y="83" width="318" height="31" rx="4" />
+  <text class="mono" x="42" y="104">1  cosi-marker</text>
+  <rect class="box highlight" x="28" y="124" width="318" height="53" rx="4" />
+  <text class="heading" x="42" y="147">2  metadata.json</text>
+  <text class="sub" x="42" y="168">COSI 1.3: layout, references, hashes, sizes</text>
+  <rect class="box" x="28" y="188" width="318" height="39" rx="4" />
+  <text class="mono" x="42" y="212">3  images/..._gpt.raw.zst</text>
+  <rect class="box" x="28" y="241" width="318" height="253" rx="4" />
+  <text class="label" x="42" y="262">SOURCE DISK-REGION MEMBERS</text>
+  <text class="mono" x="42" y="289">..._1.raw.zst   ESP (boot files)</text>
+  <text class="mono" x="42" y="317">..._2.raw.zst   /usr filesystem</text>
+  <text class="mono" x="42" y="345">..._3.raw.zst   /usr verity hashes</text>
+  <text class="mono" x="42" y="373">..._4.raw.zst   USR-B source region</text>
+  <text class="mono" x="42" y="401">..._5.raw.zst   HASH-B source region</text>
+  <text class="mono" x="42" y="429">..._6.raw.zst   OEM</text>
+  <text class="mono" x="42" y="457">..._7.raw.zst   ROOT</text>
+  <text class="sub" x="42" y="482">Numbers describe the source disk layout.</text>
+  <rect class="payload" x="28" y="511" width="318" height="231" rx="4" />
+  <text class="label" x="42" y="535">images/extensions/  (new tar members)</text>
+  <rect class="box" x="40" y="550" width="294" height="74" rx="4" />
+  <text class="mono" x="52" y="575">trident-poc.raw.zst</text>
+  <text class="sub" x="52" y="600">Sysext: 415 B compressed → 4 KiB raw</text>
+  <rect class="box" x="40" y="637" width="294" height="74" rx="4" />
+  <text class="mono" x="52" y="662">trident-poc-etc.raw.zst</text>
+  <text class="sub" x="52" y="687">Confext: 409 B compressed → 4 KiB raw</text>
+  <text class="sub" x="28" y="761">Schematic, not proportional to byte sizes.</text>
+  <rect class="box highlight" x="436" y="12" width="550" height="165" rx="7" />
+  <text class="heading" x="452" y="38">Metadata is the map</text>
+  <text class="mono" x="452" y="64">disk.gptRegions[] → GPT + partition members</text>
+  <text class="mono" x="452" y="89">images[] → filesystem and verity roles</text>
+  <text class="mono" x="452" y="114">extensions.{sysexts,confexts}[] → payload DDIs</text>
+  <text class="sub" x="452" y="146">Each descriptor: path, sizes, compressed SHA-384</text>
+  <text class="sub" x="452" y="167">Also: architecture, os-release, bootloader and package metadata</text>
+  <path class="wire" d="M346 151 H397 V96 H429" marker-end="url(#cosi-arrow)" />
+  <rect class="box" x="436" y="207" width="550" height="165" rx="7" />
+  <text class="heading" x="452" y="234">Open ..._1.raw.zst: Zstd → FAT ESP image</text>
+  <text class="mono" x="452" y="261">/EFI/Linux/vmlinuz-6.6.157.1-1.azl3.efi</text>
+  <text class="sub" x="452" y="286">That UKI contains the kernel + initrd, including our loader.</text>
+  <text class="mono" x="452" y="312">/acl/uki-addons/slot-{a,b}.addon.efi</text>
+  <text class="sub" x="452" y="344">Boot files inside a partition image, not loose tar entries.</text>
+  <path class="wire" d="M346 288 H429" marker-end="url(#cosi-arrow)" />
+  <rect class="box highlight" x="436" y="409" width="550" height="150" rx="7" />
+  <text class="heading" x="452" y="436">Open trident-poc.raw.zst: Zstd → squashfs DDI</text>
+  <text class="mono" x="452" y="464">/usr/lib/extension-release.d/extension-release.trident-poc</text>
+  <text class="sub" x="452" y="489">ID=_any  ·  SYSEXT_ID=trident-poc</text>
+  <text class="mono" x="452" y="517">/usr/share/trident-poc/version → "slot-b"</text>
+  <text class="sub" x="452" y="542">The .raw is a filesystem image; these paths are inside it.</text>
+  <path class="wire" d="M334 587 H391 V485 H429" marker-end="url(#cosi-arrow)" />
+  <rect class="box highlight" x="436" y="594" width="550" height="164" rx="7" />
+  <text class="heading" x="452" y="621">Open trident-poc-etc.raw.zst: Zstd → squashfs DDI</text>
+  <text class="mono" x="452" y="649">/etc/extension-release.d/extension-release.trident-poc-etc</text>
+  <text class="sub" x="452" y="674">ID=_any  ·  CONFEXT_ID=trident-poc-etc</text>
+  <text class="mono" x="452" y="702">/etc/trident-poc/version → "slot-b"</text>
+  <text class="mono" x="452" y="729">/etc/trident-poc/user-override → "factory-b"</text>
+  <path class="wire" d="M334 675 H429" marker-end="url(#cosi-arrow)" />
+  <text class="sub" x="20" y="799">Source partition numbers are not target slot choices; Trident maps data to the inactive pair.</text>
+  <text class="sub" x="20" y="821">Extension payloads are extra tar members, not new disk partitions.</text>
+</svg>

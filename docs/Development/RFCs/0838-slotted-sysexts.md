@@ -1,530 +1,740 @@
-# 0838 Slotted Extension Storage
+# 0838 Trident-Managed Extensions
 
-- Date: 2026-10-14
+- Date: 2026-10-15
 - RFC PR: [microsoft/trident#838](https://github.com/microsoft/trident/pull/838)
-- Builds on: [RFC 0789](https://github.com/microsoft/trident/pull/789)
+- Status: Proposal.
 
 ## Summary
 
-[RFC 0789](https://github.com/microsoft/trident/pull/789) carries extension
-images inside the COSI, so an OS-coupled extension ships and rolls out with the
-OS. It leaves one question open: such an extension still has to land somewhere
-that follows the A/B slot, and today the only way to satisfy that is a dedicated
-A/B partition pair.
-
-This RFC answers it. A bundled extension can request Trident-managed, per-slot
-storage, and a boot-time component selects the booted slot's copy before
-anything consumes it. It also supplies `/etc` layers, which have no viable
-mechanism on systemd 255.
-
-An extension bundled in the COSI is already tied to the OS image it shipped
-with. Slotted placement is the natural destination for it, and the two features
-are expected to be used together in the common case. An independently hosted
-extension fetched over OCI and placed per slot is the unusual combination, not
-the default.
+Provide an **A/B update path for sysexts on ACL**. Image builders bundle their
+sysexts in the update COSI so Trident can stage, activate and roll them back
+with the OS, rather than requiring a separate stack updater. An opt-in Host
+Configuration policy controls storage and activation for sysexts and confexts,
+while preserving shared user state.
 
 ## Motivation and Goals
 
-0789 establishes that OS-coupled extensions belong in the COSI. It also
-establishes, in [Destination
-Validation](https://github.com/microsoft/trident/pull/789), that a bundled image
-written to shared storage changes the running slot immediately and defeats
-rollback, so placement must be slot-scoped.
+### Background
 
-Trident has exactly one mechanism for that today, and
-`validate_extension_images_locations` (`config/host/mod.rs:218`) enforces it: the
-destination must resolve to a device with A/B capabilities. The only way to
-satisfy it is a dedicated A/B volume pair. Trident's own reference configuration
-(`tests/e2e_tests/trident_configurations/root-verity/trident-config.yaml`)
-spends four partitions and 2.4 GB on exactly this.
+Systemd **system extensions (sysexts)** supply `/usr` and `/opt` content;
+**configuration extensions (confexts)** supply `/etc` content. Here they are
+Discoverable Disk Images (DDIs): mountable filesystem images containing those
+files and compatibility metadata.
 
-That price buys only slot-scoping, and it is charged in the currency hardest to
-change:
+A **Composable OS Image (COSI)** is a tar of OS partition images and metadata.
+RFC 0789 proposes COSI 1.3 support for bundled extensions: optional metadata arrays
+`extensions.sysexts` and `extensions.confexts` reference compressed DDIs by ID,
+location, size and hash. OS and extensions can then ship as one artifact;
+Trident can also fetch extensions listed separately in Host Configuration.
+See the [example COSI cutaway](./0838-cosi-anatomy.svg).
 
-- **Partitions are fixed at install.** The size is a guess made before anyone
-  knows what the host will carry; growing it means repartitioning.
-- **Some layouts cannot pay it.** Where the partition table is published, signed
-  or attested, adding a pair is not a configuration change. A layout whose only
-  A/B volume is a verity-sealed `/usr` has none to offer on any terms.
-- **It is all-or-nothing per directory.** An extension that should follow the
-  slot and one that should persist cannot share a location.
+#### ACL storage and update behavior
 
-The check conflates *being slot-scoped*, the property that matters, with *being
-on an A/B block device*, one implementation of it.
+Azure Container Linux (ACL) already uses sysexts for containerd and OEM
+integration and is expected to rely more on them.
 
-### Why content matching alone is not sufficient
+Only the `/usr` filesystem is A/B-paired and dm-verity-protected, with paired
+hash partitions; **all mutable filesystems are shared**. ESP, OEM and ROOT are
+unpaired, and `/etc`, `/var` and `/opt` live on shared ROOT.
 
-A tempting alternative is to place both slots' copies in one search directory
-and let `systemd-sysext` merge whichever matches the booted OS. Version
-mismatches are skipped quietly, so this very nearly works, and on a suitable
-platform it needs no new code at all.
+Images embedded in `/usr` follow its slot. For images on shared storage,
+changing the stored files affects both slots; switching `/usr` does not undo
+those changes.
 
-It fails for two independent reasons, either sufficient on its own:
+### Problem Statement
 
-1. **Deploying one image under two filenames requires systemd v256.**
-   `path_extract_image_name()` truncates an image name at the first `_` or `+`
-   (`src/basic/os-util.c`), letting two copies share one inner
-   `extension-release`. That function arrived in commit `37543971` (2024-03-28).
-   Earlier systemd requires each copy to carry its own, so a signed image must
-   be repacked per slot.
-2. **The OS version must actually differ between slots.** Matching uses `ID=`,
-   then `SYSEXT_LEVEL=` when defined on both sides, otherwise `VERSION_ID=`. A
-   platform whose `VERSION_ID` is coarser than its build cadence, or which can
-   deploy the same image to both slots, puts identical values in both and both
-   copies match.
-
-Both conditions hold on the first intended consumer. Content matching remains
-the better mechanism where a platform satisfies both; see
-[Future possibilities](#future-possibilities).
+Users build custom images on ACL, often adding stack files or preloaded
+sysexts on mutable storage. ACL's A/B update replaces the core OS, not those
+additions. Their stack therefore needs an out-of-band updater even though it
+already ships in their image.
 
 ### Goals
 
-Give bundled extensions a slot-scoped destination without a dedicated volume
-pair; restore the previous set on rollback with no servicing operation; provide
-a workable `/etc` story on systemd 255; require no new partitions, no
-sealed-`/usr` change and no modification to systemd.
+- Update and roll back ACL's OS and declared sysexts together, using one COSI
+  instead of an out-of-band stack updater.
+- Activate the matching extension set before consumers run on every boot,
+  including rollback.
+- Preserve user state while confext defaults follow the OS slot.
 
-### Non-goals
+## Scope
 
-Changing `systemd-sysext` matching semantics. Replacing the A/B volume route,
-which stays better where a pair is affordable. Extensions on the ESP. Anything
-0789 already covers, including the effective set, the deployed inventory and
-extension-only updates.
+**ACL is the initial design and implementation target** because its sealed
+A/B `/usr` and shared mutable storage require explicit slot selection.
+Support for other platforms is future work. The public API avoids ACL-specific
+settings so it can be reused later.
+
+The mode selects how Trident consumes COSI-bundled extensions. This RFC
+develops `managed` (alias `acl`) for ACL; `simple` and `native` describe direct
+placement on writable A/B filesystems.
+
+Explicit Host Configuration `os.sysexts` and `os.confexts` declarations remain
+honored in every mode. They retain existing placement behavior except in
+`managed`/`acl`, which owns the combined COSI and Host Configuration set.
+
+### Requirements
+
+- Select bundled-extension handling through one public mode.
+- A published store must contain valid manifests for every bootable slot;
+  images without a store need no initialization.
+- Replace the inactive slot's managed extension set on reuse; do not retain
+  older sets for that slot.
+- Preserve each platform's filesystem mutability and user-state persistence.
+- Support ACL's shared storage without new partitions or systemd source changes.
+- Keep the policy reusable on platforms with writable A/B storage.
+
+### Out of Scope
+
+- Image Customizer's managed-content authoring/bundling API and build design
+  (a required separate proposal; see [Dependencies](#dependencies)).
+- Relocating the Trident-owned store; see [Future Possibilities](#future-possibilities).
+- Updating arbitrary files on shared mutable storage.
+- Runtime Update for managed extension/policy changes in the initial release.
+- New image-less updates, initrd-scoped sysext content or ESP payload storage.
+- Bundled disk streaming; 0789's exclusion remains.
+
+### Exit Criteria
+
+- A COSI file carrying extensions completes an ACL A/B update with the OS,
+  sysexts and confexts staged for the same target slot.
+- Update, commit, health-check rollback and bootloader fallback expose matching
+  slot content before consumers run, without partial activation or late repair.
+- Repeated slot reuse removes obsolete extension files without changing the
+  active slot or accumulating older sets.
+- The public API, safe adoption and tests below are delivered;
+  user `/etc` edits and SELinux Enforcing are preserved.
 
 ## Dependencies
 
-**RFC 0789 is a prerequisite.** This RFC adds a placement policy to the model
-0789 defines and does not restate it. In particular it relies on:
-
-| From 0789 | Used here as |
-| --- | --- |
-| `extensions.sysexts` / `extensions.confexts` in COSI 1.3 | The delivery mechanism for slotted content |
-| `(kind, id)` as stable extension identity | The store key, instead of a filename |
-| Deployed Extension Inventory in Host Status | The record of what is deployed per slot; this RFC adds no separate manifest |
-| Effective set computed from COSI plus Host Configuration | The set the loader selects from |
-| Resolved-placement destination validation | The hook where the slotted arm is added |
-| Atomic staging on the destination filesystem | A prerequisite shared by both RFCs |
-| SELinux check moved into validation for every servicing type | Inherited unchanged |
-
-0789's prerequisites apply transitively, including the `set_up_extensions`
-replacement bug and durable staged payloads.
-
-Bundled extensions under
-[disk streaming](../../Explanation/Disk-Streaming.md) are refused by 0789; that
-restriction is inherited.
-
-## Design
-
-### Selection is recomputed every boot, never persisted
-
-When firmware falls back to the previous slot on its own, no Trident code runs.
-Anything written during servicing would be stale with nothing to correct it, so
-the selection must derive from what actually booted.
-
-Verified: Trident's A/B rollback path invokes no subsystems.
-`rollback::validate_boot` only reconciles Host Status, and
-`manual_rollback::stage_rollback` touches only the pcrlock policy. Only the
-runtime path passes `&mut subsystems`.
-
-### Both halves run in the initrd
-
-The `/etc` half has no choice. Where `/etc` is assembled as an overlay whose
-lowerdir lives inside `/usr`, anything contributing to it must act before that
-overlay is mounted, which happens in the initrd.
-
-The sysext half rides along, because `/run` is bind-moved across switch-root
-(`src/shared/switch-root.c`: `{ "/run", MS_BIND, MS_BIND|MS_REC }`). Symlinks
-written to `/run/extensions` in the initrd are still present when
-`systemd-sysext` merges in the real root. Their targets are written as
-post-switch-root paths, so they are dangling in the initrd and correct after.
-
-Unifying is better than running them separately: the slot is resolved **once**,
-so the sysext set and the `/etc` layer cannot disagree about which slot they
-came from. It also removes complexity a real-root systemd unit would carry:
-
-| Problem with a real-root unit | In the initrd |
-| --- | --- |
-| `WantedBy=` creates a `Wants=`, which `systemd.unit(5)` states cannot fail the transaction, so the unit does not fail closed | No unit; failing in dracut is native |
-| Ordering is subtle: `ensure-sysext.service` carries `BindsTo=` and `After=systemd-sysext.service`, so it runs *after* the merge and is the wrong anchor | Nothing to order against |
-| A platform-specific `ConditionKernelCommandLine=` would block every other mode | No unit condition |
-| Unit enablement needs a preset or scriptlet | No unit to enable |
-| Store must be available at `local-fs.target` | `/sysroot` is mounted by definition |
-
-A real-root unit remains the fallback for platforms that cannot modify their
-initrd, so the mode selector chooses *where* the loader runs as well as how it
-detects the slot.
-
-### Why `/etc` payloads are confext images
-
-`systemd-confext` is the natural mechanism and is unusable here: on systemd 255
-it mounts `/etc` read-only. Mutable overlays arrived in v256; Flatcar's backport
-is 1310 lines across five files, and modifying systemd is out of scope.
-
-Keep the **format** and replace the **mount**. Payloads are confext-format DDIs
-carrying `/etc/extension-release.d/extension-release.<name>`
-(`src/basic/os-util.c`). The loader mounts them read-only and adds them as
-additional lowerdirs to the existing `/etc` overlay, whose upperdir is
-unchanged, so `/etc` stays mutable.
-
-Preferred over tarballs or plain trees because:
-
-- **It is forward-compatible.** The payload is already a valid confext. Azure
-  Linux 4.0 ships systemd 258.4, where the identical artefact is handed to
-  native `systemd-confext --mutable=yes` and the custom mounting is deleted.
-  Two things do not change at that transition: the loader remains, because
-  systemd has no concept of A/B slots and selection stays the platform's job;
-  and native mounting reintroduces `extension-release` matching that the custom
-  lowerdir mount bypasses.
-- **It reuses everything.** Same build and signing pipeline as sysexts, same
-  0789 delivery path, verity available by DDI convention.
-- **It is atomic.** A loop mount either appears or does not. A tarball
-  extraction can half-fail and pays extraction cost on every boot.
-- **SELinux labels travel in the filesystem image**, not in tar metadata.
-
-#### Payloads must declare `ID=_any`
-
-Because slot selection is the platform's job and not systemd's, the payload must
-not additionally be subject to OS-version matching. A payload declaring a
-concrete `ID=` would merge under the custom mount, which ignores matching, then
-silently stop merging the day a platform switches to native confext mounting.
-That is the failure mode this RFC exists to prevent, reappearing at the point of
-transition.
-
-`ID=_any` bypasses matching on every systemd version. Selection remains with the
-loader, which is what slot-scoping requires anyway, and the move to native
-mounting changes no artefact. Deciding this late would mean rebuilding every
-payload, so it is specified here. 0789 already states that `ID=_any` must not be
-warned on, since it declares compatibility rather than delivery method.
-
-Adding lowerdirs does not increase filesystem stacking depth, because depth is
-the maximum of the layers plus one and every lowerdir sits on a plain
-filesystem. *Reordering* the sysext merge ahead of the `/etc` overlay would
-instead place `/etc` on top of the `/usr` overlay, reaching depth 2, and any
-confext merged afterwards would reach 3 and fail.
-`FILESYSTEM_MAX_STACK_DEPTH` is 2 (`include/linux/fs.h`), enforced in
-`fs/overlayfs/super.c`.
-
-### Selection is a set, not a sequence
-
-Creating N symlinks exposes a prefix of the intended set if it fails partway,
-which matters where a driver and its userspace libraries must move together.
-The loader prepares the complete set out of the way and activates it with a
-single rename, so the set becomes visible all at once or not at all.
-
-## Public API Design
-
-### Answering 0789's open question
-
-0789 asks how a COSI entry requests slotted placement, and states that omitting
-`path` must not opt in. The answer is an explicit `scope`, spelled identically
-on both sources so one concept has one name.
-
-**COSI metadata**, extending 0789's `ExtensionImage`:
-
-```json
-{
-  "id": "gpu-driver",
-  "image": { "path": "images/extensions/gpu-driver.rawzst", "...": "..." },
-  "scope": "slotted"
-}
-```
-
-**Host Configuration**, extending `Extension`:
-
-```yaml
-os:
-  # Root of the per-volume extension store.
-  # Default /var/trident/extensions. Must be on storage an A/B update does not
-  # replace, and must not be a systemd-sysext search path.
-  extensionStore: /mnt/data/trident/extensions
-
-  sysexts:
-    - url: https://example.com/tooling.raw   # unchanged, still the default
-      sha384: <hash>
-    - url: https://example.com/platform.raw
-      sha384: <hash>
-      scope: slotted
-
-  # confext-format images contributed as /etc overlay layers
-  etcLayers:
-    - url: https://example.com/platform-etc.raw
-      sha384: <hash>
-      scope: slotted
-```
-
-| `scope` | Where the bytes live | Where it is activated |
-| --- | --- | --- |
-| `shared` (default) | At `path`. | At `path`. Today's behaviour. |
-| `slotted` | `<extensionStore>/{a,b}/`, keyed by `(kind, id)` | `/run/extensions`, or as an `/etc` lowerdir |
-
-`scope` and `path` are mutually exclusive: a slotted extension surfaces in a
-loader-owned location, so a caller-supplied destination would be silently
-ignored. This satisfies 0789's requirement that placement never change
-implicitly.
-
-`etcLayers` is a separate list rather than a `scope` on `os.confexts` because
-the two are activated by different mechanisms, only one of which is
-`systemd-confext`. The COSI side needs no equivalent split: a confext entry with
-`scope: slotted` is an `/etc` layer.
-
-### The validation change
-
-`validate_extension_images_locations` is relaxed, not removed. Its requirement
-becomes *the destination is slot-scoped*, satisfied by either mechanism. This is
-the arm 0789's Destination Validation anticipates:
-
-| Configuration | Rule |
-| --- | --- |
-| No `abUpdate` | No check, as today. |
-| `abUpdate`, `scope: shared` | Destination must be on an A/B volume. Unchanged. |
-| `abUpdate`, `scope: slotted` | Satisfied by the store, **only when loader capability is present**. |
-
-0789 states the same constraint from its side: slotted storage qualifies only
-with loader capability, and omitting `path` must not bypass the A/B check.
-
-### Validation
-
-| Condition | Result |
-| --- | --- |
-| `scope` absent | `shared`. Identical to today. |
-| `scope: slotted` with `path` | Reject. The destination is loader-owned. |
-| `scope: slotted`, no `abUpdate` | Reject, naming the absent configuration. |
-| `scope: slotted`, no loader capability | Reject. See [Rollout](#rollout). |
-| `extensionStore` inside a search path | Reject: both slots' copies would be discovered. |
-| `extensionStore` on an A/B volume | Reject: it must outlive the slot it describes. |
-| `etcLayers` entry without confext metadata | Reject at deploy time, after mount. |
-| `etcLayers` entry without `ID=_any` | Reject; see above. |
-
-Duplicate `(kind, id)` and destination collisions are already covered by 0789
-and are not restated.
-
-### Backward compatibility
-
-All new fields default, so existing Host Configurations and 1.3 COSI files
-without `scope` behave identically. The relaxed check is strictly more
-permissive, so anything valid today stays valid.
+- **[RFC 0789](https://github.com/microsoft/trident/pull/789):** COSI extension
+  metadata contract and reader/writer support.
+- **Image Customizer (IC):** a separate, out-of-scope API and build design for
+  declaring extensions, maintaining the store and manifests, and bundling
+  extensions into COSIs. Required for the end-to-end image-building workflow;
+  Trident accepts a conforming COSI from any producer.
 
 ## Implementation
 
-```
-<extensionStore>/
-├── a/
-│   ├── sysext/<id>.raw
-│   └── etc/<id>.raw
-└── b/ ...
+### Design
 
-/run/extensions/<name>.raw -> <extensionStore>/a/sysext/<id>.raw
-/etc overlay lowerdir list += <mounted etc/<id>.raw>
-```
+This section describes `managed`/`acl` on ACL.
 
-Keyed by `(kind, id)` from 0789 rather than by filename, so replacement and
-comparison use the same identity the inventory does. The store is outside every
-search path, so its contents are invisible to `systemd-sysext` until selected.
-Both slot directories persist across an update, so rollback needs no
-re-download.
+Trident keeps the old and new extension files side by side. An update prepares
+the inactive slot's files without changing the running system. At boot,
+`trident-slot-loader` selects the files for the OS slot that actually booted.
+Rollback uses the same selection process.
 
-### Servicing
+![Managed extension delivery and activation on ACL](./0838-managed-extensions-overview.svg)
 
-0789's extensions subsystem already computes the effective set and places
-images. For a slotted entry the destination becomes `<store>/<target>/`, with
-the target volume from `EngineContext::get_ab_update_volume()`, already used to
-select the per-slot verity addon.
+#### Where the files live
 
-What is deployed per slot is recorded in 0789's Deployed Extension Inventory.
-This RFC adds no separate manifest: the inventory already carries kind, ID,
-name, resolved placement, source and source hash, which is what the loader needs
-to distinguish "nothing configured" from "storage lost".
+The [store](#managed-content-store) is fixed at `/var/lib/trident/slots`. Its `a/` and `b/` directories
+hold each slot's sysexts and confexts on shared ROOT. These are separate
+directories, not new partitions. If A is running, an update prepares B's set
+while retaining A's files. **Reusing B replaces its entire managed extension
+set**, just as staging a new OS replaces B's partition contents. Keep one set
+per slot, not a history of sets within each slot.
 
-Atomic placement is a shared prerequisite. A malformed `.raw` is not skipped like
-a version mismatch: `image_read_metadata` errors propagate in
-`image_discover_and_read_metadata` (`src/sysext/sysext.c`) before any per-image
-tolerance applies, so one bad image blocks every extension on the host.
+The [staged update](#trident-staging) takes effect on reboot into the target OS slot.
 
-### Slot detection
+#### Booting after an update
 
-The loader resolves the slot per platform, selected by a mode setting so Trident
-does not hardcode one platform's mechanism. The first mode reads a slot label
-from the kernel command line, supplied by a per-slot signed boot artefact.
+The **[Slot Loader Manifest](#slot-loader-manifest)** tells the loader exactly which managed extensions
+belong to the booted slot.
+It is created when the store is initialized, during
+[image construction](#base-image-construction-and-ic-integration) or first
+servicing, and replaced during update staging. No additional COSI format change
+is required.
 
-A label is preferable to a partition UUID because no mapping table has to stay
-in sync with a layout that changes. However, a label is an *assertion*: a
-packaging error could pair it with the other slot's device. The loader
-cross-checks it against the booted `/usr` backing device and refuses to proceed
-on a mismatch.
+After reading `acl.slot`, the loader opens
+`/sysroot/var/lib/trident/slots/<slot>/slot-loader.json` in the initrd.
+It uses this file, not Trident's SQLite database or a directory scan.
 
-## Change inventory
+The loader [returns success without activation](#loader-startup-behavior) when
+the store is absent or a valid manifest selects no images.
+A loader failure on an uncommitted update boot triggers
+[diagnostics and reboot](#update-boot-failure-recovery) into the committed OS.
 
-T-shirt estimates covering design and implementation separately. Risk reflects
-how much is unknown rather than how much work there is. Rows delivered by 0789
-are excluded.
+#### Writable `/etc`
 
-### New component
+User edits in the writable **upper** take precedence over [extension defaults](#confext-handling),
+which take precedence over factory defaults. Changing OS slots changes the
+extension defaults but keeps that shared upper, so user edits survive.
+The native sysext merge still runs after `/etc` assembly.
 
-| Change | Design | Impl | Risk | Notes |
-| --- | :-: | :-: | :-: | --- |
-| `trident-sysext-loader` crate, slot detection and atomic set activation | S | M | Low | std plus `anyhow`; pure given cmdline, store and inventory, so unit-testable without root or a VM |
-| `/etc` layer mounting and lowerdir emission | M | M | Med | Loop-mount in the initrd; interaction with the existing overlay needs care |
+### Component deep dives
 
-### Trident
+#### Managed content store
 
-| Change | Design | Impl | Risk | Notes |
-| --- | :-: | :-: | :-: | --- |
-| `scope` on COSI `ExtensionImage` and HC `Extension` | S | S | Low | Additive; answers 0789's open question |
-| `extensionStore` and `etcLayers` API | M | S | Med | `etcLayers` shape depends on the confext migration path |
-| Relax `validate_extension_images_locations` | M | S | Med | Adds the slotted arm to 0789's resolved-placement validation |
-| Slotted destination in the extensions subsystem | S | S | Low | 0789 already resolves placement; this adds one destination policy |
-| Loader capability detection | M | S | Med | Needed by both RFCs' validation |
-| Package loader and dracut module in the RPM | S | S | Low | `%files acl` already ships a second binary |
-| Schema regeneration | S | S | Low | Mechanical |
+The managed content store is persistent storage for Trident-managed content
+associated with an OS slot. In this design, it holds each slot's sysext/confext
+`.raw` images and Slot Loader Manifest (`slot-loader.json`). The initial ACL
+implementation uses only `/var/lib/trident/slots`, with separate `a/` and `b/`
+directories on shared ROOT.
 
-### ACL
+The path must resolve to ACL's shared ROOT filesystem. ROOT must be mounted
+before the loader runs and writable during staging. Target-slot selection
+comes from the host's A/B configuration, not source COSI partition numbers.
 
-| Change | Design | Impl | Risk | Notes |
-| --- | :-: | :-: | :-: | --- |
-| New dracut module to install and run the loader | S | S | Low | `dracut-acl-selinux-toggle` is an existing precedent |
-| Patch `bootengine` to add `/etc` lowerdirs | S | M | Med | Third patch alongside two already carried; the mount is one line, validation is the work |
-| Order the loader before the `/etc` overlay mount | S | S | Low | Same initrd window as `initrd-setup-root` |
-| Review `overlaycleanup()` interaction | M | S | Med | It compares only against the distro lower layer, so extension-provided defaults will not auto-prune |
-| Package catalog entry | S | S | Low | |
-| Initrd size and UKI rebuild | S | S | Med | Re-signing already happens every build; size growth is the open part |
+#### Base Image Construction and IC Integration
 
-### Not affected
+ACL images may omit the managed content store entirely. **If a store is
+present, it must contain valid manifests for every bootable slot**, even if
+they select no images. `{"version": 1}` is a valid empty manifest. Boot must
+not depend on Trident servicing or datastore initialization.
 
-| Component | Why |
+IC must support adding, replacing and removing managed payloads while
+publishing their files and manifests together. Its API remains a
+[separate proposal](#dependencies).
+
+Integrating `trident offline-initialize` into ACL builds remains an independent
+goal. A store/manifest initialization extension could let ACL scripts and IC
+discover managed slot payloads in the image filesystem, validate them and write
+manifests without requiring a servicing datastore or adopting unrelated
+factory/operator extensions.
+
+Any build-time initialization must finish before publishing the image. The
+loader must not invoke initialization to repair a missing manifest.
+
+#### Trident staging
+
+This sequence applies to `managed`/`acl`. Direct-placement modes follow the
+[mode policies](#host-configuration) instead.
+
+Use the normal A/B lifecycle checks before modifying the target. If an
+update has booted B but B is not committed, A is still the fallback and must
+not be overwritten.
+
+1. Collect the COSI and Host Configuration extensions. Validate their identities,
+   paths and whether the host can activate them.
+   Each boot path's loader must understand its slot's manifest version.
+2. Select the inactive slot. Remove any old Slot Loader Manifest and synchronize
+   its directory before clearing the Trident-owned extension directory,
+   including interrupted-staging leftovers.
+3. Reserve space to stage the new extension files. Write temporary `.raw` files
+   inside the cleared directory, outside systemd's search paths. Verify hashes,
+   filesystem structure and extension compatibility. Reject invalid images with
+   an invalid-input error; flush valid files and directory entries to disk.
+4. Build the manifest from the incoming extensions, not the old list. Once every
+   image is ready, write and synchronize `slot-loader.json.tmp`, atomically
+   rename it to `slot-loader.json`, then synchronize the slot directory.
+
+Boot reads only `slot-loader.json`; a leftover temporary file is never used.
+
+Finalization retains Trident's existing one-shot boot handoff. Before arming
+the candidate, it verifies that persistent boot defaults still select the
+committed OS and that the candidate supports the recovery path below.
+
+#### Trident Slot Loader
+
+##### Loader startup behavior
+
+| Condition | Result |
 | --- | --- |
-| systemd / Azure Linux | Nothing. Avoiding a systemd change is the point of this route |
-| AgentBaker, AKS RP | No interaction |
-| Image Customizer | Covered by 0789, which already requires a writer emitting the section |
+| Store directory absent | Exit successfully (`0`); no activation. |
+| Store present, manifest absent | Return nonzero; activation fails. |
+| Valid manifest selects no images | Exit successfully (`0`); no activation. |
+| Other lookup, parsing or selected-image errors | Return nonzero. |
 
-### Cross-cutting
+Check store presence before slot detection. Successful early exits do not
+create or replace runtime links or mounts. `{"version": 1}` is a valid empty
+manifest; unreadable or malformed files are not.
+Nonzero results follow the [update-boot failure policy](#update-boot-failure-recovery).
 
-| Change | Design | Impl | Risk | Notes |
-| --- | :-: | :-: | :-: | --- |
-| Rollout and capability gating | M | S | Med | Depends on whether the initrd is per-slot |
-| Boot and rollback end-to-end tests | M | L | High | Unsupervised rollback cannot be asserted from unit tests |
-| SELinux policy | M | M | High | Extensions are already unsupported with SELinux enforcing |
+##### Loader configuration
 
-### Suggested sequencing
+ACL packaging supplies fixed loader settings:
 
-1. 0789 steps 1 and 2: prerequisites, COSI 1.3, and reading and installing
-   bundled extensions.
-2. Loader crate and dracut module, sysext half only, behind no API change.
-3. `scope` plumbing and the validation relaxation.
-4. `/etc` layer half, including the `bootengine` patch. Separable; ships after.
-5. Rollout gating, once the per-slot-initrd question is settled.
+```ini
+LOADER_MODE=acl
+TRIDENT_SYSEXT_STORE=/sysroot/var/lib/trident/slots
+TRIDENT_SYSEXT_LINK_STORE=/var/lib/trident/slots
+```
 
-The atomic-placement fix is a prerequisite of both RFCs and should land first
-and independently; it is a live defect today.
+Both paths name the same store: `/sysroot/...` is the initrd's view;
+`/var/lib/...` is the symlink destination after switching to the real root.
+These settings are private. `LOADER_MODE` controls slot detection, not service
+timing.
 
-## Rollout
+This RFC proposes a private kernel command-line input,
+`trident.update_boot=1`, for an uncommitted A/B update boot. Absence means a
+normal boot. It is boot configuration, not a manifest field or Host
+Configuration option, so a missing or malformed manifest cannot hide it.
 
-If the initrd is shared between slots, loader capability is never
-slot-dependent and no staged rollout is required.
+Trident stages a removable, prebuilt `trident-update.addon.efi` on the
+candidate UKI's `.extra.d/` only, following the image's normal signing policy.
+Factory and fallback entries do not carry it. Commit durably removes that copy
+before any persistent boot-order/default promotion; subsequent boots
+therefore use the normal failure policy.
 
-If it is per-slot, a rollback into a slot whose initrd predates the loader has
-no selector, and every slotted extension is absent for that boot. Enabling
-`scope: slotted` then requires two phases: deploy a release carrying the loader
-and let it reach both slots, then permit slotted configuration. Validation must
-verify that capability rather than assume it, which is also what 0789 requires
-of its destination validation.
+##### Slot Loader Manifest
 
-## Testing
+The [JSON Schema](./0838-slot-loader-manifest.schema.json) defines format v1
+as UTF-8 JSON:
 
-Beyond 0789's coverage:
+```json
+{
+  "version": 1,
+  "sysexts": [{"name": "runtime"}],
+  "confexts": [{"name": "runtime-defaults"}]
+}
+```
 
-- A bundled extension with `scope: slotted`: placed in the correct slot
-  directory, selected at boot, merged.
-- A/B update: the selection repoints and **the merged content differs from the
-  previous slot**. A presence-only assertion passes in the inert case and must
-  not be used.
-- **Unsupervised rollback, with no Trident servicing operation in between**: the
-  previous slot's content is merged again. This is the case the design exists
-  for.
-- `/etc` layer: visible in `/etc`, `/etc` remains writable, and a write to a
-  file the layer provides persists across reboot.
-- Loader failure: boot does not proceed silently with a partial set.
-- Validation: each reject row, plus a shared extension off an A/B volume still
-  rejected, and `scope: slotted` rejected without loader capability.
+| Field | Required | Contract |
+| --- | --- | --- |
+| `version` | Yes | Integer `1`: file-format version, not an update or generation counter. |
+| `sysexts`, `confexts` | No | Arrays of image objects; omitted arrays are treated as `[]`. Names must be unique per kind. |
+| `name` | Yes, per item | Filename stem shared by the image `<name>.raw` and metadata `extension-release.<name>`. No directory separators, control characters, `.` or `..`. |
 
-## Counter-arguments
+Unknown fields are ignored in both the manifest and image objects. Compatible
+optional fields can be added within v1; changes that old loaders must understand
+require a new format version.
 
-- **"Just add the partitions."** Better where possible: the filesystem provides
-  the isolation, nothing runs at boot, and capacity is contained. This is for
-  layouts that cannot. Directory slotting gives equivalent naming, not
-  equivalent failure containment: a store on shared storage can fill and affect
-  the running slot, which a dedicated pair cannot.
-- **"Put it in `/usr`."** Better still, and unavailable without re-sealing
-  dm-verity and re-signing. Upstream also forbids extension storage under
-  `/usr`: a `lowerdir=` that is a child of another fails with `-ELOOP`.
-- **"Use the ESP."** Genuinely slot-scoped via `<uki>.efi.extra.d/`, but ESPs
-  are 128 to 256 MiB against payloads in the tens to hundreds of megabytes, and
-  `systemd-stub` places them in the initrd.
-- **"Backport mutable confexts."** It exists, and it is 1310 lines across five
-  files of someone else's component. This route reaches the same place without
-  carrying that, and converges on native confexts later at zero payload cost.
+An entry named `runtime` resolves to `<slot>/sysexts/runtime.raw` or
+`<slot>/confexts/runtime.raw`, according to its array, relative to the store.
+There are no caller-supplied image paths.
 
-### Rejected mechanisms
+Sysexts retain native systemd ordering. Trident writes confexts highest-priority
+first using
+[systemd's version-aware extension-name ordering](https://github.com/systemd/systemd/blob/v255/src/sysext/sysext.c#L869-L892);
+the loader uses that array order for `/etc` lowerdirs, where the first wins.
 
-- **`.v` versioned directories.** They select the highest version and stop, with
-  no fallback when that image fails OS matching, so they cannot hold per-slot
-  copies. Verified empirically; Flatcar reached the same conclusion.
-- **`systemd-tmpfiles`.** No specifier identifies the booted device, partition
-  or slot, and the main pass is ordered after the merge.
-- **A systemd generator.** Generators run sandboxed with most of the filesystem
-  read-only, and `/var` is not mounted when they run.
-- **Reordering the sysext merge ahead of the `/etc` overlay.** Exhausts the
-  filesystem stacking budget and breaks confexts outright.
+The loader rejects unsupported versions, missing required fields, invalid known
+fields, duplicate known JSON keys and duplicate names within either kind, even if
+ignored fields differ. It requires readable, regular image files confined to
+the selected slot's directory and applies the
+compatibility checks below before activation. Symlinks, missing image files and invalid
+metadata fail activation; none trigger a fallback to directory scanning.
 
-### Prior art
+##### Selecting extensions at boot
 
-Three shipping systems converge on recomputing the selection at boot rather than
-persisting it:
+1. **Existing:** ACL mounts ROOT in the initrd.
+2. **New:** `trident-slot-loader.service` runs after that mount. The loader reads
+   `acl.slot=a|b`, loads the slot's manifest, validates its images and prepares
+   `/run/extensions` links and confext lowerdirs. Missing, invalid or duplicate
+   slot values are errors.
+3. **Integration change:** the existing `initrd-setup-root.service` gains a
+   required dependency on the loader and consumes its lowerdir list when
+   creating the existing writable `/etc` overlay.
+4. **Existing:** `/run` survives switch-root, and `systemd-sysext.service` merges
+   the sysexts in the real root. Afterwards, `ensure-sysext.service` reloads unit
+   discovery and restarts targets; it does not perform the merge itself.
 
-- **Flatcar**, whose layout is closest to the first consumer, stamps the version
-  into the filename on shared storage and rewrites the activating symlink in the
-  initrd from the booted `/usr`'s `os-release`. It has since moved extension
-  mounting wholesale into the initrd and deleted its late-merge workaround.
-- **ChromeOS** stores `dlc_a`/`dlc_b` on shared stateful storage and derives the
-  slot from the booted partition number on every service start. It clears the
-  inactive slot's validity marker *before* writing and re-sets it after, so a
-  rollback into a half-written slot finds an honest failure rather than a
-  plausible file. Worth adopting.
-- **Fedora's `sysexts-manager`** filters candidates by the running `VERSION_ID`
-  and symlinks the winner into `/run/extensions`.
+On rollback, the booted slot selects its old set before consumers run. No later
+`trident commit` repair is needed. Sysext content is not available before the
+native merge in step 4.
 
-Fedora CoreOS is the counter-example: it activates sysexts statically across
-deployments, and its documentation records that after a major rebase the
-extensions silently stop matching and are not loaded.
+Loader failure must stop root setup; activation failure must prevent a healthy
+commit. Use required service dependencies, not `Wants=` alone or conditions that
+quietly skip the loader. Preserve another component's activation entries or
+reject the conflict; the exact shared-directory publication protocol remains open.
 
-## Open questions
+##### Update-boot failure recovery
 
-1. **Is the initrd per-slot or shared?** Decides whether a staged rollout is
-   needed at all, and changes the estimates above.
-2. **Whole-directory selection or a prepared set?** Both activate atomically. The
-   former is simpler; the latter allows shared and slotted extensions to share a
-   search path.
-3. **Retention.** Nothing prunes a slot directory when an entry leaves the
-   configuration. Reconciling during provisioning conflicts with keeping the
-   previous slot's files for rollback. 0789's inventory gives this something to
-   act on, but the policy is undecided.
-4. **Default store path.** `/var/trident/extensions` against
-   `/var/lib/trident/extensions`; the datastore already lives under the latter.
-5. **Does a slotted extension need an extension-only update path?** 0789's
-   Runtime Update path writes to the running slot, which is in tension with
-   slot-scoped placement.
-6. **Measured boot.** The selected image is outside the UKI's measurements, so
-   identical measurements can yield different `/usr` contents.
-7. **SELinux.** Extensions are already unsupported with SELinux enforcing, a
-   precondition neither RFC resolves.
+The loader unit uses `Restart=no` and gains
+`OnFailure=trident-slot-loader-recovery.service`. This new initrd-only recovery
+unit uses `ConditionKernelCommandLine=trident.update_boot=1` and
+`ConditionPathExists=/etc/initrd-release`, with `DefaultDependencies=no`.
+It has no dependency on `/etc` assembly or Trident's datastore and runs with
+a bounded timeout. Nonzero exits, crashes and timeouts take this path, not
+just errors returned by the loader's main function.
 
-## Future possibilities
+The handler captures diagnostics, then requests a reboot through systemd.
+`SuccessAction=reboot` and `FailureAction=reboot` ensure that capture failure
+or timeout does not leave the candidate stuck. It never re-arms the one-shot
+entry or guesses the other slot: the consumed one-shot handoff returns the next boot
+to the committed default. Normal boots keep the existing fatal-error behavior
+without automatic reboot, preventing a fallback boot from entering a loop.
 
-- **Native confext mounting.** On systemd 256 or later, the loader places the
-  selected payload in a confext search path and `systemd-confext --mutable=yes`
-  mounts it. The loader still performs selection, and payloads do not change
-  provided they declare `ID=_any`. Azure Linux 4.0 ships systemd 258.4.
-- **Content matching** on platforms with systemd v256 or later and a
-  build-granular `VERSION_ID`, which needs no loader at all.
-- **Initrd-phase sysext merging**, as Flatcar now does, for extensions that must
-  be present before unit enumeration.
-- Per-volume scoping for other Trident-managed state that is shared today.
+Before reboot, the handler overwrites a bounded, human-readable record at
+`/sysroot/var/lib/trident/diagnostics/slot-loader-last-failure.log` and
+synchronizes it. This is shared ROOT, outside the slot directory that staging
+clears; the old OS reads it at `/var/lib/trident/diagnostics/slot-loader-last-failure.log`.
+Record the boot ID, attempted slot when known, failure phase, service result
+and error reason, not manifest or image contents. Failure to persist the record
+is reported to the journal/console but does not prevent reboot. If the loader
+crashed before reporting a reason, capture its unit result and journal tail.
+
+Use leveled stderr diagnostics (slot, manifest path, store, activation method and
+image errors), captured by the journal/console. Return nonzero on failure.
+Install the loader's dracut module before normal UKI build and signing.
+
+##### Confext handling
+
+The loader mounts selected confext images read-only below
+`/run/trident-slot-loader/etc/`. It publishes their `/etc` subdirectories as a
+colon-separated lowerdir list in `/run/trident-slot-loader/etc-lowerdirs`, in
+manifest order, only after all selected mounts are ready.
+
+The loader reuses confext images, not systemd 255's native `systemd-confext`
+merge, which would make `/etc` read-only. It does not create the final overlay;
+ACL Bootengine consumes the list. With no confexts, there are no extra lowerdirs.
+
+#### ACL Bootengine
+
+ACL already combines factory defaults with a persistent writable directory
+using overlayfs. This RFC requires two integration changes:
+
+- The existing `initrd-setup-root.service` gains `Requires=` and `After=`
+  dependencies on `trident-slot-loader.service`.
+- The existing `initrd-setup-root` command reads the published lowerdir list
+  before its overlay mount and prepends those paths to the factory lower.
+
+The resulting mount keeps the existing upper and work directories:
+
+```text
+lowerdir=<published confext lowerdirs>:/sysroot/usr/share/distro/etc
+upperdir=/sysroot/etc
+workdir=/sysroot/.etc-work
+```
+
+A missing or empty list leaves the existing factory-only lower unchanged.
+Bootengine does not modify a live mount or copy defaults into the writable
+directory. Each confext supplies a directory to the same overlay, not another
+overlay mount.
+
+`overlaycleanup()` currently compares user files only with factory defaults.
+How cleanup handles changed or removed extension defaults and deletion markers
+(whiteouts) remains an open policy decision.
+
+### Safety checks
+
+| Area | Required behavior | Failure behavior |
+| --- | --- | --- |
+| Mode and layout | Validate selected inputs and placement before writing. `managed`/`acl` initially requires ACL A/B servicing and compatible boot components. | Reject unsupported layouts; never silently switch modes. Intentional skips are reported. |
+| Native placement | Bundled `simple` and `native` images go only to writable A/B filesystems. Resolve the actual backing filesystem, including an overlay's writable upper. | Reject an unsafe explicit destination or an exhausted native candidate list before staging. |
+| Ownership and cleanup | Clear only the inactive managed slot tree. Direct placement changes only Trident-tracked files, not entire native directories. Reject aliases, overlapping paths, traversal and untrusted writers. | Preserve the running/fallback slot and unrelated data; refuse unsafe cleanup. |
+| Image validity | Validate delivery hashes and standard [`extension-release` compatibility](https://www.freedesktop.org/software/systemd/man/latest/os-release.html): distro, level/version, architecture and scope. `ID=_any` is allowed, not required. | Reject invalid selected images. Custom mounting does not bypass these checks. |
+| Publication and activation | Keep temporary images undiscoverable and publish a complete managed manifest last. A valid empty manifest or absent store is a no-op; a missing manifest in an existing store is not. | Block root setup and healthy commit after activation failure; apply the update-boot recovery policy when marked. |
+| Update recovery | Verify the committed default, one-shot support, recovery unit and marker addon before activation. Remove the marker before persistent boot promotion. | Refuse an unsafe handoff. Pending-boot failures record diagnostics and reboot once; normal-boot failures do not loop. |
+| Writable-store trust | Delivery checks do not add boot-time hashes or authenticate the manifest. Signing, integrity and measurement remain platform policies; sealed `/usr` attestation does not cover the store. | Do not claim inherited trust. Loss of shared storage can affect both slots; A/B cannot restore it, and boot must not require a network download. |
+| SELinux | Preserve Enforcing mode and correct payload/mount labels. | Surface access or labeling errors; never disable checks or exempt COSI inputs. |
+
+## Public API Design
+
+### Host Configuration
+
+```yaml
+image:
+  url: https://example.com/acl.cosi
+  sha384: <metadata-sha384>
+os:
+  managedExtensions: acl
+```
+
+| Field | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `os.managedExtensions` | Enum | `disabled` | Bundled-extension intake and placement policy. |
+
+The proposed names distinguish filesystem-level slotting (`native`) from
+Trident-managed logical slots on shared storage (`managed`). `acl` is an alias
+for `managed`, not a separate mode. Aliases are normalized before comparison
+and serialized as the canonical value, so changing only the spelling does not
+trigger servicing. Boolean values are not mode values.
+
+| Value | COSI-bundled extensions |
+| --- | --- |
+| `disabled` (default) | Ignore bundled extensions: do not extract, verify or deploy their payloads. OS-image processing and explicit Host Configuration extensions are unchanged. |
+| `simple`\* | Place an image at its requested `path` only when that destination is writable and A/B-slotted. Entries without `path` are skipped with a diagnostic; an invalid or unsafe explicit path fails validation. |
+| `native`\* | Consume all bundled images. For each kind, choose the first writable, A/B-slotted native directory from the ordered list below. Incoming destination hints do not choose the location. |
+| `managed` (alias `acl`) | Consume all bundled images and own their store, lifecycle and activation, overriding requested destinations. Trident supplies logical slot separation on shared storage; no writable filesystem-level A/B store is required. The initial ACL store is fixed at `/var/lib/trident/slots`. |
+
+\* Future developments, not part of the initial implementation.
+
+The mode applies to both sysexts and confexts. In `managed`/`acl`, explicit
+Host Configuration URL/OCI images join the owned set and use managed
+destinations; in other modes their existing explicit placement behavior is
+retained. Unrelated factory/operator extensions are not adopted.
+
+Ignoring bundled payloads does not waive normal COSI metadata/OS-image
+validation. Intentionally ignored members are not reported as unused OS images.
+An empty `managed`/`acl` set publishes an empty target manifest.
+
+### Native mode directory selection
+
+| Kind | Candidate order |
+| --- | --- |
+| Sysext | `/var/lib/extensions`, then `/etc/extensions` |
+| Confext | `/var/lib/confexts`, then `/usr/lib/confexts`, then `/usr/local/lib/confexts` |
+
+The primary candidates retain Trident's existing default directories.
+Ephemeral `/run` locations and initrd-scoped `/.extra/sysext` are not candidates.
+An eligible directory exists or can be created on the target slot's writable
+A/B filesystem without breaking image protection. Evaluate both kinds before
+writing; if a consumed kind has no eligible destination, fail the update.
+`native` never falls back to `managed` implicitly. On ACL, shared ROOT and
+sealed `/usr` provide no eligible native destination.
+
+`simple` and `native` only place files in the target filesystem if it is
+A/B-slotted at a partition level. The image's existing boot setup activates
+them: standard OS discovery for
+`native`, or image-provided configuration for `simple`. Trident Slot Loader
+does not activate these files.
+
+### Identity and layout
+
+For consumed images, use `(kind, id)` for update identity and verify it against
+the DDI's `SYSEXT_ID` or `CONFEXT_ID`. Derive `<name>.raw` from
+`extension-release.<name>`; ID and filename need not be equal.
+
+```text
+/var/lib/trident/slots/{a,b}/{sysexts,confexts}/<name>.raw
+```
+
+Record both ID and name. Reject duplicate IDs per kind and conflicting discovery
+names/destinations, including existing activation entries. No source wins a
+collision silently. In `managed`/`acl`, each slot's directory is exclusively
+Trident-owned and is cleared when that slot is reused. The direct modes track
+their deployed files without owning the surrounding native directory.
+
+## Testing and Metrics
+
+### Validation
+
+A proof of concept combining the core managed-extension, A/B update and
+writable `/etc` mechanisms was successfully executed on ACL.
+
+### Required tests
+
+For the initial ACL implementation, cover:
+
+#### API and intake
+
+- `managed`/`acl` equivalence and canonical serialization; `disabled` ignores
+  bundled payloads without unused-image errors. Unsupported modes and Boolean
+  inputs fail, while explicit URL/OCI behavior remains unchanged by default.
+- Both input sources, destination overrides, IDs distinct from filenames,
+  renames and cross-source collisions; unrelated extensions remain untouched.
+- Compressed COSI and raw Host Configuration hashes, malformed images and
+  extension compatibility failures are checked before publication.
+
+#### Store lifetime and publication
+
+- Fixed ROOT placement and mount ordering; refuse writes through aliases,
+  traversal or unowned paths, or cleanup of a still-needed fallback slot.
+- Repeated A/B reuse, additions/removals, empty sets, retries and mode changes:
+  only the target changes, space stays bounded by two slot sets, and retained
+  rollback data remains intact. Non-owned activation entries are preserved or
+  rejected.
+- Interrupt initial store creation, staging and manifest publication:
+  retained slots remain bootable, temporary manifests are never consumed,
+  and no partial set becomes active.
+
+#### Loader and ACL integration
+
+- Manifest versions/types and required fields, duplicate known keys/names
+  (including different ignored fields), unknown optional fields, unsafe names
+  and symlinks; omitted arrays and version-only manifests are valid.
+- No store or a valid empty set exits successfully without links or mounts.
+  A present store with missing/malformed/unreadable metadata or selected images
+  fails rather than activating a partial set.
+- ROOT/loader/Bootengine ordering, factory-only fallback for missing/empty
+  lowerdir lists, and blocked root setup after loader failure.
+- Multiple `/etc` layers, precedence, copy-up, whiteouts and removal; user edits
+  survive update and rollback. Assert visible content, not just file existence.
+
+#### Update failure and rollback
+
+- Loader errors, crashes and timeouts return a pending boot to the committed
+  OS without a loop; normal no-ops do not reboot. Include bootloader fallback,
+  failed commit and power loss in both slot directions.
+- Marker cleanup precedes persistent boot promotion; cleanup failure preserves
+  the previous default.
+- Failure records survive outside the reused slot. Read-only ROOT, capture
+  errors and timeouts do not prevent the rollback reboot.
+
+#### Image construction and compatibility
+
+- Base/customized images boot and reboot before datastore initialization,
+  with absent, empty or populated stores. Construction edits keep payloads and
+  manifests consistent without adopting unrelated images.
+- Old/new loader, manifest, boot-context and Host Configuration reader
+  combinations preserve supported rollback paths; unsafe adoption is refused.
+
+#### Performance
+
+- Matched cold/warm benchmarks for the scenarios and budgets below, including
+  image-count scaling and end-to-end critical-path measurements.
+
+### Metrics
+
+| Scenario | Provisional p95 goal | What is measured |
+| --- | --- | --- |
+| No-op: absent store or valid empty manifest | Less than 5 ms added latency | Service/process startup and lookup or empty-manifest handling; no links or mounts. |
+| Sysext-only | Less than 10 ms added latency | All loader work before the existing native sysext merge. The unchanged OS merge is not charged as new loader work. |
+| Confext-only or mixed | Less than 10 ms coordination time, plus measured image preparation | Separate startup, selection and publication from image mounting/validation. Report the full time until `/etc` is ready; its total budget is TBD after representative measurements. |
+
+Confext handling owns work that systemd would normally perform, so its total
+time is inherently higher than selection alone and is not subject to the
+sysext-only 10 ms limit. Do not report coordination time as the whole impact.
+
+Compare matched ACL boots with equivalent hardware, kernel, services and
+payloads. Measure added boot-critical-path delay, not just process CPU time;
+report cold/warm median and p95, preparation time and image counts. The no-op
+5 ms goal is a starting budget, and none of these targets is yet demonstrated.
+
+Record staging, activation and rollback outcomes with slot, selected image names,
+activation method and failure reason in servicing logs and boot diagnostics.
+Correlate a recovered update failure with its persistent record's boot ID.
+Success requires matching visible content and no healthy commit after activation
+failure.
+
+## Servicing
+
+### Introduction and opt-in
+
+The default is no new behavior: omitted means `disabled`, existing OS
+servicing and explicit URL/OCI declarations are unchanged, and bundled images
+are not adopted. Images without a store boot normally without Trident
+initialization.
+
+Customers opt in with `os.managedExtensions: managed` or its `acl` alias:
+
+1. Supply an ACL image with loader, Bootengine and recovery support. Preflight
+   checks the target and retained rollback paths.
+2. On first use, publish the store only after retained slots have valid
+   manifests, empty where appropriate.
+3. Stage the target and attempt a one-shot boot. The committed OS stays the
+   fallback until health checks and commit succeed.
+
+### Compatibility policy
+
+Keep the loader and its boot contracts small, stable and long-lived.
+
+| Interface | Compatibility approach |
+| --- | --- |
+| Host Configuration | The enum allows future modes without changing the field shape. Initially support `disabled` and `managed`/`acl`; reject unsupported values. Canonicalize aliases and omit defaults from serialized state. |
+| Loader and manifest | New loaders retain older released format readers. Old loaders ignore optional unknown fields within supported versions; incompatible semantics need a new version that they reject. |
+| Per-slot state | Write each slot's manifest in a format its loader supports. Preserve the retained slot's files and format; never convert it to a new-only version. |
+| Boot and store contracts | Keep paths, update markers and failure semantics stable. Rollback selects matching extensions before consumers run, without late `trident commit` repair. |
+
+Rollback needs compatible Trident state readers as well as a compatible
+loader: older strict `Os` readers may reject new fields or values.
+
+### Preserving rollback capability
+
+**TBD:** the exact compatibility matrix and admission/upgrade checks that prove
+rollback remains usable. Prefer an exceptionally stable loader, maintained
+backward compatibility and automated old/new boot tests. Block changes whose
+retained rollback path is incompatible.
+
+### Policy changes
+
+Mode and managed-set changes initially use A/B servicing; alias spelling alone
+does not trigger one. Preserve retained slots until the transition completes.
+Normal inactive-slot reuse replaces its old set rather than retaining history.
+
+If an owned store already exists and the target mode is not `managed`/`acl`,
+clear the reused target's owned tree and publish an empty manifest. This avoids
+stale activation without consuming disabled bundles or wiping native
+directories. Migrate legacy aliases safely: deleting them can break rollback,
+while leaving them can shadow `/run`. Refuse unsafe transitions and leave
+unrelated entries untouched.
+
+Reject unsupported Runtime Update requests, without promotion or partial application.
+Explicit Host Configuration inputs keep 0789's servicing constraints;
+`simple`/`native` remain deferred.
+
+## Implementation Plan
+
+Initial delivery is `managed`/`acl` on ACL, with `disabled` as the default
+for bundled extensions. `simple`, `native`, configurable stores and native
+mutable-confext migration remain future work. ACL integration of
+`trident offline-initialize` is an independent goal, not a prerequisite for
+unmanaged-image boot.
+
+RFC 0789 reader/writer support is a prerequisite; its shared work and the
+separate IC authoring API are not estimated here. Sizes below are relative
+design/implementation effort (S/M/L), not elapsed-time commitments.
+
+| Phase | Work and completion gate | Size | Main risk |
+| --- | --- | :-: | --- |
+| 1. Contracts and compatibility | Freeze the initial API, manifest and boot interfaces; define the rollback compatibility matrix and admission rules. | M/M | High: retained readers |
+| 2. Managed staging and lifecycle | Validate inputs; implement fixed-ROOT placement, atomic first-use publication, inactive-slot replacement and safe disable transitions. | M/L | High: ownership and interrupted writes |
+| 3. Loader and ACL integration | Implement selection, links and confext preparation; integrate Bootengine ordering/lowerdirs and package the dracut assets before UKI signing. | M/M | High: early-boot integration |
+| 4. Update-boot recovery | Add the candidate marker, one-shot fallback, persistent diagnostics and marker removal before commit promotion; prove fallback cannot loop. | M/M | High: commit and failure ordering |
+| 5. Rollout and fault validation | Apply target/retained-reader preflight and execute the grouped functional, interruption, compatibility and rollback tests. | L/L | High: rollback viability |
+| 6. Performance validation | Measure no-op and sysext-only budgets plus complete confext cost; publish cold/warm results and settle the confext total budget. | S/M | Medium: hardware and image-count variance |
+
+Production enablement requires passing the initial test areas, demonstrated
+rollback compatibility and published measurements against the scenario budgets.
+Unmet performance goals need explicit review; the compatibility-enforcement
+TBD must be resolved before that gate. No new COSI fields, systemd source
+changes or cluster-control-plane integration are required.
+
+## Counter-Arguments
+
+### Drawbacks
+
+- The shared store is a failure domain for both slots and needs space for both
+  slot sets.
+- The loader and versioned manifests add early-boot and rollout complexity.
+- Confext layering requires `/etc` reconciliation and integrity policies.
+
+### Alternatives
+
+- **Compatibility-based selection:** versions may match, and portable images may
+  be compatible with both slots.
+- **Version selection (`.v` or "newest" links):** selects a version, not the
+  booted OS slot.
+- **New dedicated A/B extension partitions:** valid, but require reserving disk
+  capacity for both slots upfront. Shared ROOT lets the two sets use available
+  filesystem space as needed.
+- **ESP payload storage:** unnecessary when the existing ROOT can hold the images.
+- **Systemd backports or changing ACL's merge order:** neither is required by
+  this design.
+
+## Open Questions
+
+1. Shared activation-path publication and legacy alias migration.
+2. `/etc` reconciliation and integrity/attestation policy.
+3. Whether managed sysext-only Runtime Update belongs in the first release;
+   this proposal starts with A/B servicing.
+4. How rollback compatibility is admitted and enforced across loader, manifest,
+   boot-context and servicing-state reader versions.
+
+## Future Possibilities
+
+### Configurable store location
+
+A configurable `os.managedContentStore` path could support other storage
+layouts later. It would require early-mount dependencies, compatible loader
+configuration and rollback-safe migration of both slot sets. The initial ACL
+implementation supports only `/var/lib/trident/slots` on ROOT.
+
+### Direct placement modes
+
+Future `simple` and `native` implementations need placement tests for pathless
+entries, unsafe explicit paths, candidate ordering/exhaustion, writable
+A/B-partition detection and direct activation without the loader.
+
+### Native mutable-confext integration
+
+Newer ACL can replace custom mounting with native mutable confext integration
+without changing the API or payload format. Verify precedence, upper state,
+labels, compatibility and ordering; version alone is insufficient.
+
+### Runtime updates
+
+Managed sysext-only Runtime Update can follow; ACL cannot replace its `/etc`
+lowerdirs live.
+
+### Btrfs-backed managed store
+
+On Btrfs-backed storage, the store could use a pair of subvolumes, one per
+slot, to simplify inactive-slot replacement without changing paths or the
+public API.
+
+### Other platforms
+
+Non-ACL backends can reuse the policy once validated against their storage
+and activation models.
+
+A future `managed` backend could prepare links in writable A/B extension
+search directories during staging. Switching OS slots then selects those
+links without a loader. The owned images may live on shared or slotted
+storage, but the links must still resolve after reboot.
+
+Choose separately for sysexts and confexts. Native confext integration can use
+slotted links or boot-selected `/run/confexts` entries if it preserves the
+platform's `/etc` mutability and user-state persistence. Prefer existing
+writable A/B directories in a fixed, platform-defined order.
