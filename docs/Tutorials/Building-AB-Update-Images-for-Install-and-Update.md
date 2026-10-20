@@ -509,13 +509,27 @@ popd
 
 To update our existing installation, we need a new Host Configuration file. In
 this case, we are only changing the OS based on a new COSI file. So we can
-simply copy the install and update the image url to point at our new COSI file.
+copy the install configuration and update both the image URL and its metadata
+checksum for the new COSI file.
+
+Calculate the SHA384 checksum of `metadata.json` in the update COSI:
+
+```bash
+tar -xOf "$HOME/staging/osimage-update.cosi" metadata.json | sha384sum
+```
+
+Set `IMAGE_SHA384` below to the resulting 96-character hexadecimal checksum.
+Do not reuse the install COSI's checksum.
 
 ``` bash
+IMAGE_SHA384="<Calculated SHA384 hash>"
 # Create an update version of the Host Configuration
 cp $HOME/staging/host-config.yaml $HOME/staging/host-config-update.yaml
-# Modify the image url to point at /tmp
-sed -i 's|url: /images/azure-linux.cosi|url: /tmp/osimage-update.cosi|' $HOME/staging/host-config-update.yaml
+# Update the image URL and metadata checksum
+sed -i \
+    -e 's|url: /images/azure-linux.cosi|url: /tmp/osimage-update.cosi|' \
+    -e "s|^  sha384: .*|  sha384: $IMAGE_SHA384|" \
+    $HOME/staging/host-config-update.yaml
 ```
 
 ### Step 10: Copy COSI and Host Configuration to the Servicing OS
