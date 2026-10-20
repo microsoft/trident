@@ -496,7 +496,7 @@ A proof of concept combining the core managed-extension, A/B update and writable
 
 ### Required tests
 
-*WIP: TODO: finalize*
+*WIP: TODO: re-review*
 
 For the initial ACL implementation, cover:
 
@@ -600,7 +600,7 @@ Customers opt in with `os.managedExtensions: managed` or its `acl` alias:
 
 ### Compatibility policy
 
-*WIP: TODO: finalize*
+*WIP: TODO: re-review*
 
 Keep the loader and its boot contracts small, stable and long-lived.
 
@@ -616,7 +616,7 @@ older strict `Os` readers may reject new fields or values.
 
 ### Preserving rollback capability
 
-*WIP: TODO: finalize*
+*WIP: TODO: re-review*
 
 **TBD:** the exact compatibility matrix and admission/upgrade checks that prove
 rollback remains usable. Prefer an exceptionally stable loader, maintained
@@ -625,7 +625,7 @@ retained rollback path is incompatible.
 
 ### Policy changes
 
-*WIP: TODO: finalize*
+*WIP: TODO: re-review*
 
 Mode and managed-set changes initially use A/B servicing; alias spelling alone
 does not trigger one. Preserve retained slots until the transition completes.
@@ -694,7 +694,7 @@ cluster-control-plane integration are required.
 
 ## Open Questions
 
-*WIP: TODO: finalize*
+*WIP: TODO: re-review*
 
 1. Shared activation-path publication and legacy alias migration.
 2. `/etc` reconciliation and integrity/attestation policy.
