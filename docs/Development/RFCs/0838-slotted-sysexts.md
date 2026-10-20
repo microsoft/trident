@@ -26,7 +26,6 @@ RFC 0789 proposes COSI 1.3 support for bundled extensions: optional metadata arr
 `extensions.sysexts` and `extensions.confexts` reference compressed DDIs by ID,
 location, size and hash. OS and extensions can then ship as one artifact;
 Trident can also fetch extensions listed separately in Host Configuration.
-See the [example COSI cutaway](./0838-cosi-anatomy.svg).
 
 #### ACL storage and update behavior
 
@@ -123,7 +122,7 @@ the inactive slot's files without changing the running system. At boot,
 `trident-slot-loader` selects the files for the OS slot that actually booted.
 Rollback uses the same selection process.
 
-![Managed extension delivery and activation on ACL](./0838-managed-extensions-overview.svg)
+![Managed extension delivery and activation on ACL](./0838-slotted-sysexts/0838-managed-extensions-overview.svg)
 
 #### Where the files live
 
@@ -268,7 +267,7 @@ therefore use the normal failure policy.
 
 ##### Slot Loader Manifest
 
-The [JSON Schema](./0838-slot-loader-manifest.schema.json) defines format v1
+The [JSON Schema](./0838-slotted-sysexts/0838-slot-loader-manifest.schema.json) defines format v1
 as UTF-8 JSON:
 
 ```json
@@ -495,6 +494,8 @@ writable `/etc` mechanisms was successfully executed on ACL.
 
 ### Required tests
 
+*WIP: TODO: finalize*
+
 For the initial ACL implementation, cover:
 
 #### API and intake
@@ -598,6 +599,8 @@ Customers opt in with `os.managedExtensions: managed` or its `acl` alias:
 
 ### Compatibility policy
 
+*WIP: TODO: finalize*
+
 Keep the loader and its boot contracts small, stable and long-lived.
 
 | Interface | Compatibility approach |
@@ -612,12 +615,16 @@ loader: older strict `Os` readers may reject new fields or values.
 
 ### Preserving rollback capability
 
+*WIP: TODO: finalize*
+
 **TBD:** the exact compatibility matrix and admission/upgrade checks that prove
 rollback remains usable. Prefer an exceptionally stable loader, maintained
 backward compatibility and automated old/new boot tests. Block changes whose
 retained rollback path is incompatible.
 
 ### Policy changes
+
+*WIP: TODO: finalize*
 
 Mode and managed-set changes initially use A/B servicing; alias spelling alone
 does not trigger one. Preserve retained slots until the transition completes.
@@ -684,6 +691,8 @@ changes or cluster-control-plane integration are required.
   this design.
 
 ## Open Questions
+
+*WIP: TODO: finalize*
 
 1. Shared activation-path publication and legacy alias migration.
 2. `/etc` reconciliation and integrity/attestation policy.
