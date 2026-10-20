@@ -159,6 +159,8 @@ defaults. Changing OS slots changes the extension defaults but keeps that shared
 upper, so user edits survive. The native sysext merge still runs after `/etc`
 assembly.
 
+![Final /usr and /etc layers, backed by the booted slot's verity-protected /usr partition](./0838-slotted-sysexts/0838-filesystem-layer-stack.svg)
+
 ### Component deep dives
 
 #### Managed content store
