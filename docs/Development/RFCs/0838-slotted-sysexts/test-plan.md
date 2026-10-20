@@ -94,11 +94,18 @@ Boot and reboot base/customized images before Trident datastore initialization,
 with absent, empty and populated stores. Image-building edits must keep payloads
 and manifests consistent without adopting unrelated factory images.
 
-Test old/new loaders with their supported manifest versions and boot inputs,
-then run the retained OS's Trident reader against the servicing state. Supported
-combinations must boot and remain serviceable; incompatible adoption must be
-rejected before activation. The exact release matrix depends on the RFC's
-[rollback-compatibility decision](../0838-slotted-sysexts.md#preserving-rollback-capability).
+Stage manifests for same-release and newer target loaders, plus a target that
+does not support the chosen format. Preflight must check the target loader,
+not the one running on the servicing OS, and reject an unsupported pair before
+activation.
+
+Record the retained loader and manifest bytes, update the other slot, then
+roll back. Both retained files must be unchanged and boot together; no manifest
+conversion or cross-slot reader compatibility is required.
+
+Separately test shared boot/store changes and the retained OS's Trident reader
+against the servicing state. These still need
+[rollback-safety checks](../0838-slotted-sysexts.md#preserving-rollback-capability).
 
 ## 6. Boot-time impact
 

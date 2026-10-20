@@ -203,8 +203,8 @@ has booted B but B is not committed, A is still the fallback and must not be
 overwritten.
 
 1. Collect the COSI and Host Configuration extensions. Validate their
-   identities, paths and whether the host can activate them. Each boot path's
-   loader must understand its slot's manifest version.
+   identities, paths and whether the host can activate them. Check that the
+   loader in the target boot image supports the manifest format being written.
 2. Select the inactive slot. Remove any old Slot Loader Manifest and synchronize
    its directory before clearing the Trident-owned extension directory,
    including interrupted-staging leftovers.
@@ -286,6 +286,9 @@ defines format v1 as UTF-8 JSON:
 Unknown fields are ignored in both the manifest and image objects. Compatible
 optional fields can be added within v1; changes that old loaders must understand
 require a new format version.
+
+The manifest is written once for each staged set. Boot, commit and rollback
+do not rewrite it; it changes only when that slot is reused.
 
 An entry named `runtime` resolves to `<slot>/sysexts/runtime.raw` or
 `<slot>/confexts/runtime.raw`, according to its array, relative to the store.
@@ -496,8 +499,6 @@ A proof of concept combining the core managed-extension, A/B update and writable
 
 ### Required tests
 
-*WIP: TODO: re-review*
-
 Tests will be added for these areas:
 
 - Configuration and image sources.
@@ -555,24 +556,34 @@ Customers opt in with `os.managedExtensions: managed` or its `acl` alias:
 
 Keep the loader and its boot contracts small, stable and long-lived.
 
+The target image is normally expected to contain a loader from the same or a
+newer release than the staging Trident. The actual check is format support:
+Trident must write a manifest that the target loader can read, regardless of
+the loader running on the servicing OS.
+
 | Interface | Compatibility approach |
 | --- | --- |
 | Host Configuration | The enum allows future modes without changing the field shape. Initially support `disabled` and `managed`/`acl`; reject unsupported values. Canonicalize aliases and omit defaults from serialized state. |
-| Loader and manifest | New loaders retain older released format readers. Old loaders ignore optional unknown fields within supported versions; incompatible semantics need a new version that they reject. |
-| Per-slot state | Write each slot's manifest in a format its loader supports. Preserve the retained slot's files and format; never convert it to a new-only version. |
+| Loader and manifest | Check the target pair during staging. Optional unknown fields are ignored within supported formats; unsupported versions are rejected. A release number alone does not prove support. |
+| Per-slot state | Publish the manifest once and retain it with its loader through boot, commit and rollback. Do not regenerate or upgrade the retained slot's manifest. |
 | Boot and store contracts | Keep paths, update markers and failure semantics stable. Rollback selects matching extensions before consumers run, without late `trident commit` repair. |
 
-Rollback needs compatible Trident state readers as well as a compatible loader:
-older strict `Os` readers may reject new fields or values.
+Trident's shared servicing state is a separate compatibility concern: older
+strict `Os` readers may reject new fields or values after rollback.
 
 ### Preserving rollback capability
 
 *WIP: TODO: re-review*
 
-**TBD:** the exact compatibility matrix and admission/upgrade checks that prove
-rollback remains usable. Prefer an exceptionally stable loader, maintained
-backward compatibility and automated old/new boot tests. Block changes whose
-retained rollback path is incompatible.
+Rollback returns to the retained loader and its unchanged manifest. If that
+pair booted successfully before the update, manifest-version changes in the
+new slot do not affect it. There is no need for the old loader to read the
+new slot's manifest, or for the new loader to read the old slot's.
+
+**TBD:** how staging discovers target-loader format support, and how preflight
+checks shared boot configuration, store layout and servicing-state changes.
+Keep those shared contracts stable; preserving a slot's pair does not protect
+it from incompatible changes to shared state.
 
 ### Policy changes
 
@@ -607,18 +618,18 @@ design/implementation effort (S/M/L), not elapsed-time commitments.
 
 | Phase | Work and completion gate | Size | Main risk |
 | --- | --- | :-: | --- |
-| 1. Contracts and compatibility | Freeze the initial API, manifest and boot interfaces; define the rollback compatibility matrix and admission rules. | M/M | High: retained readers |
+| 1. Contracts and compatibility | Freeze the initial API, manifest and boot interfaces; define target-loader format detection and shared-state rollback checks. | M/M | High: staging and shared contracts |
 | 2. Managed staging and lifecycle | Validate inputs; implement fixed-ROOT placement, atomic first-use publication, inactive-slot replacement and safe disable transitions. | M/L | High: ownership and interrupted writes |
 | 3. Loader and ACL integration | Implement selection, links and confext preparation; integrate Bootengine ordering/lowerdirs and package the dracut assets before UKI signing. | M/M | High: early-boot integration |
 | 4. Update-boot recovery | Add the candidate marker, one-shot fallback, persistent diagnostics and marker removal before commit promotion; prove fallback cannot loop. | M/M | High: commit and failure ordering |
-| 5. Rollout and fault validation | Apply target/retained-reader preflight and execute the grouped functional, interruption, compatibility and rollback tests. | L/L | High: rollback viability |
+| 5. Rollout and fault validation | Verify the staged loader/manifest pair, preserve the retained pair and check shared-state readers; execute the grouped fault and rollback tests. | L/L | High: rollback viability |
 | 6. Performance validation | Measure no-op and sysext-only budgets plus complete confext cost; publish cold/warm results and settle the confext total budget. | S/M | Medium: hardware and image-count variance |
 
 Production enablement requires passing the initial test areas, demonstrated
 rollback compatibility and published measurements against the scenario budgets.
-Unmet performance goals need explicit review; the compatibility-enforcement TBD
-must be resolved before that gate. No new COSI fields, systemd source changes or
-cluster-control-plane integration are required.
+Unmet performance goals need explicit review; target-loader detection and
+shared-state compatibility checks must be defined before that gate. No new COSI
+fields, systemd source changes or cluster-control-plane integration are required.
 
 ## Counter-Arguments
 
@@ -651,8 +662,9 @@ cluster-control-plane integration are required.
 2. `/etc` reconciliation and integrity/attestation policy.
 3. Whether managed sysext-only Runtime Update belongs in the first release; this
    proposal starts with A/B servicing.
-4. How rollback compatibility is admitted and enforced across loader, manifest,
-   boot-context and servicing-state reader versions.
+4. How staging discovers which manifest formats the target loader supports.
+5. How changes to shared boot configuration, store layout and servicing state
+   are checked for compatibility with the retained OS.
 
 ## Future Possibilities
 
