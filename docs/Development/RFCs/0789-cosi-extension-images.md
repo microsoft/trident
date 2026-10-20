@@ -61,6 +61,8 @@ immediately follow `metadata.json`. Write extension members after the
 disk-region images and include their window sizes in `compression.maxWindowLog`.
 Older readers ignore the additional tar members.
 
+![Example COSI tar with separate sysext and confext images; disk partitions are illustrative](./0789-cosi-anatomy.svg)
+
 ### Metadata Schema
 
 The two arrays mirror Host Configuration and determine the kind; each entry
