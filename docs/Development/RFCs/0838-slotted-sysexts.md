@@ -498,65 +498,16 @@ A proof of concept combining the core managed-extension, A/B update and writable
 
 *WIP: TODO: re-review*
 
-For the initial ACL implementation, cover:
+Tests will be added for these areas:
 
-#### API and intake
+- Configuration and image sources.
+- Store replacement and interrupted updates.
+- Manifest parsing and boot integration.
+- Update failure and rollback.
+- Image construction and version compatibility.
+- Boot-time impact.
 
-- `managed`/`acl` equivalence and canonical serialization; `disabled` ignores
-  bundled payloads without unused-image errors. Unsupported modes and Boolean
-  inputs fail, while explicit URL/OCI behavior remains unchanged by default.
-- Both input sources, destination overrides, IDs distinct from filenames,
-  renames and cross-source collisions; unrelated extensions remain untouched.
-- Compressed COSI and raw Host Configuration hashes, malformed images and
-  extension compatibility failures are checked before publication.
-
-#### Store lifetime and publication
-
-- Fixed ROOT placement and mount ordering; refuse writes through aliases,
-  traversal or unowned paths, or cleanup of a still-needed fallback slot.
-- Repeated A/B reuse, additions/removals, empty sets, retries and mode changes:
-  only the target changes, space stays bounded by two slot sets, and retained
-  rollback data remains intact. Non-owned activation entries are preserved or
-  rejected.
-- Interrupt initial store creation, staging and manifest publication: retained
-  slots remain bootable, temporary manifests are never consumed, and no partial
-  set becomes active.
-
-#### Loader and ACL integration
-
-- Manifest versions/types and required fields, duplicate known keys/names
-  (including different ignored fields), unknown optional fields, unsafe names
-  and symlinks; omitted arrays and version-only manifests are valid.
-- No store or a valid empty set exits successfully without links or mounts. A
-  present store with missing/malformed/unreadable metadata or selected images
-  fails rather than activating a partial set.
-- ROOT/loader/Bootengine ordering, factory-only fallback for missing/empty
-  lowerdir lists, and blocked root setup after loader failure.
-- Multiple `/etc` layers, precedence, copy-up, whiteouts and removal; user edits
-  survive update and rollback. Assert visible content, not just file existence.
-
-#### Update failure and rollback
-
-- Loader errors, crashes and timeouts return a pending boot to the committed OS
-  without a loop; normal no-ops do not reboot. Include bootloader fallback,
-  failed commit and power loss in both slot directions.
-- Marker cleanup precedes persistent boot promotion; cleanup failure preserves
-  the previous default.
-- Failure records survive outside the reused slot. Read-only ROOT, capture
-  errors and timeouts do not prevent the rollback reboot.
-
-#### Image construction and compatibility
-
-- Base/customized images boot and reboot before datastore initialization, with
-  absent, empty or populated stores. Construction edits keep payloads and
-  manifests consistent without adopting unrelated images.
-- Old/new loader, manifest, boot-context and Host Configuration reader
-  combinations preserve supported rollback paths; unsafe adoption is refused.
-
-#### Performance
-
-- Matched cold/warm benchmarks for the scenarios and budgets below, including
-  image-count scaling and end-to-end critical-path measurements.
+Details are in the supporting [test plan](./0838-slotted-sysexts/test-plan.md).
 
 ### Metrics
 
