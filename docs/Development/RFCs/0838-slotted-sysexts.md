@@ -85,7 +85,9 @@ it can be reused later.
 - Relocating the Trident-owned store; see
   [Future Possibilities](#future-possibilities).
 - Updating arbitrary files on shared mutable storage.
-- Runtime Update for managed extension/policy changes in the initial release.
+- Runtime Update for managed extension changes in the initial release. Allowing
+  for runtime updates of managed extensions should be planned in a standalone
+  document.
 - New image-less updates, initrd-scoped sysext content or ESP payload storage.
 - Bundled disk streaming; 0789's exclusion remains.
 
@@ -693,6 +695,9 @@ labels, compatibility and ordering; version alone is insufficient.
 
 Managed sysext-only Runtime Update can follow; ACL cannot replace its `/etc`
 lowerdirs live.
+
+An implementation of this could involve an extension-only COSI, or
+OCI-distributed extension files.
 
 ### Btrfs-backed managed store
 
