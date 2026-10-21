@@ -42,9 +42,9 @@ be refused without changing the protected files. Unrelated runtime activation
 entries must be preserved or reported as conflicts.
 
 Interrupt first-use store creation, target clearing, image writes and manifest
-publication, including immediately before and after the final rename. Retry
-each case. Retained slots must stay bootable; temporary manifests must never
-be read, and incomplete sets must never activate.
+publication, including immediately before and after the final rename and marker
+write. Retry each case. Retained slots must stay bootable; temporary manifests
+must never be read, and incomplete sets must never activate.
 
 Switch a previously managed target to `disabled`. Its reused slot gets an
 empty manifest and no stale owned images; the retained slot keeps its data.
@@ -76,19 +76,22 @@ resolved.
 
 ## 4. Update failure and rollback
 
-On an uncommitted candidate boot, inject a loader error, crash and timeout.
-Each must reboot into the committed OS without re-arming the failed entry.
-A failure on the fallback's normal boot must not create a reboot loop.
+On a newly deployed slot, inject a loader error, crash and timeout. Each must
+retain the marker, log to the journal and, with rollback enabled, reboot into
+the committed OS without re-arming the failed entry. Disable rollback in the
+loader env file and confirm the failed boot stays stopped. On loader success,
+including an empty manifest, confirm the marker is removed without waiting for
+commit. A failure on the fallback's normal boot must not create a reboot loop.
 
 Also exercise bootloader fallback, failed commit and power loss. Confirm the
 visible OS and extension markers match after recovery. Fail the pending-state
 transition during commit: the previous persistent boot default must remain
-unchanged. Stale context after commit, cancellation or fallback must not cause
-another automatic reboot. Finalize these cases with the pending-context contract.
+unchanged. Restaging and cancellation must clear stale markers; a failed
+candidate's remaining marker must not cause the fallback to reboot.
 
-Read the failure record from the recovered OS and correlate its boot ID and
-reason. Repeat with read-only ROOT, failed diagnostic writes and capture
-timeouts: lost diagnostics must be reported but must not block reboot.
+Check the failed boot's journal/console for slot, boot ID and reason. Repeat
+with read-only ROOT and journal persistence disabled: logging must not block
+reboot, and initrd journal messages need not survive it.
 
 ## 5. Image construction and version compatibility
 

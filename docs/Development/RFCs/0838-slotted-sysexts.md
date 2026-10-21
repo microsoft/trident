@@ -148,8 +148,8 @@ this file, not Trident's SQLite database or a directory scan.
 
 The loader [returns success without activation](#loader-startup-behavior) when
 the store is absent or a valid manifest selects no images. A loader failure on
-an uncommitted update boot triggers
-[diagnostics and reboot](#update-boot-failure-recovery) into the committed OS.
+a newly deployed slot follows the
+[update-boot failure policy](#update-boot-failure-recovery).
 
 #### Writable `/etc`
 
@@ -207,22 +207,23 @@ overwritten.
 1. Collect the COSI and Host Configuration extensions. Validate their
    identities, paths and whether the host can activate them. Check that the
    loader in the target boot image supports the manifest format being written.
-2. Select the inactive slot. Remove any old Slot Loader Manifest and synchronize
-   its directory before clearing the Trident-owned extension directory,
-   including interrupted-staging leftovers.
+2. Select the inactive slot. Remove any old Slot Loader Manifest and
+   `slot-loader.pending` marker, then synchronize its directory before clearing the
+   Trident-owned extension directory, including interrupted-staging leftovers.
 3. Reserve space to stage the new extension files. Write temporary `.raw` files
    inside the cleared directory, outside systemd's search paths. Verify hashes,
    filesystem structure and extension compatibility. Reject invalid images with
    an invalid-input error; flush valid files and directory entries to disk.
 4. Build the manifest from the incoming extensions, not the old list. Once every
    image is ready, write and synchronize `slot-loader.json.tmp`, atomically
-   rename it to `slot-loader.json`, then synchronize the slot directory.
+   rename it to `slot-loader.json`, then synchronize the slot directory. Write
+   and synchronize a `slot-loader.pending` marker beside the published manifest.
 
-Boot reads only `slot-loader.json`; a leftover temporary file is never used.
+Boot reads the manifest and marker; a leftover temporary file is never used.
 
 Finalization retains Trident's existing one-shot boot handoff. Before arming the
 candidate, it verifies that persistent boot defaults still select the committed
-OS and that the candidate supports the recovery path below.
+OS, the marker is durable and the candidate supports the recovery path below.
 
 #### Trident Slot Loader
 
@@ -242,29 +243,24 @@ unreadable or malformed files are not. Nonzero results follow the
 
 ##### Loader configuration
 
-ACL packaging supplies fixed loader settings:
+ACL packaging supplies an initrd-readable loader env file:
 
 ```ini
 LOADER_MODE=acl
 TRIDENT_SYSEXT_STORE=/sysroot/var/lib/trident/slots
 TRIDENT_SYSEXT_LINK_STORE=/var/lib/trident/slots
+ROLLBACK_ON_LOADER_FAILURE=true
 ```
 
 Both paths name the same store: `/sysroot/...` is the initrd's view;
 `/var/lib/...` is the symlink destination after switching to the real root.
-These settings are private. `LOADER_MODE` controls slot detection, not service
-timing.
-
-The loader also needs to know whether this boot is an uncommitted update
-attempt. The proposed approach is for finalization to expose Trident's pending
-update context in a small initrd-readable record on shared ROOT, without
-opening its SQLite datastore in the initrd.
-
-The record must identify the candidate boot, not merely say that an update
-is pending: the fallback OS sees the same shared storage. It is separate from
-the immutable manifest and must remain usable when manifest or slot validation
-fails. No new kernel command-line option or UKI addon is required; the existing
-`acl.slot` still selects the slot.
+The paths and `LOADER_MODE` are fixed; `LOADER_MODE` controls slot detection,
+not service timing. `ROLLBACK_ON_LOADER_FAILURE` defaults to `true` and can be
+set to `false` in this env file to leave a failed boot stopped for inspection.
+The failure handler reads this setting independently of the loader. The
+`slot-loader.pending` marker beside each slot's manifest identifies a new slot
+boot without opening Trident's SQLite datastore in the initrd. No new kernel
+command-line option or UKI addon is required; `acl.slot` selects the slot.
 
 ##### Slot Loader Manifest
 
@@ -335,29 +331,29 @@ open.
 
 ##### Update-boot failure recovery
 
-An initrd-only failure handler checks the pending-update context when the
-loader fails, crashes or times out. On an uncommitted candidate boot, it records
-the failure and requests a reboot. Trident's existing one-shot boot attempt has
-already been consumed, so the next boot returns to the committed default. The
-handler never re-arms the failed entry or restarts the loader.
+Staging writes `<slot>/slot-loader.pending` beside `slot-loader.json` before arming
+the one-shot boot attempt. The loader removes the marker only after its own
+successful execution, including a valid empty manifest, and synchronizes the
+slot directory. This does not wait for the rest of the boot or for commit.
+Loader failure leaves the marker in place.
 
-Normal-boot errors remain failures without automatic reboot, so a fallback
-failure cannot start a reboot loop. The handler runs independently of `/etc`
-assembly and the loader process; diagnostic capture has a bounded timeout and
-must not prevent the candidate's reboot if writing fails.
+On loader failure, crash or timeout, an initrd failure handler reads `acl.slot`
+and checks that slot's marker without relying on manifest parsing or the loader
+process. It logs the slot, boot ID, unit result and reason to the journal/console.
+There is no separate failure record; initrd journal messages may not survive a
+reboot unless journal persistence is configured.
 
-The handler writes and synchronizes a bounded, human-readable failure record at
-`/var/lib/trident/diagnostics/slot-loader-last-failure.log` on shared ROOT,
-written through `/sysroot` in the initrd. It survives slot cleanup and is
-readable from the old OS. It contains the boot ID, attempted slot when known,
-failure phase, unit result and reason, with a short journal tail after a crash.
-Capture failures are reported to the journal/console.
+If the marker exists and `ROLLBACK_ON_LOADER_FAILURE=true` (the default), the
+handler requests a reboot. The one-shot attempt has already been consumed, so
+the next boot selects the committed default. When the setting is `false`, the
+failed boot stays stopped for inspection. A missing marker or invalid slot never
+triggers an automatic reboot, preventing fallback failures from looping. The
+handler does not re-arm the failed entry or restart the loader and must run
+independently of `/etc` assembly.
 
-**TBD:** the pending-context file format, how the handler identifies the
-candidate without relying on successful loader parsing, and its lifecycle
-across finalization, cancellation, commit and power loss. The handoff must
-remain consistent with Trident's servicing state; after commit or fallback,
-stale context must not cause an automatic reboot.
+Cancellation or restaging clears stale markers. A failed candidate's marker
+may remain on shared ROOT after fallback, but only the booted slot's marker
+controls recovery.
 
 Use leveled stderr diagnostics (slot, manifest path, store, activation method
 and image errors), captured by the journal/console. Return nonzero on failure.
@@ -411,7 +407,7 @@ cleanup handles changed or removed extension defaults and deletion markers
 | Ownership and cleanup | Clear only the inactive managed slot tree. Direct placement changes only Trident-tracked files, not entire native directories. Reject aliases, overlapping paths, traversal and untrusted writers. | Preserve the running/fallback slot and unrelated data; refuse unsafe cleanup. |
 | Image validity | Validate delivery hashes and standard [`extension-release` compatibility](https://www.freedesktop.org/software/systemd/man/latest/os-release.html): distro, level/version, architecture and scope. `ID=_any` is allowed, not required. | Reject invalid selected images. Custom mounting does not bypass these checks. |
 | Publication and activation | Keep temporary images undiscoverable and publish a complete managed manifest last. A valid empty manifest or absent store is a no-op; a missing manifest in an existing store is not. | Block root setup and healthy commit after activation failure; apply recovery only for an identified uncommitted candidate boot. |
-| Update recovery | Verify the committed default, one-shot support, failure handler and candidate-specific pending context before activation. Commit must complete the pending-state transition before persistent boot promotion. | Refuse an unsafe handoff. Candidate failures record diagnostics and reboot; stale context or a fallback boot must not trigger another reboot. |
+| Update recovery | Verify the committed default, one-shot support, failure handler and durable `slot-loader.pending` marker before activation. Commit must complete the pending-state transition before persistent boot promotion. | Refuse an unsafe handoff. Candidate failures log to the journal and reboot when enabled; a fallback boot must not trigger another reboot. |
 | Writable-store trust | Delivery checks do not add boot-time hashes or authenticate the manifest. Signing, integrity and measurement remain platform policies; sealed `/usr` attestation does not cover the store. | Do not claim inherited trust. Loss of shared storage can affect both slots; A/B cannot restore it, and boot must not require a network download. |
 | SELinux | Preserve Enforcing mode and correct payload/mount labels. | Surface access or labeling errors; never disable checks or exempt COSI inputs. |
 
@@ -530,9 +526,9 @@ ms goal is a starting budget, and none of these targets is yet demonstrated.
 
 Record staging, activation and rollback outcomes with slot, selected image
 names, activation method and failure reason in servicing logs and boot
-diagnostics. Correlate a recovered update failure with its persistent record's
-boot ID. Success requires matching visible content and no healthy commit after
-activation failure.
+diagnostics. Correlate a recovered update failure by boot ID when journal
+messages survive. Success requires matching visible content and no healthy
+commit after activation failure.
 
 ## Servicing
 
@@ -567,7 +563,7 @@ the loader running on the servicing OS.
 | Host Configuration | The enum allows future modes without changing the field shape. Initially support `disabled` and `managed`/`acl`; reject unsupported values. Canonicalize aliases and omit defaults from serialized state. |
 | Loader and manifest | Check the target pair during staging. Optional unknown fields are ignored within supported formats; unsupported versions are rejected. A release number alone does not prove support. |
 | Per-slot state | Publish the manifest once and retain it with its loader through boot, commit and rollback. Do not regenerate or upgrade the retained slot's manifest. |
-| Boot and store contracts | Keep paths, pending-update handoff and failure semantics stable. Rollback selects matching extensions before consumers run, without late `trident commit` repair. |
+| Boot and store contracts | Keep paths, marker lifecycle, one-shot handoff and failure semantics stable. Rollback selects matching extensions before consumers run, without late `trident commit` repair. |
 
 Trident's shared servicing state is a separate compatibility concern: older
 strict `Os` readers may reject new fields or values after rollback.
@@ -622,7 +618,7 @@ design/implementation effort (S/M/L), not elapsed-time commitments.
 | 1. Contracts and compatibility | Freeze the initial API, manifest and boot interfaces; define target-loader format detection and shared-state rollback checks. | M/M | High: staging and shared contracts |
 | 2. Managed staging and lifecycle | Validate inputs; implement fixed-ROOT placement, atomic first-use publication, inactive-slot replacement and safe disable transitions. | M/L | High: ownership and interrupted writes |
 | 3. Loader and ACL integration | Implement selection, links and confext preparation; integrate Bootengine ordering/lowerdirs and package the dracut assets before UKI signing. | M/M | High: early-boot integration |
-| 4. Update-boot recovery | Define the pending-context handoff; integrate one-shot fallback, persistent diagnostics and commit/cancellation cleanup; prove fallback cannot loop. | M/M | High: state and failure ordering |
+| 4. Update-boot recovery | Integrate the `slot-loader.pending` marker, one-shot fallback, journal diagnostics and configurable reboot; prove fallback cannot loop. | M/M | High: state and failure ordering |
 | 5. Rollout and fault validation | Verify the staged loader/manifest pair, preserve the retained pair and check shared-state readers; execute the grouped fault and rollback tests. | L/L | High: rollback viability |
 | 6. Performance validation | Measure no-op and sysext-only budgets plus complete confext cost; publish cold/warm results and settle the confext total budget. | S/M | Medium: hardware and image-count variance |
 
