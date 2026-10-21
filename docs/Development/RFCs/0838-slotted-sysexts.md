@@ -41,6 +41,29 @@ Images embedded in `/usr` follow its slot. For images on shared storage,
 changing the stored files affects both slots; switching `/usr` does not undo
 those changes.
 
+#### Flatcar's approach
+
+Flatcar already [updates OEM and release sysexts alongside the OS](https://www.flatcar.org/docs/latest/sys-ext/).
+For those stored on shared storage, its
+[initrd preparation](https://github.com/flatcar/bootengine/blob/7727ec78da72e700e8fa1ce2144cb2476448d186/dracut/99setup-root/initrd-setup-root-after-ignition)
+reads the booted `/usr` release, selects matching versioned images and recreates
+`/etc/extensions` symlinks before merging sysexts. Custom extensions can instead
+have an independent lifecycle through `systemd-sysupdate`.
+
+Flatcar also uses native `systemd-confext` for factory `/etc` defaults, with
+[mutable mode](https://github.com/flatcar/init/blob/0765e955aca24034d66b9389e0d538e4c3ee543c/systemd/confext.conf)
+and a persistent writable upper. Its
+[boot code](https://github.com/flatcar/bootengine/blob/7727ec78da72e700e8fa1ce2144cb2476448d186/dracut/99setup-root/initrd-setup-root)
+prepares `/etc` in the initrd; confext refresh and sysext merge also occur before
+switch-root.
+
+The shared pattern is retaining extension payloads and selecting them for the
+booted OS. Flatcar selects these release sysexts by OS version; this RFC also
+needs to distinguish different extension sets for the same OS version. For
+upstreaming, Flatcar's Bootengine is therefore a useful reference, not a drop-in
+implementation: ACL keeps its existing writable `/etc` overlay and later native
+sysext merge.
+
 ### Problem Statement
 
 Users build custom images on ACL, often adding loose files or preloaded sysexts
@@ -114,8 +137,6 @@ it can be reused later.
 ## Implementation
 
 ### Design
-
-This section describes `managed`/`acl` on ACL.
 
 Trident keeps the old and new extension files side by side. An update prepares
 the inactive slot's files without changing the running system. At boot,
