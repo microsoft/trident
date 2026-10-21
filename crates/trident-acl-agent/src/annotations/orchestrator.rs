@@ -837,7 +837,7 @@ impl Orchestrator {
                 in_progress,
                 client.update_stage(
                     &offered.primary.url,
-                    Some(&hash),
+                    Some(hash.as_str()),
                     self.config.orchestration.stage_timeout,
                 ),
             )
