@@ -43,7 +43,7 @@ those changes.
 
 ### Problem Statement
 
-Users build custom images on ACL, often adding stack files or preloaded sysexts
+Users build custom images on ACL, often adding loose files or preloaded sysexts
 on mutable storage. ACL's A/B update replaces the core OS, not those additions.
 Their stack therefore needs an out-of-band updater even though it already ships
 in their image.
@@ -147,8 +147,8 @@ After reading `acl.slot`, the loader opens
 this file, not Trident's SQLite database or a directory scan.
 
 The loader [returns success without activation](#loader-startup-behavior) when
-the store is absent or a valid manifest selects no images. A loader failure on
-a newly deployed slot follows the
+the store is absent or a valid manifest selects no images. A loader failure on a
+newly deployed slot follows the
 [update-boot failure policy](#update-boot-failure-recovery).
 
 #### Writable `/etc`
@@ -208,8 +208,9 @@ overwritten.
    identities, paths and whether the host can activate them. Check that the
    loader in the target boot image supports the manifest format being written.
 2. Select the inactive slot. Remove any old Slot Loader Manifest and
-   `slot-loader.pending` marker, then synchronize its directory before clearing the
-   Trident-owned extension directory, including interrupted-staging leftovers.
+   `slot-loader.pending` marker, then synchronize its directory before clearing
+   the Trident-owned extension directory, including interrupted-staging
+   leftovers.
 3. Reserve space to stage the new extension files. Write temporary `.raw` files
    inside the cleared directory, outside systemd's search paths. Verify hashes,
    filesystem structure and extension compatibility. Reject invalid images with
@@ -253,11 +254,11 @@ ROLLBACK_ON_LOADER_FAILURE=true
 ```
 
 Both paths name the same store: `/sysroot/...` is the initrd's view;
-`/var/lib/...` is the symlink destination after switching to the real root.
-The paths and `LOADER_MODE` are fixed; `LOADER_MODE` controls slot detection,
-not service timing. `ROLLBACK_ON_LOADER_FAILURE` defaults to `true` and can be
-set to `false` in this env file to leave a failed boot stopped for inspection.
-The failure handler reads this setting independently of the loader. The
+`/var/lib/...` is the symlink destination after switching to the real root. The
+paths and `LOADER_MODE` are fixed; `LOADER_MODE` controls slot detection, not
+service timing. `ROLLBACK_ON_LOADER_FAILURE` defaults to `true` and can be set
+to `false` in this env file to leave a failed boot stopped for inspection. The
+failure handler reads this setting independently of the loader. The
 `slot-loader.pending` marker beside each slot's manifest identifies a new slot
 boot without opening Trident's SQLite datastore in the initrd. No new kernel
 command-line option or UKI addon is required; `acl.slot` selects the slot.
@@ -285,8 +286,8 @@ Unknown fields are ignored in both the manifest and image objects. Compatible
 optional fields can be added within v1; changes that old loaders must understand
 require a new format version.
 
-The manifest is written once for each staged set. Boot, commit and rollback
-do not rewrite it; it changes only when that slot is reused.
+The manifest is written once for each staged set. Boot, commit and rollback do
+not rewrite it; it changes only when that slot is reused.
 
 An entry named `runtime` resolves to `<slot>/sysexts/runtime.raw` or
 `<slot>/confexts/runtime.raw`, according to its array, relative to the store.
@@ -331,17 +332,17 @@ open.
 
 ##### Update-boot failure recovery
 
-Staging writes `<slot>/slot-loader.pending` beside `slot-loader.json` before arming
-the one-shot boot attempt. The loader removes the marker only after its own
-successful execution, including a valid empty manifest, and synchronizes the
+Staging writes `<slot>/slot-loader.pending` beside `slot-loader.json` before
+arming the one-shot boot attempt. The loader removes the marker only after its
+own successful execution, including a valid empty manifest, and synchronizes the
 slot directory. This does not wait for the rest of the boot or for commit.
 Loader failure leaves the marker in place.
 
 On loader failure, crash or timeout, an initrd failure handler reads `acl.slot`
 and checks that slot's marker without relying on manifest parsing or the loader
-process. It logs the slot, boot ID, unit result and reason to the journal/console.
-There is no separate failure record; initrd journal messages may not survive a
-reboot unless journal persistence is configured.
+process. It logs the slot, boot ID, unit result and reason to the
+journal/console. There is no separate failure record; initrd journal messages
+may not survive a reboot unless journal persistence is configured.
 
 If the marker exists and `ROLLBACK_ON_LOADER_FAILURE=true` (the default), the
 handler requests a reboot. The one-shot attempt has already been consumed, so
@@ -351,9 +352,9 @@ triggers an automatic reboot, preventing fallback failures from looping. The
 handler does not re-arm the failed entry or restart the loader and must run
 independently of `/etc` assembly.
 
-Cancellation or restaging clears stale markers. A failed candidate's marker
-may remain on shared ROOT after fallback, but only the booted slot's marker
-controls recovery.
+Cancellation or restaging clears stale markers. A failed candidate's marker may
+remain on shared ROOT after fallback, but only the booted slot's marker controls
+recovery.
 
 Use leveled stderr diagnostics (slot, manifest path, store, activation method
 and image errors), captured by the journal/console. Return nonzero on failure.
@@ -555,8 +556,8 @@ Keep the loader and its boot contracts small, stable and long-lived.
 
 The target image is normally expected to contain a loader from the same or a
 newer release than the staging Trident. The actual check is format support:
-Trident must write a manifest that the target loader can read, regardless of
-the loader running on the servicing OS.
+Trident must write a manifest that the target loader can read, regardless of the
+loader running on the servicing OS.
 
 | Interface | Compatibility approach |
 | --- | --- |
@@ -572,15 +573,15 @@ strict `Os` readers may reject new fields or values after rollback.
 
 *WIP: TODO: re-review*
 
-Rollback returns to the retained loader and its unchanged manifest. If that
-pair booted successfully before the update, manifest-version changes in the
-new slot do not affect it. There is no need for the old loader to read the
-new slot's manifest, or for the new loader to read the old slot's.
+Rollback returns to the retained loader and its unchanged manifest. If that pair
+booted successfully before the update, manifest-version changes in the new slot
+do not affect it. There is no need for the old loader to read the new slot's
+manifest, or for the new loader to read the old slot's.
 
 **TBD:** how staging discovers target-loader format support, and how preflight
-checks shared boot configuration, store layout and servicing-state changes.
-Keep those shared contracts stable; preserving a slot's pair does not protect
-it from incompatible changes to shared state.
+checks shared boot configuration, store layout and servicing-state changes. Keep
+those shared contracts stable; preserving a slot's pair does not protect it from
+incompatible changes to shared state.
 
 ### Policy changes
 
@@ -626,7 +627,8 @@ Production enablement requires passing the initial test areas, demonstrated
 rollback compatibility and published measurements against the scenario budgets.
 Unmet performance goals need explicit review; target-loader detection and
 shared-state compatibility checks must be defined before that gate. No new COSI
-fields, systemd source changes or cluster-control-plane integration are required.
+fields, systemd source changes or cluster-control-plane integration are
+required.
 
 ## Counter-Arguments
 
