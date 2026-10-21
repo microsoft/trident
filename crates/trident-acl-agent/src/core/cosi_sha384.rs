@@ -32,8 +32,8 @@ const SHA384_LEN_BYTES: usize = 48;
 /// [`Hash`](Self::Hash) explicitly instead.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum CosiSha384Source {
-    /// Require the `cosi.metadata.sha384` label; never read the package's
-    /// legacy `hash` attribute. The default.
+    /// Require the hex-encoded `cosi.metadata.sha384` label; never read
+    /// the package's legacy `hash` attribute. The default.
     #[default]
     Labels,
     /// Always use the legacy `hash` attribute; ignore labels entirely. For
@@ -65,6 +65,10 @@ pub enum CosiSha384Error {
     #[error("package has no COSI metadata SHA-384 for source {0:?}")]
     Missing(CosiSha384Source),
 
+    /// The label is not a hex-encoded SHA-384 digest.
+    #[error("COSI metadata SHA-384 label must contain 96 hex characters: {0}")]
+    InvalidHex(hex::FromHexError),
+
     /// The selected source's value is not valid base64, or doesn't fit in
     /// [`SHA384_LEN_BYTES`].
     #[error(
@@ -82,9 +86,9 @@ pub enum CosiSha384Error {
 /// hex-encoded form Trident's gRPC `image.sha384` Host Configuration field
 /// expects.
 ///
-/// This is a straight re-encode (base64 -> raw bytes -> hex), not a real
-/// hash-family conversion: our Nebraska deployment already stores a SHA-384
-/// digest in the selected source, just base64-encoded instead of hex.
+/// Labels contain a hex-encoded SHA-384 digest. The legacy `hash` source
+/// contains the same digest in base64. Labels are validated and passed
+/// through unchanged; legacy hashes are converted to lowercase hex.
 pub fn resolve_cosi_sha384(
     package: &PackageFile,
     source: CosiSha384Source,
@@ -94,6 +98,12 @@ pub fn resolve_cosi_sha384(
         CosiSha384Source::Hash => package.hash.as_ref().map(|h| h.sha1.as_str()),
     }
     .ok_or(CosiSha384Error::Missing(source))?;
+
+    if source == CosiSha384Source::Labels {
+        let mut buf = [0u8; SHA384_LEN_BYTES];
+        hex::decode_to_slice(raw, &mut buf).map_err(CosiSha384Error::InvalidHex)?;
+        return Ok(raw.to_owned());
+    }
 
     // Decode straight into a fixed-size stack buffer instead of
     // `Engine::decode`'s allocating `Vec<u8>` output: a malicious or buggy
@@ -119,7 +129,7 @@ mod tests {
     use url::Url;
 
     use super::*;
-    use crate::core::nebraska::PackageHash;
+    use crate::core::{nebraska::PackageHash, trident::host_configuration_from_image};
 
     // Digest generated with:
     //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
@@ -147,11 +157,47 @@ mod tests {
 
     #[test]
     fn resolves_from_label_with_labels_source() {
-        let package = package_file(Some("LEGACY"), &[("cosi.metadata.sha384", BASE64_DIGEST)]);
+        let package = package_file(Some("LEGACY"), &[("cosi.metadata.sha384", HEX_DIGEST)]);
         assert_eq!(
             resolve_cosi_sha384(&package, CosiSha384Source::Labels).unwrap(),
             HEX_DIGEST
         );
+    }
+
+    #[test]
+    fn preserves_hex_label_casing_in_host_configuration() {
+        for label in [
+            HEX_DIGEST.to_owned(),
+            HEX_DIGEST.to_uppercase(),
+            "aB".repeat(SHA384_LEN_BYTES),
+        ] {
+            let package = package_file(None, &[(COSI_SHA384_LABEL_KEY, &label)]);
+            let resolved = resolve_cosi_sha384(&package, CosiSha384Source::Labels).unwrap();
+            assert_eq!(resolved, label);
+
+            let config = host_configuration_from_image(&package.url, Some(&resolved));
+            let yaml: serde_yaml::Value = serde_yaml::from_str(&config.config).unwrap();
+            assert_eq!(yaml["image"]["sha384"].as_str(), Some(label.as_str()));
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_hex_labels_without_legacy_fallback() {
+        for label in [
+            "",
+            BASE64_DIGEST,
+            &"ab".repeat(47),
+            &"ab".repeat(49),
+            &"a".repeat(95),
+            &"g".repeat(96),
+        ] {
+            let package = package_file(Some(BASE64_DIGEST), &[(COSI_SHA384_LABEL_KEY, label)]);
+            let err = resolve_cosi_sha384(&package, CosiSha384Source::Labels).unwrap_err();
+            assert!(
+                matches!(err, CosiSha384Error::InvalidHex(_)),
+                "{label:?}: {err}"
+            );
+        }
     }
 
     #[test]
@@ -180,7 +226,7 @@ mod tests {
         // No implicit fallback the other direction either: a <labels>
         // element being present does not help when the configured source
         // is Hash.
-        let package = package_file(None, &[("cosi.metadata.sha384", BASE64_DIGEST)]);
+        let package = package_file(None, &[("cosi.metadata.sha384", HEX_DIGEST)]);
         let err = resolve_cosi_sha384(&package, CosiSha384Source::Hash).unwrap_err();
         assert!(matches!(
             err,

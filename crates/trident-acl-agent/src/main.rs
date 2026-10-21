@@ -75,6 +75,7 @@ async fn main() -> Result<(), Error> {
     }
 
     let config = AgentConfig::from_env()?;
+    log::info!("Effective AgentConfig: {:?}", config.redacted_for_logging());
     match osutils::machine_id::boot_id() {
         Ok(boot_id) => log::info!(
             "agent process started: pid={}, boot_id={boot_id}",

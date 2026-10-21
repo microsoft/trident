@@ -238,14 +238,36 @@ fn summarize(response: &wire::Response) -> String {
                 Some(check) => {
                     let manifest = match &check.manifest {
                         None => String::new(),
-                        Some(manifest) => format!(
-                            ", manifest {} with {} package(s)",
-                            manifest.version,
-                            manifest
-                                .packages
-                                .as_ref()
-                                .map_or(0, |packages| packages.packages.len())
-                        ),
+                        Some(manifest) => {
+                            let packages =
+                                manifest
+                                    .packages
+                                    .as_ref()
+                                    .map_or_else(String::new, |packages| {
+                                        packages
+                                            .packages
+                                            .iter()
+                                            .map(|package| {
+                                                let hash_present = package.hash.is_some();
+                                                let hash_sha256_present = package.hash_sha256.is_some();
+                                                let label_keys =
+                                                    package.labels.keys().collect::<Vec<_>>();
+                                                format!(
+                                                    "hash_present={hash_present} hash_sha256_present={hash_sha256_present} label_keys={label_keys:?}"
+                                                )
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join("; ")
+                                    });
+                            format!(
+                                ", manifest {} with {} package(s) [{packages}]",
+                                manifest.version,
+                                manifest
+                                    .packages
+                                    .as_ref()
+                                    .map_or(0, |packages| packages.packages.len())
+                            )
+                        }
                     };
                     format!(", updatecheck {}{manifest}", check.status)
                 }
@@ -1003,17 +1025,14 @@ mod tests {
     #[test]
     fn check_offer_labels_resolve_via_default_source() {
         // Digest generated with:
-        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
         //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384
-        const BASE64_DIGEST: &str =
-            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
         const HEX_DIGEST: &str =
             "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
         let client = client_with(&format!(
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
               <package name="os.cosi" hash="LEGACY" size="10" required="true">
                 <labels>
-                  <label key="cosi.metadata.sha384" value="{BASE64_DIGEST}"/>
+                  <label key="cosi.metadata.sha384" value="{HEX_DIGEST}"/>
                 </labels>
               </package>
             </packages></manifest></updatecheck></app></response>"#
@@ -1080,16 +1099,14 @@ mod tests {
         // documents last-in-document-wins for this case (Nebraska has no
         // uniqueness guarantee on label keys), so the second value must be
         // the one the resolver sees, end to end through real XML.
-        const BASE64_DIGEST: &str =
-            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
         const HEX_DIGEST: &str =
             "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
         let client = client_with(&format!(
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
               <package name="os.cosi" size="10" required="true">
                 <labels>
-                  <label key="cosi.metadata.sha384" value="FIRST-NOT-VALID-BASE64!!"/>
-                  <label key="cosi.metadata.sha384" value="{BASE64_DIGEST}"/>
+                  <label key="cosi.metadata.sha384" value="FIRST-NOT-VALID-HEX!!"/>
+                  <label key="cosi.metadata.sha384" value="{HEX_DIGEST}"/>
                 </labels>
               </package>
             </packages></manifest></updatecheck></app></response>"#
@@ -1450,6 +1467,29 @@ mod tests {
             join_file(&codebase, "2.0.0/os.cosi").unwrap().as_str(),
             "https://updates.example.com/packages/2.0.0/os.cosi"
         );
+    }
+
+    #[test]
+    fn summarize_reports_package_fields_without_label_values_or_download_secrets() {
+        let xml = OFFER.replace(
+            r#"codebase="https://updates.example.com/""#,
+            r#"codebase="https://updates.example.com/?sig=download-secret""#,
+        ).replace(
+            r#"hash="AAAAAAAAAAAAAAAAAAAAAAAAAAA=" size="1024" required="true"/>"#,
+            r#"size="1024" required="true"><labels><label key="cosi.metadata.sha384" value="private-label-value"/></labels></package>"#,
+        );
+        let response = wire::parse_response(&xml).unwrap();
+        let summary = summarize(&response);
+        assert!(summary.contains("hash_present=false"), "{summary}");
+        assert!(summary.contains("hash_sha256_present=false"), "{summary}");
+        assert!(summary.contains("cosi.metadata.sha384"), "{summary}");
+        for secret in [
+            "private-label-value",
+            "download-secret",
+            "updates.example.com",
+        ] {
+            assert!(!summary.contains(secret), "{summary}");
+        }
     }
 
     #[test]

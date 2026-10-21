@@ -145,8 +145,13 @@ func (p *NebraskaProxy) Handler() http.Handler {
 			http.Error(w, fmt.Sprintf("nebraska omaha handler error: %v", err), http.StatusInternalServerError)
 			return
 		}
+		response, err := labelCosiPackage(buf.Bytes(), p.Scenario.PackageName)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("nebraska package label error: %v", err), http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/xml")
-		_, _ = w.Write(buf.Bytes())
+		_, _ = w.Write(response)
 	})
 }
 
@@ -281,20 +286,15 @@ func (p *NebraskaProxy) seed() error {
 		baseURL = "https://example.invalid/images/"
 	}
 
-	// Our real Nebraska deployment puts a base64-encoded SHA-384 (of the
-	// COSI's metadata section) into the package's "hash" field, in place of
-	// a real SHA-1 (see PackageHash::to_cosi_sha384 in
-	// crates/trident-acl-agent/src/core/nebraska/client.rs for the
-	// trident-acl-agent side of this conversion). Reproduce that quirk
-	// here: decode Scenario.SHA384's hex digest back to raw bytes and
-	// re-encode as base64, so trident-acl-agent's to_cosi_sha384()
-	// round-trips it back to the same hex string Trident's COSI validation
-	// expects. The package.hash column is varchar(64), which a
-	// base64-encoded 48-byte SHA-384 fits exactly (48 bytes -> 64 base64
-	// chars, no padding).
+	// Upstream Nebraska has no package labels. Store the base64 metadata
+	// digest in its hash column, then re-encode it as hex in cosi.metadata.sha384 in
+	// Handler's response adapter. The legacy hash is removed on the wire.
 	sha384Bytes, err := hex.DecodeString(p.Scenario.SHA384)
 	if err != nil {
 		return fmt.Errorf("failed to decode scenario SHA384 %q as hex: %w", p.Scenario.SHA384, err)
+	}
+	if p.Scenario.Available && len(sha384Bytes) != 48 {
+		return fmt.Errorf("scenario SHA384 must contain 48 bytes, got %d", len(sha384Bytes))
 	}
 	packageHash := base64.StdEncoding.EncodeToString(sha384Bytes)
 
