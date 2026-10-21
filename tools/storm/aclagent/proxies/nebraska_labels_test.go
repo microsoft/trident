@@ -12,7 +12,8 @@ import (
 	logrustest "github.com/sirupsen/logrus/hooks/test"
 )
 
-var testMetadataSHA384 = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xab}, 48))
+var testMetadataSHA384 = strings.Repeat("ab", 48)
+var testMetadataSHA384Base64 = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xab}, 48))
 
 type labeledOmahaPackage struct {
 	Name     string `xml:"name,attr"`
@@ -59,7 +60,7 @@ func TestLabelCosiPackage(t *testing.T) {
 		return `<response protocol="3.0"><daystart elapsed_seconds="123"/><app appid="test" status="ok"><updatecheck status="ok"><urls><url codebase="https://example.invalid/a?x=1&amp;y=2"/></urls><manifest version="5.0.0"><packages>` +
 			packages + `</packages><actions><action event="postinstall" run="true"/></actions></manifest></updatecheck><event status="ok"/></app></response>`
 	}
-	cosi := fmt.Sprintf(`<package name="acl.cosi" hash="%s" hash_sha256="other-digest" size="1234" required="true"/>`, testMetadataSHA384)
+	cosi := fmt.Sprintf(`<package name="acl.cosi" hash="%s" hash_sha256="other-digest" size="1234" required="true"/>`, testMetadataSHA384Base64)
 
 	t.Run("labels-only-and-preserves-backend-fields", func(t *testing.T) {
 		input := wrap(cosi + `<package name="extra.txt" hash="extra-hash" size="99"/>`)
@@ -137,7 +138,7 @@ func TestLabelCosiPackageLogging(t *testing.T) {
 	})
 
 	pkg := fmt.Sprintf(`<package name="acl.cosi" size="1234"><labels><label key="cosi.metadata.sha384" value="%s"></label></labels></package>`, testMetadataSHA384)
-	inputPackage := fmt.Sprintf(`<package name="acl.cosi" hash="%s" size="1234"/>`, testMetadataSHA384)
+	inputPackage := fmt.Sprintf(`<package name="acl.cosi" hash="%s" size="1234"/>`, testMetadataSHA384Base64)
 	wrap := func(packages string) string {
 		return `<response><app><updatecheck><urls><url codebase="https://user:password@example.invalid/images/?sig=secret"/></urls><manifest><packages>` + packages + `</packages></manifest></updatecheck></app></response>`
 	}
@@ -179,13 +180,13 @@ func TestLabelCosiPackageLogging(t *testing.T) {
 		hook.Reset()
 		const encoded = "gibyPdJdlEOCtzjtn/RFaPDh9LzBALL6tRPldOl0PIQaoUD1eRbBJs+gZ/BJhW/z"
 		const decoded = "8226f23dd25d944382b738ed9ff44568f0e1f4bcc100b2fab513e574e9743c841aa140f57916c126cfa067f049856ff3"
-		input := wrap(strings.Replace(inputPackage, testMetadataSHA384, encoded, 1))
+		input := wrap(strings.Replace(inputPackage, testMetadataSHA384Base64, encoded, 1))
 		output, err := labelCosiPackage([]byte(input), "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertCosiMetadataLabel(t, string(output), "acl.cosi", encoded)
-		expectedPackage := strings.Replace(pkg, testMetadataSHA384, encoded, 1)
+		assertCosiMetadataLabel(t, string(output), "acl.cosi", decoded)
+		expectedPackage := strings.Replace(pkg, testMetadataSHA384, decoded, 1)
 		expected := "Nebraska COSI package XML: " + expectedPackage + "; metadata_sha384=" + decoded
 		entries := hook.AllEntries()
 		if len(entries) != 1 || entries[0].Level != logrus.InfoLevel || entries[0].Message != expected {

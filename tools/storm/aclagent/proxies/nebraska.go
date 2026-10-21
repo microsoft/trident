@@ -287,7 +287,7 @@ func (p *NebraskaProxy) seed() error {
 	}
 
 	// Upstream Nebraska has no package labels. Store the base64 metadata
-	// digest in its hash column, then move it to cosi.metadata.sha384 in
+	// digest in its hash column, then re-encode it as hex in cosi.metadata.sha384 in
 	// Handler's response adapter. The legacy hash is removed on the wire.
 	sha384Bytes, err := hex.DecodeString(p.Scenario.SHA384)
 	if err != nil {

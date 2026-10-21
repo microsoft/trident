@@ -3,6 +3,7 @@ package proxies
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -100,7 +101,7 @@ func labelCosiPackage(response []byte, packageName string) ([]byte, error) {
 				} `xml:"label"`
 			}{}
 			labels.Label.Key = "cosi.metadata.sha384"
-			labels.Label.Value = hash
+			labels.Label.Value = hex.EncodeToString(metadataSHA384)
 			if err := encoder.Encode(labels); err != nil {
 				return nil, fmt.Errorf("encode COSI metadata label: %w", err)
 			}

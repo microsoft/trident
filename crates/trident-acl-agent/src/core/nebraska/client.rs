@@ -1003,17 +1003,14 @@ mod tests {
     #[test]
     fn check_offer_labels_resolve_via_default_source() {
         // Digest generated with:
-        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
         //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384
-        const BASE64_DIGEST: &str =
-            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
         const HEX_DIGEST: &str =
             "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
         let client = client_with(&format!(
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
               <package name="os.cosi" hash="LEGACY" size="10" required="true">
                 <labels>
-                  <label key="cosi.metadata.sha384" value="{BASE64_DIGEST}"/>
+                  <label key="cosi.metadata.sha384" value="{HEX_DIGEST}"/>
                 </labels>
               </package>
             </packages></manifest></updatecheck></app></response>"#
@@ -1080,16 +1077,14 @@ mod tests {
         // documents last-in-document-wins for this case (Nebraska has no
         // uniqueness guarantee on label keys), so the second value must be
         // the one the resolver sees, end to end through real XML.
-        const BASE64_DIGEST: &str =
-            "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx";
         const HEX_DIGEST: &str =
             "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
         let client = client_with(&format!(
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
               <package name="os.cosi" size="10" required="true">
                 <labels>
-                  <label key="cosi.metadata.sha384" value="FIRST-NOT-VALID-BASE64!!"/>
-                  <label key="cosi.metadata.sha384" value="{BASE64_DIGEST}"/>
+                  <label key="cosi.metadata.sha384" value="FIRST-NOT-VALID-HEX!!"/>
+                  <label key="cosi.metadata.sha384" value="{HEX_DIGEST}"/>
                 </labels>
               </package>
             </packages></manifest></updatecheck></app></response>"#
