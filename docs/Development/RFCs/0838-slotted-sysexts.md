@@ -43,26 +43,34 @@ those changes.
 
 #### Flatcar's approach
 
-Flatcar already [updates OEM and release sysexts alongside the OS](https://www.flatcar.org/docs/latest/sys-ext/).
-For those stored on shared storage, its
+Flatcar's updater fetches OEM and optional release sysexts as
+[separate signed payloads](https://github.com/flatcar/update_engine/blob/f23d6ea848ffe2c8721bc49d2a9f77f4de038ad2/flatcar-postinst#L77-L240),
+advertised through Nebraska's Omaha response rather than bundled with the OS
+partition update. Its
 [initrd preparation](https://github.com/flatcar/bootengine/blob/7727ec78da72e700e8fa1ce2144cb2476448d186/dracut/99setup-root/initrd-setup-root-after-ignition)
-reads the booted `/usr` release, selects matching versioned images and recreates
-`/etc/extensions` symlinks before merging sysexts. Custom extensions can instead
-have an independent lifecycle through `systemd-sysupdate`.
+selects matching versioned images from shared storage using the booted `/usr`
+version and recreates `/etc/extensions` symlinks. Users must separately
+provision third-party sysexts and
+[configure their updates](https://www.flatcar.org/docs/latest/sys-ext/#updating-custom-sysext-images),
+for example with `systemd-sysupdate`; they do not automatically join OS
+servicing.
 
-Flatcar also uses native `systemd-confext` for factory `/etc` defaults, with
+Flatcar uses native `systemd-confext` for factory `/etc` defaults, with
 [mutable mode](https://github.com/flatcar/init/blob/0765e955aca24034d66b9389e0d538e4c3ee543c/systemd/confext.conf)
-and a persistent writable upper. Its
+and a persistent writable upper. This relies on support
+[introduced upstream in systemd v256](https://github.com/systemd/systemd/blob/v256/man/systemd-sysext.xml).
+ACL's v255 baseline lacks it. This RFC avoids a systemd upgrade or backport
+because of the added complexity and stability risk, retaining ACL's existing
+writable `/etc` overlay instead. Flatcar's
 [boot code](https://github.com/flatcar/bootengine/blob/7727ec78da72e700e8fa1ce2144cb2476448d186/dracut/99setup-root/initrd-setup-root)
-prepares `/etc` in the initrd; confext refresh and sysext merge also occur before
-switch-root.
+prepares `/etc` and merges confexts/sysexts in the initrd.
 
-The shared pattern is retaining extension payloads and selecting them for the
-booted OS. Flatcar selects these release sysexts by OS version; this RFC also
-needs to distinguish different extension sets for the same OS version. For
-upstreaming, Flatcar's Bootengine is therefore a useful reference, not a drop-in
-implementation: ACL keeps its existing writable `/etc` overlay and later native
-sysext merge.
+Both designs keep extension files on shared storage and choose which to load at
+boot. Flatcar chooses by OS version; this RFC chooses by slot, allowing
+different extension sets for the same OS version and linking them to the A/B
+status of the OS. This boot-time selection is a potential area for shared
+Bootengine code. ACL would still use its existing writable `/etc` overlay and
+merge sysexts after switch-root.
 
 ### Problem Statement
 
@@ -75,6 +83,8 @@ in their image.
 
 - Update and roll back ACL's OS and declared sysexts together, using one COSI
   instead of an out-of-band stack updater.
+- Onboard ACL to managed sysexts by default. Avoid regressions to non-ACL AzL
+  targets.
 - Support ACL's partition layout, where all writeable partitions are NOT
   A/B-slotted.
 - Activate the matching extension set before consumers run on every boot,
@@ -350,9 +360,8 @@ native merge in step 4.
 
 Loader failure must stop root setup; activation failure must prevent a healthy
 commit. Use required service dependencies, not `Wants=` alone or conditions that
-quietly skip the loader. Preserve another component's activation entries or
-reject the conflict; the exact shared-directory publication protocol remains
-open.
+quietly skip the loader. Leave unrelated `/run/extensions` entries untouched.
+Fail if a required symlink would overwrite one.
 
 ##### Update-boot failure recovery
 
