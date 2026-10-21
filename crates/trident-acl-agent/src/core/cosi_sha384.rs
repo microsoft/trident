@@ -87,8 +87,8 @@ pub enum CosiSha384Error {
 /// expects.
 ///
 /// Labels contain a hex-encoded SHA-384 digest. The legacy `hash` source
-/// contains the same digest in base64. Both are validated and normalized
-/// to lowercase hex; no hash-family conversion is performed.
+/// contains the same digest in base64. Labels are validated and passed
+/// through unchanged; legacy hashes are converted to lowercase hex.
 pub fn resolve_cosi_sha384(
     package: &PackageFile,
     source: CosiSha384Source,
@@ -102,7 +102,7 @@ pub fn resolve_cosi_sha384(
     if source == CosiSha384Source::Labels {
         let mut buf = [0u8; SHA384_LEN_BYTES];
         hex::decode_to_slice(raw, &mut buf).map_err(CosiSha384Error::InvalidHex)?;
-        return Ok(hex::encode(buf));
+        return Ok(raw.to_owned());
     }
 
     // Decode straight into a fixed-size stack buffer instead of
@@ -129,7 +129,7 @@ mod tests {
     use url::Url;
 
     use super::*;
-    use crate::core::nebraska::PackageHash;
+    use crate::core::{nebraska::PackageHash, trident::host_configuration_from_image};
 
     // Digest generated with:
     //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
@@ -165,12 +165,20 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_uppercase_hex_label() {
-        let package = package_file(None, &[(COSI_SHA384_LABEL_KEY, &HEX_DIGEST.to_uppercase())]);
-        assert_eq!(
-            resolve_cosi_sha384(&package, CosiSha384Source::Labels).unwrap(),
-            HEX_DIGEST
-        );
+    fn preserves_hex_label_casing_in_host_configuration() {
+        for label in [
+            HEX_DIGEST.to_owned(),
+            HEX_DIGEST.to_uppercase(),
+            "aB".repeat(SHA384_LEN_BYTES),
+        ] {
+            let package = package_file(None, &[(COSI_SHA384_LABEL_KEY, &label)]);
+            let resolved = resolve_cosi_sha384(&package, CosiSha384Source::Labels).unwrap();
+            assert_eq!(resolved, label);
+
+            let config = host_configuration_from_image(&package.url, Some(&resolved));
+            let yaml: serde_yaml::Value = serde_yaml::from_str(&config.config).unwrap();
+            assert_eq!(yaml["image"]["sha384"].as_str(), Some(label.as_str()));
+        }
     }
 
     #[test]
