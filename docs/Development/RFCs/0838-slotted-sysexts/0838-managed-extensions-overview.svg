@@ -3,9 +3,11 @@
   <title id="architecture-title">COSI delivery, per-slot storage and two boot-time activation paths</title>
   <desc id="architecture-desc">Trident replaces the inactive slot's extension files in the
           shared store, preserving the active slot. At each boot the initrd loader reads acl.slot
-          and that slot's slot-loader.json. It mounts the selected
-          confext as a lower layer in the writable etc overlay, and creates sysext links in run.
-          After switch-root, native systemd-sysext merges the selected system extension into usr.</desc>
+          and that slot's slot-loader.json. It creates symlinks in /run/extensions to that
+          slot's sysexts and mounts its confexts under /run as additional etc lowerdirs.
+          Bootengine uses those lowerdirs in the writable etc overlay. The /run filesystem
+          survives switch-root, keeping the slot-specific links available for native
+          systemd-sysext to merge the selected system extensions into usr.</desc>
   <style>
 :root {color-scheme:light dark; --bg:#f3f5f8; --panel:#fff; --text:#182432;
  --muted:#526173; --line:#c7d1dd; --accent:#2357a2; --soft:#eaf1fc;
@@ -48,9 +50,13 @@ text {fill:var(--text); font:15px system-ui,sans-serif}
   <text class="heading" x="36" y="222">acl.slot=a|b</text>
   <text class="sub" x="36" y="247">From the per-slot UKI addon</text>
   <path class="wire" d="M265 232 H310" marker-end="url(#arrowhead)" />
-  <rect class="box highlight" x="315" y="194" width="280" height="75" rx="7" />
+  <rect class="box highlight" x="315" y="194" width="665" height="75" rx="7" />
   <text class="heading" x="331" y="222">3. trident-slot-loader</text>
   <text class="sub" x="331" y="247">Reads acl.slot and slot-loader.json</text>
+  <path class="wire" d="M575 232 H625" marker-end="url(#arrowhead)" />
+  <text class="sub heading" x="645" y="216">Prepare the selected slot's files under /run</text>
+  <text class="sub" x="645" y="237">Create /run/extensions symlinks to slot sysexts</text>
+  <text class="sub" x="645" y="258">Mount slot confexts as extra /etc lowerdirs</text>
   <path class="wire" d="M812 120 V151 H455 V189" marker-end="url(#arrowhead)" />
   <text class="sub" x="651" y="173">Read the selected slot's payloads</text>
   <path class="wire" d="M455 269 V298 H242 V329" marker-end="url(#arrowhead)" />
@@ -61,6 +67,6 @@ text {fill:var(--text); font:15px system-ui,sans-serif}
   <text class="heading" x="36" y="411">First: initrd assembles writable /etc</text>
   <rect class="box" x="530" y="335" width="450" height="96" rx="7" />
   <text class="heading" x="546" y="361">5. Native /usr activation</text>
-  <text class="sub" x="546" y="386">/run/extensions links survive switch-root</text>
+  <text class="sub" x="546" y="386">/run survives switch-root, preserving the slot's links</text>
   <text class="heading" x="546" y="411">Later: systemd-sysext merges /usr</text>
 </svg>
