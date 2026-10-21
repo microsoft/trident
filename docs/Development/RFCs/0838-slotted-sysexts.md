@@ -70,12 +70,13 @@ it can be reused later.
 - Support ACL's shared storage without new partitions or systemd source changes.
 - Let users explicitly enable Trident to update bundled extensions alongside the
   OS.
-- A published store must contain valid manifests for every bootable slot; images
-  without a store need no initialization.
-- Replace the inactive slot's managed extension set on reuse; do not retain
-  older sets for that slot.
+- Base ACL images must continue to boot as-is.
+- Clean and reuse the inactive slot for staging an update's extensions, ensuring
+  the active slot's extensions remain usable and available for any eventual
+  rollback.
 - Preserve each platform's filesystem mutability and user-state persistence.
-- Keep the policy reusable on platforms with writable A/B storage.
+- (Future) Make this sysext management feature reusable on platforms with
+  writable A/B storage, not only ACL.
 
 ### Out of Scope
 
