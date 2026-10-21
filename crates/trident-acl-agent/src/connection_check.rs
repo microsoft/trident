@@ -5,7 +5,11 @@ use tokio::task;
 use trident_acl_agent::{
     annotations::k8s::NodeClient,
     check_nebraska_reachable,
-    core::{config::AgentConfig, nebraska, trident::TridentClient},
+    core::{
+        config::AgentConfig,
+        nebraska,
+        trident::{self, TridentClient},
+    },
     IdSource,
 };
 
@@ -49,12 +53,11 @@ pub async fn validate_connection(
             info!("kubernetes: reached API server at {cluster_url} and fetched Node {node_name:?}");
         }
         ConnectionTarget::Tridentd => {
+            let socket = trident::redacted_socket(&config.trident.socket);
             TridentClient::connect(&config.trident.socket)
                 .await
-                .with_context(|| {
-                    format!("failed to reach tridentd at {}", config.trident.socket)
-                })?;
-            info!("tridentd: connected to {}", config.trident.socket);
+                .with_context(|| format!("failed to reach tridentd at {socket}"))?;
+            info!("tridentd: connected to {socket}");
         }
         ConnectionTarget::Nebraska => {
             let endpoint = config.nebraska.endpoint.clone().ok_or_else(|| {
@@ -102,4 +105,23 @@ pub async fn validate_connection(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn tridentd_connection_error_redacts_socket_in_context_and_source() {
+        let mut config = AgentConfig::default();
+        config.trident.socket = "invalid-socket-secret".to_string();
+        let error = validate_connection(ConnectionTarget::Tridentd, &config)
+            .await
+            .expect_err("invalid socket should fail validation");
+        let message = format!("{error:#}");
+        assert!(message.contains("failed to reach tridentd at <invalid URI>"));
+        assert!(message.contains("failed to connect to trident socket <invalid URI>"));
+        assert!(!message.contains("invalid-socket-secret"));
+        assert_eq!(config.trident.socket, "invalid-socket-secret");
+    }
 }

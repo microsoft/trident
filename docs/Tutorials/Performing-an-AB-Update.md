@@ -214,10 +214,20 @@ on a new COSI file that was created in step 4. In essence, the Host
 Configuration file used to deploy the initial operating system can be used as a
 basis, only changing the COSI file reference:
 
+Calculate the SHA384 checksum of the new COSI metadata:
+
+```bash
+tar -xOf "$HOME/staging/osimage-update.cosi" metadata.json | sha384sum
+```
+
+Use the resulting 96-character hexadecimal checksum for `sha384` and
+`IMAGE_SHA384` below. Recalculate it for every new COSI; hash `metadata.json`,
+not the entire COSI file.
+
   ``` yaml
     image:
         url: /tmp/osimage-update.cosi
-        sha384: ignored
+        sha384: <Calculated SHA384 hash>
   ```
 
 Assuming a disk path of `/dev/sda` and a local COSI file, the Trident update
@@ -225,10 +235,11 @@ Host Configuration can be created like this:
 
 ``` bash
 DISK_DEVICE_PATH="/dev/sda"
+IMAGE_SHA384="<Calculated SHA384 hash>"
 cat << EOF > $HOME/staging/host-config-update.yaml
 image:
   url: /tmp/osimage-update.cosi
-  sha384: ignored
+  sha384: $IMAGE_SHA384
 storage:
   disks:
     - id: os

@@ -15,6 +15,25 @@ annotation-driven trident ACL agent protocol.
 
 There is intentionally no fake `tridentd`.
 
+The Nebraska proxy runs the upstream backend against ephemeral Postgres.
+Since upstream cannot emit package labels, a test-only XML response adapter
+decodes the offered COSI package's base64 metadata digest from `hash` and
+writes it as 96 lowercase hex characters in
+`<labels><label key="cosi.metadata.sha384" value="..."/></labels>`.
+It removes the legacy `hash` attribute, so the VM exercises the agent's
+default `labels` source without a usable legacy fallback. Other packages
+and Nebraska's grant/event state machine are preserved; no-update and
+event-only responses are returned unchanged.
+
+The proxy logs the generated COSI `<package>` XML at INFO, including the
+hex `cosi.metadata.sha384` label value, without logging download URLs.
+The same log line includes `metadata_sha384=<96 lowercase hex characters>`,
+matching that label, for direct comparison with the SHA-384 in the
+Trident staging Host Configuration (`tridentd.log` in the `aclagent-storm-test`
+artifact). Both VM images run the agent with
+`--verbosity trace --network-verbosity warn`; agent journals are also
+collected in that artifact, not echoed into the task log.
+
 ## Pipeline diagnostics
 
 The validation stage runs one job by default. Set `aclAgentTestParallelJobs`
@@ -25,7 +44,8 @@ to keep results separate.
 On failure, the artifact also includes `booted.qcow2.zst`, matching the
 servicing and rollback tests. The pipeline enables `--force-cleanup` to stop
 the VM before compression; failures before disk creation emit a warning.
-The disk retains both A/B roots for offline inspection of former-slot journals.
+The disk retains both A/B roots, including the former root's journal, for
+offline inspection.
 
 The packaged agent service uses `KillMode=mixed` to let the synchronous
 reboot client finish during service shutdown.

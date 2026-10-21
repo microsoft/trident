@@ -489,11 +489,11 @@
       "additionalProperties": false
     },
     "ImageSha384": {
-      "description": "Image SHA384 checksum.",
+      "description": "SHA384 checksum of the COSI metadata.\n\nUse the 96-character hexadecimal checksum of `metadata.json` from the COSI file to verify the image's integrity.",
       "oneOf": [
         {
           "title": "Ignored",
-          "description": "You can pass `ignored` to skip the checksum verification.",
+          "description": "Disables checksum verification. Do not use this value in Host Configurations: without verification, Trident cannot detect tampered COSI metadata. Provide the metadata checksum instead.",
           "type": "string",
           "enum": [
             "ignored"
@@ -501,7 +501,7 @@
         },
         {
           "title": "Checksum",
-          "description": "The SHA384 checksum of the image.\n\n*Details:*\n\nThe Sha384Hash is a 96-character hexadecimal string.",
+          "description": "The SHA384 checksum of `metadata.json` in the COSI file.\n\n*Details:*\n\nThe Sha384Hash is a 96-character hexadecimal string.",
           "type": "string",
           "format": "[a-fA-F0-9]{96}"
         }
@@ -728,7 +728,7 @@
       ],
       "properties": {
         "sha384": {
-          "description": "The Sha384 of the metadata in the COSI file.",
+          "description": "The SHA384 checksum of `metadata.json` in the COSI file, as a 96-character hexadecimal string.\n\nAlways provide the checksum to verify the image's integrity.",
           "allOf": [
             {
               "$ref": "#/definitions/ImageSha384"
