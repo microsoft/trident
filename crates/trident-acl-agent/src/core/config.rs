@@ -24,7 +24,7 @@
 //! behavior) remains available as an explicit opt-out via
 //! `TRIDENT_ACL_AGENT_ORCHESTRATION_MODE=omaha-only`.
 
-use std::{path::PathBuf, str::FromStr, time::Duration};
+use std::{fmt, path::PathBuf, str::FromStr, time::Duration};
 
 use anyhow::{anyhow, Context, Error};
 use const_format::formatcp;
@@ -87,6 +87,12 @@ pub struct AgentConfig {
 }
 
 impl AgentConfig {
+    /// A logging view of the effective configuration. Network URL credentials,
+    /// paths, queries, and fragments are omitted; kubeconfig contents are never read.
+    pub fn redacted_for_logging(&self) -> impl fmt::Debug + '_ {
+        RedactedAgentConfig(self)
+    }
+
     /// Loads the effective config purely from `TRIDENT_ACL_AGENT_*`
     /// environment variables (see the module doc).
     pub fn from_env() -> Result<Self, Error> {
@@ -165,6 +171,50 @@ impl AgentConfig {
                     .or(DEFAULT_NODE_GONE_MAX_WAIT),
             },
         })
+    }
+}
+
+struct RedactedAgentConfig<'a>(&'a AgentConfig);
+
+impl fmt::Debug for RedactedAgentConfig<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let config = self.0;
+        f.debug_struct("AgentConfig")
+            .field(
+                "nebraska.endpoint",
+                &config
+                    .nebraska
+                    .endpoint
+                    .as_ref()
+                    .map(super::nebraska::redacted),
+            )
+            .field("nebraska.app_id", &config.nebraska.app_id)
+            .field("nebraska.track", &config.nebraska.track)
+            .field("cosi_sha384", &config.cosi_sha384)
+            .field(
+                "kubernetes.api_server",
+                &config
+                    .kubernetes
+                    .api_server
+                    .as_ref()
+                    .map(super::nebraska::redacted),
+            )
+            .field("kubernetes.kubeconfig", &config.kubernetes.kubeconfig)
+            .field("kubernetes.node_name", &config.kubernetes.node_name)
+            .field(
+                "kubernetes.watch_poll_interval",
+                &config.kubernetes.watch_poll_interval,
+            )
+            .field(
+                "kubernetes.annotation_prefix",
+                &config.kubernetes.annotation_prefix,
+            )
+            .field(
+                "trident.socket",
+                &super::trident::redacted_socket(&config.trident.socket),
+            )
+            .field("orchestration", &config.orchestration)
+            .finish()
     }
 }
 
@@ -565,6 +615,97 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect()
+    }
+
+    #[test]
+    fn startup_summary_includes_effective_defaults() {
+        let config = AgentConfig::from_vars(vec![]).unwrap();
+        let summary = format!("{:?}", config.redacted_for_logging());
+        for expected in [
+            "AgentConfig",
+            "nebraska.endpoint",
+            "https://nebraska.example.invalid/<redacted>",
+            "nebraska.app_id",
+            "nebraska.track",
+            "source: Labels",
+            "kubernetes.api_server: None",
+            DEFAULT_KUBELET_KUBECONFIG,
+            "kubernetes.node_name",
+            "watch_poll_interval",
+            DEFAULT_ANNOTATION_PREFIX,
+            TRIDENT_DEFAULT_SOCKET_URI,
+            "mode: Annotations",
+            DEFAULT_STATE_PATH,
+            "stage_timeout",
+            "finalize_timeout",
+            "heartbeat_interval",
+            "node_gone_max_wait",
+        ] {
+            assert!(summary.contains(expected), "missing {expected}");
+        }
+    }
+
+    #[test]
+    fn startup_summary_uses_env_overrides_without_exposing_network_secrets() {
+        let config = AgentConfig::from_vars(vars(&[
+            ("TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT", "https://nebraska-user:nebraska-password@nebraska.example:8443/secret-path?token=secret-query#secret-fragment"),
+            ("TRIDENT_ACL_AGENT_NEBRASKA_APP_ID", "custom-app"),
+            ("TRIDENT_ACL_AGENT_NEBRASKA_TRACK", "custom-track"),
+            ("TRIDENT_ACL_AGENT_COSI_SHA384_SOURCE", "hash"),
+            ("TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER", "https://kube-user:kube-password@cluster.example/kube-secret-path?token=kube-secret-query#kube-secret-fragment"),
+            ("TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME", "node-42"),
+            ("TRIDENT_ACL_AGENT_TRIDENT_SOCKET", "https://socket-user:socket-password@trident.example/socket-secret-path?token=socket-secret-query#socket-secret-fragment"),
+            ("TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT", "21m"),
+        ])).unwrap();
+        let original = config.clone();
+        let summary = format!("{:?}", config.redacted_for_logging());
+        for expected in [
+            "https://nebraska.example:8443/<redacted>",
+            "https://cluster.example/<redacted>",
+            "https://trident.example/<redacted>",
+            "custom-app",
+            "custom-track",
+            "source: Hash",
+            "node-42",
+            "stage_timeout: 1260s",
+        ] {
+            assert!(summary.contains(expected), "missing {expected}");
+        }
+        for secret in [
+            "nebraska-user",
+            "nebraska-password",
+            "secret-path",
+            "secret-query",
+            "secret-fragment",
+            "kube-user",
+            "kube-password",
+            "socket-user",
+            "socket-password",
+        ] {
+            assert!(
+                !summary.contains(secret),
+                "startup summary contains a sensitive URL component"
+            );
+        }
+        assert!(
+            config == original,
+            "formatting the startup summary changed the configuration"
+        );
+    }
+
+    #[test]
+    fn startup_summary_redacts_unix_socket_query_and_invalid_socket() {
+        let mut config = AgentConfig::default();
+        config.trident.socket =
+            "unix:///run/trident/custom.sock?secret=socket-token#fragment".to_string();
+        let summary = format!("{:?}", config.redacted_for_logging());
+        assert!(summary.contains("unix:///run/trident/custom.sock"));
+        assert!(!summary.contains("socket-token"));
+        assert!(!summary.contains("fragment"));
+        config.trident.socket = "invalid-socket-secret".to_string();
+        let summary = format!("{:?}", config.redacted_for_logging());
+        assert!(summary.contains("<invalid URI>"));
+        assert!(!summary.contains("invalid-socket-secret"));
     }
 
     #[test]

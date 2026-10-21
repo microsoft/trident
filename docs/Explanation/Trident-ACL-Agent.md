@@ -242,6 +242,11 @@ node that never reports a terminal `commit` status within its SLA.
 
 ## Configuration
 
+At startup, the agent logs its effective `AgentConfig` at INFO after applying
+environment overrides and defaults, including for `--validate-connection`.
+Network URL credentials, paths, query strings, and fragments are redacted.
+Kubeconfig and state paths are logged, but their contents are not read for logging.
+
 There is no config file. Every setting is an environment variable prefixed
 `TRIDENT_ACL_AGENT_`, systemd-style: set it in the unit's own
 `Environment=` lines, via a drop-in override, or by any other means that
@@ -254,7 +259,7 @@ naming the offending variable.
 
 | Variable | Default | Description |
 |---|---|---|
-| `TRIDENT_ACL_AGENT_COSI_SHA384_SOURCE` | `labels` | Which source resolves a package's COSI metadata SHA-384: `labels` reads the `cosi.metadata.sha384` key from the Nebraska manifest's `<labels>` child element; `hash` reads the legacy `hash` attribute instead (for Nebraska deployments with no label support). No automatic fallback between the two. |
+| `TRIDENT_ACL_AGENT_COSI_SHA384_SOURCE` | `labels` | Which source resolves a package's COSI metadata SHA-384: `labels` reads the `cosi.metadata.sha384` label value as hex from the Nebraska manifest's `<labels>` child element; `hash` reads the base64-encoded legacy `hash` attribute instead (for Nebraska deployments with no label support). Both must decode to 48 bytes. No automatic fallback between the two. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` | `acl.microsoft.com` | The annotation-key prefix for the request/status/commit-status annotations (e.g. the `acl.microsoft.com` in `acl.microsoft.com/update-request`). Any orchestrator can pick its own namespace here so its annotations don't collide with another controller's. |
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` | `/etc/os-release` | The file the agent reads to determine the node's currently running version. Any file works, as long as it follows the os-release format (`KEY=VALUE` lines, optionally single- or double-quoted, blank lines and `#` comments ignored) — see [below](#configuring-the-on-disk-version). |
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` | `VERSION_ID` | The key the agent looks up in `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (`/etc/os-release` by default) to determine the node's currently running version, used to compare against a request's `targetVersion` (e.g. to short-circuit to `AlreadyAtTarget`). `VERSION_ID` is the standard `os-release` field most images already stamp; a deployment that instead carries an ACL-specific `IMAGE_VERSION` field can point this variable at that key instead — see [below](#configuring-the-on-disk-version). |
