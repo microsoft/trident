@@ -193,6 +193,10 @@ impl fmt::Debug for RedactedAgentConfig<'_> {
                 &config.kubernetes.annotation_prefix,
             )
             .field(
+                "kubernetes.validate_node_uuid",
+                &config.kubernetes.validate_node_uuid,
+            )
+            .field(
                 "trident.socket",
                 &super::trident::redacted_socket(&config.trident.socket),
             )
@@ -556,6 +560,7 @@ mod tests {
             "kubernetes.node_name",
             "watch_poll_interval",
             DEFAULT_ANNOTATION_PREFIX,
+            "kubernetes.validate_node_uuid: false",
             TRIDENT_DEFAULT_SOCKET_URI,
             "mode: Annotations",
             DEFAULT_STATE_PATH,
@@ -574,6 +579,7 @@ mod tests {
             ("TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT", "https://nebraska-user:nebraska-password@nebraska.example:8443/secret-path?token=secret-query#secret-fragment"),
             ("TRIDENT_ACL_AGENT_NEBRASKA_APP_ID", "custom-app"),
             ("TRIDENT_ACL_AGENT_NEBRASKA_TRACK", "custom-track"),
+            ("TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID", "true"),
             ("TRIDENT_ACL_AGENT_COSI_SHA384_SOURCE", "hash"),
             ("TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER", "https://kube-user:kube-password@cluster.example/kube-secret-path?token=kube-secret-query#kube-secret-fragment"),
             ("TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME", "node-42"),
@@ -590,6 +596,7 @@ mod tests {
             "custom-track",
             "source: Hash",
             "node-42",
+            "kubernetes.validate_node_uuid: true",
             "stage_timeout: 1260s",
         ] {
             assert!(summary.contains(expected), "missing {expected}");
