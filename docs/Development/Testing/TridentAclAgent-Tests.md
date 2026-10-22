@@ -268,7 +268,12 @@ The scenario runs these test cases in order:
    Both phases assert the service's `systemd` `MainPID` stays unchanged
    throughout (i.e. it never crashes or restarts) and that it resumes once
    `NodeStore.RestoreNode` brings the Node back — all before any fake
-   Nebraska/image-server mocks or real update/rollback traffic is involved
+   Nebraska/image-server mocks or real update/rollback traffic is involved.
+   **Phase 3** additionally checks a one-shot GET with UUID validation explicitly
+   enabled: a matching UUID succeeds, a mismatch fails with both the UUID-mismatch
+   and NodeGone diagnostics from that invocation, and restoration succeeds.
+   This isolates GET validation from daemon/watch logs. **Phase 4** exercises
+   mismatched UUID detection through the long-lived watch.
 4. **run-node-name-source** — Proves
    `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` (`hostname` vs
    `kubelet-cert`) actually switches which identity `node_name` resolves

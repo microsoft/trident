@@ -122,8 +122,9 @@ func sha384CosiMetadata(path string) (string, error) {
 // defaults; after prepareVmForAclAgent delivers it, kubernetes succeeds
 // too. Nebraska has no static config at all, so proving it can succeed
 // requires passing envVars explicitly (see the env-var-override checks in
-// RunABUpdate).
-func expectValidateConnection(cfg stormvmconfig.VMConfig, vmIP, mode string, wantSuccess bool, envVars map[string]string) error {
+// RunABUpdate). expectedOutput optionally asserts diagnostics from this
+// invocation, independently of the background service's journal.
+func expectValidateConnection(cfg stormvmconfig.VMConfig, vmIP, mode string, wantSuccess bool, envVars map[string]string, expectedOutput ...string) error {
 	var prefix strings.Builder
 	prefix.WriteString("sudo")
 	if len(envVars) > 0 {
@@ -137,6 +138,16 @@ func expectValidateConnection(cfg stormvmconfig.VMConfig, vmIP, mode string, wan
 	gotSuccess := err == nil
 	if gotSuccess != wantSuccess {
 		return fmt.Errorf("--validate-connection %s (envVars=%v): expected success=%v, got success=%v (err=%v, output=%s)", mode, envVars, wantSuccess, gotSuccess, err, out)
+	}
+	// Failed SSH commands retain their combined output in the wrapped error.
+	diagnostics := out
+	if err != nil {
+		diagnostics += "\n" + err.Error()
+	}
+	for _, expected := range expectedOutput {
+		if !strings.Contains(diagnostics, expected) {
+			return fmt.Errorf("--validate-connection %s: expected diagnostic %q, got %s", mode, expected, diagnostics)
+		}
 	}
 	return nil
 }
@@ -152,10 +163,15 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 		}
 	}
 
+	productUUID, err := readVmProductUUID(vmConfig.VMConfig, vmIP)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}))
+	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}, productUUID))
 	apiServer := stormproxies.NewAPIServer(testConfig.NodeName, nodeStore)
 	// Bind on HostEndpointIP (not 127.0.0.1) so the VM can reach the fake
 	// apiserver directly over the libvirt NAT network, instead of relying
