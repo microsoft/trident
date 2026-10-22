@@ -365,25 +365,31 @@ Fail if a required symlink would overwrite one.
 
 ##### Update-boot failure recovery
 
+The Slot Loader's dracut module gains a new
+`trident-slot-loader-recovery.service`, invoked through the loader unit's
+`OnFailure=` hook. It handles only loader failures, crashes and timeouts; other
+initrd failure handling is unchanged.
+
 Staging writes `<slot>/slot-loader.pending` beside `slot-loader.json` before
 arming the one-shot boot attempt. The loader removes the marker only after its
 own successful execution, including a valid empty manifest, and synchronizes the
 slot directory. This does not wait for the rest of the boot or for commit.
 Loader failure leaves the marker in place.
 
-On loader failure, crash or timeout, an initrd failure handler reads `acl.slot`
+On loader failure, crash or timeout, the recovery service reads `acl.slot`
 and checks that slot's marker without relying on manifest parsing or the loader
 process. It logs the slot, boot ID, unit result and reason to the
 journal/console. There is no separate failure record; initrd journal messages
 may not survive a reboot unless journal persistence is configured.
 
 If the marker exists and `ROLLBACK_ON_LOADER_FAILURE=true` (the default), the
-handler requests a reboot. The one-shot attempt has already been consumed, so
-the next boot selects the committed default. When the setting is `false`, the
-failed boot stays stopped for inspection. A missing marker or invalid slot never
-triggers an automatic reboot, preventing fallback failures from looping. The
-handler does not re-arm the failed entry or restart the loader and must run
-independently of `/etc` assembly.
+handler requests a reboot. The previous OS stays the default until commit. The
+new OS is selected for one boot only, so a recovery reboot returns to the previous
+OS. The recovery service does not change boot entries. When the setting is
+`false`, the failed boot stays stopped for inspection. A missing marker or invalid
+slot never triggers an automatic reboot, preventing fallback failures from
+looping. The handler does not re-arm the failed entry or restart the loader and
+must run independently of `/etc` assembly.
 
 Cancellation or restaging clears stale markers. A failed candidate's marker may
 remain on shared ROOT after fallback, but only the booted slot's marker controls
