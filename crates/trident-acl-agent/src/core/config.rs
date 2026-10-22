@@ -152,6 +152,7 @@ impl AgentConfig {
                 annotation_prefix: kubernetes
                     .annotation_prefix
                     .unwrap_or_else(|| DEFAULT_ANNOTATION_PREFIX.to_string()),
+                validate_node_uuid: kubernetes.validate_node_uuid.unwrap_or(false),
                 kubelet_cert_path: kubernetes
                     .kubelet_cert_path
                     .unwrap_or_else(default_kubelet_cert_path),
@@ -228,6 +229,10 @@ impl fmt::Debug for RedactedAgentConfig<'_> {
                 &config.kubernetes.annotation_prefix,
             )
             .field(
+                "kubernetes.validate_node_uuid",
+                &config.kubernetes.validate_node_uuid,
+            )
+            .field(
                 "trident.socket",
                 &super::trident::redacted_socket(&config.trident.socket),
             )
@@ -283,6 +288,8 @@ struct RawKubernetesConfig {
     node_name_source: Option<NodeNameSource>,
     #[serde(deserialize_with = "empty_string_as_none")]
     annotation_prefix: Option<String>,
+    #[serde(deserialize_with = "empty_bool_as_none")]
+    validate_node_uuid: Option<bool>,
     #[serde(deserialize_with = "empty_path_as_none")]
     kubelet_cert_path: Option<PathBuf>,
 }
@@ -371,6 +378,21 @@ where
         .transpose()
 }
 
+fn empty_bool_as_none<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    empty_as_none(String::deserialize(deserializer)?)
+        .map(|value| {
+            value.parse::<bool>().map_err(|_| {
+                D::Error::custom(format!(
+                    "invalid boolean {value:?} (expected \"true\" or \"false\")"
+                ))
+            })
+        })
+        .transpose()
+}
+
 fn empty_node_name_source_as_none<'de, D>(
     deserializer: D,
 ) -> Result<Option<NodeNameSource>, D::Error>
@@ -443,6 +465,16 @@ pub struct KubernetesConfig {
     /// `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` so a deployment can
     /// pick its own namespace instead.
     pub annotation_prefix: String,
+    /// Enables [`NodeClient`](crate::annotations::k8s::NodeClient)'s
+    /// `systemUUID`-vs-local-hardware identity check on every Node read
+    /// (both explicit `get_node` calls and each Node delivered by the
+    /// long-lived watch). Disabled by default: the check's assumption
+    /// (kubelet's `systemUUID` always traces back to this same machine's
+    /// `/sys/class/dmi/id/product_uuid`) hold for the environments this was
+    /// validated against, but hasn't been confirmed across every deployment
+    /// trident-acl-agent runs in, so it starts opt-in rather than risking
+    /// false-positive `NodeGone` loops on a healthy cluster.
+    pub validate_node_uuid: bool,
     /// Path to kubelet's client certificate, consulted by
     /// [`Self::resolve_node_name_once`] when `node_name_source` is
     /// `KubeletCert`. Defaults to [`DEFAULT_KUBELET_CLIENT_CERT`],
@@ -481,6 +513,7 @@ impl Default for KubernetesConfig {
             node_name_source: NodeNameSource::default(),
             watch_poll_interval: DEFAULT_KUBERNETES_POLL_INTERVAL,
             annotation_prefix: DEFAULT_ANNOTATION_PREFIX.to_string(),
+            validate_node_uuid: false,
             kubelet_cert_path: default_kubelet_cert_path(),
         }
     }
@@ -714,6 +747,7 @@ mod tests {
             DEFAULT_KUBELET_CLIENT_CERT,
             "watch_poll_interval",
             DEFAULT_ANNOTATION_PREFIX,
+            "kubernetes.validate_node_uuid: false",
             TRIDENT_DEFAULT_SOCKET_URI,
             "mode: Annotations",
             DEFAULT_STATE_PATH,
@@ -734,6 +768,7 @@ mod tests {
             ("TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT", "https://nebraska-user:nebraska-password@nebraska.example:8443/secret-path?token=secret-query#secret-fragment"),
             ("TRIDENT_ACL_AGENT_NEBRASKA_APP_ID", "custom-app"),
             ("TRIDENT_ACL_AGENT_NEBRASKA_TRACK", "custom-track"),
+            ("TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID", "true"),
             ("TRIDENT_ACL_AGENT_COSI_SHA384_SOURCE", "hash"),
             ("TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER", "https://kube-user:kube-password@cluster.example/kube-secret-path?token=kube-secret-query#kube-secret-fragment"),
             ("TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME", "node-42"),
@@ -750,6 +785,7 @@ mod tests {
             "custom-track",
             "source: Hash",
             "node-42",
+            "kubernetes.validate_node_uuid: true",
             "kubernetes.node_name_source: KubeletCert",
             "kubernetes.kubelet_cert_path: \"/custom/kubelet-client.pem\"",
             "stage_timeout: 1260s",
@@ -835,6 +871,10 @@ mod tests {
             config.kubernetes.annotation_prefix,
             DEFAULT_ANNOTATION_PREFIX
         );
+        assert!(
+            !config.kubernetes.validate_node_uuid,
+            "Node systemUUID verification should be disabled by default"
+        );
         assert_eq!(
             config.kubernetes.node_name_source,
             NodeNameSource::Hostname,
@@ -882,6 +922,7 @@ mod tests {
                 "TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX",
                 "contoso.example.com",
             ),
+            ("TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID", "true"),
         ]))
         .unwrap();
 
@@ -931,6 +972,10 @@ mod tests {
             Some(Duration::from_secs(30 * 60))
         );
         assert_eq!(config.kubernetes.annotation_prefix, "contoso.example.com");
+        assert!(
+            config.kubernetes.validate_node_uuid,
+            "validate_node_uuid should be true when explicitly set"
+        );
     }
 
     #[test]
@@ -986,6 +1031,26 @@ mod tests {
         )]))
         .unwrap_err();
         assert!(format!("{err:#}").contains("not a duration"), "{err:#}");
+    }
+
+    #[test]
+    fn validate_node_uuid_unset_by_empty_value_defaults_to_false() {
+        let config = AgentConfig::from_vars(vars(&[(
+            "TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID",
+            "",
+        )]))
+        .unwrap();
+        assert!(!config.kubernetes.validate_node_uuid);
+    }
+
+    #[test]
+    fn malformed_validate_node_uuid_is_a_parse_error() {
+        let err = AgentConfig::from_vars(vars(&[(
+            "TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID",
+            "yes",
+        )]))
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("yes"), "{err:#}");
     }
 
     #[test]

@@ -88,9 +88,13 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	if err := prepareVmForAclAgent(vmConfig.VMConfig, vmIP, testConfig, nil); err != nil {
 		return err
 	}
+	productUUID, err := readVmProductUUID(vmConfig.VMConfig, vmIP)
+	if err != nil {
+		return err
+	}
 
 	// --- Phase 1: kubelet-cert source resolves to the cert's Subject CN ---
-	if err := withNodeNameSourceApiServer(ctx, testConfig, certDerivedNodeName, func() error {
+	if err := withNodeNameSourceApiServer(ctx, testConfig, certDerivedNodeName, productUUID, func() error {
 		certPEM, err := generateFakeKubeletClientCertPEM(certDerivedNodeName)
 		if err != nil {
 			return fmt.Errorf("failed to generate fake kubelet client cert: %w", err)
@@ -115,7 +119,7 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	if err != nil {
 		return err
 	}
-	if err := withNodeNameSourceApiServer(ctx, testConfig, realHostname, func() error {
+	if err := withNodeNameSourceApiServer(ctx, testConfig, realHostname, productUUID, func() error {
 		if err := expectValidateConnectionOutput(vmConfig.VMConfig, vmIP, map[string]string{
 			"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "hostname",
 		}, fmt.Sprintf("fetched Node %q", realHostname)); err != nil {
@@ -169,7 +173,7 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 	//     distinct from both phases above, so success here can only be
 	//     explained by the override itself, not by coincidentally matching
 	//     the cert-derived name or the real hostname. ---
-	if err := withNodeNameSourceApiServer(ctx, testConfig, explicitOverrideNodeName, func() error {
+	if err := withNodeNameSourceApiServer(ctx, testConfig, explicitOverrideNodeName, productUUID, func() error {
 		return expectValidateConnectionOutput(vmConfig.VMConfig, vmIP, map[string]string{
 			"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME":        explicitOverrideNodeName,
 			"TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE": "hostname",
@@ -189,8 +193,8 @@ func RunNodeNameSource(testConfig stormaclconfig.TestConfig, vmConfig stormvmcon
 // with no overlap or leftover state from a previous phase, and the next
 // phase (or the next test case entirely) never races this one's teardown
 // for the same bind address.
-func withNodeNameSourceApiServer(ctx context.Context, testConfig stormaclconfig.TestConfig, nodeName string, body func() error) error {
-	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(nodeName, map[string]string{}))
+func withNodeNameSourceApiServer(ctx context.Context, testConfig stormaclconfig.TestConfig, nodeName, systemUUID string, body func() error) error {
+	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(nodeName, map[string]string{}, systemUUID))
 	apiServer := stormproxies.NewAPIServer(nodeName, nodeStore)
 	_, stop, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort))
 	if err != nil {

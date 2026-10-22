@@ -65,7 +65,11 @@ that the machine rebooted.
   object disappearing (HTTP 404) instead of exiting, and resumes once it
   reappears, both via a restart-triggered startup read and via an
   already-running agent's in-flight status PATCH; runs before
-  `run-ab-update` so it exercises a clean, no-pending-state agent
+  `run-ab-update` so it exercises a clean, no-pending-state agent.
+  UUID coverage includes a one-shot GET with validation explicitly enabled:
+  matching UUIDs succeed, a mismatched UUID fails with its own mismatch and
+  NodeGone diagnostics, and the restored UUID succeeds. These assertions do
+  not rely on daemon logs; the separate watch phase retains its own coverage.
 - `run-node-name-source` — proves `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE`
   (`hostname` vs `kubelet-cert`) actually switches which identity
   `node_name` resolves from, via one-shot `--validate-connection
