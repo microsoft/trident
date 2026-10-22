@@ -1,12 +1,13 @@
 //! The high-level [`Client`] for talking to a Nebraska server.
 
-use std::{cell::RefCell, collections::BTreeMap, thread, time::Duration};
+use std::{collections::BTreeMap, thread, time::Duration};
 
 use log::{debug, trace, warn};
 use semver::Version;
 use url::Url;
 
 use super::{
+    cookie_store::{CookieLifetime, CookieStore},
     error::NebraskaError,
     event::{ProgressEvent, TerminalEvent},
     id::MachineId,
@@ -331,17 +332,8 @@ pub struct Client<T: Transport = ReqwestTransport> {
     track: String,
     machine_id: MachineId,
     client_version: Option<String>,
-    /// Nebraska's load-balancer affinity cookie (e.g. an App-Service-style
-    /// `ASLBSA` cookie), carried on every request once known and updated
-    /// from every response that sets one. `RefCell` because every method
-    /// here takes `&self` (see the type docs), but a single `Client` still
-    /// needs to pick up a cookie mid-sequence (e.g. during
-    /// [`check_for_update`](Client::check_for_update)) and carry it into its
-    /// own later calls. Seeding it across *separate* `Client`s - including
-    /// across a reboot - is the caller's job: see [`with_cookie`](Client::with_cookie)
-    /// and [`cookie`](Client::cookie).
-    cookie: RefCell<Option<String>>,
-    cookie_enabled: bool,
+    cookie_store: Option<CookieStore>,
+    cookie_lifetime: CookieLifetime,
     transport: T,
 }
 
@@ -375,41 +367,18 @@ impl<T: Transport> Client<T> {
             track: track.into(),
             machine_id,
             client_version: None,
-            cookie: RefCell::new(None),
-            cookie_enabled: true,
+            cookie_store: None,
+            cookie_lifetime: CookieLifetime::default(),
             transport,
         }
     }
 
-    /// Enables or disables affinity cookies, including response adoption
-    /// and retries. Disabling also discards any previously seeded cookie.
-    pub fn with_cookie_enabled(mut self, enabled: bool) -> Self {
-        self.cookie_enabled = enabled;
-        if !enabled {
-            *self.cookie.borrow_mut() = None;
-        }
+    /// Enables best-effort file-backed cookies. Without a store, cookies
+    /// are neither sent nor adopted. Each request reads the store anew.
+    pub fn with_cookie_store(mut self, store: CookieStore, lifetime: CookieLifetime) -> Self {
+        self.cookie_store = Some(store);
+        self.cookie_lifetime = lifetime;
         self
-    }
-
-    /// Seeds this client with a previously-persisted Nebraska affinity
-    /// cookie (see the [`cookie`](Client::cookie) getter), so it is sent on
-    /// this client's very first request rather than only picked up from a
-    /// response. Ignored when cookies are disabled.
-    pub fn with_cookie(self, cookie: impl Into<String>) -> Self {
-        if self.cookie_enabled {
-            *self.cookie.borrow_mut() = Some(cookie.into());
-        }
-        self
-    }
-
-    /// The most recent Nebraska affinity cookie this client has seen, if
-    /// any - either seeded via [`with_cookie`](Client::with_cookie) or
-    /// picked up from a response. Callers that need the cookie to outlive
-    /// this `Client` (across a reboot, or just a later process invocation)
-    /// must read this after use and persist it themselves; nothing here
-    /// does that automatically.
-    pub fn cookie(&self) -> Option<String> {
-        self.cookie.borrow().clone()
     }
 
     /// Names the **updater** — the program driving the update — in
@@ -438,12 +407,15 @@ impl<T: Transport> Client<T> {
     /// `current_version` **must be the real version** and valid semver: a client
     /// reporting `0.0.0` is offered an update on every poll forever, and a
     /// non-semver version fails instance registration server-side.
+    ///
+    /// This is the initial update communication: per-update cookies reset
+    /// here, not on completion's batched update check or connectivity probes.
     pub fn check_for_update(
         &self,
         current_version: &Version,
     ) -> Result<CheckOutcome, NebraskaError> {
         let app = self.app(current_version).with_update_check();
-        let response = self.send(app)?;
+        let response = self.send(app, true)?;
         self.interpret_check(response)
     }
 
@@ -475,7 +447,7 @@ impl<T: Transport> Client<T> {
     /// the server is reachable and resolved the app/track.
     pub fn probe(&self, current_version: &Version) -> Result<(), NebraskaError> {
         let app = self.app(current_version);
-        let response = self.send(app)?;
+        let response = self.send(app, false)?;
         let app_response = self.app_response(&response)?;
         if app_response.status.is_ok() || app_response.status.is_update_in_progress() {
             Ok(())
@@ -496,7 +468,7 @@ impl<T: Transport> Client<T> {
         event: ProgressEvent,
     ) -> Result<(), NebraskaError> {
         let app = self.app(current_version).with_event(event.wire());
-        let response = self.send(app)?;
+        let response = self.send(app, false)?;
         self.require_events_accepted(&response, 1)?;
         Ok(())
     }
@@ -602,7 +574,7 @@ impl<T: Transport> Client<T> {
             )
             .with_ping()
             .with_update_check();
-        let response = self.send(app)?;
+        let response = self.send(app, false)?;
 
         // Landing the terminal event is what this request exists for, and a
         // dropped event is the only failure here that can wedge the instance —
@@ -639,7 +611,7 @@ impl<T: Transport> Client<T> {
         let app = self
             .app(current_version)
             .with_event_from_version(TerminalEvent::Failed.wire(), previous_version.to_string());
-        let response = self.send(app)?;
+        let response = self.send(app, false)?;
         self.require_events_accepted(&response, 1)?;
         Ok(())
     }
@@ -655,7 +627,7 @@ impl<T: Transport> Client<T> {
     }
 
     /// Serializes, sends, and parses a request/response round-trip.
-    fn send(&self, app: App) -> Result<wire::Response, NebraskaError> {
+    fn send(&self, app: App, initial_update: bool) -> Result<wire::Response, NebraskaError> {
         let request = wire::request_for(app, self.client_version.clone());
         let body = request
             .to_xml()
@@ -667,17 +639,29 @@ impl<T: Transport> Client<T> {
         );
         // Deliberately never logged: this is a session-affinity credential,
         // not protocol content.
-        let cookie = if self.cookie_enabled {
-            self.cookie.borrow().clone()
-        } else {
-            None
-        };
+        let cookie = self.cookie_store.as_ref().and_then(|store| {
+            if initial_update && self.cookie_lifetime == CookieLifetime::PerUpdate {
+                if let Err(err) = store.save("") {
+                    warn!("failed to clear Nebraska cookie for staging attempt: {err}");
+                }
+                return None;
+            }
+            match store.load() {
+                Ok(cookie) => cookie,
+                Err(err) => {
+                    warn!("failed to load Nebraska cookie, proceeding without one: {err}");
+                    None
+                }
+            }
+        });
         let (text, set_cookie) =
             self.transport
                 .post_xml(&self.endpoint, &body, cookie.as_deref())?;
-        if self.cookie_enabled {
-            if let Some(set_cookie) = set_cookie {
-                *self.cookie.borrow_mut() = Some(set_cookie);
+        if initial_update || self.cookie_lifetime == CookieLifetime::PerMessage {
+            if let (Some(store), Some(set_cookie)) = (&self.cookie_store, set_cookie) {
+                if let Err(err) = store.save(&set_cookie) {
+                    warn!("failed to persist Nebraska cookie: {err}");
+                }
             }
         }
         trace!("Nebraska response: {} bytes", text.len());
@@ -1438,46 +1422,58 @@ mod tests {
 
     #[test]
     fn completion_retries_honor_cookie_enabled() {
-        for enabled in [true, false] {
-            let mut client = client_with_responses(vec![IN_PROGRESS, NO_UPDATE])
-                .with_cookie("ASLBSA=seeded")
-                .with_cookie_enabled(enabled);
-            client.transport.set_cookie = Some("ASLBSA=fresh".to_string());
+        for lifetime in [CookieLifetime::PerUpdate, CookieLifetime::PerMessage] {
+            for enabled in [true, false] {
+                let (_dir, store) = cookie_store();
+                store.save("ASLBSA=seeded").unwrap();
+                let mut client = client_with_responses(vec![IN_PROGRESS, NO_UPDATE]);
+                if enabled {
+                    client = client.with_cookie_store(store.clone(), lifetime);
+                }
+                client.transport.set_cookie = Some("ASLBSA=fresh".to_string());
 
-            let outcome = client
-                .complete_after_reboot_with_policy(
-                    fast_policy(),
-                    &Version::new(1, 0, 0),
-                    &Version::new(2, 0, 0),
-                )
-                .unwrap();
+                let outcome = client
+                    .complete_after_reboot_with_policy(
+                        fast_policy(),
+                        &Version::new(1, 0, 0),
+                        &Version::new(2, 0, 0),
+                    )
+                    .unwrap();
 
-            assert_eq!(outcome, CheckOutcome::UpToDate);
-            assert_eq!(client.transport.calls.get(), 2);
-            let expected = if enabled {
-                vec![
-                    Some("ASLBSA=seeded".to_string()),
-                    Some("ASLBSA=fresh".to_string()),
-                ]
-            } else {
-                vec![None, None]
-            };
-            assert_eq!(*client.transport.cookies_sent.borrow(), expected);
-            assert_eq!(
-                client.cookie().as_deref(),
-                enabled.then_some("ASLBSA=fresh")
-            );
+                assert_eq!(outcome, CheckOutcome::UpToDate);
+                assert_eq!(client.transport.calls.get(), 2);
+                let expected = if enabled {
+                    vec![
+                        Some("ASLBSA=seeded".to_string()),
+                        Some(if lifetime == CookieLifetime::PerMessage {
+                            "ASLBSA=fresh".to_string()
+                        } else {
+                            "ASLBSA=seeded".to_string()
+                        }),
+                    ]
+                } else {
+                    vec![None, None]
+                };
+                assert_eq!(*client.transport.cookies_sent.borrow(), expected);
+                assert_eq!(
+                    store.load().unwrap().as_deref(),
+                    Some(if enabled && lifetime == CookieLifetime::PerMessage {
+                        "ASLBSA=fresh"
+                    } else {
+                        "ASLBSA=seeded"
+                    })
+                );
+            }
         }
     }
 
     #[test]
-    fn disabled_cookies_cannot_be_seeded() {
-        let client = client_with(NO_UPDATE)
-            .with_cookie_enabled(false)
-            .with_cookie("ASLBSA=seeded");
+    fn cookies_without_a_store_are_not_adopted() {
+        let client = client_with(NO_UPDATE);
+        *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=fresh".to_string());
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
         client.check_for_update(&Version::new(1, 0, 0)).unwrap();
         assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
-        assert_eq!(client.cookie(), None);
     }
 
     #[test]
@@ -1661,36 +1657,52 @@ mod tests {
         );
     }
 
-    #[test]
-    fn no_cookie_is_sent_until_one_is_known() {
-        let client = client_with(NO_UPDATE);
-        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
-        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
-        assert_eq!(client.cookie(), None);
+    fn cookie_store() -> (tempfile::TempDir, CookieStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CookieStore::new(dir.path().join("cookie"));
+        (dir, store)
     }
 
     #[test]
-    fn with_cookie_seeds_the_first_request() {
-        let client = client_with(NO_UPDATE).with_cookie("ASLBSA=seeded");
+    fn no_cookie_is_sent_until_one_is_known() {
+        let (_dir, store) = cookie_store();
+        let client =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerMessage);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(store.load().unwrap(), None);
+        assert!(!store.path().exists());
+    }
+
+    #[test]
+    fn stored_cookie_seeds_the_first_per_message_request() {
+        let (_dir, store) = cookie_store();
+        store.save("ASLBSA=seeded").unwrap();
+        let client =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerMessage);
+        let modified = std::fs::metadata(store.path()).unwrap().modified().unwrap();
         client.check_for_update(&Version::new(1, 0, 0)).unwrap();
         assert_eq!(
             client.transport.last_cookie_sent.borrow().as_deref(),
             Some("ASLBSA=seeded")
         );
+        assert_eq!(
+            std::fs::metadata(store.path()).unwrap().modified().unwrap(),
+            modified
+        );
     }
 
     #[test]
     fn cookie_from_a_response_is_echoed_on_the_next_request() {
-        // Two sequential calls on the *same* Client, mirroring what happens
-        // mid-operation (e.g. check_for_update picking up a cookie that a
-        // later report_progress on the same Client must then carry).
+        let (_dir, store) = cookie_store();
         let client = Client::with_transport(
             Url::parse("https://nebraska.example/v1/update/").unwrap(),
             "app-1",
             "stable",
             MachineId::new("mid-1").unwrap(),
             MockTransport::new(NO_UPDATE).with_set_cookie("ASLBSA=fresh"),
-        );
+        )
+        .with_cookie_store(store.clone(), CookieLifetime::PerMessage);
 
         client.check_for_update(&Version::new(1, 0, 0)).unwrap();
         assert_eq!(
@@ -1698,14 +1710,162 @@ mod tests {
             None,
             "first request has no cookie to send yet"
         );
-        assert_eq!(client.cookie().as_deref(), Some("ASLBSA=fresh"));
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=fresh"));
 
+        *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=replacement".to_string());
         client.check_for_update(&Version::new(1, 0, 0)).unwrap();
         assert_eq!(
             client.transport.last_cookie_sent.borrow().as_deref(),
             Some("ASLBSA=fresh"),
             "second request must echo back the cookie the first response set"
         );
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=replacement"));
+        *client.transport.set_cookie.borrow_mut() = None;
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=replacement")
+        );
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=replacement"));
+    }
+
+    #[test]
+    fn per_update_only_initial_response_sets_cookie() {
+        let (_dir, store) = cookie_store();
+        store.save("ASLBSA=previous").unwrap();
+        let client =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerUpdate);
+        *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=initial".to_string());
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=initial"));
+
+        *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=ignored".to_string());
+        client
+            .report_progress(&Version::new(1, 0, 0), ProgressEvent::DownloadStarted)
+            .unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=initial")
+        );
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=initial"));
+
+        let resumed =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerUpdate);
+        *resumed.transport.set_cookie.borrow_mut() = Some("ASLBSA=also-ignored".to_string());
+        resumed
+            .try_complete_after_reboot(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
+            .unwrap();
+        assert_eq!(
+            resumed.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=initial")
+        );
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=initial"));
+
+        *resumed.transport.set_cookie.borrow_mut() = Some("ASLBSA=next-update".to_string());
+        resumed.check_for_update(&Version::new(2, 0, 0)).unwrap();
+        assert_eq!(*resumed.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=next-update"));
+    }
+
+    #[test]
+    fn per_update_missing_initial_cookie_cannot_be_established_later() {
+        let (_dir, store) = cookie_store();
+        store.save("ASLBSA=previous").unwrap();
+        let client =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerUpdate);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(store.load().unwrap(), None);
+        *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=ignored".to_string());
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(store.load().unwrap(), None);
+    }
+
+    #[test]
+    fn cookie_store_edits_and_deletion_are_visible_to_existing_client() {
+        let (_dir, store) = cookie_store();
+        let client =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerMessage);
+        store.save("ASLBSA=external").unwrap();
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=external")
+        );
+        std::fs::remove_file(store.path()).unwrap();
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert!(!store.path().exists());
+    }
+
+    #[test]
+    fn response_without_cookie_does_not_overwrite_another_requests_cookie() {
+        struct UpdatingTransport(CookieStore);
+        impl Transport for UpdatingTransport {
+            fn post_xml(
+                &self,
+                _endpoint: &Url,
+                _body: &[u8],
+                cookie: Option<&str>,
+            ) -> Result<(String, Option<String>), NebraskaError> {
+                assert_eq!(cookie, Some("ASLBSA=old"));
+                self.0.save("ASLBSA=concurrent").unwrap();
+                Ok((NO_UPDATE.to_string(), None))
+            }
+        }
+        let (_dir, store) = cookie_store();
+        store.save("ASLBSA=old").unwrap();
+        let client = Client::with_transport(
+            Url::parse("https://nebraska.example/v1/update/").unwrap(),
+            "app-1",
+            "stable",
+            MachineId::new("mid-1").unwrap(),
+            UpdatingTransport(store.clone()),
+        )
+        .with_cookie_store(store.clone(), CookieLifetime::PerMessage);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=concurrent"));
+    }
+
+    #[test]
+    fn invalid_stored_cookie_does_not_prevent_the_request() {
+        let (_dir, store) = cookie_store();
+        std::fs::write(store.path(), "ASLBSA=bad\r\nInjected: value").unwrap();
+        let client = client_with(NO_UPDATE).with_cookie_store(store, CookieLifetime::PerMessage);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+    }
+
+    #[test]
+    fn cookie_io_failures_do_not_fail_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("not-a-directory");
+        std::fs::write(&parent, "block parent creation").unwrap();
+        for lifetime in [CookieLifetime::PerUpdate, CookieLifetime::PerMessage] {
+            let client = client_with(NO_UPDATE)
+                .with_cookie_store(CookieStore::new(parent.join("cookie")), lifetime);
+            *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=new".to_string());
+            assert_eq!(
+                client.check_for_update(&Version::new(1, 0, 0)).unwrap(),
+                CheckOutcome::UpToDate
+            );
+            client.probe(&Version::new(1, 0, 0)).unwrap();
+            assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        }
+    }
+
+    #[test]
+    fn eligible_cookie_is_saved_before_xml_parse_error() {
+        for lifetime in [CookieLifetime::PerUpdate, CookieLifetime::PerMessage] {
+            let (_dir, store) = cookie_store();
+            let client = client_with("not XML").with_cookie_store(store.clone(), lifetime);
+            *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=new".to_string());
+            let err = client.check_for_update(&Version::new(1, 0, 0)).unwrap_err();
+            assert!(matches!(err, NebraskaError::Parse(_)), "{err:?}");
+            assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=new"));
+        }
     }
 
     #[test]

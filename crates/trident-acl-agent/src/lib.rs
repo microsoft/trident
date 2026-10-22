@@ -14,11 +14,11 @@
 //! both by this crate's agent binary and by a future Trident ACL Agent that
 //! orchestrates updates differently.
 
-use log::warn;
 use semver::Version;
 use url::Url;
 
 use crate::core::{
+    config::CookieLifetime,
     error::AgentError,
     nebraska::{Client, CookieStore, MachineId, NebraskaError},
     version::FALLBACK_ALWAYS_VERSION,
@@ -78,22 +78,10 @@ fn build_machine_id(source: IdSource) -> Result<MachineId, AgentError> {
 /// (hence this being named `probe`, not `ping`). See [`Client::probe`]'s doc
 /// comment for the full explanation.
 ///
-/// Also loads/saves `cookie_store`: this probe talks to the very same
-/// Nebraska instance (and, in production, the same load-balancer-fronted
-/// deployment) that `check_for_update`/`report_progress`/etc. do, so it
-/// must participate in the shared affinity-cookie dance too -- otherwise
-/// every invocation of `--validate-connection nebraska` is itself a fresh
-/// "first contact" that never adopts or persists a cookie, silently
-/// defeating the whole mechanism's point for one more request each time
-/// it's run. Best-effort, like every other cookie_store use: a load/save
-/// failure only logs a warning and the probe proceeds/returns normally.
-///
-/// `cookie_enabled` is the same blanket kill switch
-/// (`OrchestrationConfig::cookie_enabled`) the orchestrator honors: when
-/// `false`, this probe never touches `cookie_store` at all, in either
-/// direction. There's no `CookieLifetime` concept here -- a diagnostic
-/// probe isn't part of any update, so "first call of a new update" never
-/// applies to it.
+/// When enabled, probes reuse the shared cookie store. Per-update probes
+/// cannot initialize or replace the update's cookie; per-message probes
+/// persist response cookies. Storage failures only warn, and disabled
+/// probes never access the store.
 pub fn check_nebraska_reachable(
     url: &Url,
     app_id: &str,
@@ -101,37 +89,18 @@ pub fn check_nebraska_reachable(
     machine_id_source: IdSource,
     cookie_store: &CookieStore,
     cookie_enabled: bool,
+    cookie_lifetime: CookieLifetime,
 ) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
-    let mut client =
-        Client::new(url.clone(), app_id, track, machine_id).with_cookie_enabled(cookie_enabled);
-    let initial_cookie = cookie_enabled
-        .then(|| match cookie_store.load() {
-            Ok(cookie) => cookie,
-            Err(err) => {
-                warn!("failed to load Nebraska cookie, proceeding without one: {err}");
-                None
-            }
-        })
-        .flatten();
-    if let Some(cookie) = initial_cookie {
-        client = client.with_cookie(cookie);
+    let mut client = Client::new(url.clone(), app_id, track, machine_id);
+    if cookie_enabled {
+        client = client.with_cookie_store(cookie_store.clone(), cookie_lifetime);
     }
 
-    let result = client.probe(
+    match client.probe(
         &Version::parse(FALLBACK_ALWAYS_VERSION)
             .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver"),
-    );
-
-    if cookie_enabled {
-        if let Some(cookie) = client.cookie() {
-            if let Err(err) = cookie_store.save(&cookie) {
-                warn!("failed to persist Nebraska cookie: {err}");
-            }
-        }
-    }
-
-    match result {
+    ) {
         Ok(()) => Ok(()),
         // A well-formed response reporting a non-OK app status still proves
         // the server is reachable and speaking Omaha; only a
@@ -199,6 +168,7 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             true,
+            CookieLifetime::PerMessage,
         )
         .unwrap();
 
@@ -232,6 +202,7 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             true,
+            CookieLifetime::PerUpdate,
         )
         .unwrap();
 
@@ -249,6 +220,7 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             true,
+            CookieLifetime::PerUpdate,
         )
         .unwrap_err();
         assert!(matches!(err, AgentError::Nebraska(_)));
@@ -284,6 +256,7 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             true,
+            CookieLifetime::PerMessage,
         )
         .unwrap();
         first_mock.assert();
@@ -313,9 +286,67 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             true,
+            CookieLifetime::PerMessage,
         )
         .unwrap();
         second_mock.assert();
+    }
+
+    #[test]
+    fn per_update_probe_reuses_but_never_establishes_or_replaces_cookie() {
+        let mut server = Server::new();
+        let (_dir, store) = temp_cookie_store();
+        for cookie in [None, Some("ASLBSA=initial")] {
+            if let Some(cookie) = cookie {
+                store.save(cookie).unwrap();
+            }
+            let mock = server.mock("POST", "/")
+                .match_header("cookie", cookie.map(|v| Matcher::Exact(v.to_string())).unwrap_or(Matcher::Missing))
+                .with_status(200)
+                .with_header("set-cookie", "ASLBSA=ignored; Path=/")
+                .with_body(r#"<response protocol="3.0" server="n"><app appid="test" status="ok"/></response>"#)
+                .expect(1)
+                .create();
+            check_nebraska_reachable(
+                &Url::parse(&server.url()).unwrap(),
+                "test",
+                "track",
+                IdSource::MachineIdHashed,
+                &store,
+                true,
+                CookieLifetime::PerUpdate,
+            )
+            .unwrap();
+            mock.assert();
+            assert_eq!(store.load().unwrap().as_deref(), cookie);
+        }
+    }
+
+    #[test]
+    fn http_error_cookie_is_not_adopted() {
+        let mut server = Server::new();
+        let (_dir, store) = temp_cookie_store();
+        store.save("ASLBSA=previous").unwrap();
+        let mock = server
+            .mock("POST", "/")
+            .match_header("cookie", "ASLBSA=previous")
+            .with_status(503)
+            .with_header("set-cookie", "ASLBSA=error-cookie; Path=/")
+            .expect(1)
+            .create();
+        let err = check_nebraska_reachable(
+            &Url::parse(&server.url()).unwrap(),
+            "test",
+            "track",
+            IdSource::MachineIdHashed,
+            &store,
+            true,
+            CookieLifetime::PerMessage,
+        )
+        .unwrap_err();
+        assert!(matches!(err, AgentError::Nebraska(_)), "{err:?}");
+        mock.assert();
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=previous"));
     }
 
     #[test]
@@ -349,6 +380,7 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             false,
+            CookieLifetime::PerUpdate,
         )
         .unwrap();
 

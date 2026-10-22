@@ -215,10 +215,8 @@ func (p *NebraskaProxy) AffinityCookie() string {
 }
 
 // RequestsMissingCookie returns how many requests this proxy has served
-// with no Cookie header at all - i.e. before trident-acl-agent has ever
-// picked up the simulated affinity cookie. A healthy end-to-end run expects
-// exactly 1: the agent's very first-ever contact with this Nebraska
-// instance.
+// with no Cookie header at all, including diagnostic probes before affinity
+// is established and the initial check of each per-update staging attempt.
 func (p *NebraskaProxy) RequestsMissingCookie() int {
 	p.cookieMu.Lock()
 	defer p.cookieMu.Unlock()

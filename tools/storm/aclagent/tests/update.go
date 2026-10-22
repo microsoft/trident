@@ -469,9 +469,11 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// best-effort hint, not something Nebraska requires to drive the update
 	// correctly, so these checks run after - not instead of - the real
 	// pass/fail assertions above.
-	if got := nebraska.RequestsMissingCookie(); got != 1 {
+	// The successful diagnostic probe cannot establish per-update affinity;
+	// the initial staging check must independently start without a cookie.
+	if got := nebraska.RequestsMissingCookie(); got != 2 {
 		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
-		return fmt.Errorf("expected exactly 1 Nebraska request with no affinity cookie (the agent's first-ever contact), got %d", got)
+		return fmt.Errorf("expected exactly 2 Nebraska requests with no affinity cookie (diagnostic probe and initial staging check), got %d", got)
 	}
 	if got := nebraska.RequestsWithWrongCookie(); got != 0 {
 		collectAclArtifactsBestEffort(vmConfig.VMConfig, vmIP, testConfig.OutputPath)
