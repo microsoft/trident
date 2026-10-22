@@ -82,7 +82,7 @@ pub async fn run_omaha_only(config: &AgentConfig) -> Result<(), Error> {
             let combined_timeout =
                 config.orchestration.stage_timeout + config.orchestration.finalize_timeout;
             client
-                .update(&offer.primary.url, Some(&hash), combined_timeout)
+                .update(&offer.primary.url, Some(hash.as_str()), combined_timeout)
                 .await?;
             Ok(())
         }
