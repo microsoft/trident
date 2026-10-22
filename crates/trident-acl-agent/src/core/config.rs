@@ -212,6 +212,14 @@ impl fmt::Debug for RedactedAgentConfig<'_> {
                 &config.kubernetes.node_name_override,
             )
             .field(
+                "kubernetes.node_name_source",
+                &config.kubernetes.node_name_source,
+            )
+            .field(
+                "kubernetes.kubelet_cert_path",
+                &config.kubernetes.kubelet_cert_path,
+            )
+            .field(
                 "kubernetes.watch_poll_interval",
                 &config.kubernetes.watch_poll_interval,
             )
@@ -701,6 +709,9 @@ mod tests {
             "kubernetes.api_server: None",
             DEFAULT_KUBELET_KUBECONFIG,
             "kubernetes.node_name",
+            "kubernetes.node_name_source: Hostname",
+            "kubernetes.kubelet_cert_path",
+            DEFAULT_KUBELET_CLIENT_CERT,
             "watch_poll_interval",
             DEFAULT_ANNOTATION_PREFIX,
             TRIDENT_DEFAULT_SOCKET_URI,
@@ -718,6 +729,8 @@ mod tests {
     #[test]
     fn startup_summary_uses_env_overrides_without_exposing_network_secrets() {
         let config = AgentConfig::from_vars(vars(&[
+            ("TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE", "kubelet-cert"),
+            ("TRIDENT_ACL_AGENT_KUBERNETES_KUBELET_CERT_PATH", "/custom/kubelet-client.pem"),
             ("TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT", "https://nebraska-user:nebraska-password@nebraska.example:8443/secret-path?token=secret-query#secret-fragment"),
             ("TRIDENT_ACL_AGENT_NEBRASKA_APP_ID", "custom-app"),
             ("TRIDENT_ACL_AGENT_NEBRASKA_TRACK", "custom-track"),
@@ -737,6 +750,8 @@ mod tests {
             "custom-track",
             "source: Hash",
             "node-42",
+            "kubernetes.node_name_source: KubeletCert",
+            "kubernetes.kubelet_cert_path: \"/custom/kubelet-client.pem\"",
             "stage_timeout: 1260s",
         ] {
             assert!(summary.contains(expected), "missing {expected}");
