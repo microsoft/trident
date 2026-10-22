@@ -67,7 +67,7 @@ IDs; resuming finalize/completion does not.
 
 `per-message` sends the stored cookie on every request and persists each
 response's replacement for the next request, including completion retries.
-Responses without `Set-Cookie` leave the file unchanged. `forever` is not supported.
+Responses without `Set-Cookie` leave the file unchanged.
 
 Standalone clients opt in with `Client::with_cookie_store(store, lifetime)`, using
 `CookieStore` and `CookieLifetime` from this module. A client without a store

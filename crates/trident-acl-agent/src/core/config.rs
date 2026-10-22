@@ -921,26 +921,16 @@ mod tests {
     }
 
     #[test]
-    fn removed_forever_cookie_lifetime_is_rejected() {
-        let err = AgentConfig::from_vars(vars(&[(
-            "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME",
-            "forever",
-        )]))
-        .unwrap_err();
-        let message = format!("{err:#}");
-        assert!(message.contains("forever"), "{message}");
-        assert!(message.contains("per-update"), "{message}");
-        assert!(message.contains("per-message"), "{message}");
-    }
-
-    #[test]
     fn malformed_cookie_lifetime_is_a_parse_error() {
         let err = AgentConfig::from_vars(vars(&[(
             "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME",
             "bogus",
         )]))
         .unwrap_err();
-        assert!(format!("{err:#}").contains("bogus"), "{err:#}");
+        let message = format!("{err:#}");
+        assert!(message.contains("bogus"), "{message}");
+        assert!(message.contains("per-update"), "{message}");
+        assert!(message.contains("per-message"), "{message}");
     }
 
     #[test]
