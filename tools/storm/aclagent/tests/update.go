@@ -368,17 +368,19 @@ func RunABUpdate(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// prepareVmForAclAgent's update-ca-trust + rehash install, exactly as
 	// a real deployment would trust Nebraska's cert via the OS trust store.
 	nebraskaEnv := map[string]string{
-		"TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT": nebraskaServer,
-		"TRIDENT_ACL_AGENT_NEBRASKA_APP_ID":   nebraskaAppID,
-		"TRIDENT_ACL_AGENT_NEBRASKA_TRACK":    nebraskaTrack,
+		"TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT":            nebraskaServer,
+		"TRIDENT_ACL_AGENT_NEBRASKA_APP_ID":              nebraskaAppID,
+		"TRIDENT_ACL_AGENT_NEBRASKA_TRACK":               nebraskaTrack,
+		"TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED": "true",
 	}
 	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", true, nebraskaEnv); err != nil {
 		return fmt.Errorf("env-var-override validate-connection check failed (expected success): %w", err)
 	}
 	wrongNebraskaEnv := map[string]string{
-		"TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT": fmt.Sprintf("https://%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort+1),
-		"TRIDENT_ACL_AGENT_NEBRASKA_APP_ID":   nebraskaAppID,
-		"TRIDENT_ACL_AGENT_NEBRASKA_TRACK":    nebraskaTrack,
+		"TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT":            fmt.Sprintf("https://%s:%d", testConfig.HostEndpointIP, testConfig.NebraskaPort+1),
+		"TRIDENT_ACL_AGENT_NEBRASKA_APP_ID":              nebraskaAppID,
+		"TRIDENT_ACL_AGENT_NEBRASKA_TRACK":               nebraskaTrack,
+		"TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED": "true",
 	}
 	if err := expectValidateConnection(vmConfig.VMConfig, vmIP, "nebraska", false, wrongNebraskaEnv); err != nil {
 		return fmt.Errorf("env-var-override validate-connection check failed (expected failure against wrong port): %w", err)

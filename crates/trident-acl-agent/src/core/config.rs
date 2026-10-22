@@ -73,9 +73,9 @@ pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
 /// Default annotation-key prefix.
 /// Override with `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`.
 pub const DEFAULT_ANNOTATION_PREFIX: &str = "acl.microsoft.com";
-/// Default for `cookie_enabled`: on, matching the originally-shipped
-/// behavior. Override with `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED`.
-const DEFAULT_COOKIE_ENABLED: bool = true;
+/// Cookies are opt-in.
+/// Override with `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED`.
+const DEFAULT_COOKIE_ENABLED: bool = false;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentConfig {
@@ -738,8 +738,8 @@ mod tests {
             PathBuf::from(DEFAULT_NEBRASKA_COOKIE_PATH)
         );
         assert!(
-            config.orchestration.cookie_enabled,
-            "cookie_enabled should default to on, matching the originally-shipped behavior"
+            !config.orchestration.cookie_enabled,
+            "cookie_enabled should default to off"
         );
         assert_eq!(
             config.orchestration.cookie_lifetime,
@@ -796,7 +796,7 @@ mod tests {
                 "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_PATH",
                 "/var/lib/trident-acl-agent/custom-nebraska-cookie",
             ),
-            ("TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED", "false"),
+            ("TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED", "true"),
             (
                 "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME",
                 "per-update",
@@ -838,7 +838,7 @@ mod tests {
             config.orchestration.cookie_path,
             PathBuf::from("/var/lib/trident-acl-agent/custom-nebraska-cookie")
         );
-        assert!(!config.orchestration.cookie_enabled);
+        assert!(config.orchestration.cookie_enabled);
         assert_eq!(
             config.orchestration.cookie_lifetime,
             CookieLifetime::PerUpdate
@@ -905,6 +905,22 @@ mod tests {
             AgentConfig::from_vars(vars(&[("TRIDENT_ACL_AGENT_ORCHESTRATION_MODE", "bogus")]))
                 .unwrap_err();
         assert!(format!("{err:#}").contains("bogus"), "{err:#}");
+    }
+
+    #[test]
+    fn cookie_enabled_is_opt_in() {
+        assert!(!AgentConfig::default().orchestration.cookie_enabled);
+        for (value, expected) in [("", false), ("false", false), ("true", true)] {
+            let config = AgentConfig::from_vars(vars(&[(
+                "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED",
+                value,
+            )]))
+            .unwrap();
+            assert_eq!(
+                config.orchestration.cookie_enabled, expected,
+                "cookie_enabled with value {value:?}"
+            );
+        }
     }
 
     #[test]
