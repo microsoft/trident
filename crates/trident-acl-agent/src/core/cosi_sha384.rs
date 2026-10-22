@@ -10,7 +10,9 @@
 use std::str::FromStr;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use serde::{de::IntoDeserializer, Deserialize};
 use thiserror::Error;
+use trident_api::primitives::hash::Sha384Hash;
 
 use super::nebraska::PackageFile;
 
@@ -67,7 +69,7 @@ pub enum CosiSha384Error {
 
     /// The label is not a hex-encoded SHA-384 digest.
     #[error("COSI metadata SHA-384 label must contain 96 hex characters: {0}")]
-    InvalidHex(hex::FromHexError),
+    InvalidHex(serde::de::value::Error),
 
     /// The selected source's value is not valid base64, or doesn't fit in
     /// [`SHA384_LEN_BYTES`].
@@ -87,12 +89,12 @@ pub enum CosiSha384Error {
 /// expects.
 ///
 /// Labels contain a hex-encoded SHA-384 digest. The legacy `hash` source
-/// contains the same digest in base64. Labels are validated and passed
-/// through unchanged; legacy hashes are converted to lowercase hex.
+/// contains the same digest in base64. Both are returned as the API's
+/// SHA-384 type, which normalizes hex to lowercase.
 pub fn resolve_cosi_sha384(
     package: &PackageFile,
     source: CosiSha384Source,
-) -> Result<String, CosiSha384Error> {
+) -> Result<Sha384Hash, CosiSha384Error> {
     let raw = match source {
         CosiSha384Source::Labels => package.label(COSI_SHA384_LABEL_KEY),
         CosiSha384Source::Hash => package.hash.as_ref().map(|h| h.sha1.as_str()),
@@ -100,9 +102,8 @@ pub fn resolve_cosi_sha384(
     .ok_or(CosiSha384Error::Missing(source))?;
 
     if source == CosiSha384Source::Labels {
-        let mut buf = [0u8; SHA384_LEN_BYTES];
-        hex::decode_to_slice(raw, &mut buf).map_err(CosiSha384Error::InvalidHex)?;
-        return Ok(raw.to_owned());
+        return Sha384Hash::deserialize(raw.into_deserializer())
+            .map_err(CosiSha384Error::InvalidHex);
     }
 
     // Decode straight into a fixed-size stack buffer instead of
@@ -119,7 +120,7 @@ pub fn resolve_cosi_sha384(
     if decoded_len != SHA384_LEN_BYTES {
         return Err(CosiSha384Error::WrongLength(decoded_len));
     }
-    Ok(hex::encode(buf))
+    Ok(Sha384Hash::from(hex::encode(buf)))
 }
 
 #[cfg(test)]
@@ -165,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn preserves_hex_label_casing_in_host_configuration() {
+    fn normalizes_hex_label_casing_in_host_configuration() {
         for label in [
             HEX_DIGEST.to_owned(),
             HEX_DIGEST.to_uppercase(),
@@ -173,11 +174,11 @@ mod tests {
         ] {
             let package = package_file(None, &[(COSI_SHA384_LABEL_KEY, &label)]);
             let resolved = resolve_cosi_sha384(&package, CosiSha384Source::Labels).unwrap();
-            assert_eq!(resolved, label);
+            assert_eq!(resolved.as_str(), label.to_lowercase());
 
-            let config = host_configuration_from_image(&package.url, Some(&resolved));
+            let config = host_configuration_from_image(&package.url, Some(resolved.as_str()));
             let yaml: serde_yaml::Value = serde_yaml::from_str(&config.config).unwrap();
-            assert_eq!(yaml["image"]["sha384"].as_str(), Some(label.as_str()));
+            assert_eq!(yaml["image"]["sha384"].as_str(), Some(resolved.as_str()));
         }
     }
 
@@ -190,6 +191,8 @@ mod tests {
             &"ab".repeat(49),
             &"a".repeat(95),
             &"g".repeat(96),
+            &"a".repeat(1_000_000),
+            &"\u{00e9}".repeat(48),
         ] {
             let package = package_file(Some(BASE64_DIGEST), &[(COSI_SHA384_LABEL_KEY, label)]);
             let err = resolve_cosi_sha384(&package, CosiSha384Source::Labels).unwrap_err();
