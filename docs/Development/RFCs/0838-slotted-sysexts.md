@@ -376,20 +376,20 @@ own successful execution, including a valid empty manifest, and synchronizes the
 slot directory. This does not wait for the rest of the boot or for commit.
 Loader failure leaves the marker in place.
 
-On loader failure, crash or timeout, the recovery service reads `acl.slot`
-and checks that slot's marker without relying on manifest parsing or the loader
+On loader failure, crash or timeout, the recovery service reads `acl.slot` and
+checks that slot's marker without relying on manifest parsing or the loader
 process. It logs the slot, boot ID, unit result and reason to the
 journal/console. There is no separate failure record; initrd journal messages
 may not survive a reboot unless journal persistence is configured.
 
 If the marker exists and `ROLLBACK_ON_LOADER_FAILURE=true` (the default), the
 handler requests a reboot. The previous OS stays the default until commit. The
-new OS is selected for one boot only, so a recovery reboot returns to the previous
-OS. The recovery service does not change boot entries. When the setting is
-`false`, the failed boot stays stopped for inspection. A missing marker or invalid
-slot never triggers an automatic reboot, preventing fallback failures from
-looping. The handler does not re-arm the failed entry or restart the loader and
-must run independently of `/etc` assembly.
+new OS is selected for one boot only, so a recovery reboot returns to the
+previous OS. The recovery service does not change boot entries. When the setting
+is `false`, the failed boot stays stopped for inspection. A missing marker or
+invalid slot never triggers an automatic reboot, preventing fallback failures
+from looping. The handler does not re-arm the failed entry or restart the loader
+and must run independently of `/etc` assembly.
 
 Cancellation or restaging clears stale markers. A failed candidate's marker may
 remain on shared ROOT after fallback, but only the booted slot's marker controls
@@ -483,9 +483,9 @@ trigger servicing. Boolean values are not mode values.
 \* Future developments, not part of the initial implementation.
 
 The mode applies to both sysexts and confexts. In `managed`/`acl`, explicit Host
-Configuration URL/OCI images join the owned set and use managed destinations; in
-other modes their existing explicit placement behavior is retained. Unrelated
-factory/operator extensions are not adopted.
+Configuration URL/OCI images join the COSI-provided extension set and use
+managed destinations; in other modes their existing explicit placement behavior
+is retained. Unrelated factory/operator extensions are not adopted.
 
 Ignoring bundled payloads does not waive normal COSI metadata/OS-image
 validation. Intentionally ignored members are not reported as unused OS images.
@@ -577,6 +577,12 @@ commit after activation failure.
 The default is no new behavior: omitted means `disabled`, existing OS servicing
 and explicit URL/OCI declarations are unchanged, and bundled images are not
 adopted. Images without a store boot normally without Trident initialization.
+
+ACL will be onboarded to `acl` mode at initialize time (currently online
+initialize on a live ACL system). This change will be a TAA configuration option
+during the transition, and enforced one all ACL images carry the required
+changes. The managed extensions mode can only be set once, changing modes will
+not be supported across updates.
 
 Customers opt in with `os.managedExtensions: managed` or its `acl` alias:
 
