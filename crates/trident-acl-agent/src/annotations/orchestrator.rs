@@ -35,7 +35,7 @@ use crate::{
     core::{
         config::{AgentConfig, KubernetesConfig},
         cosi_sha384,
-        nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
+        nebraska::{CheckOutcome, Client as NebraskaClient, CookieStore, ProgressEvent},
         trident::{CompletedResponse, TridentClient, TridentClientError},
         version::{current_active_version, FALLBACK_ALWAYS_VERSION},
     },
@@ -114,6 +114,10 @@ pub struct Orchestrator {
     node_name: String,
     k8s: NodeClient,
     state: StateStore,
+    /// Persists Nebraska's load-balancer affinity cookie across requests
+    /// and reboots. Deliberately separate from `state`: see
+    /// `core::nebraska::CookieStore`'s docs for why.
+    nebraska_cookie: CookieStore,
     annotation_keys: AnnotationKeys,
 }
 
@@ -140,6 +144,7 @@ impl Orchestrator {
         let annotation_keys = AnnotationKeys::new(&config.kubernetes.annotation_prefix);
         Ok(Some(Self {
             state: StateStore::new(config.orchestration.state_path.clone()),
+            nebraska_cookie: CookieStore::new(config.orchestration.cookie_path.clone()),
             config,
             node_name,
             k8s,
@@ -761,10 +766,16 @@ impl Orchestrator {
                 Version::parse(FALLBACK_ALWAYS_VERSION)
                     .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver")
             });
+        let cookie_enabled = self.config.orchestration.cookie_enabled;
+        let cookie_store = self.nebraska_cookie.clone();
+        let cookie_lifetime = self.config.orchestration.cookie_lifetime;
         let outcome = task::spawn_blocking({
             let current_version = current_version.clone();
             move || {
-                let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+                let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+                if cookie_enabled {
+                    client = client.with_cookie_store(cookie_store, cookie_lifetime);
+                }
                 client.check_for_update(&current_version)
             }
         })
@@ -1684,8 +1695,14 @@ impl Orchestrator {
             }
         };
         let label = report.label();
+        let cookie_enabled = self.config.orchestration.cookie_enabled;
+        let cookie_store = self.nebraska_cookie.clone();
+        let cookie_lifetime = self.config.orchestration.cookie_lifetime;
         let result = task::spawn_blocking(move || {
-            let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+            let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+            if cookie_enabled {
+                client = client.with_cookie_store(cookie_store, cookie_lifetime);
+            }
             match report {
                 NebraskaReport::Progress { version, event } => {
                     client.report_progress(&version, event)
@@ -2318,10 +2335,253 @@ mod tests {
     use crate::{
         annotations::{RequestedOperation, SCHEMA_VERSION},
         core::{
-            config::NodeNameSource,
+            config::{CookieLifetime, NodeNameSource},
             trident::mock::{connect_mock_client, MockTridentdConfig, Outcome},
         },
     };
+
+    async fn cookie_orchestrator(
+        dir: &std::path::Path,
+        enabled: bool,
+        lifetime: CookieLifetime,
+    ) -> Orchestrator {
+        use crate::core::config::{KubernetesConfig, OrchestrationConfig};
+
+        let kubeconfig = dir.join("kubeconfig");
+        std::fs::write(
+            &kubeconfig,
+            "apiVersion: v1\nkind: Config\ncurrent-context: test\ncontexts:\n- name: test\n  context:\n    cluster: test\n    user: test\nclusters:\n- name: test\n  cluster:\n    server: http://127.0.0.1:1\nusers:\n- name: test\n  user: {}\n",
+        )
+        .unwrap();
+        let config = AgentConfig {
+            kubernetes: KubernetesConfig {
+                kubeconfig,
+                ..Default::default()
+            },
+            orchestration: OrchestrationConfig {
+                state_path: dir.join("state.json"),
+                cookie_path: dir.join("nebraska-cookie"),
+                cookie_enabled: enabled,
+                cookie_lifetime: lifetime,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let shutdown = CancellationToken::new();
+        Orchestrator::from_config(config, &shutdown)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn per_update_cookie_is_not_reloaded_when_initial_check_sets_none() {
+        use mockito::Matcher;
+
+        let mut server = mockito::Server::new_async().await;
+        for (enabled, lifetime) in [
+            (true, CookieLifetime::PerUpdate),
+            (true, CookieLifetime::PerMessage),
+            (false, CookieLifetime::PerUpdate),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let orchestrator = cookie_orchestrator(dir.path(), enabled, lifetime).await;
+            orchestrator
+                .nebraska_cookie
+                .save("ASLBSA=previous")
+                .unwrap();
+            let expected_cookie = if enabled && lifetime == CookieLifetime::PerMessage {
+                Matcher::Exact("ASLBSA=previous".to_string())
+            } else {
+                Matcher::Missing
+            };
+            let response = r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/><updatecheck status="noupdate"/></app></response>"#;
+            let check = server
+                .mock("POST", "/v1/update/")
+                .match_header("cookie", expected_cookie.clone())
+                .match_body(Matcher::Regex("<updatecheck".to_string()))
+                .with_status(200)
+                .with_body(response)
+                .expect(1)
+                .create_async()
+                .await;
+            let endpoint = Url::parse(&format!("{}/v1/update/", server.url())).unwrap();
+            initial_cookie_check(&orchestrator, endpoint.clone()).await;
+            check.assert_async().await;
+
+            let progress = server
+                .mock("POST", "/v1/update/")
+                .match_header("cookie", expected_cookie)
+                .match_body(Matcher::Regex("<event ".to_string()))
+                .with_status(200)
+                .with_header("set-cookie", "ASLBSA=progress; Path=/")
+                .with_body(response)
+                .expect(1)
+                .create_async()
+                .await;
+            let mut request = request(RequestedOperation::Stage);
+            request.server = Some(endpoint);
+            request.app_id = Some("app-1".to_string());
+            request.track = Some("stable".to_string());
+            orchestrator
+                .report_nebraska_event(
+                    &request,
+                    NebraskaReport::Progress {
+                        version: Version::new(1, 0, 0),
+                        event: ProgressEvent::DownloadStarted,
+                    },
+                )
+                .await;
+            progress.assert_async().await;
+            assert_eq!(
+                orchestrator.nebraska_cookie.load().unwrap().as_deref(),
+                if enabled && lifetime == CookieLifetime::PerUpdate {
+                    None
+                } else if enabled {
+                    Some("ASLBSA=progress")
+                } else {
+                    Some("ASLBSA=previous")
+                },
+            );
+        }
+    }
+
+    async fn initial_cookie_check(orchestrator: &Orchestrator, endpoint: Url) {
+        let store = orchestrator.nebraska_cookie.clone();
+        let enabled = orchestrator.config.orchestration.cookie_enabled;
+        let lifetime = orchestrator.config.orchestration.cookie_lifetime;
+        task::spawn_blocking(move || {
+            let mut client = NebraskaClient::new(
+                endpoint,
+                "app-1",
+                "stable",
+                crate::core::nebraska::MachineId::new("mid-1").unwrap(),
+            );
+            if enabled {
+                client = client.with_cookie_store(store, lifetime);
+            }
+            client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn per_update_cookie_resets_when_an_unfinished_stage_restarts() {
+        let mut server = mockito::Server::new_async().await;
+        let endpoint = Url::parse(&format!("{}/v1/update/", server.url())).unwrap();
+        let response = r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/><updatecheck status="noupdate"/></app></response>"#;
+        let dir = tempfile::tempdir().unwrap();
+        let orchestrator = cookie_orchestrator(dir.path(), true, CookieLifetime::PerUpdate).await;
+        let first = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=first-attempt; Path=/")
+            .with_body(response)
+            .expect(1)
+            .create_async()
+            .await;
+        initial_cookie_check(&orchestrator, endpoint.clone()).await;
+        first.assert_async().await;
+        drop(orchestrator);
+
+        let restarted = cookie_orchestrator(dir.path(), true, CookieLifetime::PerUpdate).await;
+        assert_eq!(
+            restarted.nebraska_cookie.load().unwrap().as_deref(),
+            Some("ASLBSA=first-attempt"),
+        );
+        let completion = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", "ASLBSA=first-attempt")
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=ignored; Path=/")
+            .with_body(response)
+            .expect(1)
+            .create_async()
+            .await;
+        let mut request = request(RequestedOperation::Finalize);
+        request.server = Some(endpoint.clone());
+        request.app_id = Some("app-1".to_string());
+        request.track = Some("stable".to_string());
+        restarted
+            .report_nebraska_event(
+                &request,
+                NebraskaReport::Completed {
+                    previous: Version::new(1, 0, 0),
+                    current: Version::new(2, 0, 0),
+                },
+            )
+            .await;
+        completion.assert_async().await;
+        assert_eq!(
+            restarted.nebraska_cookie.load().unwrap().as_deref(),
+            Some("ASLBSA=first-attempt")
+        );
+
+        let next = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=second-attempt; Path=/")
+            .with_body(response)
+            .expect(1)
+            .create_async()
+            .await;
+        initial_cookie_check(&restarted, endpoint).await;
+        next.assert_async().await;
+        assert_eq!(
+            restarted.nebraska_cookie.load().unwrap().as_deref(),
+            Some("ASLBSA=second-attempt"),
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_cookie_is_not_adopted_by_completion_report_retries() {
+        let dir = tempfile::tempdir().unwrap();
+        let orchestrator = cookie_orchestrator(dir.path(), false, CookieLifetime::PerUpdate).await;
+        orchestrator
+            .nebraska_cookie
+            .save("ASLBSA=previous")
+            .unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let first = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=fresh; Path=/")
+            .with_body(r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"><event status="ok"/><updatecheck status="error-internal"/></app></response>"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let retry = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_body(r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/><updatecheck status="noupdate"/></app></response>"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let mut request = request(RequestedOperation::Finalize);
+        request.server = Some(Url::parse(&format!("{}/v1/update/", server.url())).unwrap());
+        request.app_id = Some("app-1".to_string());
+        request.track = Some("stable".to_string());
+        orchestrator
+            .report_nebraska_event(
+                &request,
+                NebraskaReport::Completed {
+                    previous: Version::new(1, 0, 0),
+                    current: Version::new(2, 0, 0),
+                },
+            )
+            .await;
+        first.assert_async().await;
+        retry.assert_async().await;
+        assert_eq!(
+            orchestrator.nebraska_cookie.load().unwrap().as_deref(),
+            Some("ASLBSA=previous"),
+        );
+    }
 
     // --- node_name resolution retry (microsoft/trident#839 follow-up) ---
 
