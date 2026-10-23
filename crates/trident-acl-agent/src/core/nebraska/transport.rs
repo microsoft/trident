@@ -24,6 +24,7 @@
 use std::time::{Duration, Instant};
 
 use log::trace;
+use reqwest::header::{COOKIE, SET_COOKIE};
 use url::Url;
 
 use super::{client::redacted, error::NebraskaError};
@@ -114,7 +115,7 @@ impl Transport for ReqwestTransport {
             .header("Content-Type", "application/xml")
             .timeout(self.timeout);
         if let Some(cookie) = cookie {
-            request = request.header(reqwest::header::COOKIE, cookie);
+            request = request.header(COOKIE, cookie);
         }
 
         // `reqwest::Error`'s `Display` embeds the request URL, which may carry an
@@ -178,7 +179,7 @@ impl Transport for ReqwestTransport {
 fn extract_cookie(response: &reqwest::blocking::Response) -> Option<String> {
     let pairs: Vec<String> = response
         .headers()
-        .get_all(reqwest::header::SET_COOKIE)
+        .get_all(SET_COOKIE)
         .iter()
         .filter_map(|value| value.to_str().ok())
         .filter_map(|raw| raw.split(';').next())
