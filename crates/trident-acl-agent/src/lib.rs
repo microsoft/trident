@@ -18,7 +18,6 @@ use semver::Version;
 use url::Url;
 
 use crate::core::{
-    config::CookieLifetime,
     error::AgentError,
     nebraska::{Client, CookieStore, MachineId, NebraskaError},
     version::FALLBACK_ALWAYS_VERSION,
@@ -89,12 +88,11 @@ pub fn check_nebraska_reachable(
     machine_id_source: IdSource,
     cookie_store: &CookieStore,
     cookie_enabled: bool,
-    cookie_lifetime: CookieLifetime,
 ) -> Result<(), AgentError> {
     let machine_id = build_machine_id(machine_id_source)?;
     let mut client = Client::new(url.clone(), app_id, track, machine_id);
     if cookie_enabled {
-        client = client.with_cookie_store(cookie_store.clone(), cookie_lifetime);
+        client = client.with_cookie_store(cookie_store.clone());
     }
 
     match client.probe(
@@ -114,6 +112,7 @@ pub fn check_nebraska_reachable(
 mod tests {
     use super::*;
 
+    use crate::nebraska::CookieLifetime;
     use indoc::indoc;
     use mockito::{Matcher, Server};
     use url::Url;
@@ -121,10 +120,10 @@ mod tests {
     /// A `CookieStore` backed by a fresh temp file, for tests that don't
     /// care about cookie persistence themselves (most of them) but still
     /// need to satisfy `check_nebraska_reachable`'s now-required parameter.
-    fn temp_cookie_store() -> (tempfile::TempDir, CookieStore) {
+    fn temp_cookie_store(lifetime: CookieLifetime) -> (tempfile::TempDir, CookieStore) {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let path = dir.path().join("nebraska-cookie");
-        (dir, CookieStore::new(path))
+        (dir, CookieStore::with_path(path, lifetime))
     }
 
     #[test]
@@ -144,7 +143,7 @@ mod tests {
         // this mock at all, so mockito would return no matching mock and the
         // call would fail instead of silently passing.
         let mut server = Server::new();
-        let (_dir, cookie_store) = temp_cookie_store();
+        let (_dir, cookie_store) = temp_cookie_store(CookieLifetime::PerMessage);
 
         let bare_app_mock = server
             .mock("POST", "/")
@@ -168,7 +167,6 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             true,
-            CookieLifetime::PerMessage,
         )
         .unwrap();
 
@@ -181,7 +179,7 @@ mod tests {
         // server and does it speak Omaha" check: a well-formed response with
         // a non-OK app status should still count as "reachable" here.
         let mut server = Server::new();
-        let (_dir, cookie_store) = temp_cookie_store();
+        let (_dir, cookie_store) = temp_cookie_store(CookieLifetime::PerUpdate);
 
         let omaha_mock = server
             .mock("POST", "/")
@@ -202,7 +200,6 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             true,
-            CookieLifetime::PerUpdate,
         )
         .unwrap();
 
@@ -211,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_check_nebraska_reachable_fails_on_transport_error() {
-        let (_dir, cookie_store) = temp_cookie_store();
+        let (_dir, cookie_store) = temp_cookie_store(CookieLifetime::PerUpdate);
         let err = check_nebraska_reachable(
             // Port 0 never accepts a connection.
             &Url::parse("http://127.0.0.1:0/").unwrap(),
@@ -220,7 +217,6 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             true,
-            CookieLifetime::PerUpdate,
         )
         .unwrap_err();
         assert!(matches!(err, AgentError::Nebraska(_)));
@@ -233,7 +229,7 @@ mod tests {
         // "first contact," silently defeating the whole mechanism for every
         // `--validate-connection nebraska` invocation.
         let mut server = Server::new();
-        let (_dir, cookie_store) = temp_cookie_store();
+        let (_dir, cookie_store) = temp_cookie_store(CookieLifetime::PerMessage);
 
         let first_mock = server
             .mock("POST", "/")
@@ -256,7 +252,6 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             true,
-            CookieLifetime::PerMessage,
         )
         .unwrap();
         first_mock.assert();
@@ -286,7 +281,6 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             true,
-            CookieLifetime::PerMessage,
         )
         .unwrap();
         second_mock.assert();
@@ -295,7 +289,7 @@ mod tests {
     #[test]
     fn per_update_probe_reuses_but_never_establishes_or_replaces_cookie() {
         let mut server = Server::new();
-        let (_dir, store) = temp_cookie_store();
+        let (_dir, store) = temp_cookie_store(CookieLifetime::PerUpdate);
         for cookie in [None, Some("ASLBSA=initial")] {
             if let Some(cookie) = cookie {
                 store.save(cookie).unwrap();
@@ -314,7 +308,6 @@ mod tests {
                 IdSource::MachineIdHashed,
                 &store,
                 true,
-                CookieLifetime::PerUpdate,
             )
             .unwrap();
             mock.assert();
@@ -325,7 +318,7 @@ mod tests {
     #[test]
     fn http_error_cookie_is_not_adopted() {
         let mut server = Server::new();
-        let (_dir, store) = temp_cookie_store();
+        let (_dir, store) = temp_cookie_store(CookieLifetime::PerMessage);
         store.save("ASLBSA=previous").unwrap();
         let mock = server
             .mock("POST", "/")
@@ -341,7 +334,6 @@ mod tests {
             IdSource::MachineIdHashed,
             &store,
             true,
-            CookieLifetime::PerMessage,
         )
         .unwrap_err();
         assert!(matches!(err, AgentError::Nebraska(_)), "{err:?}");
@@ -356,7 +348,7 @@ mod tests {
         // even when the response sets one and even when a cookie is already
         // on disk from before the toggle was flipped.
         let mut server = Server::new();
-        let (_dir, cookie_store) = temp_cookie_store();
+        let (_dir, cookie_store) = temp_cookie_store(CookieLifetime::PerUpdate);
         cookie_store.save("ASLBSA=preexisting").unwrap();
 
         let mock = server
@@ -380,7 +372,6 @@ mod tests {
             IdSource::MachineIdHashed,
             &cookie_store,
             false,
-            CookieLifetime::PerUpdate,
         )
         .unwrap();
 

@@ -84,9 +84,8 @@ pub async fn validate_connection(
             // Probes share affinity without starting a new update interval.
             let endpoint_for_task = endpoint.clone();
             let track = config.nebraska.track.clone();
-            let cookie_store = nebraska::CookieStore::new(config.orchestration.cookie_path.clone());
+            let cookie_store = nebraska::CookieStore::new(config.orchestration.cookie_lifetime);
             let cookie_enabled = config.orchestration.cookie_enabled;
-            let cookie_lifetime = config.orchestration.cookie_lifetime;
             task::spawn_blocking(move || {
                 check_nebraska_reachable(
                     &endpoint_for_task,
@@ -95,7 +94,6 @@ pub async fn validate_connection(
                     IdSource::MachineIdHashed,
                     &cookie_store,
                     cookie_enabled,
-                    cookie_lifetime,
                 )
             })
             .await

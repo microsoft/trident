@@ -27,6 +27,7 @@ use uuid::Uuid;
 /// with owner-only permissions - the same posture `annotations::state`
 /// already applies to `state.json`.
 const COOKIE_FILE_MODE: u32 = 0o600;
+const NEBRASKA_COOKIE_PATH: &str = "/var/lib/trident-acl-agent/nebraska-cookie";
 
 /// Controls which responses may replace the persisted affinity cookie.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString)]
@@ -50,11 +51,47 @@ pub enum CookieLifetime {
 #[derive(Debug, Clone)]
 pub struct CookieStore {
     path: PathBuf,
+    lifetime: CookieLifetime,
 }
 
 impl CookieStore {
-    pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
+    pub fn new(lifetime: CookieLifetime) -> Self {
+        Self {
+            path: PathBuf::from(NEBRASKA_COOKIE_PATH),
+            lifetime,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_path(path: impl Into<PathBuf>, lifetime: CookieLifetime) -> Self {
+        Self {
+            path: path.into(),
+            lifetime,
+        }
+    }
+
+    pub(super) fn load_for_request(&self, initial_update: bool) -> Option<String> {
+        if initial_update && self.lifetime == CookieLifetime::PerUpdate {
+            if let Err(err) = self.save("") {
+                warn!("failed to clear Nebraska cookie for staging attempt: {err}");
+            }
+            return None;
+        }
+        match self.load() {
+            Ok(cookie) => cookie,
+            Err(err) => {
+                warn!("failed to load Nebraska cookie, proceeding without one: {err}");
+                None
+            }
+        }
+    }
+
+    pub(super) fn save_from_response(&self, cookie: &str, initial_update: bool) {
+        if initial_update || self.lifetime == CookieLifetime::PerMessage {
+            if let Err(err) = self.save(cookie) {
+                warn!("failed to persist Nebraska cookie: {err}");
+            }
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -160,8 +197,22 @@ mod tests {
     fn store() -> (tempfile::TempDir, CookieStore) {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let path = dir.path().join("nebraska-cookie");
-        let store = CookieStore::new(path);
+        let store = CookieStore::with_path(path, CookieLifetime::default());
         (dir, store)
+    }
+
+    #[test]
+    fn production_store_uses_fixed_path_and_preserves_policy_when_cloned() {
+        for lifetime in [CookieLifetime::PerUpdate, CookieLifetime::PerMessage] {
+            let store = CookieStore::new(lifetime);
+            assert_eq!(
+                store.path(),
+                Path::new("/var/lib/trident-acl-agent/nebraska-cookie")
+            );
+            let cloned = store.clone();
+            assert_eq!(cloned.path(), store.path());
+            assert_eq!(cloned.lifetime, lifetime);
+        }
     }
 
     #[test]
@@ -224,7 +275,7 @@ mod tests {
         fs::create_dir(&destination).unwrap();
         let stale = dir.path().join("cookie.tmp-unrelated");
         fs::write(&stale, "keep this file").unwrap();
-        CookieStore::new(&destination)
+        CookieStore::with_path(&destination, CookieLifetime::default())
             .save("ASLBSA=new")
             .unwrap_err();
         assert!(destination.is_dir());
@@ -261,7 +312,7 @@ mod tests {
     fn save_creates_missing_parent_directories() {
         let dir = tempfile::tempdir().expect("failed to create temp dir");
         let path = dir.path().join("nested").join("nebraska-cookie");
-        let store = CookieStore::new(path);
+        let store = CookieStore::with_path(path, CookieLifetime::default());
         store.save("ASLBSA=abc123").unwrap();
         assert_eq!(store.load().unwrap(), Some("ASLBSA=abc123".to_string()));
     }

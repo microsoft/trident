@@ -69,14 +69,6 @@ const DEFAULT_NODE_GONE_MAX_WAIT: Option<Duration> = None;
 /// File name for the persisted agent state (see `annotations::state`).
 pub const STATE_FILE_NAME: &str = "state.json";
 pub const DEFAULT_STATE_PATH: &str = formatcp!("/var/lib/trident-acl-agent/{STATE_FILE_NAME}");
-/// File name for the persisted Nebraska affinity cookie (see
-/// `core::nebraska::CookieStore`). Deliberately a separate file from
-/// `STATE_FILE_NAME`: the cookie is a host/connection-level attribute with
-/// no relationship to any update operation, unlike everything else in
-/// `state.json`.
-pub const NEBRASKA_COOKIE_FILE_NAME: &str = "nebraska-cookie";
-pub const DEFAULT_NEBRASKA_COOKIE_PATH: &str =
-    formatcp!("/var/lib/trident-acl-agent/{NEBRASKA_COOKIE_FILE_NAME}");
 pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
 /// Default path to kubelet's own client certificate, used to derive
 /// `node_name` when `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` is
@@ -180,9 +172,6 @@ impl AgentConfig {
                 state_path: orchestration
                     .state_path
                     .unwrap_or_else(|| PathBuf::from(DEFAULT_STATE_PATH)),
-                cookie_path: orchestration
-                    .cookie_path
-                    .unwrap_or_else(|| PathBuf::from(DEFAULT_NEBRASKA_COOKIE_PATH)),
                 cookie_enabled: orchestration
                     .cookie_enabled
                     .unwrap_or(DEFAULT_COOKIE_ENABLED),
@@ -330,8 +319,6 @@ struct RawOrchestrationConfig {
     mode: Option<Mode>,
     #[serde(deserialize_with = "empty_path_as_none")]
     state_path: Option<PathBuf>,
-    #[serde(deserialize_with = "empty_path_as_none")]
-    cookie_path: Option<PathBuf>,
     #[serde(deserialize_with = "empty_bool_as_none")]
     cookie_enabled: Option<bool>,
     #[serde(deserialize_with = "empty_cookie_lifetime_as_none")]
@@ -671,10 +658,6 @@ impl FromStr for NodeNameSource {
 pub struct OrchestrationConfig {
     pub mode: Mode,
     pub state_path: PathBuf,
-    /// Path to the persisted Nebraska affinity cookie (see
-    /// `core::nebraska::CookieStore`). Kept separate from `state_path` so
-    /// cookie persistence does not change the serialized update-state schema.
-    pub cookie_path: PathBuf,
     /// Blanket kill switch for the whole cookie mechanism. When `false`, no
     /// `Cookie:` header is ever sent and no `Set-Cookie` is ever adopted -
     /// the persisted file (if one exists from before the toggle was
@@ -714,7 +697,6 @@ impl Default for OrchestrationConfig {
         Self {
             mode: Mode::Annotations,
             state_path: PathBuf::from(DEFAULT_STATE_PATH),
-            cookie_path: PathBuf::from(DEFAULT_NEBRASKA_COOKIE_PATH),
             cookie_enabled: DEFAULT_COOKIE_ENABLED,
             cookie_lifetime: CookieLifetime::PerUpdate,
             stage_timeout: DEFAULT_STAGE_TIMEOUT,
@@ -921,10 +903,6 @@ mod tests {
             config.orchestration.state_path,
             PathBuf::from(DEFAULT_STATE_PATH)
         );
-        assert_eq!(
-            config.orchestration.cookie_path,
-            PathBuf::from(DEFAULT_NEBRASKA_COOKIE_PATH)
-        );
         assert!(
             !config.orchestration.cookie_enabled,
             "cookie_enabled should default to off"
@@ -993,10 +971,6 @@ mod tests {
                 "TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH",
                 "/var/lib/trident-acl-agent/custom-state.json",
             ),
-            (
-                "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_PATH",
-                "/var/lib/trident-acl-agent/custom-nebraska-cookie",
-            ),
             ("TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED", "true"),
             (
                 "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME",
@@ -1042,10 +1016,6 @@ mod tests {
         assert_eq!(
             config.orchestration.state_path,
             PathBuf::from("/var/lib/trident-acl-agent/custom-state.json")
-        );
-        assert_eq!(
-            config.orchestration.cookie_path,
-            PathBuf::from("/var/lib/trident-acl-agent/custom-nebraska-cookie")
         );
         assert!(config.orchestration.cookie_enabled);
         assert_eq!(
@@ -1144,6 +1114,16 @@ mod tests {
         )]))
         .unwrap_err();
         assert!(format!("{err:#}").contains("yes please"), "{err:#}");
+    }
+
+    #[test]
+    fn removed_cookie_path_override_is_ignored() {
+        let config = AgentConfig::from_vars(vars(&[(
+            "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_PATH",
+            "/tmp/unused-nebraska-cookie",
+        )]))
+        .unwrap();
+        assert_eq!(config, AgentConfig::default());
     }
 
     #[test]

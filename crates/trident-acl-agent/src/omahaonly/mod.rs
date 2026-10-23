@@ -44,12 +44,11 @@ pub async fn run_omaha_only(config: &AgentConfig) -> Result<(), Error> {
         Version::parse(FALLBACK_ALWAYS_VERSION).expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver")
     });
     let cookie_enabled = config.orchestration.cookie_enabled;
-    let cookie_store = CookieStore::new(config.orchestration.cookie_path.clone());
-    let cookie_lifetime = config.orchestration.cookie_lifetime;
+    let cookie_store = CookieStore::new(config.orchestration.cookie_lifetime);
     let outcome = task::spawn_blocking(move || {
         let mut client = Client::new(endpoint, app_id, track, machine_id);
         if cookie_enabled {
-            client = client.with_cookie_store(cookie_store, cookie_lifetime);
+            client = client.with_cookie_store(cookie_store);
         }
         client.check_for_update(&current_version)
     })

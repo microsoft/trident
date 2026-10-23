@@ -50,12 +50,13 @@ new ones does not break parsing.
 
 ### Affinity cookies
 
-Cookies are opt-in. The agent uses these environment variables:
+Cookies are opt-in. The agent uses this environment variable:
 
 | Variable | Default |
 | --- | --- |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED` | `false` |
-| `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_PATH` | `/var/lib/trident-acl-agent/nebraska-cookie` |
+
+Cookies use the fixed file `/var/lib/trident-acl-agent/nebraska-cookie`.
 
 Each initial `check_for_update` starts without a cookie, clears the previous
 stored value, and persists only that response's cookie. Progress,

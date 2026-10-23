@@ -144,7 +144,7 @@ impl Orchestrator {
         let annotation_keys = AnnotationKeys::new(&config.kubernetes.annotation_prefix);
         Ok(Some(Self {
             state: StateStore::new(config.orchestration.state_path.clone()),
-            nebraska_cookie: CookieStore::new(config.orchestration.cookie_path.clone()),
+            nebraska_cookie: CookieStore::new(config.orchestration.cookie_lifetime),
             config,
             node_name,
             k8s,
@@ -768,13 +768,12 @@ impl Orchestrator {
             });
         let cookie_enabled = self.config.orchestration.cookie_enabled;
         let cookie_store = self.nebraska_cookie.clone();
-        let cookie_lifetime = self.config.orchestration.cookie_lifetime;
         let outcome = task::spawn_blocking({
             let current_version = current_version.clone();
             move || {
                 let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
                 if cookie_enabled {
-                    client = client.with_cookie_store(cookie_store, cookie_lifetime);
+                    client = client.with_cookie_store(cookie_store);
                 }
                 client.check_for_update(&current_version)
             }
@@ -1697,11 +1696,10 @@ impl Orchestrator {
         let label = report.label();
         let cookie_enabled = self.config.orchestration.cookie_enabled;
         let cookie_store = self.nebraska_cookie.clone();
-        let cookie_lifetime = self.config.orchestration.cookie_lifetime;
         let result = task::spawn_blocking(move || {
             let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
             if cookie_enabled {
-                client = client.with_cookie_store(cookie_store, cookie_lifetime);
+                client = client.with_cookie_store(cookie_store);
             }
             match report {
                 NebraskaReport::Progress { version, event } => {
@@ -2360,7 +2358,6 @@ mod tests {
             },
             orchestration: OrchestrationConfig {
                 state_path: dir.join("state.json"),
-                cookie_path: dir.join("nebraska-cookie"),
                 cookie_enabled: enabled,
                 cookie_lifetime: lifetime,
                 ..Default::default()
@@ -2368,10 +2365,13 @@ mod tests {
             ..Default::default()
         };
         let shutdown = CancellationToken::new();
-        Orchestrator::from_config(config, &shutdown)
+        let mut orchestrator = Orchestrator::from_config(config, &shutdown)
             .await
             .unwrap()
-            .unwrap()
+            .unwrap();
+        orchestrator.nebraska_cookie =
+            CookieStore::with_path(dir.join("nebraska-cookie"), lifetime);
+        orchestrator
     }
 
     #[tokio::test]
@@ -2449,7 +2449,6 @@ mod tests {
     async fn initial_cookie_check(orchestrator: &Orchestrator, endpoint: Url) {
         let store = orchestrator.nebraska_cookie.clone();
         let enabled = orchestrator.config.orchestration.cookie_enabled;
-        let lifetime = orchestrator.config.orchestration.cookie_lifetime;
         task::spawn_blocking(move || {
             let mut client = NebraskaClient::new(
                 endpoint,
@@ -2458,7 +2457,7 @@ mod tests {
                 crate::core::nebraska::MachineId::new("mid-1").unwrap(),
             );
             if enabled {
-                client = client.with_cookie_store(store, lifetime);
+                client = client.with_cookie_store(store);
             }
             client.check_for_update(&Version::new(1, 0, 0)).unwrap();
         })

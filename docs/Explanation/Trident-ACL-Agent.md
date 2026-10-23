@@ -250,8 +250,9 @@ cookie file untouched.
 
 When enabled, each initial staging update check starts without a cookie and
 clears the previous stored value. The cookie returned by that check is
-persisted separately from `state.json` and reused for progress, failure,
-finalize, and post-reboot completion requests. Later responses do not replace
+persisted at `/var/lib/trident-acl-agent/nebraska-cookie`, separately from
+`state.json`, and reused for progress, failure, finalize, and post-reboot
+completion requests. Later responses do not replace
 it. If the initial response sets no cookie, subsequent requests remain
 cookie-less. A restarted staging attempt starts fresh, even with unchanged
 request IDs; resuming finalize or completion retains the stored cookie.
@@ -267,8 +268,7 @@ affinity is best-effort if storage fails.
 At startup, the agent logs its effective `AgentConfig` at INFO after applying
 environment overrides and defaults, including for `--validate-connection`.
 Network URL credentials, paths, query strings, and fragments are redacted.
-Kubeconfig, state, and cookie file paths are logged, but their contents are
-not read for logging.
+Kubeconfig and state paths are logged, but their contents are not read for logging.
 
 There is no config file. Every setting is an environment variable prefixed
 `TRIDENT_ACL_AGENT_`, systemd-style: set it in the unit's own
@@ -295,7 +295,6 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_TRIDENT_SOCKET` | `unix:///run/trident/trident.sock` | The gRPC Unix socket URI used to reach `tridentd`. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH` | `/var/lib/trident-acl-agent/state.json` | Path to the agent's persistent state file bridging the pre-reboot and post-reboot halves of `finalize`/`rollback` across the reboot. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED` | `false` | Enable Nebraska affinity cookie transmission and persistence. When disabled, existing cookie files are left untouched. See [Nebraska affinity cookies](#nebraska-affinity-cookies). |
-| `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_PATH` | `/var/lib/trident-acl-agent/nebraska-cookie` | Path to the persisted Nebraska affinity cookie, separate from the agent's state file. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT` | `20m` | Timeout for each Trident update-stage or rollback-stage call (a [`humantime`](https://docs.rs/humantime) duration, e.g. `20m`, `1h`), not the entire staging workflow. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | Timeout for each Trident update-finalize, rollback-finalize, or post-reboot commit call. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL` | `60s` | Refresh cadence for the `InProgress` status heartbeat. |
@@ -422,10 +421,10 @@ checks connectivity to a single dependency using the current environment
 and exits immediately — useful for a systemd `ExecStartPre` check or manual
 on-node troubleshooting without running the full orchestrator loop.
 
-The Nebraska probe honors the cookie enable/path settings. When enabled,
+The Nebraska probe honors the cookie enable setting. When enabled,
 it reuses an existing persisted cookie without clearing or replacing it;
 a probe cannot establish affinity. A standalone invocation does not inherit
-a systemd service's environment, so supply those settings explicitly when
+a systemd service's environment, so supply that setting explicitly when
 checking cookie reuse.
 
 `--validate-connection nebraska` is the one place
