@@ -1,0 +1,14 @@
+[Unit]
+Description=Netlaunch RCP proxy
+After=network.target network-online.target
+Before=tridentd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/rcp-agent
+Restart=on-failure
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target tridentd.service

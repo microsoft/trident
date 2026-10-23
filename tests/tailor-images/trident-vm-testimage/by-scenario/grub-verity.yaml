@@ -1,0 +1,8 @@
+outputs:
+  $replace:
+    - format: cosi
+config:
+  storage:
+    $include: ./include/storage-grub-verity.yaml
+  os:
+    hostname: trident-vm-verity-testimg

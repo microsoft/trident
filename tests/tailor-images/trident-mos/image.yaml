@@ -1,0 +1,17 @@
+name: trident-mos
+
+base:
+  ref: baremetal
+
+outputs:
+  - format: iso
+
+extraDependencies:
+  - ./iso.yaml
+  - ./files
+  - ./post-install.sh
+  - ../common
+  - ../../../artifacts/rcp-agent
+
+config:
+  $include: ./iso.yaml
