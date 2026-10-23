@@ -17,7 +17,7 @@ An image definition lives in an `image.yaml`. The top level belongs to tailor. T
 | `rpmSources` | path list | no | Each path is a directory of RPMs or a `.repo` file; passed as IC `--rpm-source`. |
 | `operation` | `customize` or `convert` | no | Default: `customize`. |
 | `signing` | `true` or profile id | no | Opt in to the signed-image pipeline. `true` ⇒ the workspace `signing.default` profile; a string ⇒ that named profile; omitted ⇒ unsigned. See [Sign an image](../how-to/sign-an-image.md). |
-| `extraDependencies` | path list | no | Extra files/directories to hash for incremental checks; use for IC-config-referenced assets. |
+| `extraDependencies` | path list | no | Extra files/directories to hash for incremental checks; use for IC-config-referenced assets. Mergeable like `rpmSources`/`extraParams` -- see below. |
 | `dependsOn` | string list | no | Order-only build dependencies on other workspace images. See [Inter-image dependencies](#inter-image-dependencies). |
 | `inputs` | list of `{name, image, output?, cell?}` | no | Named producer artifacts embedded in `config:` via `${inputs.<name>}`. See [Embedding an artifact with `inputs:`](#embedding-an-artifact-with-inputs). |
 | `extraParams` | list of `{param, value?}` | no | Extra Image Customizer command-line flags, appended verbatim after every flag tailor manages. For experimental/non-standard IC builds. See [Extra params](#extra-params). |
@@ -80,6 +80,11 @@ so changing a `param` or `value` rebuilds the affected cells.
 `extraParams` is **mergeable like `rpmSources`**: it is concatenated across the base document and
 every matched fragment, base → most-specific, so a `by-<axis>/<value>.yaml` fragment can add a flag
 for just its cells.
+
+`extraDependencies` is mergeable the same way: a fragment's own `extraDependencies:` concatenates
+with the base document's (and every other matched fragment's), base → most-specific, and resolves
+relative to the image directory just like the base document's paths do -- so a `by-<axis>/<value>.yaml`
+fragment can declare extra local dependencies that only its own cells need hashed.
 
 A flag tailor already emits itself (`--config-file`, `--build-dir`, `--output-image-file`,
 `--output-image-format`, `--rpm-source`, `--tools-dir`, `--image`, `--image-file`,
@@ -264,12 +269,13 @@ entries whose kind is `image` add a build-order edge; each input `name` is uniqu
 outputs:
   - format: cosi
     cosiCompressionLevel: 6
-    name: "${name}-${arch}"
   - format: vhd-fixed
     compression: zstd      # tailor compresses the artifact → <slug>.vhd.zst
 ```
 
-`format` is required. `cosiCompressionLevel`, `compression`, and `name` are optional.
+`format` is required. `cosiCompressionLevel` and `compression` are optional. The published
+basename is always the cell's slug (`<slug>.<ext>`, clone-suffixed `_cloneN` under `--clones`) --
+there is no per-output name override.
 
 ### `compression`
 

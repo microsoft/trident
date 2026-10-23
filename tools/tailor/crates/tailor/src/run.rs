@@ -338,7 +338,29 @@ fn validate(workspace: &Workspace, names: &[String], selector: &Selector) -> Res
     }
     // Surface signing prerequisites non-fatally (meta/docs/2026-06-29-signing.md §5.1) so they are discoverable
     // without starting a real build.
-    let signing = signing_requirements(&targets, tool.signing.as_ref())?;
+    let mut signing: Vec<SigningRequirement<'_>> = Vec::new();
+    for target in &targets {
+        for cell in cells_selected(target, selector)? {
+            let Some((profile_id, profile)) =
+                tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())?
+            else {
+                continue;
+            };
+            let slug = cell.slug.as_ref().to_owned();
+            if let Some(existing) = signing
+                .iter_mut()
+                .find(|requirement| requirement.profile_id == profile_id)
+            {
+                existing.images.push(slug);
+            } else {
+                signing.push(SigningRequirement {
+                    profile_id,
+                    profile,
+                    images: vec![slug],
+                });
+            }
+        }
+    }
     ensure_signing_preview(&tool, &signing)?;
     report_signing(&build_signers(&signing, &workspace.root));
     Ok(())
@@ -1423,7 +1445,9 @@ fn convert_cell(input: &Path, dir: &Path, arch: Arch, format: OutputFormat, slug
         },
         base_image: None,
         rpm_sources: Vec::new(),
+        extra_dependencies: Vec::new(),
         extra_params: Vec::new(),
+        signing: None,
         input_deps: Vec::new(),
         tools_dir: None,
         skip: false,
@@ -1501,21 +1525,22 @@ async fn build(
             .get_or_insert_with(Runtime::default)
             .build_dir_base = Some(output_dir.join(TAILOR_STATE_DIR).join(BUILD_DIR));
     }
-    let signing = signing_requirements(&targets, tool.signing.as_ref())?;
+    let signing = signing_requirements(&ordered, &build_selection, tool.signing.as_ref())?;
     ensure_signing_preview(&tool, &signing)?;
     // Build one signer per required profile (a shared CA per build); `signer_for` resolves a cell to
-    // its signer via the image name (meta/docs/2026-06-29-signing.md §6). Empty when nothing signs.
+    // its signer via the rendered cell slug, so only the cells whose merged fragments opted into
+    // `signing:` take the signed three-pass path.
     let signers = build_signers(&signing, &workspace.root);
-    let image_signer: HashMap<&str, Arc<dyn Signer>> = signers
+    let slug_signer: HashMap<&str, Arc<dyn Signer>> = signers
         .iter()
         .flat_map(|(requirement, signer)| {
             requirement
                 .images
                 .iter()
-                .map(move |image| (image.as_str(), Arc::clone(signer)))
+                .map(move |slug| (slug.as_str(), Arc::clone(signer)))
         })
         .collect();
-    let signer_for = |cell: &Cell| image_signer.get(cell.target.name()).cloned();
+    let signer_for = |cell: &Cell| slug_signer.get(cell.slug.as_ref()).cloned();
 
     // Dry-run prints each selected cell's container invocation (the signed 3-pass for signed cells)
     // without resolving digests, running, or contacting any engine — daemon-free via a no-op runtime.
@@ -1542,7 +1567,7 @@ async fn build(
         return Ok(());
     }
 
-    // Fail fast on every signing prerequisite — including the `openssl`/`sbsign` binaries — before any
+    // Fail fast on every signing prerequisite — including the `openssl`/PE-signing binaries — before any
     // (slow, privileged) IC run (meta/docs/2026-06-29-signing.md §5.1).
     preflight_signers(&signers)?;
 
@@ -1593,6 +1618,23 @@ async fn build(
     let clones = args.clones.max(1);
     let mut built = 0usize;
     let mut selected_cells = 0usize;
+    // Claim every output path for the *whole* selected closure before planning or building any one
+    // node: the per-node loop below plans-then-builds one node at a time (required so a consumer's
+    // base hash reflects a freshly-built producer), which means a node's own claims only exist once
+    // that node has been reached -- an earlier node's signed build could otherwise write its CA
+    // cert over a path that collides with a later node's output before the later node ever
+    // contributes its claim. This pass is independent of topological order and touches no network,
+    // so it can run once, up front, over every node.
+    orchestrator.preflight_claims(&ordered, &tool, &build_selection, &output_dir, clones)?;
+    // Threaded across every per-node `plan()` call below (not reset each iteration) so a collision
+    // between two different targets' output paths is still caught -- a map scoped to one call only
+    // sees that target's own cells (`orchestrator.rs::plan`). Redundant with the preflight pass
+    // above (which already covers the whole closure) but kept as a second, independent check with
+    // its own accumulators -- cheap, and it costs nothing to verify the per-node incremental view
+    // agrees with the whole-closure one.
+    let mut seen_artifacts = BTreeMap::new();
+    // Same cross-call accumulation, for a `local-test-ca` profile's resolved `publishCaCert` path.
+    let mut seen_ca_cert_paths = BTreeMap::new();
     for node in &ordered {
         let plan = orchestrator
             .plan(
@@ -1605,6 +1647,9 @@ async fn build(
                 &build_selection,
                 &output_dir,
                 Some(&base_hash_cache_dir),
+                clones,
+                &mut seen_artifacts,
+                &mut seen_ca_cert_paths,
             )
             .await?;
         selected_cells += plan.cells.len();
@@ -1677,18 +1722,25 @@ async fn clean(
     for target in &targets {
         // A signed image also drops an enrollable CA cert beside each cell's image (§6); remove it
         // too. Lenient on config: `validate` surfaces signing errors; cleanup should not fail on them.
-        let signed = tailor_config::resolve_signing(
-            target.definition.signing.as_ref(),
-            tool.signing.as_ref(),
-        )
-        .ok()
-        .flatten()
-        .is_some();
         for cell in cells_selected(target, selector)? {
+            let signed =
+                tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())
+                    .ok()
+                    .flatten()
+                    .is_some();
             paths.push(output_dir.join(tailor_core::artifact_name(
                 cell.slug.as_ref(),
                 cell.output.format,
             )));
+            // A compressed artifact publishes under its own post-compression filename; make sure
+            // `clean` also knows about the compressed form.
+            if cell.output.compression.is_some() {
+                paths.push(output_dir.join(tailor_core::published_artifact_name(
+                    cell.slug.as_ref(),
+                    cell.output.format,
+                    cell.output.compression,
+                )));
+            }
             if signed {
                 paths.push(output_dir.join(ca_cert_name(cell.slug.as_ref())));
             }
@@ -1978,25 +2030,33 @@ fn ensure_signing_preview(
 /// each (`meta/docs/2026-06-29-signing.md` §5.1). Resolution also validates each referenced profile.
 fn signing_requirements<'a>(
     targets: &[Arc<Target>],
+    selector: &BuildSelection<'_>,
     workspace_signing: Option<&'a tailor_config::SigningConfig>,
 ) -> Result<Vec<SigningRequirement<'a>>, AppError> {
     let mut requirements: Vec<SigningRequirement<'a>> = Vec::new();
     for target in targets {
-        let resolved =
-            tailor_config::resolve_signing(target.definition.signing.as_ref(), workspace_signing)?;
-        if let Some((profile_id, profile)) = resolved {
-            let image = target.definition.name.clone();
-            if let Some(existing) = requirements
-                .iter_mut()
-                .find(|requirement| requirement.profile_id == profile_id)
-            {
-                existing.images.push(image);
-            } else {
-                requirements.push(SigningRequirement {
-                    profile_id,
-                    profile,
-                    images: vec![image],
-                });
+        for cell in select_node_cells(
+            target,
+            selector.selector,
+            selector.requested.contains(target.name()),
+            selector.required.get(target.name()),
+        )? {
+            let resolved =
+                tailor_config::resolve_signing(cell.signing.as_ref(), workspace_signing)?;
+            if let Some((profile_id, profile)) = resolved {
+                let slug = cell.slug.as_ref().to_owned();
+                if let Some(existing) = requirements
+                    .iter_mut()
+                    .find(|requirement| requirement.profile_id == profile_id)
+                {
+                    existing.images.push(slug);
+                } else {
+                    requirements.push(SigningRequirement {
+                        profile_id,
+                        profile,
+                        images: vec![slug],
+                    });
+                }
             }
         }
     }
@@ -2053,7 +2113,7 @@ fn preflight_signers(signers: &[ProfileSigner<'_>]) -> Result<(), AppError> {
 }
 
 /// Report signing-preflight status **without failing** — for `validate` and `--dry-run`
-/// (`meta/docs/2026-06-29-signing.md` §5.1). Runs each signer's preflight so missing `openssl`/`sbsign` binaries
+/// (`meta/docs/2026-06-29-signing.md` §5.1). Runs each signer's preflight so missing `openssl`/PE-signing binaries
 /// surface too.
 fn report_signing(signers: &[ProfileSigner<'_>]) {
     for (requirement, signer) in signers {

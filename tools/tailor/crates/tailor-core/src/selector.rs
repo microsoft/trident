@@ -169,9 +169,11 @@ mod tests {
             },
             base_image: None,
             rpm_sources: vec![],
+            extra_dependencies: vec![],
             extra_params: vec![],
             input_deps: vec![],
             tools_dir: None,
+            signing: None,
             skip: false,
             skip_pins: Vec::new(),
         }

@@ -61,7 +61,7 @@ pub fn hash_file_cached(path: &Path, cache_dir: Option<&Path>) -> io::Result<Fil
 }
 
 /// Hash `path`'s bytes with XXH3-128, unconditionally reading the file (no cache).
-fn hash_file(path: &Path) -> io::Result<FileHash> {
+pub(crate) fn hash_file(path: &Path) -> io::Result<FileHash> {
     let mut file = File::open(path)?;
     let mut hasher = Xxh3::new();
     let mut size = 0_u64;
