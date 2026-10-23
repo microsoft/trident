@@ -429,7 +429,13 @@ where
     D: Deserializer<'de>,
 {
     empty_as_none(String::deserialize(deserializer)?)
-        .map(|value| value.parse::<CookieLifetime>().map_err(D::Error::custom))
+        .map(|value| {
+            value.parse::<CookieLifetime>().map_err(|_| {
+                D::Error::custom(format!(
+                    "unknown cookie lifetime {value:?} (expected \"per-update\" or \"per-message\")"
+                ))
+            })
+        })
         .transpose()
 }
 
@@ -1161,15 +1167,17 @@ mod tests {
 
     #[test]
     fn malformed_cookie_lifetime_is_a_parse_error() {
-        let err = AgentConfig::from_vars(vars(&[(
-            "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME",
-            "bogus",
-        )]))
-        .unwrap_err();
-        let message = format!("{err:#}");
-        assert!(message.contains("bogus"), "{message}");
-        assert!(message.contains("per-update"), "{message}");
-        assert!(message.contains("per-message"), "{message}");
+        for value in ["bogus", "forever", "PerUpdate", "per_update", "PER-MESSAGE"] {
+            let err = AgentConfig::from_vars(vars(&[(
+                "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME",
+                value,
+            )]))
+            .unwrap_err();
+            let message = format!("{err:#}");
+            assert!(message.contains(value), "{message}");
+            assert!(message.contains("per-update"), "{message}");
+            assert!(message.contains("per-message"), "{message}");
+        }
     }
 
     #[test]

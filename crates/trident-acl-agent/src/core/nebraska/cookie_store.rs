@@ -15,12 +15,12 @@ use std::{
     io::{ErrorKind, Write},
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
-    str::FromStr,
 };
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error};
 use log::warn;
 use reqwest::header::HeaderValue;
+use strum_macros::EnumString;
 use uuid::Uuid;
 
 /// The cookie is a bearer-style session-affinity credential, so store it
@@ -29,7 +29,8 @@ use uuid::Uuid;
 const COOKIE_FILE_MODE: u32 = 0o600;
 
 /// Controls which responses may replace the persisted affinity cookie.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, EnumString)]
+#[strum(serialize_all = "kebab-case")]
 pub enum CookieLifetime {
     /// Start each initial update check without a cookie and retain only
     /// that response's cookie until the next initial check. A restarted
@@ -40,20 +41,6 @@ pub enum CookieLifetime {
     /// Each response that supplies a cookie replaces the stored value for
     /// the next request. Responses without a cookie leave it unchanged.
     PerMessage,
-}
-
-impl FromStr for CookieLifetime {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "per-update" => Ok(Self::PerUpdate),
-            "per-message" => Ok(Self::PerMessage),
-            other => Err(anyhow!(
-                "unknown cookie lifetime {other:?} (expected \"per-update\" or \"per-message\")"
-            )),
-        }
-    }
 }
 
 /// Durable store for the single Nebraska affinity cookie this host has most
