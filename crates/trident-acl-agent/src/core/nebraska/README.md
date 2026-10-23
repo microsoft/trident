@@ -56,30 +56,22 @@ Cookies are opt-in. The agent uses these environment variables:
 | --- | --- |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED` | `false` |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_PATH` | `/var/lib/trident-acl-agent/nebraska-cookie` |
-| `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME` | `per-update` |
 
-`per-update` sends each initial `check_for_update` without a cookie, clears the
-previous stored value, and persists only that response's cookie. Progress,
+Each initial `check_for_update` starts without a cookie, clears the previous
+stored value, and persists only that response's cookie. Progress,
 failure, completion, and diagnostic requests reuse it without adopting
 replacements. An initial response without a cookie leaves the update cookie-less.
 A restarted staging attempt starts a new interval, even with unchanged request
 IDs; resuming finalize/completion does not.
 
-`per-message` sends the stored cookie on every request and persists each
-response's replacement for the next request, including completion retries.
-Responses without `Set-Cookie` leave the file unchanged.
-
-Standalone clients opt in with `Client::with_cookie_store(store, lifetime)`, using
-`CookieStore` and `CookieLifetime` from this module. A client without a store
-neither sends nor adopts cookies. Both agent orchestration modes and connectivity
-probes honor the enabled switch and policy.
+When cookies are disabled, clients neither send nor adopt them. Both agent
+orchestration modes and connectivity probes honor the enabled switch.
 
 Only HTTP-success responses with readable bodies can supply a cookie; XML
 validation happens afterward. Cookies are stored with owner-only permissions and
 atomic replacement, never logged. I/O failures warn without failing the update;
 the affinity guarantees are therefore best-effort when storage fails. Concurrent
-cookie-bearing responses use last-successful-write-wins ordering. Configure
-independent processes consistently when sharing a cookie path.
+cookie-bearing responses use last-successful-write-wins ordering.
 
 ### Poll for an update
 
