@@ -209,6 +209,28 @@ The path must resolve to ACL's shared ROOT filesystem. ROOT must be mounted
 before the loader runs and writable during staging. Target-slot selection comes
 from the host's A/B configuration, not source COSI partition numbers.
 
+#### Sharing unchanged images between slots
+
+Image identity is defined as `(kind, id, sha384)`. Trident records each image's
+verified identityin the Host Configuration when staging it or during
+online-initialize.
+
+On subsequent updates, staging matches incoming metadata against these records
+before downloading or extracting a payload. A match reuses the local DDI across
+slots, sources or different compression without inspecting its inner files or
+separately downloading the payload. Without a verified match, fetch and validate
+the payload normally.
+
+The slots keep separate paths and manifests. When the filesystem permits hard
+links, link the reusable image into the target slot; otherwise copy the local
+image. Use a copy if the slots need different file metadata or labels. Reuse
+does not waive compatibility checks against the target OS.
+
+Shared images are immutable. Changed images get new files, never in-place writes
+to shared inodes. Clearing a slot removes only its links; the other slot's image
+remains available. This is a staging optimization, not a manifest or
+boot-selection change.
+
 #### Base Image Construction and IC Integration
 
 ACL images may omit the managed content store entirely. **If a store is present,
@@ -229,6 +251,31 @@ factory/operator extensions.
 Any build-time initialization must finish before publishing the image. The
 loader must not invoke initialization to repair a missing manifest.
 
+#### AgentBaker and the AKS stack
+
+The intended AKS workflow is for AgentBaker to repackage the entire AKS stack as
+managed sysexts and confexts, rather than inject loose files outside OS
+servicing. Sysexts carry stack binaries and services; confexts carry shipped
+`/etc` defaults. Writable node and user state remains outside these images.
+
+For a prebuilt node image, AgentBaker supplies the images in the managed slot
+layout and publishes valid manifests before first boot (Potentially by using
+IC). Online initialization adopts that prepared set for Trident servicing,
+without adopting unrelated factory or operator extensions.
+
+Each subsequent OS update must declare the complete AKS extension set through
+COSI metadata or explicit Host Configuration inputs. Trident stages that set in
+the inactive slot and retains the old set for rollback. Images omitted from the
+next set are removed when that slot is reused; copying files into the initial
+node image alone does not make them part of future updates.
+
+The end result is that theinitial VHD and the update COSI carry the same payload
+in a way that Trident can fully A/B upgrade it, making the A/B update
+behaviorally equivalent to a full image swap.
+
+Note: the above only covers payload in sysexts and confexts. Preloaded OCI
+images are the topic of a future RFC.
+
 #### Trident staging
 
 This sequence applies to `managed`/`acl`. Direct-placement modes follow the
@@ -245,10 +292,12 @@ overwritten.
    `slot-loader.pending` marker, then synchronize its directory before clearing
    the Trident-owned extension directory, including interrupted-staging
    leftovers.
-3. Reserve space to stage the new extension files. Write temporary `.raw` files
-   inside the cleared directory, outside systemd's search paths. Verify hashes,
-   filesystem structure and extension compatibility. Reject invalid images with
-   an invalid-input error; flush valid files and directory entries to disk.
+3. Reserve space to stage the new extension files outside systemd's search
+   paths. Reuse verified local matches as described
+   [above](#sharing-unchanged-images-between-slots). Fetch other images into
+   temporary `.raw` files and verify their hashes and filesystem structure.
+   Check all images for compatibility with the target OS. Reject invalid images
+   with an invalid-input error; flush valid files and directory entries to disk.
 4. Build the manifest from the incoming extensions, not the old list. Once every
    image is ready, write and synchronize `slot-loader.json.tmp`, atomically
    rename it to `slot-loader.json`, then synchronize the slot directory. Write
@@ -278,24 +327,13 @@ unreadable or malformed files are not. Nonzero results follow the
 
 ##### Loader configuration
 
-ACL packaging supplies an initrd-readable loader env file:
+ACL packaging supplies these settings in an initrd-readable loader env file:
 
-```ini
-LOADER_MODE=acl
-TRIDENT_SYSEXT_STORE=/sysroot/var/lib/trident/slots
-TRIDENT_SYSEXT_LINK_STORE=/var/lib/trident/slots
-ROLLBACK_ON_LOADER_FAILURE=true
-```
-
-Both paths name the same store: `/sysroot/...` is the initrd's view;
-`/var/lib/...` is the symlink destination after switching to the real root. The
-paths and `LOADER_MODE` are fixed; `LOADER_MODE` controls slot detection, not
-service timing. `ROLLBACK_ON_LOADER_FAILURE` defaults to `true` and can be set
-to `false` in this env file to leave a failed boot stopped for inspection. The
-failure handler reads this setting independently of the loader. The
-`slot-loader.pending` marker beside each slot's manifest identifies a new slot
-boot without opening Trident's SQLite datastore in the initrd. No new kernel
-command-line option or UKI addon is required; `acl.slot` selects the slot.
+| Variable | Behavior | Default |
+| --- | --- | --- |
+| `LOADER_MODE` | Detect the booted slot from `acl.slot`; does not control service timing. | `acl` |
+| `TRIDEN_SLOT_STORE` | Absolute store path under the real root, used for symlink targets. Prefix `/sysroot` for initrd access. | `/var/lib/trident/slots` |
+| `REBOOT_ON_UPDATE_LOADER_ERROR` | Reboot after a loader error on a [pending update boot](#update-boot-failure-recovery); `false` leaves the failed boot stopped for inspection. The failure handler reads this independently. | `true` |
 
 ##### Slot Loader Manifest
 
@@ -382,9 +420,9 @@ process. It logs the slot, boot ID, unit result and reason to the
 journal/console. There is no separate failure record; initrd journal messages
 may not survive a reboot unless journal persistence is configured.
 
-If the marker exists and `ROLLBACK_ON_LOADER_FAILURE=true` (the default), the
-handler requests a reboot. The previous OS stays the default until commit. The
-new OS is selected for one boot only, so a recovery reboot returns to the
+If the marker exists and `REBOOT_ON_UPDATE_LOADER_ERROR=true` (the default),
+the handler requests a reboot. The previous OS stays the default until commit.
+The new OS is selected for one boot only, so a recovery reboot returns to the
 previous OS. The recovery service does not change boot entries. When the setting
 is `false`, the failed boot stays stopped for inspection. A missing marker or
 invalid slot never triggers an automatic reboot, preventing fallback failures
