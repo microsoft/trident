@@ -168,7 +168,7 @@ DEFINED_IMAGES: List[ImageConfig] = [
         "trident-vm-acl-agent-update-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",
-        config_file="base/updateimg-acl-agent.yaml",
+        output_and_config={OutputFormat.COSI: "base/updateimg-acl-agent.yaml"},
         requires_ukify=True,
         ssh_key="files/id_rsa.pub",
     ),
