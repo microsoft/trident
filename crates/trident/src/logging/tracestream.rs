@@ -49,7 +49,6 @@ pub(crate) fn clock_boottime_uptime_secs(
 }
 
 use osutils::{
-    dmi,
     osrelease::{OsRelease, OS_RELEASE_PATH},
     uname, virt,
 };
@@ -797,23 +796,6 @@ where
     }
 }
 
-/// Obtain product uuid of the hardware Trident is running on. Falls back to
-/// "unknown" (rather than failing) since this value is purely informational
-/// metadata attached to trace entries.
-///
-/// Takes the raw string from [`dmi::read_product_uuid_raw`], not the typed
-/// [`OsUuid`] from [`dmi::read_product_uuid`]: `OsUuid`'s `Display`
-/// canonicalizes a well-formed UUID to lowercase, which would silently
-/// change this `asset_id`'s representation (and break continuity with prior
-/// telemetry for the same asset) on any host whose BIOS reports
-/// `product_uuid` in uppercase.
-fn product_uuid_or_unknown(uuid: Result<String, Error>) -> String {
-    uuid.unwrap_or_else(|err| {
-        debug!("Failed to read product uuid: {err:#}");
-        "unknown".into()
-    })
-}
-
 /// Merge the current thread's `operation_id`/`command`/`source` (see
 /// `operation_context`), if any, into `fields`. Values the caller already
 /// set (e.g. an event that explicitly names its own `command`) are never
@@ -897,10 +879,6 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
     let mut platform_info = BTreeMap::new();
     let mut sys = System::new();
     sys.refresh_all();
-    platform_info.insert(
-        "asset_id".to_string(),
-        json!(product_uuid_or_unknown(dmi::read_product_uuid_raw())),
-    );
     platform_info.insert("os_release".to_string(), json!(get_os_release()));
     platform_info.insert("total_cpu".to_string(), json!(sys.cpus().len()));
     platform_info.insert(
@@ -1036,26 +1014,6 @@ mod tests {
             trace_sender.get_server().is_none(),
             "tracestream should not have a server"
         );
-    }
-
-    #[test]
-    fn test_read_product_uuid_unknown() {
-        let uuid = product_uuid_or_unknown(Err(anyhow!("UUID file unavailable")));
-        assert_eq!(uuid, "unknown");
-    }
-
-    #[test]
-    fn test_read_product_uuid_exists() {
-        let uuid = product_uuid_or_unknown(Ok("test_uuid".to_string()));
-        assert_eq!(uuid, "test_uuid");
-    }
-
-    #[test]
-    fn test_read_product_uuid_preserves_case() {
-        // Regression test: must not canonicalize/lowercase a well-formed
-        // uppercase UUID, unlike OsUuid's Display.
-        let uuid = product_uuid_or_unknown(Ok("6BA7B810-9DAD-11D1-80B4-00C04FD430C8".to_string()));
-        assert_eq!(uuid, "6BA7B810-9DAD-11D1-80B4-00C04FD430C8");
     }
 
     #[test]
@@ -1498,7 +1456,7 @@ mod functional_test {
 
     // These two remain functional tests (VM-only) because they assert
     // against the actual host's hardware/platform info (CPU count, memory,
-    // product UUID, os-release, kernel version) -- unlike the metrics-file
+    // os-release, kernel version) -- unlike the metrics-file
     // tests above, there's no way to inject a fake value here, so the
     // result is inherently host-dependent.
 
@@ -1514,10 +1472,6 @@ mod functional_test {
     #[functional_test]
     fn test_populate_platform_info() {
         let mut expected_platform_info = BTreeMap::new();
-        expected_platform_info.insert(
-            "asset_id".to_string(),
-            json!(product_uuid_or_unknown(dmi::read_product_uuid_raw())),
-        );
         expected_platform_info.insert("os_release".to_string(), json!(get_os_release()));
         expected_platform_info.insert("total_cpu".to_string(), json!(4));
         expected_platform_info.insert("total_memory_gib".to_string(), json!(6));
