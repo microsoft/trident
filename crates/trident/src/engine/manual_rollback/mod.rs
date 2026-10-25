@@ -96,6 +96,27 @@ pub fn execute_rollback(
     requested_rollback_kind: ManualRollbackRequestKind,
     allowed_operations: &Operations,
 ) -> Result<(ExitKind, ServicingType), TridentError> {
+    // Fired once per *logical* rollback, not once per call: a
+    // finalize-only call (the second step of the CLI/gRPC two-step
+    // stage-then-finalize flow) resumes a rollback that was already
+    // staged -- and therefore already reported -- by an earlier
+    // stage-having call (stage-only or combined), so it isn't a new
+    // start. Gating on `has_stage()` fires exactly for the calls that
+    // genuinely begin a rollback (stage-only and combined); a
+    // finalize-only call fires nothing here. Whatever identifying context
+    // is known this early is included -- the specific A/B-vs-runtime
+    // `ManualRollbackKind` isn't determined until the stage/finalize
+    // logic below runs, so it isn't included here.
+    if allowed_operations.has_stage() {
+        tracing::info!(
+            metric_name = "manual_rollback_start",
+            requested_rollback_kind = format!("{:?}", requested_rollback_kind),
+            servicing_state = format!("{:?}", datastore.host_status().servicing_state),
+            stage = allowed_operations.has_stage(),
+            finalize = allowed_operations.has_finalize(),
+        );
+    }
+
     // Tracks the rollback kind actually staged this call, so the trailing
     // "stage completed, finalize not requested this call" return below can
     // report it instead of a generic NoActiveServicing. Stays None when
@@ -294,6 +315,25 @@ fn finalize_rollback(
             host_status.spec_old = Default::default();
             host_status.servicing_state = ServicingState::Provisioned;
         })?;
+
+        // Unlike the A/B rollback case below, a runtime rollback requires no
+        // reboot, so this never reaches `engine::rollback`'s post-reboot
+        // boot-validation flow -- the only place `manual_rollback_success`
+        // is otherwise fired (and only for the `ManualRollbackAbFinalized`
+        // state). Without this, a runtime rollback would emit
+        // `manual_rollback_start` but no matching success signal at all.
+        info!("Manual rollback of runtime update succeeded");
+        tracing::info!(
+            metric_name = "manual_rollback_runtime_success",
+            value = true
+        );
+
+        // Persistence happens in the caller (execute_rollback), after this
+        // function returns -- not here. This function's own outcome metric
+        // has already fired above by the time that happens, so the
+        // archived metrics file still includes it; persisting again here
+        // as well would just archive the same (or, with second-resolution
+        // filenames, a second) copy.
         return Ok(rollback_exit_kind);
     }
 
