@@ -3,15 +3,32 @@ use std::{fs, path::Path};
 use log::{debug, warn};
 use serde::{de::DeserializeOwned, Serialize};
 use sqlite::State;
+use uuid::Uuid;
 
 use trident_api::{
     error::{
         DatastoreError, InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
     },
-    status::{decode_host_status, HostStatus, TridentVersion},
+    status::{decode_host_status, HostStatus, ServicingState, TridentVersion},
 };
 
-use crate::TRIDENT_SEMVER_VERSION;
+use crate::{logging::operation_context, TRIDENT_SEMVER_VERSION};
+
+/// Key under which the datastore's unique installation ID is stored in the
+/// generic key-value table. This ID is generated once, at the start of
+/// `Trident::install` (see `DataStore::ensure_installation_id`), and
+/// persisted for the lifetime of the datastore. It is intended to be added
+/// to tracing/telemetry so that all activity for a given host installation
+/// can be correlated.
+const INSTALLATION_ID_KEY: &str = "installation-id";
+
+/// Key under which the current servicing ID is stored in the generic
+/// key-value table. Unlike `INSTALLATION_ID_KEY`, this is overwritten
+/// every time a new servicing operation begins staging (install, update,
+/// or manual rollback) via `DataStore::ensure_servicing_id` -- it identifies
+/// "the servicing operation in progress (or last completed)", not the
+/// host installation as a whole.
+const SERVICING_ID_KEY: &str = "servicing-id";
 
 pub struct DataStore {
     db: Option<sqlite::Connection>,
@@ -206,8 +223,8 @@ impl DataStore {
 
     pub(crate) fn persist(&mut self, path: &Path) -> Result<(), TridentError> {
         if self.temporary {
-            // Read every generic key-value entry (e.g. an installation ID)
-            // out of the temporary datastore before starting any
+            // Read every generic key-value entry (e.g. the installation
+            // ID) out of the temporary datastore before starting any
             // destination writes below: this both avoids a same-file
             // read/write lock deadlock when `path` is the datastore's own
             // current path (see `write_key_values`'s doc comment) and lets
@@ -447,11 +464,6 @@ impl DataStore {
     /// Values are serialized as JSON, so any type implementing
     /// `serde::Serialize`/`serde::de::DeserializeOwned` can be stored, not
     /// just `HostStatus`.
-    ///
-    /// No first-party caller exists yet in this crate on its own (see
-    /// `set_value`/`set_value_if_absent` for why); kept as part of the
-    /// generic key-value API for the first real consumer to build on.
-    #[allow(dead_code)]
     pub(crate) fn get_value<T: DeserializeOwned>(
         &self,
         key: &str,
@@ -510,12 +522,11 @@ impl DataStore {
     /// `serde::Serialize`/`serde::de::DeserializeOwned` can be stored, not
     /// just `HostStatus`.
     ///
-    /// No first-party caller exists yet in this crate on its own -- this is
-    /// exercised only by tests for now. It's kept as part of the generic
-    /// key-value API (see `get_value`) for the first real consumer that
-    /// wants unconditional-overwrite semantics (as opposed to
-    /// `set_value_if_absent`'s insert-if-absent semantics).
-    #[allow(dead_code)]
+    /// `installation_id` needs insert-if-absent semantics instead (see
+    /// `set_value_if_absent`), but `servicing_id` -- a new servicing
+    /// operation genuinely does replace whatever ID (if any) came before
+    /// it -- is a first-party caller of this unconditional-overwrite
+    /// form.
     pub(crate) fn set_value<T: Serialize>(&self, key: &str, value: &T) -> Result<(), TridentError> {
         let contents = serde_json::to_string(value).structured(ServicingError::Datastore {
             inner: DatastoreError::SerializeValue {
@@ -533,14 +544,9 @@ impl DataStore {
     /// Like [`Self::set_value`], but only inserts a row if `key` does not
     /// already have one; an existing row is left untouched. Used where two
     /// datastore connections could race to perform "first access"
-    /// initialization of a key: whichever connection's insert commits first
-    /// wins, and the other's insert becomes a no-op instead of overwriting
-    /// the winner's value.
-    ///
-    /// No first-party caller exists yet in this crate on its own -- this is
-    /// exercised only by tests for now. Kept as part of the generic
-    /// key-value API for the first real get-or-create-style consumer.
-    #[allow(dead_code)]
+    /// initialization of a key (see [`Self::ensure_installation_id`]):
+    /// whichever connection's insert commits first wins, and the other's
+    /// insert becomes a no-op instead of overwriting the winner's value.
     pub(crate) fn set_value_if_absent<T: Serialize>(
         &self,
         key: &str,
@@ -599,6 +605,126 @@ impl DataStore {
         })?;
 
         Ok(())
+    }
+
+    /// Returns this datastore's installation ID, if one has already been
+    /// persisted. Read-only: never generates or persists one -- callers
+    /// that need get-or-create semantics must call
+    /// [`Self::ensure_installation_id`] instead.
+    pub fn installation_id(&self) -> Result<Option<Uuid>, TridentError> {
+        self.get_value::<Uuid>(INSTALLATION_ID_KEY)
+    }
+
+    /// Retrieve this datastore's unique installation ID, generating and
+    /// persisting a new one on first access.
+    ///
+    /// This ID is stable for the lifetime of the datastore (surviving the
+    /// temporary-to-persistent transition performed by `persist`), and is
+    /// intended to be attached to tracing/telemetry so that activity for a
+    /// given host installation can be correlated across logs and traces.
+    ///
+    /// The value used on first access is this invocation's own
+    /// `operation_id` (see `logging::operation_context::current`), not an
+    /// unrelated freshly-generated UUID: whichever command actually
+    /// creates the datastore (normally `Trident::install`) has, by the
+    /// time it gets here, already been tagging its own telemetry with
+    /// `operation_id` since `command_start`. Reusing it here means that
+    /// invocation's telemetry never needs a second, disconnected
+    /// installation ID -- and every later command on this host just reads
+    /// back this same value. Falls back to a fresh random UUID only if
+    /// called with no operation context active (should not happen for any
+    /// real caller).
+    ///
+    /// First access is not a simple read-then-write: `Trident::new` may be
+    /// invoked concurrently (e.g. by multiple daemon RPC handlers), each
+    /// opening its own connection to the same datastore file. A naive
+    /// "read, and if absent generate + write" would let two connections
+    /// both observe no row, generate different UUIDs, and each overwrite
+    /// the other -- leaving one caller tracing with an ID that was never
+    /// actually persisted. Instead, unconditionally attempt to insert a
+    /// freshly generated ID with `ON CONFLICT DO NOTHING` (a no-op if
+    /// another connection already inserted one first), then read back
+    /// whichever ID actually won that race.
+    pub fn ensure_installation_id(&mut self) -> Result<Uuid, TridentError> {
+        if let Some(id) = self.get_value::<Uuid>(INSTALLATION_ID_KEY)? {
+            return Ok(id);
+        }
+
+        let new_id = operation_context::current()
+            .and_then(|(operation_id, _, _)| Uuid::parse_str(&operation_id).ok())
+            .unwrap_or_else(Uuid::new_v4);
+        self.set_value_if_absent(INSTALLATION_ID_KEY, &new_id)?;
+
+        self.get_value::<Uuid>(INSTALLATION_ID_KEY)?
+            .structured(InternalError::Internal(
+                "Installation ID missing immediately after being inserted",
+            ))
+    }
+
+    /// Returns this datastore's installation ID, creating one as a
+    /// one-time migration if it is missing. Single source of truth for
+    /// every caller that attaches an installation ID to the shared
+    /// `TraceStream` on datastore open, so the same migration logic isn't
+    /// hand-copied (and drifting) across `Trident::new`, the CLI's
+    /// installation-ID pre-warm, and the daemon's per-request backstop.
+    ///
+    /// A datastore can be genuinely provisioned (`servicing_state !=
+    /// NotProvisioned`) without ever having gone through
+    /// `Trident::install` -- offline initialization and the CIH update
+    /// bootstrap both create/adopt a datastore directly. Those hosts
+    /// would otherwise never get an installation ID, since nothing else
+    /// ever calls `ensure_installation_id`. Create one as a one-time
+    /// migration in that specific case, while leaving a genuinely
+    /// unprovisioned (temporary or not-yet-installed) datastore alone --
+    /// callers should not observe an installation ID appear before the
+    /// host actually completes an install.
+    pub fn installation_id_or_migrate(&mut self) -> Result<Option<Uuid>, TridentError> {
+        match self.installation_id()? {
+            Some(id) => Ok(Some(id)),
+            None if self.host_status().servicing_state != ServicingState::NotProvisioned => {
+                self.ensure_installation_id().map(Some)
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Returns the currently persisted servicing ID, if any. `None` if no
+    /// servicing operation has ever staged (via `ensure_servicing_id`) on
+    /// this datastore.
+    pub fn servicing_id(&self) -> Result<Option<Uuid>, TridentError> {
+        self.get_value::<Uuid>(SERVICING_ID_KEY)
+    }
+
+    /// Generates a fresh servicing ID and persists it (unconditionally
+    /// overwriting any previous value), returning the new ID. Called once
+    /// at the start of staging for install, update, or manual rollback --
+    /// i.e. whenever `Operations::has_stage()` is true for that
+    /// invocation -- so a finalize-only call (or a later `commit`) must
+    /// use [`Self::servicing_id`] to read the value back instead of
+    /// calling this again.
+    ///
+    /// Like `ensure_installation_id`, the value used is this invocation's
+    /// own `operation_id` (see `logging::operation_context::current`),
+    /// not an unrelated freshly-generated UUID: whichever call actually
+    /// performs the staging is what should be correlatable, via this same
+    /// ID, with every later command (finalize, commit) that touches the
+    /// same servicing operation. Falls back to a fresh random UUID only if
+    /// called with no operation context active (should not happen for any
+    /// real caller).
+    ///
+    /// Unlike `ensure_installation_id`, this always generates a *new* ID
+    /// on every call -- there is no "first access wins"/get-or-create
+    /// semantics here, since a new servicing operation genuinely is a new
+    /// operation, not a value that should be stable for the datastore's
+    /// lifetime. (This also means, unlike installation_id, there is no
+    /// concurrent-first-access race to guard against: `set_value`'s plain
+    /// overwrite is sufficient.)
+    pub fn ensure_servicing_id(&mut self) -> Result<Uuid, TridentError> {
+        let id = operation_context::current()
+            .and_then(|(operation_id, _, _)| Uuid::parse_str(&operation_id).ok())
+            .unwrap_or_else(Uuid::new_v4);
+        self.set_value(SERVICING_ID_KEY, &id)?;
+        Ok(id)
     }
 
     /// Parse a single HostStatus entry from a datastore query result.
@@ -673,17 +799,15 @@ mod tests {
         let datastore_path = temp_dir.path().join("db.sqlite");
 
         let mut datastore = super::DataStore::open_or_create(&datastore_path).unwrap();
-        datastore
-            .set_value("test-key", &"test-value".to_string())
-            .unwrap();
+        let installation_id = datastore.ensure_installation_id().unwrap();
 
         // Persist to the exact same path the datastore is currently open at.
         datastore.persist(&datastore_path).unwrap();
 
         assert_eq!(
-            datastore.get_value::<String>("test-key").unwrap(),
-            Some("test-value".to_string()),
-            "keyvalue row should survive a self-persist"
+            datastore.ensure_installation_id().unwrap(),
+            installation_id,
+            "Installation ID should survive a self-persist"
         );
     }
 
@@ -844,8 +968,8 @@ mod tests {
     #[test]
     /// Regression test: a datastore created by an older Trident version that
     /// predates the `keyvalue` table (only `hoststatus` exists) must still
-    /// be usable after `open()` -- in particular, `get_value`/`set_value`
-    /// must not fail with "no such table: keyvalue".
+    /// be usable after `open()` -- in particular, `ensure_installation_id()` must
+    /// not fail with "no such table: keyvalue".
     fn test_open_upgrades_pre_existing_datastore_schema() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("db.sqlite");
@@ -864,11 +988,9 @@ mod tests {
             .unwrap();
         }
 
-        let datastore = super::DataStore::open(&path).unwrap();
+        let mut datastore = super::DataStore::open(&path).unwrap();
         // Should not fail with "no such table: keyvalue".
-        datastore
-            .set_value("test-key", &"test-value".to_string())
-            .unwrap();
+        datastore.ensure_installation_id().unwrap();
 
         temp_dir.close().unwrap();
     }
@@ -894,33 +1016,15 @@ mod tests {
         temp_dir.close().unwrap();
     }
 
-    /// Test helper mirroring the "get-or-create" pattern a real consumer
-    /// (e.g. a future `installation_id`-style accessor) would build on top
-    /// of `get_value`/`set_value_if_absent`: read the value back if
-    /// present, otherwise attempt to insert a freshly generated one with
-    /// insert-if-absent semantics, then read back whichever value actually
-    /// won.
-    fn get_or_create_test_value(datastore: &mut super::DataStore) -> String {
-        const KEY: &str = "test-key";
-        if let Some(v) = datastore.get_value::<String>(KEY).unwrap() {
-            return v;
-        }
-        datastore
-            .set_value_if_absent(KEY, &uuid::Uuid::new_v4().to_string())
-            .unwrap();
-        datastore.get_value::<String>(KEY).unwrap().unwrap()
-    }
-
     #[test]
-    fn test_set_value_if_absent_concurrent_first_access_is_consistent() {
+    fn test_installation_id_concurrent_first_access_is_consistent() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("db.sqlite");
 
         // Create the datastore (and its schema) up front, then open two
-        // separate connections to it, simulating two callers concurrently
-        // performing "first access" get-or-create initialization (e.g. two
-        // daemon RPC handlers both calling `Trident::new`) against the same
-        // datastore path.
+        // separate connections to it, simulating two daemon RPC handlers
+        // concurrently calling `Trident::new` (and therefore
+        // `installation_id`) against the same datastore path.
         super::DataStore::make_datastore(&path).unwrap();
 
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
@@ -931,25 +1035,25 @@ mod tests {
                 std::thread::spawn(move || {
                     let mut datastore = super::DataStore::open(&path).unwrap();
                     // Synchronize so both threads attempt "first access"
-                    // (no value persisted yet) as close together as
-                    // possible.
+                    // (no installation ID persisted yet) as close together
+                    // as possible.
                     barrier.wait();
-                    get_or_create_test_value(&mut datastore)
+                    datastore.ensure_installation_id().unwrap()
                 })
             })
             .collect();
 
-        let values: Vec<String> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        let ids: Vec<uuid::Uuid> = handles.into_iter().map(|h| h.join().unwrap()).collect();
         assert_eq!(
-            values[0], values[1],
-            "concurrent first access returned inconsistent values"
+            ids[0], ids[1],
+            "concurrent first access returned inconsistent installation IDs"
         );
 
         temp_dir.close().unwrap();
     }
 
     #[test]
-    fn test_set_value_if_absent_is_stable() {
+    fn test_installation_id_is_stable() {
         let temp_dir = tempfile::tempdir().unwrap();
         let path = temp_dir.path().join("db.sqlite");
         let db = super::DataStore::make_datastore(&path).unwrap();
@@ -959,12 +1063,67 @@ mod tests {
             temporary: false,
         };
 
-        let value = get_or_create_test_value(&mut datastore);
-        // Calling get_or_create again should return the same value, not
-        // generate a new one.
-        assert_eq!(get_or_create_test_value(&mut datastore), value);
+        let id = datastore.ensure_installation_id().unwrap();
+        // Calling installation_id again should return the same ID, not generate a
+        // new one.
+        assert_eq!(datastore.ensure_installation_id().unwrap(), id);
 
         temp_dir.close().unwrap();
+    }
+
+    #[test]
+    /// The read-only getter must not create an installation ID -- only
+    /// `ensure_installation_id` (called specifically at the start of
+    /// `Trident::install`) does that.
+    fn test_installation_id_read_only_getter_does_not_create() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("db.sqlite");
+        let db = super::DataStore::make_datastore(&path).unwrap();
+        let mut datastore = super::DataStore {
+            db: Some(db),
+            host_status: Default::default(),
+            temporary: false,
+        };
+
+        assert_eq!(
+            datastore.installation_id().unwrap(),
+            None,
+            "no installation ID should exist before ensure_installation_id is called"
+        );
+
+        let created = datastore.ensure_installation_id().unwrap();
+
+        assert_eq!(
+            datastore.installation_id().unwrap(),
+            Some(created),
+            "the read-only getter should now see the created ID"
+        );
+
+        temp_dir.close().unwrap();
+    }
+
+    #[test]
+    /// Regression test: `ensure_servicing_id` always generates a *fresh* ID
+    /// on every call, unlike `ensure_installation_id`'s get-or-create
+    /// semantics. This is what lets a retried clean install (e.g. a
+    /// previous attempt's staging failed, leaving
+    /// `ServicingState::NotProvisioned`) get its own distinct servicing ID
+    /// rather than reusing a stale one from the failed attempt.
+    fn test_ensure_servicing_id_generates_a_fresh_id_each_call() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let datastore_path = temp_dir.path().join("db.sqlite");
+
+        let mut datastore = super::DataStore::open_or_create(&datastore_path).unwrap();
+
+        let first = datastore.ensure_servicing_id().unwrap();
+        assert_eq!(datastore.servicing_id().unwrap(), Some(first));
+
+        let second = datastore.ensure_servicing_id().unwrap();
+        assert_ne!(
+            first, second,
+            "ensure_servicing_id should generate a fresh ID on every call, not reuse the previous one"
+        );
+        assert_eq!(datastore.servicing_id().unwrap(), Some(second));
     }
 }
 
@@ -1043,28 +1202,22 @@ mod functional_test {
     }
 
     #[functional_test]
-    fn test_generic_key_value_survives_persist() {
+    fn test_installation_id_survives_persist() {
         let temp_dir = TempDir::new().unwrap();
         let datastore_temp_path = temp_dir.path().join("db-tmp.sqlite");
         let datastore_path = temp_dir.path().join("db.sqlite");
 
-        // Store a generic keyvalue entry in the temporary datastore, then
-        // persist it.
-        {
+        // Generate a installation ID in the temporary datastore, then persist it.
+        let installation_id = {
             let mut datastore = DataStore::open_or_create(&datastore_temp_path).unwrap();
-            datastore
-                .set_value("test-key", &"test-value".to_string())
-                .unwrap();
+            let installation_id = datastore.ensure_installation_id().unwrap();
             datastore.persist(&datastore_path).unwrap();
+            installation_id
         };
 
-        // Re-open the persisted datastore and verify the same value is
-        // returned, rather than being lost in the temporary-to-persistent
-        // transition.
-        let datastore = DataStore::open(&datastore_path).unwrap();
-        assert_eq!(
-            datastore.get_value::<String>("test-key").unwrap(),
-            Some("test-value".to_string())
-        );
+        // Re-open the persisted datastore and verify the same installation ID is
+        // returned, rather than a new one being generated.
+        let mut datastore = DataStore::open(&datastore_path).unwrap();
+        assert_eq!(datastore.ensure_installation_id().unwrap(), installation_id);
     }
 }
