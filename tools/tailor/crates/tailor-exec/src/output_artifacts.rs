@@ -14,6 +14,13 @@ use tailor_config::OutputArtifactsPolicy;
 
 use crate::path_translate;
 
+/// The per-cell published CA cert filename -- paired 1:1 with the image so concurrent tailor
+/// instances never clobber a shared cert (`meta/docs/2026-06-29-signing.md` §6). Used by the
+/// executor to place the cert and by `tailor clean` to remove it. Defined in `tailor-core` (not
+/// here) so planning's collision claims and this crate's actual write share one definition instead
+/// of two that can drift.
+pub use tailor_core::ca_cert_name;
+
 /// The IC preview-feature flag that gates `output.artifacts` (IC docs). Its presence is tailor's
 /// single activation predicate today (§3.1); a stabilized-API detector is added alongside later.
 const OUTPUT_ARTIFACTS_FEATURE: &str = "output-artifacts";
@@ -23,17 +30,8 @@ const ARTIFACTS_KEY: &str = "artifacts";
 const PATH_KEY: &str = "path";
 /// Prefix of the hidden, tailor-named staging directories (so the crash sweep can recognise its own).
 const STAGE_PREFIX: &str = ".tailor-stage";
-/// Suffix of the enrollable CA cert dropped beside a signed image (`meta/docs/2026-06-29-signing.md` §6).
-const CA_CERT_SUFFIX: &str = "ca_cert.pem";
 
 static STAGING_SEQ: AtomicU64 = AtomicU64::new(0);
-
-/// The per-cell published CA cert filename, `<slug>.ca_cert.pem` — paired 1:1 with the image so
-/// concurrent tailor instances never clobber a shared cert (`meta/docs/2026-06-29-signing.md` §6). Used by the
-/// executor to place the cert and by `tailor clean` to remove it.
-pub fn ca_cert_name(slug: &str) -> String {
-    format!("{slug}.{CA_CERT_SUFFIX}")
-}
 
 /// What tailor does with the staging directory after IC runs (§3.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
