@@ -197,6 +197,9 @@ fn stage_clean_install(
         is_uki: Some(is_uki),
     })?;
 
+    // Trace feature usage for this clean install.
+    ctx.feature_tracing();
+
     // Execute pre-servicing scripts
     HooksSubsystem::new_for_local_scripts().execute_pre_servicing_scripts(&ctx)?;
 
