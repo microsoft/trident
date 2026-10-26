@@ -1,33 +1,22 @@
-use std::{
-    collections::HashSet,
-    sync::LazyLock,
-    thread::{Builder, JoinHandle},
-    time::Duration,
-};
+use std::{thread::JoinHandle, time::Duration};
 
 use anyhow::{bail, Context, Error};
 use log::{debug, error};
-use reqwest::Client;
-use tokio::sync::{
-    mpsc::{self, UnboundedReceiver, UnboundedSender, WeakUnboundedSender},
-    oneshot,
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender, WeakUnboundedSender};
+use url::Url;
+
+use super::upload_core::{
+    self, attempt_upload, join_with_deadline, OriginCooldowns, ResponseValidator, UploadData,
 };
-use url::{Origin, Url};
 
-/// A static HTTP client for background uploads.
-static HTTP_ASYNC_CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
+// Re-exported so callers filtering log forwarding by this uploader's own
+// module don't need to know that the actual POST/backoff logic (and its
+// logging) lives in `upload_core`.
+pub(super) use super::upload_core::BACKGROUND_LOG_MODULE;
 
-/// The module path of the background uploader. Can be used for filtering logs.
-pub(super) const BACKGROUND_LOG_MODULE: &str = module_path!();
-
-/// Data to be uploaded by the background uploader.
-struct UploadData {
-    url: Url,
-    body: Vec<u8>,
-    timeout: Duration,
-}
-
-/// A background uploader that sends log data to a remote server asynchronously.
+/// A background uploader that sends log data to a remote server
+/// asynchronously, via an unbounded pending-upload queue -- losing queued
+/// data is not acceptable, so items are never dropped under backpressure.
 ///
 /// When dropped it will finish any pending uploads and shut down the background
 /// thread.
@@ -54,76 +43,44 @@ impl BackgroundUploader {
 
     /// Starts a new thread with a Tokio runtime to handle uploads.
     fn start_upload_task(receiver: UnboundedReceiver<UploadData>) -> Result<JoinHandle<()>, Error> {
-        let (ready_tx, ready_rx) = oneshot::channel::<bool>();
-        let handle = Builder::new()
-            .name("background-uploader".into())
-            .spawn(move || {
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build();
-                let _ = ready_tx.send(runtime.is_ok());
-                let runtime = match runtime {
-                    Ok(rt) => rt,
-                    Err(e) => {
-                        eprintln!("Failed to create Tokio runtime for background uploader: {e}");
-                        return;
-                    }
-                };
-
-                runtime.block_on(async move {
-                    Self::upload_loop(receiver).await;
-                });
-            })
-            .context("Failed to create background-uploader thread.")?;
-
-        // Wait for the runtime to be ready
-        match ready_rx.blocking_recv() {
-            Ok(true) => Ok(handle),
-            Ok(false) => bail!("Failed to create Tokio runtime for background uploader"),
-            Err(e) => bail!("Background uploader thread terminated unexpectedly: {e}"),
-        }
+        upload_core::spawn_uploader_thread(Self::upload_loop(receiver))
     }
 
-    /// The main upload loop that processes incoming upload requests.
+    /// The main upload loop that processes incoming upload requests. Runs
+    /// until the channel is closed (all senders dropped) and fully
+    /// drained.
     async fn upload_loop(mut receiver: UnboundedReceiver<UploadData>) {
-        let mut ignored_servers = HashSet::new();
+        let mut origin_cooldowns = OriginCooldowns::new();
 
         while let Some(upload) = receiver.recv().await {
-            if ignored_servers.contains(&upload.url.origin()) {
-                continue;
-            }
-
-            let result = HTTP_ASYNC_CLIENT
-                .post(upload.url.clone())
-                .timeout(upload.timeout)
-                .body(upload.body)
-                .send()
-                .await;
-
-            if let Err(e) = result {
-                error!("Background upload failed: {e}");
-                ignored_servers.insert(upload.url.origin());
-                error!(
-                    "Ignoring future uploads to server: {}",
-                    match upload.url.origin() {
-                        Origin::Tuple(scheme, host, port) =>
-                            format!("{}://{}:{}", scheme, host, port),
-                        Origin::Opaque(_) => "[opaque origin]".to_string(),
-                    }
-                );
-            }
-
-            // Note: we don't particularly care much for the status code since
-            // this is just a generic implementation.
+            attempt_upload(&mut origin_cooldowns, upload).await;
         }
 
         debug!("Background uploader loop has exited");
+    }
+
+    /// Signals the uploader to shut down, waiting up to `deadline` for its
+    /// background thread to drain whatever is already queued and exit.
+    pub fn shutdown_with_deadline(mut self, deadline: Duration) {
+        let Some((sender, handle)) = self.inner.take() else {
+            return;
+        };
+        drop(sender);
+
+        match join_with_deadline(handle, deadline) {
+            Ok(Ok(())) => debug!("Background uploader shut down"),
+            Ok(Err(e)) => error!("Background uploader thread panicked: {:?}", e),
+            Err(_) => {
+                debug!("Background uploader did not shut down within {deadline:?}; abandoning it")
+            }
+        }
     }
 }
 
 impl Drop for BackgroundUploader {
     fn drop(&mut self) {
-        // When the sender is dropped, the upload loop will exit gracefully
+        // Dropping the sender lets the upload loop exit gracefully on its
+        // own once it has drained whatever is already queued.
         if let Some((sender, handle)) = self.inner.take() {
             drop(sender);
             debug!("Waiting for background uploader to shut down");
@@ -141,20 +98,41 @@ pub struct BackgroundUploadHandle {
 }
 
 impl BackgroundUploadHandle {
-    /// Sends data to be uploaded in the background.
+    /// Sends data to be uploaded in the background. Any 2xx response is
+    /// treated as success; use [`Self::upload_with_validator`] if the
+    /// destination's ingestion protocol can reject part of a request
+    /// while still returning a 2xx status.
     pub fn upload(
         &self,
         url: &Url,
         body: impl Into<Vec<u8>>,
         timeout: Duration,
+        content_type: Option<&'static str>,
     ) -> Result<(), Error> {
+        self.upload_with_validator(url, body, timeout, content_type, None)
+    }
+
+    /// Same as [`Self::upload`], but with an optional response validator
+    /// -- see `UploadData`'s `response_validator` field doc comment above
+    /// for its contract.
+    pub fn upload_with_validator(
+        &self,
+        url: &Url,
+        body: impl Into<Vec<u8>>,
+        timeout: Duration,
+        content_type: Option<&'static str>,
+        response_validator: Option<ResponseValidator>,
+    ) -> Result<(), Error> {
+        let data = UploadData {
+            url: url.clone(),
+            body: body.into(),
+            timeout,
+            content_type,
+            response_validator,
+        };
         if let Some(sender) = self.sender.upgrade() {
             sender
-                .send(UploadData {
-                    url: url.clone(),
-                    body: body.into(),
-                    timeout,
-                })
+                .send(data)
                 .context("Failed to send data to background uploader")
         } else {
             bail!("Background uploader has been shut down");
@@ -176,9 +154,9 @@ impl BackgroundUploadHandle {
 mod tests {
     use super::*;
 
-    use std::time::Duration;
+    use std::time::Instant;
 
-    use mockito::{Matcher, Server};
+    use mockito::Matcher;
 
     fn init_test_logging() {
         let _ = env_logger::builder()
@@ -208,7 +186,7 @@ mod tests {
         let url = Url::parse("http://example.invalid/upload").unwrap();
         // After shutdown, the weak sender can't be upgraded so upload should error.
         let err = handle
-            .upload(&url, b"hello".to_vec(), Duration::from_millis(50))
+            .upload(&url, b"hello".to_vec(), Duration::from_millis(50), None)
             .unwrap_err();
         assert!(
             err.to_string().contains("shut down"),
@@ -225,7 +203,7 @@ mod tests {
         let uploader = BackgroundUploader::new().unwrap();
         let handle = uploader.get_handle().unwrap();
 
-        let mut server = Server::new();
+        let mut server = mockito::Server::new();
         let body = "hello-background-uploader";
         let mock = server
             .mock("POST", "/upload")
@@ -236,7 +214,7 @@ mod tests {
 
         let url = Url::parse(&server.url()).unwrap().join("/upload").unwrap();
         handle
-            .upload(&url, body.as_bytes().to_vec(), Duration::from_secs(2))
+            .upload(&url, body.as_bytes().to_vec(), Duration::from_secs(2), None)
             .unwrap();
 
         // Drop uploader first to ensure the background thread finishes processing all queued
@@ -250,7 +228,7 @@ mod tests {
     fn test_upload_loop_sends_post_request() {
         init_test_logging();
 
-        let mut server = Server::new();
+        let mut server = mockito::Server::new();
         let body = "hello-upload-loop";
         let mock = server
             .mock("POST", "/upload")
@@ -272,6 +250,8 @@ mod tests {
                     url,
                     body: body.as_bytes().to_vec(),
                     timeout: Duration::from_secs(2),
+                    content_type: None,
+                    response_validator: None,
                 })
                 .unwrap();
 
@@ -284,70 +264,6 @@ mod tests {
     }
 
     #[test]
-    /// Directly tests `upload_loop` failure handling: once a request to an origin fails, future
-    /// uploads to that same origin should be ignored.
-    fn test_upload_loop_failed_host_is_ignored_for_future_uploads() {
-        init_test_logging();
-
-        // Use a single mockito server so both uploads share the same origin (scheme+host+port).
-        // First upload: the server intentionally responds too slowly, causing a client timeout
-        // (reqwest returns Err) which marks the origin as ignored.
-        let mut server = Server::new();
-        let slow_mock = server
-            .mock("POST", "/slow")
-            .with_status(200)
-            .with_body_from_request(|_| {
-                std::thread::sleep(Duration::from_millis(1000));
-                b"slow-response".to_vec()
-            })
-            .expect(1)
-            .create();
-
-        let should_not_hit = server
-            .mock("POST", "/upload")
-            .with_status(200)
-            .expect(0)
-            .create();
-
-        // Queue both requests upfront, then close the channel. The loop processes
-        // messages sequentially, so the first request will timeout and mark the
-        // origin as ignored before the second request is even considered.
-        // This removes any timing dependency.
-        let (sender, receiver) = mpsc::unbounded_channel::<UploadData>();
-
-        // First request: a slow response + short timeout forces reqwest to return an error.
-        // The timeout (100ms) must be long enough for the request to be sent to the server,
-        // but short enough to expire before the mock's 1s response delay completes.
-        sender
-            .send(UploadData {
-                url: Url::parse(&server.url()).unwrap().join("/slow").unwrap(),
-                body: b"timeout-me".to_vec(),
-                timeout: Duration::from_millis(100),
-            })
-            .unwrap();
-
-        // Second request: same origin; should be skipped after the first fails.
-        sender
-            .send(UploadData {
-                url: Url::parse(&server.url()).unwrap().join("/upload").unwrap(),
-                body: b"this-should-be-skipped".to_vec(),
-                timeout: Duration::from_secs(2),
-            })
-            .unwrap();
-
-        // Close the channel before running the loop. The loop will process both
-        // queued messages in order, then exit.
-        drop(sender);
-
-        run_in_runtime(async {
-            BackgroundUploader::upload_loop(receiver).await;
-        });
-
-        slow_mock.assert();
-        should_not_hit.assert();
-    }
-
-    #[test]
     /// Directly tests `upload_loop` shutdown behavior: once the channel is closed, the loop
     /// should upload remaining items in the queue before exiting.
     fn test_upload_loop_shutdown_uploads_remaining_queue_items() {
@@ -355,7 +271,7 @@ mod tests {
 
         // Deterministic shutdown behavior: if the channel is closed (sender dropped) after a
         // message has already been queued, `upload_loop` should still process that queued item.
-        let mut server = Server::new();
+        let mut server = mockito::Server::new();
         let queued_upload = server
             .mock("POST", "/queued")
             .with_status(200)
@@ -368,6 +284,8 @@ mod tests {
                 url: Url::parse(&server.url()).unwrap().join("/queued").unwrap(),
                 body: b"queued".to_vec(),
                 timeout: Duration::from_secs(1),
+                content_type: None,
+                response_validator: None,
             })
             .unwrap();
         // Close the sender before running the loop to simulate shutdown.
@@ -392,7 +310,7 @@ mod tests {
             .expect("get_handle should return Some when alive");
         let handle2 = handle.clone();
 
-        let mut server = Server::new();
+        let mut server = mockito::Server::new();
         let ok_mock = server
             .mock("POST", "/ok")
             .match_body(Matcher::Exact("hello".to_string()))
@@ -402,7 +320,7 @@ mod tests {
 
         let url = Url::parse(&server.url()).unwrap().join("/ok").unwrap();
         handle
-            .upload(&url, b"hello".to_vec(), Duration::from_secs(2))
+            .upload(&url, b"hello".to_vec(), Duration::from_secs(2), None)
             .unwrap();
 
         // Drop the uploader to shut down the background thread. Both `handle`
@@ -423,9 +341,23 @@ mod tests {
                 &Url::parse(&server.url()).unwrap().join("/nope").unwrap(),
                 b"nope".to_vec(),
                 Duration::from_secs(1),
+                None,
             )
             .unwrap_err();
         assert!(err.to_string().contains("shut down"));
         after_drop.assert();
+    }
+
+    #[test]
+    fn test_shutdown_with_deadline_returns_promptly_with_empty_queue() {
+        init_test_logging();
+
+        let uploader = BackgroundUploader::new().unwrap();
+        let start = Instant::now();
+        uploader.shutdown_with_deadline(Duration::from_secs(5));
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "shutdown with nothing queued should be immediate"
+        );
     }
 }
