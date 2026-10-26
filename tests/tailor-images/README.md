@@ -60,3 +60,4 @@ The current families are:
 - `trident-installer`
 - `trident-testimage`
 - `trident-verity-testimage`
+- `trident-vm-testimage`
