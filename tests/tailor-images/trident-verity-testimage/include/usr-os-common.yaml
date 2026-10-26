@@ -1,0 +1,41 @@
+bootloader:
+  resetType: hard-reset
+selinux:
+  mode: disabled
+uki:
+  mode: create
+kernelCommandLine:
+  extraCommandLine:
+    - console=tty0
+    - console=ttyS0
+    - rd.info
+    - log_buf_len=1M
+    - rd.hostonly=0
+packages:
+  install:
+    - curl
+    - device-mapper
+    - efibootmgr
+    - iproute
+    - iptables
+    - lvm2
+    - mdadm
+    - netplan
+    - openssh-server
+    - systemd-udev
+    - tpm2-tools
+    - veritysetup
+    - vim
+    - systemd-ukify
+    - systemd-boot
+    - efibootmgr
+  remove:
+    - grub2-efi-binary
+additionalFiles:
+  - source: usr/files/dracut-nohostonly.conf
+    destination: /usr/lib/dracut/dracut.conf.d/nohostonly.conf
+  - source: ../common/files/sudoers-wheel
+    destination: /etc/sudoers.d/wheel
+services:
+  enable:
+    - sshd
