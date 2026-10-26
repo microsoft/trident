@@ -2,7 +2,7 @@ use std::{
     collections::VecDeque,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex, Weak,
+        Arc, Condvar, Mutex, Weak,
     },
     thread::JoinHandle,
     time::Duration,
@@ -24,8 +24,14 @@ use super::upload_core::{
 ///
 /// This is for best-effort telemetry: producers must never block on enqueue,
 /// but a merely slow endpoint still needs a backlog cap.
+struct TelemetryQueue {
+    pending: VecDeque<UploadData>,
+    in_flight: bool,
+}
+
 struct TelemetryRing {
-    queue: Mutex<VecDeque<UploadData>>,
+    queue: Mutex<TelemetryQueue>,
+    drained: Condvar,
     capacity: usize,
     /// Woken on each push, and once more by `signal_stop`, so `pop` can
     /// wake for either new data or shutdown.
@@ -38,7 +44,11 @@ struct TelemetryRing {
 impl TelemetryRing {
     fn new(capacity: usize) -> Arc<Self> {
         Arc::new(Self {
-            queue: Mutex::new(VecDeque::with_capacity(capacity)),
+            queue: Mutex::new(TelemetryQueue {
+                pending: VecDeque::with_capacity(capacity),
+                in_flight: false,
+            }),
+            drained: Condvar::new(),
             capacity,
             notify: Notify::new(),
             stop_requested: AtomicBool::new(false),
@@ -54,10 +64,10 @@ impl TelemetryRing {
         if self.stop_requested.load(Ordering::Acquire) {
             bail!("Background uploader has been shut down");
         }
-        if queue.len() >= self.capacity {
-            queue.pop_front();
+        if queue.pending.len() >= self.capacity {
+            queue.pending.pop_front();
         }
-        queue.push_back(item);
+        queue.pending.push_back(item);
         drop(queue);
         self.notify.notify_one();
         Ok(())
@@ -69,7 +79,8 @@ impl TelemetryRing {
         loop {
             {
                 let mut queue = self.queue.lock().unwrap();
-                if let Some(item) = queue.pop_front() {
+                if let Some(item) = queue.pending.pop_front() {
+                    queue.in_flight = true;
                     return Some(item);
                 }
                 if self.stop_requested.load(Ordering::Acquire) {
@@ -78,6 +89,23 @@ impl TelemetryRing {
             }
             self.notify.notified().await;
         }
+    }
+
+    fn finish_upload(&self) {
+        let mut queue = self.queue.lock().unwrap();
+        queue.in_flight = false;
+        self.drained.notify_all();
+    }
+
+    fn flush_with_deadline(&self, deadline: Duration) -> bool {
+        let queue = self.queue.lock().unwrap();
+        let (queue, _) = self
+            .drained
+            .wait_timeout_while(queue, deadline, |queue| {
+                !queue.pending.is_empty() || queue.in_flight
+            })
+            .unwrap();
+        queue.pending.is_empty() && !queue.in_flight
     }
 
     /// Signals shutdown under the same `queue` lock used by `push`/`pop`; see
@@ -131,6 +159,7 @@ impl TelemetryUploader {
         while let Some(upload) = ring.pop().await {
             let draining = ring.stop_requested.load(Ordering::Acquire);
             let outcome = attempt_upload(&mut origin_cooldowns, upload).await;
+            ring.finish_upload();
             if draining && matches!(outcome, AttemptOutcome::Attempted { succeeded: false }) {
                 debug!("Telemetry uploader stopping drain after a failed upload during shutdown");
                 break;
@@ -138,6 +167,15 @@ impl TelemetryUploader {
         }
 
         debug!("Telemetry uploader loop has exited");
+    }
+
+    /// Waits for queued and in-flight attempts without closing the uploader.
+    /// Returns false if the deadline expires before it becomes idle.
+    pub fn flush_with_deadline(&self, deadline: Duration) -> bool {
+        let Some((ring, _)) = self.inner.as_ref() else {
+            return true;
+        };
+        ring.flush_with_deadline(deadline)
     }
 
     /// Signals shutdown and waits up to `deadline` for the uploader thread
@@ -264,6 +302,70 @@ mod tests {
             content_type: None,
             response_validator: None,
         }
+    }
+
+    #[test]
+    fn test_flush_waits_for_in_flight_attempt_without_closing() {
+        let ring = TelemetryRing::new(2);
+        ring.push(mock_upload(
+            Url::parse("http://example.invalid/").unwrap(),
+            "reboot",
+        ))
+        .unwrap();
+        run_in_runtime(async {
+            assert!(ring.pop().await.is_some());
+        });
+
+        let started = std::time::Instant::now();
+        assert!(!ring.flush_with_deadline(Duration::from_millis(20)));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        ring.finish_upload();
+        assert!(ring.flush_with_deadline(Duration::ZERO));
+        ring.push(mock_upload(
+            Url::parse("http://example.invalid/").unwrap(),
+            "command_error",
+        ))
+        .unwrap();
+        assert!(!ring.flush_with_deadline(Duration::ZERO));
+    }
+
+    #[test]
+    fn test_non_closing_flush_allows_later_error_upload() {
+        let mut server = mockito::Server::new();
+        let reboot = server
+            .mock("POST", "/reboot")
+            .with_status(200)
+            .expect(1)
+            .create();
+        let error = server
+            .mock("POST", "/command-error")
+            .with_status(200)
+            .expect(1)
+            .create();
+        let uploader = TelemetryUploader::new(4).unwrap();
+        let handle = uploader.get_handle().unwrap();
+        let url = Url::parse(&server.url()).unwrap();
+
+        handle
+            .upload(
+                &url.join("reboot").unwrap(),
+                b"reboot".to_vec(),
+                Duration::from_secs(2),
+                None,
+            )
+            .unwrap();
+        assert!(uploader.flush_with_deadline(Duration::from_secs(2)));
+        reboot.assert();
+        handle
+            .upload(
+                &url.join("command-error").unwrap(),
+                b"failure".to_vec(),
+                Duration::from_secs(2),
+                None,
+            )
+            .unwrap();
+        uploader.shutdown_with_deadline(Duration::from_secs(2));
+        error.assert();
     }
 
     #[test]

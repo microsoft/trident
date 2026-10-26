@@ -64,8 +64,8 @@ pub use crate::{
         logstream::Logstream,
         operation_context::{
             command_name, run_command, run_command_if, run_reboot_command,
-            run_with_captured_operation, run_with_operation, save_reboot_operation,
-            take_reboot_operation, OperationSource,
+            run_with_captured_operation, save_reboot_operation, take_reboot_operation,
+            OperationSource,
         },
         telemetry_uploader::TelemetryUploader,
         tracestream::TraceStream,
