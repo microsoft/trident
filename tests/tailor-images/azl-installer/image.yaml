@@ -1,0 +1,20 @@
+name: azl-installer
+
+base:
+  ref: baremetal
+
+outputs:
+  - format: iso
+
+rpmSources:
+  - ../../../bin/RPMS
+  - ../../../artifacts/rpm-overrides
+
+extraDependencies:
+  - ./installer-iso.yaml
+  - ./mos
+  - ./iso
+  - ../common
+
+config:
+  $include: ./installer-iso.yaml

@@ -64,5 +64,7 @@ baseImages:
 
 images:
   members:
+    - azl-installer
     - trident-functest
+    - trident-installer
     - trident-testimage
