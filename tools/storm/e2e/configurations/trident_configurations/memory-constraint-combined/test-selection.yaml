@@ -1,0 +1,5 @@
+compatible:
+  - base
+  - usr_verity
+  - encryption
+  - uki

@@ -35,10 +35,44 @@ header = """\
 # Scenarios not listed in this file will not be run in any ring.
 """
 
-# While on development, only allow these configurations:
-ALLOWED_CONFIGS = ["base"]
+# Configurations enabled for the storm-based E2E flow, validated end-to-end on
+# a real VM (base/encryption/verity/uki paths).
+#
+# Runtime note: the encryption+UKI configs (combined, memory-constraint-combined,
+# rerun) seal to PCR 7, which Trident forbids under a containerized runtime. On
+# the container runtime the Host Configuration is rewritten to drop PCR 7
+# (scenario.applyContainerPcrExclusion, mirroring the legacy #221 pipeline glue
+# in testing_vm/netlaunch-testing.yml), so they run in both runtimes just like
+# legacy. memory-constraint-combined is host-only purely because
+# target-configurations.yaml does not list it under container.
+#
+# The UKI/usr-verity images boot their kernel directly through firmware Secure
+# Boot, so they require the image signing certificate injected via
+# --signing-cert (the CI template passes the usrverity-testimage ca_cert.pem
+# for usrverity images).
+ALLOWED_CONFIGS = [
+    "base",
+    "simple",
+    "misc",
+    "raid-big",
+    "raid-mirrored",
+    "raid-resync-small",
+    "raid-small",
+    "extensions",
+    "encrypted-partition",
+    "encrypted-raid",
+    "encrypted-swap",
+    "root-verity",
+    "health-checks-install",
+    "usr-verity",
+    "usr-verity-raid",
+    "combined",
+    "memory-constraint-combined",
+    "rerun",
+    "split",
+]
 ALLOWED_HARDWARES = ["vm"]
-ALLOWED_RUNTIMES = ["host"]
+ALLOWED_RUNTIMES = ["host", "container"]
 
 # Special settings to merge into specific configurations
 SPECIAL_SETTINGS = {
@@ -52,6 +86,25 @@ SPECIAL_SETTINGS = {
         "ignorePhonehomeFailures": True,
     },
 }
+
+
+def config_has_uki_marker(repo_root, name):
+    """Return True if the config's test-selection.yaml lists the "uki" marker."""
+    selection_file = (
+        repo_root
+        / "tests"
+        / "e2e_tests"
+        / "trident_configurations"
+        / name
+        / "test-selection.yaml"
+    )
+    try:
+        with open(selection_file, "r") as f:
+            selection = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        return False
+
+    return "uki" in (selection.get("compatible") or [])
 
 
 def main():
@@ -125,6 +178,13 @@ def main():
             continue
         for k, v in settings.items():
             inverted[name][k] = v
+
+    # Set isUki for configurations whose test selection declares the "uki"
+    # marker. This mirrors the pytest `isUki` fixture (uki in compatible) and
+    # drives the expected TPM2 policy in the encryption validation.
+    for name in inverted:
+        if config_has_uki_marker(repo_root, name):
+            inverted[name]["isUki"] = True
 
     # Re-sort configs by name
     inverted = dict(sorted(inverted.items()))
