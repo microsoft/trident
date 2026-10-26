@@ -1,0 +1,14 @@
+name: trident-container-installer
+
+base:
+  ref: baremetal
+
+outputs:
+  - format: iso
+
+extraDependencies:
+  - ./base
+  - ../common
+
+config:
+  $include: ./tailor/baseimg.yaml

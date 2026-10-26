@@ -65,6 +65,10 @@ baseImages:
 images:
   members:
     - azl-installer
+    - azurelinux-direct-streaming-testimage
+    - foreign-direct-streaming-testimage
+    - trident-container-installer
+    - trident-container-testimage
     - trident-functest
     - trident-installer
     - trident-testimage
