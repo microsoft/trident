@@ -22,6 +22,14 @@ use crate::{logging::operation_context, TRIDENT_SEMVER_VERSION};
 /// can be correlated.
 const INSTALLATION_ID_KEY: &str = "installation-id";
 
+/// Key under which the current servicing ID is stored in the generic
+/// key-value table. Unlike `INSTALLATION_ID_KEY`, this is overwritten
+/// every time a new servicing operation begins staging (install, update,
+/// or manual rollback) via `DataStore::ensure_servicing_id` -- it identifies
+/// "the servicing operation in progress (or last completed)", not the
+/// host installation as a whole.
+const SERVICING_ID_KEY: &str = "servicing-id";
+
 pub struct DataStore {
     db: Option<sqlite::Connection>,
     host_status: HostStatus,
@@ -516,12 +524,11 @@ impl DataStore {
     /// `serde::Serialize`/`serde::de::DeserializeOwned` can be stored, not
     /// just `HostStatus`.
     ///
-    /// No first-party caller exists yet in this crate on its own -- this is
-    /// exercised only by tests for now. It's kept as part of the generic
-    /// key-value API (see `get_value`) for the first real consumer that
-    /// wants unconditional-overwrite semantics (as opposed to
-    /// `set_value_if_absent`'s insert-if-absent semantics).
-    #[allow(dead_code)]
+    /// `installation_id` needs insert-if-absent semantics instead (see
+    /// `set_value_if_absent`), but `servicing_id` -- a new servicing
+    /// operation genuinely does replace whatever ID (if any) came before
+    /// it -- is a first-party caller of this unconditional-overwrite
+    /// form.
     pub(crate) fn set_value<T: Serialize>(&self, key: &str, value: &T) -> Result<(), TridentError> {
         let contents = serde_json::to_string(value).structured(ServicingError::Datastore {
             inner: DatastoreError::SerializeValue {
@@ -681,6 +688,45 @@ impl DataStore {
             }
             None => Ok(None),
         }
+    }
+
+    /// Returns the currently persisted servicing ID, if any. `None` if no
+    /// servicing operation has ever staged (via `ensure_servicing_id`) on
+    /// this datastore.
+    pub fn servicing_id(&self) -> Result<Option<Uuid>, TridentError> {
+        self.get_value::<Uuid>(SERVICING_ID_KEY)
+    }
+
+    /// Generates a fresh servicing ID and persists it (unconditionally
+    /// overwriting any previous value), returning the new ID. Called once
+    /// at the start of staging for install, update, or manual rollback --
+    /// i.e. whenever `Operations::has_stage()` is true for that
+    /// invocation -- so a finalize-only call (or a later `commit`) must
+    /// use [`Self::servicing_id`] to read the value back instead of
+    /// calling this again.
+    ///
+    /// Like `ensure_installation_id`, the value used is this invocation's
+    /// own `operation_id` (see `logging::operation_context::current`),
+    /// not an unrelated freshly-generated UUID: whichever call actually
+    /// performs the staging is what should be correlatable, via this same
+    /// ID, with every later command (finalize, commit) that touches the
+    /// same servicing operation. Falls back to a fresh random UUID only if
+    /// called with no operation context active (should not happen for any
+    /// real caller).
+    ///
+    /// Unlike `ensure_installation_id`, this always generates a *new* ID
+    /// on every call -- there is no "first access wins"/get-or-create
+    /// semantics here, since a new servicing operation genuinely is a new
+    /// operation, not a value that should be stable for the datastore's
+    /// lifetime. (This also means, unlike installation_id, there is no
+    /// concurrent-first-access race to guard against: `set_value`'s plain
+    /// overwrite is sufficient.)
+    pub fn ensure_servicing_id(&mut self) -> Result<Uuid, TridentError> {
+        let id = operation_context::current()
+            .and_then(|(operation_id, _, _)| Uuid::parse_str(&operation_id).ok())
+            .unwrap_or_else(Uuid::new_v4);
+        self.set_value(SERVICING_ID_KEY, &id)?;
+        Ok(id)
     }
 
     /// Parse a single HostStatus entry from a datastore query result.
@@ -1087,6 +1133,30 @@ mod tests {
         );
 
         temp_dir.close().unwrap();
+    }
+
+    #[test]
+    /// Regression test: `ensure_servicing_id` always generates a *fresh* ID
+    /// on every call, unlike `ensure_installation_id`'s get-or-create
+    /// semantics. This is what lets a retried clean install (e.g. a
+    /// previous attempt's staging failed, leaving
+    /// `ServicingState::NotProvisioned`) get its own distinct servicing ID
+    /// rather than reusing a stale one from the failed attempt.
+    fn test_ensure_servicing_id_generates_a_fresh_id_each_call() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let datastore_path = temp_dir.path().join("db.sqlite");
+
+        let mut datastore = super::DataStore::open_or_create(&datastore_path).unwrap();
+
+        let first = datastore.ensure_servicing_id().unwrap();
+        assert_eq!(datastore.servicing_id().unwrap(), Some(first));
+
+        let second = datastore.ensure_servicing_id().unwrap();
+        assert_ne!(
+            first, second,
+            "ensure_servicing_id should generate a fresh ID on every call, not reuse the previous one"
+        );
+        assert_eq!(datastore.servicing_id().unwrap(), Some(second));
     }
 }
 
