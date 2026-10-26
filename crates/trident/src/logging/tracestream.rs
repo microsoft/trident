@@ -1,10 +1,10 @@
 use std::{
     collections::BTreeMap,
-    fs::File,
+    fs::{self, File, OpenOptions},
     io::Write,
     path::Path,
     sync::{Arc, RwLock},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Context, Error};
@@ -49,7 +49,7 @@ pub(crate) fn clock_boottime_uptime_secs(
 }
 
 use osutils::{
-    dmi, files,
+    dmi,
     osrelease::{OsRelease, OS_RELEASE_PATH},
     uname, virt,
 };
@@ -430,23 +430,42 @@ impl TraceStream {
         }
     }
 
-    /// Create a Boxed TraceSender
+    /// Create a Boxed TraceSender. Truncates the local metrics file on
+    /// creation, same as every previous invocation of a command that
+    /// installs this layer -- appropriate for commands that are
+    /// themselves generating fresh servicing metrics.
     pub fn make_trace_sender(&self) -> Box<TraceSender> {
-        self.make_trace_sender_with_metrics_path(TRIDENT_METRICS_FILE_PATH)
+        self.make_trace_sender_with_metrics_path(TRIDENT_METRICS_FILE_PATH, true)
+    }
+
+    /// Like `make_trace_sender`, but appends to the existing local metrics
+    /// file instead of truncating it. For commands (namely `diagnose`)
+    /// that read back and repackage that same file's *pre-existing*
+    /// content (e.g. into a support bundle) -- truncating it first would
+    /// destroy the history the command is supposed to be collecting,
+    /// leaving only the metrics the command emits about itself.
+    pub fn make_trace_sender_appending(&self) -> Box<TraceSender> {
+        self.make_trace_sender_with_metrics_path(TRIDENT_METRICS_FILE_PATH, false)
     }
 
     /// Like `make_trace_sender`, but writes the local metrics file to
     /// `metrics_file_path` instead of the real host path
-    /// (`TRIDENT_METRICS_FILE_PATH`). This lets tests exercise the full
+    /// (`TRIDENT_METRICS_FILE_PATH`), and lets the caller choose whether
+    /// to truncate it first. This lets tests exercise the full
     /// metrics-writing pipeline against a throwaway temp file instead of a
     /// real, shared host path, so they can be plain `#[test]`s instead of
     /// needing a VM.
-    fn make_trace_sender_with_metrics_path(&self, metrics_file_path: &str) -> Box<TraceSender> {
+    fn make_trace_sender_with_metrics_path(
+        &self,
+        metrics_file_path: &str,
+        truncate: bool,
+    ) -> Box<TraceSender> {
         Box::new(TraceSender::new(
             self.target.clone(),
             self.installation_id.clone(),
             self.servicing_id.clone(),
             metrics_file_path,
+            truncate,
         ))
     }
 }
@@ -471,13 +490,64 @@ impl TraceSender {
         installation_id: Arc<RwLock<Option<String>>>,
         servicing_id: Arc<RwLock<Option<String>>>,
         metrics_file_path: &str,
+        truncate: bool,
     ) -> Self {
+        if let Some(parent) = Path::new(metrics_file_path).parent() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                eprintln!(
+                    "Tracestream setup error: failed to create local metrics file's parent directory: {err:?}"
+                );
+            }
+        }
+        // Reset any pre-existing content up front when requested, via a
+        // separate truncating open, then always keep the real handle in
+        // append-only mode: a plain `File::create` (O_TRUNC without
+        // O_APPEND) kept open long-term has its own independent,
+        // non-advancing write offset, so a concurrent writer to this same
+        // path (e.g. `grpc-client`, opened separately in append mode) that
+        // extends the file past that offset would have its data
+        // overwritten the next time this descriptor writes. Combining
+        // `OpenOptions::truncate(true)` with `.append(true)` in one open()
+        // call isn't an option: the standard library requires `.write(true)`
+        // for truncation, and adding that back defeats the point of
+        // append-only semantics for every later write through this handle.
+        if truncate {
+            if let Err(err) = File::create(metrics_file_path) {
+                eprintln!(
+                    "Tracestream setup error: failed to truncate local metrics file: {err:?}"
+                );
+            }
+        }
+        let metrics_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(metrics_file_path)
+            .map_err(Error::from);
         Self {
             server,
             installation_id,
             servicing_id,
-            client: reqwest::blocking::Client::new(),
-            metrics_file: match files::create_file(metrics_file_path) {
+            // Bounded so a hung/slow tracestream endpoint can only stall a
+            // caller for this long, not indefinitely -- `on_event`'s POST
+            // below can run inside `tokio::task::block_in_place` (see the
+            // `block_in_place` comment in `services/mod.rs`), which keeps
+            // it on a shared async runtime worker thread rather than a
+            // dedicated one, so an unbounded client here could tie up that
+            // worker forever. This is a stopgap, not a full fix: enough
+            // concurrent malformed requests can still occupy every worker
+            // thread for up to this timeout at once, repeatedly, for as
+            // long as the endpoint stays slow. The real fix is to stop
+            // sending this POST from the shared worker thread at all --
+            // e.g. hand it off to a bounded-queue background
+            // uploader/thread, the same pattern `AppInsightsSender`/
+            // `TelemetryUploader` already use (see `logging/appinsights.rs`
+            // and `logging/telemetry_uploader.rs`) -- so a hung endpoint
+            // can never block RPC handling, regardless of request volume.
+            client: reqwest::blocking::Client::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+                .expect("failed to build tracestream HTTP client"),
+            metrics_file: match metrics_file {
                 Ok(f) => Some(f),
                 Err(err) => {
                     eprintln!(
@@ -766,13 +836,14 @@ pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
         // `TraceStream::servicing_id` still holds a *previous* operation's
         // value until this invocation's own
         // `ensure_and_attach_servicing_id` runs deeper in the call stack
-        // and overwrites it. For the six commands that will end up
-        // generating their own new servicing ID anyway, that value is
-        // already fully determined the moment this operation's context
-        // exists -- so force it here (unconditionally, not just filling a
-        // gap in the cached value) rather than leaving any earlier
-        // event (e.g. command_start/trident_start) showing a stale,
-        // unrelated operation's ID.
+        // and overwrites it. For the commands that will end up
+        // generating their own new servicing ID anyway (see
+        // `CommandKind::generates_servicing_id`'s doc comment for the
+        // exact set and why), that value is already fully determined the
+        // moment this operation's context exists -- so force it here
+        // (unconditionally, not just filling a missing value) rather than leaving any earlier event (e.g.
+        // command_start/trident_start) showing a stale, unrelated
+        // operation's ID.
         if command.generates_servicing_id() {
             fields.insert("servicing_id".to_string(), json!(operation_id));
         }
@@ -888,7 +959,7 @@ mod tests {
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
         let trace_sender =
-            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap());
+            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true);
         assert!(
             trace_sender.get_server().is_none(),
             "tracestream should not have a server"
@@ -906,12 +977,51 @@ mod tests {
     }
 
     #[test]
+    /// Regression test: `make_trace_sender_with_metrics_path(.., false)`
+    /// (used by `make_trace_sender_appending`, for `diagnose`) must append
+    /// to a pre-existing metrics file rather than truncating it -- unlike
+    /// the `true` (truncating) case every other command uses.
+    fn test_tracestream_appending_sender_preserves_existing_metrics() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        std::fs::write(&metrics_path, "preexisting line\n").unwrap();
+
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), false)
+            .with_filter(filter::LevelFilter::INFO);
+
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        tracing::info!(metric_name = "test_metric_appended", value = true);
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        assert!(
+            lines.iter().any(|line| line == "preexisting line"),
+            "appending sender must not have truncated the pre-existing content"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains(r#""metric_name":"test_metric_appended""#)),
+            "appending sender must still write new metrics"
+        );
+    }
+
+    #[test]
     fn test_lock() {
         let temp_dir = tempfile::tempdir().unwrap();
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let mut tracestream = TraceStream::default();
         let trace_sender =
-            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap());
+            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true);
 
         assert!(
             trace_sender.get_server().is_none(),
@@ -956,7 +1066,7 @@ mod tests {
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         // Use a thread-local scoped default subscriber (rather than
@@ -1013,7 +1123,7 @@ mod tests {
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         let _guard = tracing::subscriber::set_default(
@@ -1057,7 +1167,7 @@ mod tests {
         let tracestream = TraceStream::default();
         tracestream.set_installation_id("test-installation-id".to_string());
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         // See test_tracestream_write_metric_event_to_file for why a scoped
@@ -1096,7 +1206,7 @@ mod tests {
     /// events (e.g. `command_start`/`trident_start`, fired before that
     /// command's own `refresh_servicing_id` runs). `merge_operation_context`
     /// must force `servicing_id` to this invocation's own `operation_id`
-    /// for any command where `CommandKind::generates_servicing_id` is true, overriding
+    /// for any command in `command_generates_servicing_id`, overriding
     /// whatever is currently cached rather than merely filling a gap.
     fn test_tracestream_servicing_id_forced_to_operation_id_for_staging_commands() {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -1106,7 +1216,7 @@ mod tests {
         // the same long-lived process.
         tracestream.set_servicing_id("stale-previous-operation-id".to_string());
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         let _guard = tracing::subscriber::set_default(
@@ -1156,7 +1266,7 @@ mod tests {
         let tracestream = TraceStream::default();
         tracestream.set_servicing_id("previously-staged-id".to_string());
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         let _guard = tracing::subscriber::set_default(
@@ -1195,7 +1305,7 @@ mod tests {
         let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
         let trace_sender = tracestream
-            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap(), true)
             .with_filter(filter::LevelFilter::INFO);
 
         // See test_tracestream_write_metric_event_to_file for why a scoped
