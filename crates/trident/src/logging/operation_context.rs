@@ -43,6 +43,19 @@ use trident_api::{config::Operations, error::TridentError};
 
 use crate::command_kind::CommandKind;
 
+/// Message used by `server::tridentserver::TridentServer::try_acquire_read_lock`/
+/// `try_acquire_write_lock` for the `Status::unavailable` returned when
+/// connection-lock contention blocks a request. `grpc_client::is_transport_failure`
+/// matches on this exact message to recognize this as a deliberate
+/// admission-control rejection -- the daemon DID receive and answer the
+/// request -- rather than a genuine transport-level failure, even though
+/// tonic uses the same `Code::Unavailable` for both.
+pub(crate) const CONNECTION_LOCK_BUSY_MESSAGE: &str = "Trident is busy";
+
+/// Same as [`CONNECTION_LOCK_BUSY_MESSAGE`], but for the servicing-lock
+/// contention rejections in `servicing_request`/`reading_request`.
+pub(crate) const SERVICING_LOCK_BUSY_MESSAGE: &str = "Servicing is active";
+
 /// Maps a base command name plus its requested `Operations` to the same
 /// naming convention gRPC's `servicing_request` already uses for
 /// stage/finalize granularity (e.g. `"install"` vs `"install_stage"` vs
