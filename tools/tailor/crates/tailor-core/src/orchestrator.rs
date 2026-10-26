@@ -144,9 +144,13 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                 let resolved_tools_dir = resolved_tools_dir(tools_dir_sources, &cell)?;
                 // Hash the cell's declared local dependencies so an edit to an IC-config-referenced
                 // asset (an `additionalFiles` script, a local RPM) invalidates the incremental
-                // fingerprint — the config text only *names* these files (`deps.rs`).
+                // fingerprint — the config text only *names* these files (`deps.rs`). `image.yaml`
+                // is itself parsed as the first matched fragment, so `cell.extra_dependencies`
+                // already is the full base + matched-fragment merge (base -> most-specific) -- no
+                // separate image-level set needs to be chained in here, that would just hash the
+                // base document's own paths a second time.
                 let extra_dependency_hashes = deps::hash_dependencies(
-                    &cell.target.definition.extra_dependencies,
+                    &cell.extra_dependencies,
                     &cell.target.dir,
                     None,
                     hash_cache_dir,
@@ -555,6 +559,7 @@ pub fn cells(target: &Arc<Target>) -> Result<Vec<Cell>, CoreError> {
                     base: base.clone(),
                     base_image: base_image.clone(),
                     rpm_sources: rc.rpm_sources.clone(),
+                    extra_dependencies: rc.extra_dependencies.clone(),
                     extra_params: rc.extra_params.clone(),
                     signing: rc.signing.clone(),
                     input_deps: Vec::new(),
