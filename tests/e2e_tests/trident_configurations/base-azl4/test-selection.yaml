@@ -1,0 +1,5 @@
+compatible:
+  # identify configuration as azl4
+  - azl4
+  # Use the shared pytest assertions where appropriate.
+  - base
