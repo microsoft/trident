@@ -21,7 +21,9 @@ DatastorePath=/special/path/to/my-datastore.sqlite
 ## Telemetry
 
 Trident can optionally send telemetry data to Azure Monitor / Application
-Insights. This requires an Application Insights connection string to have been compiled into the Trident binary at build
+Insights. See [Telemetry](./Telemetry.md) for what data is collected and
+how delivery failures are handled. This requires an Application Insights
+connection string to have been compiled into the Trident binary at build
 time (via the `AZURE_MONITOR_CONNECTION_STRING` environment variable); if
 no connection string was compiled in, this setting has no effect.
 
