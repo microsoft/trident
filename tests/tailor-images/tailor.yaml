@@ -10,6 +10,14 @@ toolchains:
       container: mcr.microsoft.com/azurelinux/imagecustomizer
       tag: latest
 
+runtime:
+  mounts:
+    extraPaths:
+      - path: ../../packaging
+        access: ro
+      - path: ../../tools/cmd/rcp-agent/rcp-agent.service
+        access: ro
+
 signing:
   default: test-ca
   profiles:
@@ -71,6 +79,7 @@ images:
     - trident-container-testimage
     - trident-functest
     - trident-installer
+    - trident-mos
     - trident-testimage
     - trident-verity-testimage
     - trident-vm-testimage
