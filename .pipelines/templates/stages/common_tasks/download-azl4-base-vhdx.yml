@@ -1,0 +1,48 @@
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+
+steps:
+  # Download a preview AZL4 base VHDX from storage account.
+  - task: AzureCLI@2
+    displayName: "Download AZL4 base VHDX from blob"
+    inputs:
+      azureSubscription: azlinuxbmpstaging-storage-account-read
+      scriptType: bash
+      scriptLocation: inlineScript
+      workingDirectory: ${{ parameters.tridentSourceDirectory }}
+      inlineScript: |
+        set -euxo pipefail
+
+        mkdir -p $(Build.ArtifactStagingDirectory)/images
+        az storage blob download \
+          --max-connections 10 \
+          --auth-mode login \
+          --account-name azlinuxbmpstaging \
+          --container-name azl4-qemu-guest \
+          --name azl4_qemu_guest.vhdx \
+          --file $(Build.ArtifactStagingDirectory)/images/azl4_qemu_guest.vhdx
+        ls -la $(Build.ArtifactStagingDirectory)/images/azl4_qemu_guest.vhdx
+
+  # AZL4 netplan (1.1.2) is incompatible with systemd (258.4). 1.1.2 is the current
+  # release of netplan in AZL4, but netplan 1.2.1 fixes the problem. Our
+  # tests depend on netplan, so workaround this for now with cached RPMs.
+  - task: AzureCLI@2
+    displayName: "Download override AZL4 RPMs from blob"
+    inputs:
+      azureSubscription: azlinuxbmpstaging-storage-account-read
+      scriptType: bash
+      scriptLocation: inlineScript
+      workingDirectory: ${{ parameters.tridentSourceDirectory }}
+      inlineScript: |
+        set -euxo pipefail
+
+        mkdir -p ${{ parameters.tridentSourceDirectory }}/artifacts/rpm-overrides
+        az storage blob download-batch \
+          --max-connections 10 \
+          --auth-mode login \
+          --account-name azlinuxbmpstaging \
+          --source azl4-override-rpms \
+          --pattern "*.rpm" \
+          --destination ${{ parameters.tridentSourceDirectory }}/artifacts/rpm-overrides
+        ls -la ${{ parameters.tridentSourceDirectory }}/artifacts/rpm-overrides

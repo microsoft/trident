@@ -1,0 +1,74 @@
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+
+  - name: azureLinuxVersion
+    displayName: Version of AzureLinux for the Base Image
+    type: string
+    default: "3.0"
+
+  - name: stageSshKeys
+    type: boolean
+    default: false
+
+steps:
+  - ${{ if eq(parameters.stageSshKeys, true) }}:
+    # Stage SSH keys into the testimage tree so they get baked into the image
+    # and are available for tests to use.
+    - bash: |
+        set -euxo pipefail
+        SSH_DEST="${{ parameters.tridentSourceDirectory }}/tests/images/trident-vm-testimage/base/files"
+        SSH_SRC="${{ parameters.tridentSourceDirectory }}/artifacts"
+
+        if [ ! -f "$SSH_SRC/id_rsa.pub" ]; then
+          echo "ssh keys not found at $SSH_SRC"
+          echo "Available files:"
+          find "$SSH_SRC" -type f 2>/dev/null | head -20 || true
+          exit 1
+        fi
+
+        # Stage only the public key. The image configs reference only
+        # files/id_rsa.pub (injected as an authorized key); the private
+        # key is used host-side by the test runner and must not be baked
+        # into the image.
+        mkdir -p "$SSH_DEST"
+        cp "$SSH_SRC/id_rsa.pub" "$SSH_DEST/"
+        chmod 644 "$SSH_DEST/id_rsa.pub"
+      displayName: "Stage SSH keys into testimage tree"
+      workingDirectory: ${{ parameters.tridentSourceDirectory }}
+
+  - bash: |
+      set -euxo pipefail
+
+      # Move base VHDX to artifacts/ (builder expects artifacts/*.vhdx)
+      mkdir -p artifacts
+      if ls "$(Build.ArtifactStagingDirectory)/images" | grep -q ".*\.vhdx$"; then
+        mv $(Build.ArtifactStagingDirectory)/images/*.vhdx artifacts/
+        rm -rf $(Build.ArtifactStagingDirectory)/images
+      else
+        echo "No base image found"
+        exit 1
+      fi
+
+      # Move dev RPM overrides to artifacts/rpm-overrides/
+      if ls "$(Build.ArtifactStagingDirectory)/rpms/" 2>/dev/null | grep -q "rpms.tar.gz"; then
+        mkdir -p artifacts/rpm-overrides
+        tar -xvf $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz \
+          --strip-components=2 \
+          -C artifacts/rpm-overrides
+        rm $(Build.ArtifactStagingDirectory)/rpms/rpms.tar.gz
+      fi
+
+      DISTRO=azl3
+      if [[ "${{ parameters.azureLinuxVersion }}" == "4.0-preview" ]]; then
+        DISTRO=azl4
+      fi
+
+      # Move Trident RPMs to bin/RPMS/ (builder expects bin/RPMS/*.rpm)
+      if [ -d "$(Build.ArtifactStagingDirectory)/trident" ]; then
+        mkdir -p bin/RPMS
+        find "$(Build.ArtifactStagingDirectory)/trident" -name "*${DISTRO}*.rpm" -exec mv {} bin/RPMS/ \;
+        rm -rf "$(Build.ArtifactStagingDirectory)/trident"
+      fi
+    displayName: "Prepare and move requirements"
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
