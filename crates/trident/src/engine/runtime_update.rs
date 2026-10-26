@@ -11,7 +11,9 @@ use trident_api::{
 use crate::{
     datastore::DataStore,
     engine::{self, EngineContext, EngineContextParams},
-    health, monitor_metrics, ExitKind,
+    health,
+    logging::operation_context,
+    monitor_metrics, ExitKind,
 };
 
 use super::Subsystem;
@@ -91,10 +93,62 @@ pub(crate) fn finalize_update(
     if let Err(e) = finalize_result {
         error!("Runtime update finalize failed with message:\n{e:?}");
         // Attempt an auto-rollback
-        return rollback(subsystems, state, update_start_time).message(format!(
+        let rollback_result = rollback(subsystems, state, update_start_time).message(format!(
             "Auto-rollback was triggered by runtime update failure:\n{e:?}"
         ));
+        // Persist here (not inside finalize_or_rollback_runtime_update --
+        // see the comment on that function) now that the auto-rollback's
+        // own outcome is known, so the archived metrics file actually
+        // includes it either way -- including a *failed* auto-rollback.
+        //
+        // Explicitly fire `command_error` for the final outcome *before*
+        // persisting (rather than leaving it to `run_command`/
+        // `run_command_if`, further up the call stack, which would only
+        // see it well after this archive is already written).
+        //
+        // Unlike A/B update and clean install, runtime update recovers
+        // synchronously, in this same call: when auto-rollback succeeds,
+        // this function returns `Ok`, so the generic `run_command` safety
+        // net (which only reports `command_error` on `Err`) never sees
+        // anything go wrong. Without reporting here, a finalize failure
+        // that was successfully rolled back would vanish from telemetry
+        // entirely -- no `command_error`, no `runtime_update_success`.
+        // Report the *original* finalize failure `e` in that case; if
+        // rollback itself also failed, report that outcome instead (this
+        // is a no-op if the outer wrapper has already reported an error
+        // for this operation, and it's the same call that wrapper would
+        // otherwise make on its own once `rollback_result` reaches it as
+        // an `Err`, so this doesn't introduce a duplicate `command_error`).
+        match rollback_result {
+            Ok(_) => operation_context::report_command_error(&e),
+            Err(ref outcome_error) => operation_context::report_command_error(outcome_error),
+        }
+        engine::persist_background_log_and_metrics(
+            &state.host_status().spec.trident.datastore_path,
+            None,
+            state.host_status().servicing_state,
+        );
+        return rollback_result;
     }
+
+    // Unlike A/B update and clean install, a runtime update requires no
+    // reboot, so success can be confirmed synchronously right here instead
+    // of via the post-reboot boot-validation flow in `engine::rollback`
+    // (which only ever sees `CleanInstallFinalized`/`AbUpdateFinalized`/
+    // `ManualRollbackAbFinalized` -- runtime update/rollback finalize and
+    // return to `Provisioned` without ever going through that flow).
+    info!("Runtime update succeeded");
+    tracing::info!(metric_name = "runtime_update_success", value = true);
+
+    // Persist *after* the success metric above so the archived metrics
+    // file on the target OS actually includes this event, not just a
+    // snapshot taken before it was ever emitted.
+    engine::persist_background_log_and_metrics(
+        &state.host_status().spec.trident.datastore_path,
+        None,
+        state.host_status().servicing_state,
+    );
+
     finalize_result
 }
 
@@ -211,12 +265,13 @@ fn finalize_or_rollback_runtime_update(
         );
     }
 
-    // Persist the Trident background log and metrics file to the updated target OS
-    engine::persist_background_log_and_metrics(
-        &state.host_status().spec.trident.datastore_path,
-        None,
-        state.host_status().servicing_state,
-    );
+    // Persistence moved to each caller (finalize_update, and
+    // manual_rollback::finalize_rollback for the manual-rollback case),
+    // right after their own final outcome metric fires -- this function
+    // returning `Ok` here does not by itself mean any of those metrics
+    // have been emitted yet, so persisting here could snapshot the
+    // metrics file before its own caller's success/rollback event was
+    // ever appended to it.
 
     Ok(ExitKind::Done)
 }
