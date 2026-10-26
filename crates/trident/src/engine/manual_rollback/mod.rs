@@ -143,6 +143,16 @@ pub fn execute_rollback(
             }
         };
 
+        // A selected target starts a new rollback. No-op requests and
+        // finalize-only calls do not stage a new servicing operation.
+        tracing::info!(
+            metric_name = "manual_rollback_start",
+            requested_rollback_kind = format!("{:?}", requested_rollback_kind),
+            servicing_state = format!("{:?}", datastore.host_status().servicing_state),
+            stage = allowed_operations.has_stage(),
+            finalize = allowed_operations.has_finalize(),
+        );
+
         let rollback_type = match requested_rollback.kind {
             ManualRollbackKind::Ab => ServicingType::ManualRollbackAb,
             ManualRollbackKind::Runtime => ServicingType::ManualRollbackRuntime,
@@ -294,6 +304,25 @@ fn finalize_rollback(
             host_status.spec_old = Default::default();
             host_status.servicing_state = ServicingState::Provisioned;
         })?;
+
+        // Unlike the A/B rollback case below, a runtime rollback requires no
+        // reboot, so this never reaches `engine::rollback`'s post-reboot
+        // boot-validation flow -- the only place `manual_rollback_success`
+        // is otherwise fired (and only for the `ManualRollbackAbFinalized`
+        // state). Without this, a runtime rollback would emit
+        // `manual_rollback_start` but no matching success signal at all.
+        info!("Manual rollback of runtime update succeeded");
+        tracing::info!(
+            metric_name = "manual_rollback_runtime_success",
+            value = true
+        );
+
+        // Persistence happens in the caller (execute_rollback), after this
+        // function returns -- not here. This function's own outcome metric
+        // has already fired above by the time that happens, so the
+        // archived metrics file still includes it; persisting again here
+        // as well would just archive the same (or, with second-resolution
+        // filenames, a second) copy.
         return Ok(rollback_exit_kind);
     }
 
@@ -336,5 +365,64 @@ fn finalize_rollback(
             NO_TRANSITION
         );
         Ok(ExitKind::Done)
+    }
+}
+
+#[cfg(test)]
+mod metrics_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+    use tracing::{field::Visit, Event, Subscriber};
+    use tracing_subscriber::{layer::Context, prelude::*, Layer, Registry};
+
+    struct Metrics(Arc<Mutex<Vec<String>>>);
+
+    impl<S: Subscriber> Layer<S> for Metrics {
+        fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
+            struct Visitor<'a>(&'a mut Vec<String>);
+            impl Visit for Visitor<'_> {
+                fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                    if field.name() == "metric_name" {
+                        self.0.push(value.to_string());
+                    }
+                }
+                fn record_debug(&mut self, _: &tracing::field::Field, _: &dyn std::fmt::Debug) {}
+            }
+            event.record(&mut Visitor(&mut self.0.lock().unwrap()));
+        }
+    }
+
+    #[test]
+    fn test_no_op_rollback_does_not_report_a_start() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("datastore.sqlite");
+        let mut datastore = DataStore::open_or_create(&path).unwrap();
+        datastore
+            .with_host_status(|status| {
+                status.servicing_state = ServicingState::Provisioned;
+            })
+            .unwrap();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = Registry::default().with(Metrics(events.clone()));
+        tracing::subscriber::with_default(subscriber, || {
+            for operations in [
+                Operations::all(),
+                trident_api::config::Operation::Stage.into(),
+            ] {
+                let (exit, servicing) = execute_rollback(
+                    &mut datastore,
+                    ManualRollbackRequestKind::RollbackNext,
+                    &operations,
+                )
+                .unwrap();
+                assert!(matches!(exit, ExitKind::Done));
+                assert_eq!(servicing, ServicingType::NoActiveServicing);
+            }
+        });
+        assert!(!events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|name| name == "manual_rollback_start"));
     }
 }
