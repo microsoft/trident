@@ -100,6 +100,10 @@ pub(crate) fn update(
 
     ctx.servicing_type = servicing_type;
 
+    // Trace feature usage now that we know real staging (A/B or runtime
+    // update) is required.
+    ctx.feature_tracing();
+
     engine::validate_host_config(&subsystems, &ctx)?;
 
     ctx.populate_filesystems()?;
