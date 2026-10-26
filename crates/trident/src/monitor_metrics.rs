@@ -11,6 +11,8 @@ use std::{
     time::Duration,
 };
 
+use crate::logging::operation_context;
+
 // This constant defines the interval at which the monitoring thread will check for updates.
 const MONITORING_INTERVAL_MS: u64 = 100; // in milliseconds
 
@@ -232,37 +234,51 @@ impl MonitorMetrics {
         let mut memory_stat = MemoryStat::new(phase.clone());
         let mut network_stat = NetworkStat::new(phase.clone(), init_net_stats);
 
+        // Captured on the spawning thread (which is running inside
+        // run_with_operation/run_command) and re-installed on the new
+        // monitoring thread below, so its own summary_trace() events at
+        // the end still carry operation_id/command/servicing_id -- a
+        // freshly spawned thread otherwise starts with no thread-local
+        // operation context of its own.
+        let captured_operation = operation_context::snapshot();
+
         let join_handle = thread::spawn(move || {
-            loop {
-                // Update CPU and memory statistics
-                if let Ok(process) = Process::myself() {
-                    if let Ok(stat) = process.stat() {
-                        cpu_stat.update((stat.utime + stat.stime) as f64);
-                        memory_stat.update(stat.rss);
+            operation_context::run_with_captured_operation(captured_operation, || {
+                loop {
+                    // Update CPU and memory statistics
+                    if let Ok(process) = Process::myself() {
+                        if let Ok(stat) = process.stat() {
+                            cpu_stat.update((stat.utime + stat.stime) as f64);
+                            memory_stat.update(stat.rss);
+                        }
                     }
-                }
-                // Update network statistics
-                if let Ok(dev_stats) = procfs::net::dev_status() {
-                    let stats: Vec<_> = dev_stats.values().collect();
-                    for stat in stats {
-                        network_stat.update(stat.name.clone(), stat.recv_bytes, stat.sent_bytes);
+                    // Update network statistics
+                    if let Ok(dev_stats) = procfs::net::dev_status() {
+                        let stats: Vec<_> = dev_stats.values().collect();
+                        for stat in stats {
+                            network_stat.update(
+                                stat.name.clone(),
+                                stat.recv_bytes,
+                                stat.sent_bytes,
+                            );
+                        }
                     }
+
+                    local_metric_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+                    if local_stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        break;
+                    }
+
+                    // Sleep for the polling interval
+                    thread::sleep(polling_interval);
                 }
-
-                local_metric_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-                if local_stop.load(std::sync::atomic::Ordering::SeqCst) {
-                    break;
-                }
-
-                // Sleep for the polling interval
-                thread::sleep(polling_interval);
-            }
-            // Perform summary trace for CPU, memory, and network metrics
-            // after the monitoring thread is stopped.
-            cpu_stat.summary_trace();
-            memory_stat.summary_trace();
-            network_stat.summary_trace();
+                // Perform summary trace for CPU, memory, and network metrics
+                // after the monitoring thread is stopped.
+                cpu_stat.summary_trace();
+                memory_stat.summary_trace();
+                network_stat.summary_trace();
+            });
         });
 
         self.join_handle = Some(join_handle);
