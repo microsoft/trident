@@ -8,6 +8,9 @@
 # AZL4-specific package names (dnf5, grub2-efi-x64, shim, etc.) matching
 # the updateimg-grub-azl4.yaml flavor.
 
+previewFeatures:
+  - preview-distro-version
+
 storage:
   disks:
     - partitionTableType: gpt
