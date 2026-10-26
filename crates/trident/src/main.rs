@@ -10,10 +10,9 @@ use trident::{
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
-    run_with_captured_operation, run_with_operation, save_reboot_operation, take_reboot_operation,
-    validation, AppInsightsSender, BackgroundLog, BackgroundUploader, DataStore, ExitKind,
-    LogForwarder, Logstream, OperationSource, TelemetryUploader, TraceStream, Trident,
-    TRIDENT_BACKGROUND_LOG_PATH,
+    run_command, run_reboot_command, save_reboot_operation, validation, AppInsightsSender,
+    BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogForwarder, Logstream,
+    OperationSource, TelemetryUploader, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -49,7 +48,17 @@ fn run_trident(
         proxy_status("NO_PROXY"),
     );
 
-    // Catch exit fast commands
+    // Fast-exit commands: read-only/one-shot commands that never start a
+    // servicing run (validate, get, diagnose, offline-initialize, a manual
+    // rollback --check, start-network). These deliberately run outside
+    // run_command below -- no command_start/command_error telemetry is
+    // emitted for them. Their failures (a malformed --config, a datastore
+    // that can't be opened, a diagnostics bundle that can't be written,
+    // etc.) are operator-input or read errors, not servicing outcomes; a
+    // genuine underlying datastore/host problem still gets telemetry when
+    // the actual servicing operation (install/update/etc.) that triggered
+    // it runs. Handled here, before `command`/run_command are even set up,
+    // so none of that machinery needs to reason about them.
     match &args.command {
         Commands::Validate { config } => {
             return validation::validate_host_config_file(config).map(|()| ExitKind::Done);
@@ -123,110 +132,107 @@ fn run_trident(
         _ => (),
     }
 
+    // Only servicing commands reach here: Install, Update, Commit,
+    // RebuildRaid, and a non-check Rollback. These get command_start/
+    // command_error telemetry via run_command below; the fast-exit
+    // commands above already returned without any. `Commands::kind()` is
+    // total over every variant (including the fast-exit ones and
+    // Daemon/GrpcClient, none of which can actually reach here), so it
+    // renders the same wire name the old per-variant match did without
+    // needing `unreachable!()` arms to prove exhaustiveness.
+    let kind = args.command.kind();
+
+    // Determine this up front, before the pre-warm attach below: a
+    // multiboot install may swap to a brand-new temporary datastore
+    // inside `Trident::install` (see there), distinct from
+    // `datastore_path` here (the existing host's persistent datastore) --
+    // so skip attaching an installation ID from the pre-swap datastore
+    // until `install` has settled on which one it actually uses, rather
+    // than attaching the existing host's here and having it (and every
+    // event emitted before the swap decision) be wrong for the rest of
+    // the run. See `new_deferring_installation_id`'s doc comment for the
+    // full rationale.
+    let defer_installation_id = matches!(
+        args.command,
+        Commands::Install {
+            multiboot: true,
+            ..
+        }
+    );
+
+    // Attach this host's installation ID and current servicing ID to the
+    // shared TraceStream before run_command below fires command_start:
+    // Trident::new (further down, inside the closure) is the usual place
+    // installation ID gets attached, but that's too late for
+    // command_start, which run_command fires immediately, before the
+    // closure even runs. Does not create a *datastore* (see
+    // `TraceStream::attach_ids_if_present`) -- silently does nothing if
+    // the datastore doesn't exist yet, which is expected for a host's
+    // first-ever install. But not purely read-only: on an existing
+    // datastore that predates `installation_id`, this can perform a
+    // one-time migration write to mint one (see
+    // `DataStore::installation_id_or_migrate`). Skips the installation-ID
+    // half specifically (but still attaches servicing ID, unaffected by a
+    // multiboot swap) when `defer_installation_id` is set, for the same
+    // reason `Trident::new_deferring_installation_id` is used below.
+    // Load once and reuse the same snapshot inside the run_command
+    // closure below, rather than reloading there: calling
+    // `AgentConfig::load()` a second time could observe a different
+    // `DatastorePath` (e.g. a CIH bootstrap swap between the two reads),
+    // leaving the ID attached to `tracestream` here attributed to a
+    // different datastore than the one the operation actually runs
+    // against.
+    let agent_config_result = AgentConfig::load();
+    if let Ok(agent_config) = &agent_config_result {
+        tracestream.attach_ids_if_present(agent_config.datastore_path(), defer_installation_id);
+    }
+
+    // Determined up front so a missing/nonexistent --config is rejected
+    // immediately, before run_command below even fires command_start.
+    let config_path = match &args.command {
+        Commands::Update { config, .. } | Commands::Install { config, .. } => Some(config.clone()),
+        Commands::RebuildRaid { config, .. } => config.clone(),
+        _ => None,
+    };
+    if let Some(path) = &config_path {
+        if !path.exists() {
+            return run_command(&kind, OperationSource::Cli, || {
+                Err(TridentError::new(InvalidInputError::ReadInputFile {
+                    path: path.to_string_lossy().to_string(),
+                }))
+                .message("Config file does not exist")
+            });
+        }
+    }
+
+    // run_command itself now catches a panic from its closure (while the
+    // operation context is still active) and fires command_error before
+    // re-raising it, so a genuine panic gets the same telemetry as a
+    // normal Err. This outer catch_unwind remains as a safety net for a
+    // panic occurring outside run_command's closure (e.g. in run_command's
+    // own setup) and to keep converting an unwound panic into a non-zero
+    // exit code below.
     let res = panic::catch_unwind(move || {
-        match &args.command {
-            Commands::Install { status, error, .. }
-            | Commands::Update { status, error, .. }
-            | Commands::Commit { status, error }
-            | Commands::RebuildRaid { status, error, .. }
-            | Commands::Rollback { status, error, .. } => {
-                // Determined before any preflight checks below, and used
-                // to wrap the *entire* servicing branch (preflight checks,
-                // Trident::new, and the actual command) in a single
-                // run_with_operation call -- not just the innermost
-                // install/update/commit/rollback/rebuild-raid call, as
-                // before. That previously left Trident::new (and
-                // everything it does, including firing "trident_start")
-                // outside any operation context: every event from CLI
-                // startup through to just before the actual command ran
-                // had no operation_id/command.
-                // `Commands::kind()` is total over every variant
-                // (including ones that can never actually reach this
-                // arm), so it renders the same wire name the old
-                // per-variant match did without needing an
-                // `unreachable!()` fallback to prove exhaustiveness.
-                let kind = args.command.kind();
-
-                // Determined up front, before any preflight checks below,
-                // so a missing/nonexistent --config is rejected immediately.
-                let config_path = match &args.command {
-                    Commands::Update { config, .. } | Commands::Install { config, .. } => {
-                        Some(config.clone())
-                    }
-                    Commands::RebuildRaid { config, .. } => config.clone(),
-                    _ => None,
-                };
-                if let Some(path) = &config_path {
-                    if !path.exists() {
-                        return run_with_operation(&kind, OperationSource::Cli, || {
-                            Err(TridentError::new(InvalidInputError::ReadInputFile {
-                                path: path.to_string_lossy().to_string(),
-                            }))
-                            .message("Config file does not exist")
-                        });
-                    }
-                }
-
-                // Determine this up front, before the pre-warm attach
-                // below: a multiboot install may swap to a brand-new
-                // temporary datastore inside `Trident::install` (see
-                // there), distinct from `datastore_path` here (the
-                // existing host's persistent datastore) -- so skip
-                // attaching an installation ID from the pre-swap datastore
-                // until `install` has settled on which one it actually
-                // uses, rather than attaching the existing host's here and
-                // having it (and every event emitted before the swap
-                // decision) be wrong for the rest of the run. See
-                // `new_deferring_installation_id`'s doc comment for the
-                // full rationale.
-                let defer_installation_id = matches!(
-                    args.command,
-                    Commands::Install {
-                        multiboot: true,
-                        ..
-                    }
-                );
-
-                // Attach this host's installation ID and current servicing
-                // ID to the shared TraceStream before run_with_operation
-                // below fires command_start: Trident::new (further down,
-                // inside the closure) is the usual place installation ID
-                // gets attached, but that's too late for command_start,
-                // which run_with_operation fires immediately, before the
-                // closure even runs. Does not create a *datastore* (see
-                // `TraceStream::attach_ids_if_present`) -- silently does
-                // nothing if the datastore doesn't exist yet, which is
-                // expected for a host's first-ever install. But not purely
-                // read-only: on an existing datastore that predates
-                // `installation_id`, this can perform a one-time migration
-                // write to mint one (see
-                // `DataStore::installation_id_or_migrate`). Skips the
-                // installation-ID half specifically (but still attaches
-                // servicing ID, unaffected by a multiboot swap) when
-                // `defer_installation_id` is set, for the same reason
-                // `Trident::new_deferring_installation_id` is used below.
-                //
-                // Load once and reuse the same snapshot for both the
-                // pre-warm attach here and the operation closure below:
-                // calling `AgentConfig::load()` a second time inside the
-                // closure could observe a different `DatastorePath` (e.g. a
-                // CIH bootstrap swap between the two reads), leaving the
-                // ID cached on `tracestream` here attributed to a
-                // different datastore than the one the operation actually
-                // runs against.
-                let agent_config_result = AgentConfig::load();
-                if let Ok(agent_config) = &agent_config_result {
-                    tracestream.attach_ids_if_present(
-                        agent_config.datastore_path(),
-                        defer_installation_id,
-                    );
-                }
-
-                run_with_operation(&kind, OperationSource::Cli, || {
+        run_command(&kind, OperationSource::Cli, || {
+            match &args.command {
+                Commands::Install { status, error, .. }
+                | Commands::Update { status, error, .. }
+                | Commands::Commit { status, error }
+                | Commands::RebuildRaid { status, error, .. }
+                | Commands::Rollback { status, error, .. } => {
                     // config_path was already validated (existence-checked)
-                    // above. Reuse the same `AgentConfig` snapshot loaded
-                    // just above rather than reloading -- see the comment
-                    // there.
+                    // above.
+                    let config_path = match &args.command {
+                        Commands::Update { config, .. } | Commands::Install { config, .. } => {
+                            Some(config.clone())
+                        }
+                        Commands::RebuildRaid { config, .. } => config.clone(),
+                        _ => None,
+                    };
+
+                    // Reuse the same `AgentConfig` snapshot loaded above
+                    // (before this closure/panic::catch_unwind) rather
+                    // than reloading -- see the comment there.
                     let agent_config = agent_config_result?;
                     // For commands that cannot themselves stage a new
                     // install/update (see
@@ -330,7 +336,7 @@ fn run_trident(
 
                     // Capture this operation's identity while its context
                     // is still installed (this closure runs entirely
-                    // inside `run_with_operation`'s scope), so the reboot
+                    // inside `run_command`'s scope), so the reboot
                     // requested below by the caller can be tagged with the
                     // *original* install/update/etc.'s `operation_id`/
                     // `command` instead of a disconnected fresh one -- see
@@ -340,10 +346,10 @@ fn run_trident(
                     }
 
                     res.message(format!("Failed to execute '{}' command", args.command))
-                })
+                }
+                _ => unreachable!(),
             }
-            _ => unreachable!(),
-        }
+        })
     });
 
     match res {
@@ -737,19 +743,18 @@ fn main() -> ExitCode {
             Ok(ExitKind::NeedsReboot) => {
                 // Reuse the just-completed install/update/etc.'s own
                 // operation_id/command (captured via save_reboot_operation
-                // just before that command's own run_with_operation scope
-                // ended) rather than leaving `trident_system_reboot`
-                // untagged, or minting an unrelated fresh "reboot"
-                // identity: the reboot is a direct continuation of that
-                // same servicing operation, not an independent one, so
-                // telemetry should correlate it back to the same
-                // operation_id. Falls back to a plain, untagged call if
-                // nothing was captured (shouldn't happen on this path, but
-                // avoids losing the reboot attempt entirely if it does).
-                if let Err(e) = run_with_captured_operation(
-                    take_reboot_operation(),
-                    trident::request_reboot_with_wait,
-                ) {
+                // just before that command's own run_command scope ended)
+                // rather than leaving `trident_system_reboot` untagged, or
+                // minting an unrelated fresh "reboot" identity: the reboot
+                // is a direct continuation of that same servicing
+                // operation, not an independent one, so telemetry should
+                // correlate it back to the same operation_id.
+                // run_reboot_command also still fires command_error on a
+                // failed reboot -- falling back to a fresh, untagged
+                // command if nothing was captured -- matching every other
+                // command's error-reporting contract instead of silently
+                // dropping this one on the floor.
+                if let Err(e) = run_reboot_command(trident::request_reboot_with_wait) {
                     error!("Failed to reboot: {e:?}");
                     return TridentExitCodes::RebootUnsuccessful.into();
                 }
