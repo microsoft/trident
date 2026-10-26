@@ -1,0 +1,4 @@
+- path: base/scripts/post-install.sh
+- path: base/scripts/ssh-move-host-keys.sh
+- path: base/scripts/update-os-release.sh
+- path: base/scripts/duid-type-to-link-layer.sh
