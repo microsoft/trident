@@ -47,6 +47,14 @@ Ubuntu / GB200 direct-streaming inputs still come from the pipeline-managed blob
 staging flow; those slots are intentionally catalogued without an in-workspace
 remote source.
 
+## Shared MOS inputs
+
+`trident-mos` references the canonical PCR-lock files, SELinux policy, and Trident
+systemd units under `packaging/`, plus `tools/cmd/rcp-agent/rcp-agent.service`.
+The workspace declares read-only mounts for these inputs, and the image lists
+them in `extraDependencies` so changes invalidate Tailor's build cache. Do not
+copy these assets into the image workspace.
+
 ## Image families
 
 The current families are:
@@ -58,6 +66,7 @@ The current families are:
 - `trident-container-testimage`
 - `trident-functest`
 - `trident-installer`
+- `trident-mos`
 - `trident-testimage`
 - `trident-verity-testimage`
 - `trident-vm-testimage`
