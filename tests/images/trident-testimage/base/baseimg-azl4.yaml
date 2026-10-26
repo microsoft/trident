@@ -1,3 +1,6 @@
+previewFeatures:
+  - preview-distro-version
+
 storage:
   bootType: efi
 
