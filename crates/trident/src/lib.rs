@@ -91,6 +91,15 @@ lazy_static::lazy_static! {
         .expect("Failed to parse TRIDENT_VERSION as semver::Version");
 }
 
+/// Azure Monitor / Application Insights connection string, compiled in at
+/// build time via the `AZURE_MONITOR_CONNECTION_STRING` environment
+/// variable. Empty when the variable was not provided at build time.
+pub const AZURE_MONITOR_CONNECTION_STRING: &str =
+    match option_env!("AZURE_MONITOR_CONNECTION_STRING") {
+        Some(v) => v,
+        None => "",
+    };
+
 /// Trident binary path.
 const TRIDENT_BINARY_PATH: &str = "/usr/bin/trident";
 
