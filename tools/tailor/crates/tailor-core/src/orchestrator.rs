@@ -556,6 +556,7 @@ pub fn cells(target: &Arc<Target>) -> Result<Vec<Cell>, CoreError> {
                     base_image: base_image.clone(),
                     rpm_sources: rc.rpm_sources.clone(),
                     extra_params: rc.extra_params.clone(),
+                    signing: rc.signing.clone(),
                     input_deps: Vec::new(),
                     tools_dir,
                     skip: rc.skip,
