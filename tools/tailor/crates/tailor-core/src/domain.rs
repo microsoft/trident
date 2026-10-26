@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, fmt, path::PathBuf, sync::Arc};
 use serde_yaml_ng::Value;
 use tailor_config::{
     Arch, BaseImageCatalogue, BaseSource, ExtraParam, ImageDefinition, OutputArtifactsPolicy,
-    OutputSpec, ToolsDirSource, ToolsDirSourceInline,
+    OutputSpec, SigningRef, ToolsDirSource, ToolsDirSourceInline,
 };
 
 /// A resolved image — the catalogue/authoring unit, after config load and defaults are applied.
@@ -60,8 +60,16 @@ pub struct Cell {
     pub base_image: Option<String>,
     /// Local RPM sources passed to IC as `--rpm-source`.
     pub rpm_sources: Vec<PathBuf>,
+    /// The complete, merged `extraDependencies:` dependency list for this cell -- `image.yaml`
+    /// is itself parsed as the first matched fragment, so this already includes the image-level
+    /// paths concatenated with every matched fragment's own (base -> most-specific); it's the sole
+    /// input hashed into the fingerprint, so an edit to any of those declared assets invalidates
+    /// this cell.
+    pub extra_dependencies: Vec<PathBuf>,
     /// Extra IC command-line flags appended verbatim after every tailor-managed flag.
     pub extra_params: Vec<ExtraParam>,
+    /// The resolved per-cell `signing:` opt-in after fragment merging.
+    pub signing: Option<SigningRef>,
     /// Resolved `${inputs.<name>}` producer artifact paths substituted into `ic_config`, in declared
     /// order. Content-hashed into the fingerprint (like `extraDependencies`) so a producer rebuild
     /// invalidates this cell (`meta/docs/2026-09-09-inter-image-dependencies.md`). Live in the (already
