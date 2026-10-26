@@ -23,7 +23,12 @@ AZL_INSTALLER_TAILOR_DEPS := $(shell find $(AZL_INSTALLER_DIR) 2>/dev/null) $(TA
 AZURELINUX_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/azurelinux-direct-streaming-testimage 2>/dev/null) $(TAILOR_COMMON_DEPS)
 FOREIGN_DIRECT_STREAMING_DEPS := $(shell find $(TAILOR_DIR)/foreign-direct-streaming-testimage 2>/dev/null)
 TRIDENT_VM_TESTIMAGE_DEPS := $(shell find $(TAILOR_DIR)/trident-vm-testimage 2>/dev/null) $(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub $(TAILOR_COMMON_DEPS)
-TRIDENT_MOS_DEPS := $(shell find $(TAILOR_DIR)/trident-mos 2>/dev/null) $(TAILOR_COMMON_DEPS)
+TRIDENT_MOS_SHARED_DEPS := $(shell find packaging/static-pcrlock-files packaging/selinux-policy-trident 2>/dev/null) \
+	packaging/systemd/trident-install.service \
+	packaging/systemd/tridentd.socket \
+	packaging/systemd/tridentd.service \
+	tools/cmd/rcp-agent/rcp-agent.service
+TRIDENT_MOS_DEPS := $(shell find $(TAILOR_DIR)/trident-mos 2>/dev/null) $(TAILOR_COMMON_DEPS) $(TRIDENT_MOS_SHARED_DEPS)
 
 COSI_TARGETS = \
 	trident-testimage \
