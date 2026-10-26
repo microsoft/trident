@@ -1,6 +1,7 @@
 //! Thread-local "which command is currently executing, under what
 //! operation ID, and from which of Trident's three entry points" context,
-//! so the local telemetry sink ([`super::tracestream::TraceSender`]) can tag every metric/span
+//! so telemetry sinks ([`super::tracestream::TraceSender`],
+//! [`super::appinsights::AppInsightsSender`]) can tag every metric/span
 //! fired during a command's execution with `command`/`operation_id`/
 //! `source` fields, without every call site (deep in `engine::*`,
 //! `Trident::*`, etc.) needing to pass them explicitly.
