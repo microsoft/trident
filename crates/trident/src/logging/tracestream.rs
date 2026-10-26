@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     fs::File,
     io::Write,
+    path::Path,
     sync::{Arc, RwLock},
     time::Instant,
 };
@@ -18,11 +19,18 @@ use tracing::{
 };
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 
-use crate::{logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
+#[cfg(test)]
+use crate::command_kind::CommandKind;
+use trident_api::error::TridentError;
+
 use osutils::{
     dmi, files,
     osrelease::{OsRelease, OS_RELEASE_PATH},
     uname,
+};
+
+use crate::{
+    datastore::DataStore, logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION,
 };
 
 lazy_static::lazy_static! {
@@ -81,6 +89,7 @@ pub struct TraceStream {
     // TODO: Consider changing this to a LockOnce when rustc is updated to
     // >=1.70
     target: Arc<RwLock<Option<String>>>,
+    installation_id: Arc<RwLock<Option<String>>>,
     disabled: bool,
 }
 
@@ -122,6 +131,92 @@ impl TraceStream {
         Ok(())
     }
 
+    /// Set the installation ID to attach to every trace entry sent from this
+    /// point forward, as an additional field, so that all traces/metrics for
+    /// a given host installation can be correlated. Expected to be called
+    /// once the datastore's persisted installation ID has been retrieved
+    /// (see [`Self::attach_ids_if_present`] and
+    /// [`Self::ensure_and_attach_installation_id`]).
+    pub fn set_installation_id(&self, installation_id: String) {
+        match self.installation_id.write() {
+            Ok(mut val) => {
+                val.replace(installation_id);
+            }
+            Err(_) => warn!("Failed to lock tracestream to set installation ID"),
+        }
+    }
+
+    /// Returns a clone of the shared installation-ID handle -- the same
+    /// underlying `Arc<RwLock<..>>` written by `set_installation_id` -- so
+    /// other telemetry sinks (namely `AppInsightsSender`) can read the
+    /// current value at send-time without needing their own copy of the
+    /// logic that sets it.
+    pub fn installation_id_handle(&self) -> Arc<RwLock<Option<String>>> {
+        self.installation_id.clone()
+    }
+
+    fn installation_id_cached(&self) -> bool {
+        self.installation_id
+            .read()
+            .map(|v| v.is_some())
+            .unwrap_or(false)
+    }
+
+    /// Attach an existing installation ID, migrating provisioned legacy
+    /// datastores when needed. Never creates a datastore. Multiboot
+    /// callers may defer attachment until their datastore is selected.
+    pub fn attach_ids_if_present(&self, datastore_path: &Path, skip_installation_id: bool) {
+        if !datastore_path.exists() {
+            return;
+        }
+        let mut datastore = match DataStore::open(datastore_path) {
+            Ok(ds) => ds,
+            Err(e) => {
+                warn!("Failed to open datastore to attach IDs: {e:?}");
+                return;
+            }
+        };
+
+        if !skip_installation_id && !self.installation_id_cached() {
+            match datastore.installation_id_or_migrate() {
+                Ok(Some(installation_id)) => {
+                    info!("Installation ID: {installation_id}");
+                    self.set_installation_id(installation_id.to_string());
+                }
+                Ok(None) => {
+                    debug!("No installation ID persisted yet (host not yet installed)");
+                }
+                Err(e) => {
+                    warn!("Failed to read installation ID: {e:?}");
+                }
+            }
+        }
+    }
+
+    /// Ensures `datastore` has an installation ID -- creating one if this
+    /// is the first access, or reading back the existing one otherwise --
+    /// and attaches it. Unlike
+    /// [`Self::attach_ids_if_present`], this is only for the
+    /// one caller that already knows a command genuinely allowed to
+    /// initialize a brand-new datastore (per
+    /// [`crate::datastore::DataStore::may_initialize_datastore_for_command`])
+    /// is proceeding, and already holds (or just created) the datastore
+    /// handle for it -- so this attaches the new install/update's own ID
+    /// instead of leaving the trace stream untagged until some later
+    /// read-only attach happens to run.
+    pub fn ensure_and_attach_installation_id(
+        &self,
+        datastore: &mut DataStore,
+    ) -> Result<(), TridentError> {
+        if self.installation_id_cached() {
+            return Ok(());
+        }
+        let installation_id = datastore.ensure_installation_id()?;
+        info!("Installation ID: {installation_id}");
+        self.set_installation_id(installation_id.to_string());
+        Ok(())
+    }
+
     /// Create a Boxed TraceSender
     pub fn make_trace_sender(&self) -> Box<TraceSender> {
         self.make_trace_sender_with_metrics_path(TRIDENT_METRICS_FILE_PATH)
@@ -134,12 +229,17 @@ impl TraceStream {
     /// real, shared host path, so they can be plain `#[test]`s instead of
     /// needing a VM.
     fn make_trace_sender_with_metrics_path(&self, metrics_file_path: &str) -> Box<TraceSender> {
-        Box::new(TraceSender::new(self.target.clone(), metrics_file_path))
+        Box::new(TraceSender::new(
+            self.target.clone(),
+            self.installation_id.clone(),
+            metrics_file_path,
+        ))
     }
 }
 
 pub struct TraceSender {
     server: Arc<RwLock<Option<String>>>,
+    installation_id: Arc<RwLock<Option<String>>>,
     client: reqwest::blocking::Client,
     metrics_file: Option<File>,
 }
@@ -151,9 +251,14 @@ struct ExecutionTime(Instant);
 /// the tracing-subscriber crate to handle the events and send them to the
 /// server.
 impl TraceSender {
-    fn new(server: Arc<RwLock<Option<String>>>, metrics_file_path: &str) -> Self {
+    fn new(
+        server: Arc<RwLock<Option<String>>>,
+        installation_id: Arc<RwLock<Option<String>>>,
+        metrics_file_path: &str,
+    ) -> Self {
         Self {
             server,
+            installation_id,
             client: reqwest::blocking::Client::new(),
             metrics_file: match files::create_file(metrics_file_path) {
                 Ok(f) => Some(f),
@@ -173,6 +278,11 @@ impl TraceSender {
 
     fn additional_fields(&self) -> BTreeMap<String, Value> {
         let mut fields = ADDITIONAL_FIELDS.clone();
+        if let Ok(installation_id) = self.installation_id.read() {
+            if let Some(installation_id) = installation_id.as_ref() {
+                fields.insert("installation_id".to_string(), json!(installation_id));
+            }
+        }
         merge_operation_context(&mut fields);
         fields
     }
@@ -402,6 +512,14 @@ pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
         fields
             .entry("source".to_string())
             .or_insert_with(|| json!(source.as_str()));
+        // If no installation ID has been persisted/attached yet (e.g. this
+        // is the invocation that is about to create the datastore and
+        // create one), fall back to this invocation's own `operation_id` --
+        // the same value `DataStore::ensure_installation_id` will persist
+        // as the installation ID once the datastore is actually created.
+        fields
+            .entry("installation_id".to_string())
+            .or_insert_with(|| json!(operation_id));
     }
 }
 
@@ -573,6 +691,50 @@ mod tests {
     }
 
     #[test]
+    /// Regression test: `TraceStream::set_installation_id` must actually
+    /// reach the serialized trace entry's `additional_fields.installation_id`
+    /// -- the metric/span tests above only assert on `metric_name`/`value`
+    /// and would still pass even if the installation ID were never copied
+    /// into `additional_fields`.
+    fn test_tracestream_installation_id_written_to_additional_fields() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        tracestream.set_installation_id("test-installation-id".to_string());
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .with_filter(filter::LevelFilter::INFO);
+
+        // See test_tracestream_write_metric_event_to_file for why a scoped
+        // (not global) default subscriber is used here.
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        tracing::info!(
+            metric_name = "test_metric_with_installation_id",
+            value = true
+        );
+
+        // Ensure the trace system has time to write the file.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let metric_found = lines.iter().any(|line| {
+            line.contains(r#""metric_name":"test_metric_with_installation_id""#)
+                && line.contains(r#""installation_id":"test-installation-id""#)
+        });
+
+        assert!(
+            metric_found,
+            "Expected metric with installation_id field not found in the local metrics file"
+        );
+    }
+
+    #[test]
     fn test_tracestream_write_span_metric_to_file() {
         let temp_dir = tempfile::tempdir().unwrap();
         let metrics_path = temp_dir.path().join("metrics.jsonl");
@@ -611,6 +773,84 @@ mod tests {
     // Helper function to test span metrics
     #[tracing::instrument(name = "test_span", skip_all)]
     fn simulate_function_span() {}
+
+    #[test]
+    /// Same cross-invocation join gap as
+    /// `test_servicing_id_stage_then_read_back_across_separate_tracestreams`,
+    /// but for `installation_id`: every existing installation_id test
+    /// either only exercises the datastore layer (`datastore.rs`) or sets
+    /// the value directly on a single `TraceStream`
+    /// (`test_tracestream_installation_id_written_to_additional_fields`) --
+    /// none of them prove that a *separate* `TraceStream` calling
+    /// `attach_ids_if_present` actually recovers an installation ID
+    /// created by a different one.
+    fn test_installation_id_stage_then_read_back_across_separate_tracestreams() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("db.sqlite");
+
+        // Stage: a fresh TraceStream + datastore, as if this were
+        // `Trident::install` creating the installation ID for the first
+        // time.
+        let mut staging_datastore = DataStore::open_or_create(&db_path).unwrap();
+        let staging_tracestream = TraceStream::default();
+        operation_context::run_with_operation(
+            &CommandKind::install(),
+            operation_context::OperationSource::Cli,
+            || {
+                staging_tracestream
+                    .ensure_and_attach_installation_id(&mut staging_datastore)
+                    .unwrap();
+            },
+        );
+        let staged_id = staging_tracestream
+            .installation_id_handle()
+            .read()
+            .unwrap()
+            .clone()
+            .expect("staging call should have created an installation ID");
+
+        // Read back: a completely separate TraceStream, reading only from
+        // disk (via the datastore path, matching the real
+        // attach_ids_if_present call site signature), as if this were a
+        // later command or daemon request in the same process
+        // reattaching to an already-provisioned host.
+        let readback_tracestream = TraceStream::default();
+        readback_tracestream.attach_ids_if_present(&db_path, false);
+
+        assert_eq!(
+            readback_tracestream
+                .installation_id_handle()
+                .read()
+                .unwrap()
+                .clone(),
+            Some(staged_id),
+            "a separate TraceStream reading the same datastore should recover the installation ID"
+        );
+    }
+
+    #[test]
+    /// Negative counterpart: a `TraceStream` that only ever reads (never
+    /// creates) against a datastore that has never had an installation ID
+    /// created, and is not otherwise provisioned, must leave the handle
+    /// `None` rather than fabricating one.
+    fn test_installation_id_absent_when_never_created() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("db.sqlite");
+
+        // Create the datastore file itself (so attach_ids_if_present's
+        // `datastore_path.exists()` check passes), but never create an
+        // installation ID on it.
+        DataStore::open_or_create(&db_path).unwrap();
+
+        let tracestream = TraceStream::default();
+        tracestream.attach_ids_if_present(&db_path, false);
+
+        assert_eq!(
+            tracestream.installation_id_handle().read().unwrap().clone(),
+            None,
+            "installation ID must stay absent when none has ever been created on this datastore"
+        );
+    }
 }
 
 #[cfg(feature = "functional-test")]
