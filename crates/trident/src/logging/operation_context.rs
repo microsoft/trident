@@ -7,7 +7,7 @@
 //! `Trident::*`, etc.) needing to pass them explicitly.
 //!
 //! A thread-local (rather than e.g. a `tracing` span) is enough here
-//! because both places that actually install this context run the entire
+//! because all three places that install this context run the entire
 //! command synchronously on a single, dedicated thread for the command's
 //! whole duration:
 //! - CLI: `run_trident`'s command dispatch (synchronous, main thread),
@@ -15,16 +15,26 @@
 //! - gRPC/daemon: `servicing_request`'s closure runs inside
 //!   `tokio::task::spawn_blocking`, which gives it its own OS thread for
 //!   as long as the closure runs, tagged [`OperationSource::Daemon`].
+//! - `grpc-client`: `client_main`'s dispatch runs the whole RPC via
+//!   `runtime.block_on(...)` on the calling (main) thread -- nothing in
+//!   the client path spawns a separate task -- tagged
+//!   [`OperationSource::GrpcClient`], wrapped in `run_command_if` just
+//!   like the other two entry points wrap their dispatch in
+//!   `run_command`.
 //!
-//! [`OperationSource::GrpcClient`] is defined for a third entry point --
-//! `grpc_client`'s command dispatch (the CLI acting as a client of a
-//! running daemon) -- but nothing currently wraps that dispatch with
-//! `run_with_operation`, so client-side telemetry is not enriched with
-//! `operation_id`/`command`/`source` today. Not considered worth closing:
-//! the daemon side of that same request already produces the interesting
-//! `source = daemon` telemetry, so a client-side `source = grpc-client`
-//! event would mostly just duplicate it from a less informative vantage
-//! point.
+//! So `operation_id`/`command`/`source` enrichment is not a gap for any
+//! of the three. What *is* still missing for `GrpcClient` is the
+//! persisted `installation_id`/`servicing_id` pair (see
+//! `should_generate_persistent_ids` below and `Telemetry.md`'s
+//! `installation_id`/`source` entries): `client_main` is never handed the
+//! `TraceStream` `main()` builds, so it can never attach the datastore's
+//! real installation ID, and every `grpc-client` event instead reports
+//! that invocation's own fresh `operation_id` as a stand-in. Not
+//! considered worth closing today: `grpc-client` is currently only
+//! exercised by tests as a way to drive the daemon, not a real
+//! telemetry-producing entry point, and the daemon side of that same
+//! request already produces the interesting, correctly-correlated
+//! `source = daemon` telemetry.
 //!
 //! `operation_id` is a fresh, random ID generated once per command
 //! invocation (distinct from the persisted `installation_id`/
