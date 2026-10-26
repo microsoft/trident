@@ -48,6 +48,7 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	customizerConfig := map[string]interface{}{
 		"previewFeatures": []string{
 			"reinitialize-verity",
+			"preview-distro-version",
 		},
 		"os": map[string]interface{}{
 			"additionalFiles": []map[string]string{
