@@ -73,3 +73,4 @@ images:
     - trident-installer
     - trident-testimage
     - trident-verity-testimage
+    - trident-vm-testimage
