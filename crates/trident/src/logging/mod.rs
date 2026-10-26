@@ -7,6 +7,7 @@ pub(super) mod logfwd;
 pub(super) mod logstream;
 pub(super) mod operation_context;
 pub(super) mod tracestream;
+pub(super) mod upload_core;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct LogEntry {
