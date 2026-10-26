@@ -858,7 +858,9 @@ pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
         // (unconditionally, not just filling a missing value) rather than leaving any earlier event (e.g.
         // command_start/trident_start) showing a stale, unrelated
         // operation's ID.
-        if command.generates_servicing_id() {
+        if command.generates_servicing_id()
+            && operation_context::should_generate_persistent_ids(source)
+        {
             fields.insert("servicing_id".to_string(), json!(operation_id));
         }
     }
@@ -993,6 +995,37 @@ mod tests {
             *stream.servicing_id_handle().read().unwrap(),
             Some(persisted_servicing)
         );
+    }
+
+    #[test]
+    fn test_grpc_client_context_does_not_synthesize_persistent_ids() {
+        operation_context::run_with_operation(
+            &CommandKind::update(),
+            operation_context::OperationSource::GrpcClient,
+            || {
+                let mut fields = BTreeMap::new();
+                merge_operation_context(&mut fields);
+                assert_eq!(fields["source"], json!("grpc-client"));
+                assert!(fields.contains_key("operation_id"));
+                assert!(!fields.contains_key("installation_id"));
+                assert!(!fields.contains_key("servicing_id"));
+            },
+        );
+    }
+
+    #[test]
+    fn test_staging_context_still_synthesizes_cli_and_daemon_servicing_ids() {
+        for source in [
+            operation_context::OperationSource::Cli,
+            operation_context::OperationSource::Daemon,
+        ] {
+            operation_context::run_with_operation(&CommandKind::update(), source, || {
+                let mut fields = BTreeMap::new();
+                fields.insert("servicing_id".to_string(), json!("previous"));
+                merge_operation_context(&mut fields);
+                assert_eq!(fields["servicing_id"], fields["operation_id"]);
+            });
+        }
     }
 
     #[test]
