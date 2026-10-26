@@ -63,7 +63,7 @@ os:
     # Required for systemd-pcrlock & PCR-based encryption; can be removed once
     # AZL 4.0 merges a fix to provide statically defined files inside the same
     # package as the systemd-pcrlock binary, i.e. systemd-udev.
-    - source: "files/static-pcrlock-files/"
+    - source: "../../../packaging/static-pcrlock-files/"
       destination: "/var/lib/pcrlock.d/"
 
   additionalFiles:
@@ -73,29 +73,25 @@ os:
       destination: /usr/lib/systemd/system/serial-getty@.service
     - source: files/root.profile
       destination: /root/.profile
-    - source: files/trident-install.service
+    - source: ../../../packaging/systemd/trident-install.service
       destination: /usr/lib/systemd/system/trident-install.service
-    - source: files/trident.if
+    - source: ../../../packaging/selinux-policy-trident/trident.if
       destination: /usr/share/selinux/packages/trident/trident.if
-    - source: files/trident.fc
+    - source: ../../../packaging/selinux-policy-trident/trident.fc
       destination: /usr/share/selinux/packages/trident/trident.fc
-    - source: files/trident.te
+    - source: ../../../packaging/selinux-policy-trident/trident.te
       destination: /usr/share/selinux/packages/trident/trident.te
 
     # Trident daemon service files
-    - source: files/tridentd.socket
+    - source: ../../../packaging/systemd/tridentd.socket
       destination: /usr/lib/systemd/system/tridentd.socket
-    - source: files/tridentd.service
+    - source: ../../../packaging/systemd/tridentd.service
       destination: /usr/lib/systemd/system/tridentd.service
 
-    # Netlaunch RCP files -- rcp-agent is a built Go binary staged into
-    # artifacts/ by the Makefile before invoking tailor (the IC container
-    # only mounts the tailor workspace root and the output directory, not
-    # arbitrary repo paths, so a built artifact must land under artifacts/
-    # to be reachable here).
+    # Netlaunch RCP binary is staged into artifacts/ by the Makefile.
     - source: ../../../artifacts/rcp-agent
       destination: /usr/bin/rcp-agent
-    - source: files/rcp-agent.service
+    - source: ../../../tools/cmd/rcp-agent/rcp-agent.service
       destination: /usr/lib/systemd/system/rcp-agent.service
 
   services:
