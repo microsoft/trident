@@ -217,6 +217,12 @@ pub enum InvalidInputError {
     #[error("Cannot find history file")]
     HistoryFileNotFound,
 
+    #[error("Missing required field '{field}' in request")]
+    MissingRequestField { field: String },
+
+    #[error("Invalid value for field '{field}' in request: {reason}")]
+    InvalidRequestField { field: String, reason: String },
+
     #[error("Cannot update host since it is not provisioned")]
     HostNotProvisioned,
 
