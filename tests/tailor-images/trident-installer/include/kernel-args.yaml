@@ -1,0 +1,3 @@
+- console=tty0
+- console=ttyS0
+- rd.luks=0

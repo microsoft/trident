@@ -1,0 +1,6 @@
+- path: base/scripts/post-install.sh
+- path: base/scripts/update-host-status.sh
+- path: base/scripts/prepare-update-config-verity.sh
+  arguments:
+    - uki
+- path: base/scripts/duid-type-to-link-layer.sh
