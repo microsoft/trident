@@ -44,6 +44,19 @@ host along with the metrics/spans themselves:
 - `kernel_version`: the running kernel release (`uname -r`).
 - `total_cpu`: the number of CPUs.
 - `total_memory_gib`: total memory, in GiB.
+- `vm`: whether the host appears to be a virtual machine, detected from DMI
+  vendor/product strings (`/sys/class/dmi/id/sys_vendor`,
+  `/sys/class/dmi/id/product_name`). Best-effort: reports `false` if the
+  DMI files are unreadable or the hypervisor is not one of the recognized
+  vendors, not necessarily "definitely bare metal".
+- `arch`: the CPU architecture Trident is running on, as reported by
+  `SystemArchitecture` (e.g. `amd64`, `arm64` -- not the kernel's own
+  `x86_64`/`aarch64` naming).
+- `acl`: whether the host is running Azure Container Linux (ACL), as a
+  string -- `"true"`, `"false"`, or `"unknown"` if detection itself
+  failed. Best-effort, like `vm` above: an `"unknown"` detection failure
+  is kept distinct from a known negative, rather than folded into
+  `"false"`.
 - `trident_version`: the running Trident version.
 - `installation_id`: an ID that lets separate events be correlated back to
   the same host installation over time.
