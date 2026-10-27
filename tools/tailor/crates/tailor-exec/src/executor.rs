@@ -200,7 +200,7 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
                     cancel.clone(),
                 )
                 .await;
-            let _ = fs::remove_file(&working_copy_path);
+            remove_working_copy(&working_copy_path);
 
             // Reclaim IC's root-owned staging tree. On success: chown so the caller can read the
             // outputs, then remove if the policy is scratch. On an IC failure: reclaim best-effort,
@@ -360,7 +360,7 @@ impl<R: ContainerRuntime> IcExecutor<R> {
         // A signed cell must stage `output.artifacts` — that is how IC emits the boot artifacts and
         // the `inject-files.yaml` manifest. No staging ⇒ the config declared no `output.artifacts`.
         let Some(plan) = staging else {
-            let _ = fs::remove_file(working_copy_path);
+            remove_working_copy(working_copy_path);
             return Err(ExecError::Other(format!(
                 "image `{}` requests `signing:` but its IC config declares no `output.artifacts` \
                  (add the `output-artifacts` preview feature and an `output.artifacts` block)",
@@ -383,7 +383,7 @@ impl<R: ContainerRuntime> IcExecutor<R> {
                 cancel.clone(),
             )
             .await;
-        let _ = fs::remove_file(working_copy_path);
+        remove_working_copy(working_copy_path);
         let customize = customize?;
         if customize.exit_code != 0 {
             self.reclaim_scratch(&plan.dir, &intermediate, &context.runtime, cancel.clone())
@@ -505,6 +505,12 @@ fn ic_run_failed(result: &Result<ContainerResult, ExecError>) -> bool {
     !matches!(result, Ok(outcome) if outcome.exit_code == 0)
 }
 
+fn remove_working_copy(path: &Path) {
+    if let Err(err) = fs::remove_file(path) {
+        warn!(path = %path.display(), error = %err, "failed to remove IC working copy");
+    }
+}
+
 #[derive(Debug, Default)]
 struct PreparedToolsDir {
     rw_copy: Option<PathBuf>,
@@ -579,7 +585,13 @@ async fn ensure_tools_dir_cache<R: ContainerRuntime>(
         )
         .await
     {
-        let _ = fs::remove_dir_all(&plan.cache_dir);
+        if let Err(cleanup_err) = fs::remove_dir_all(&plan.cache_dir) {
+            warn!(
+                path = %plan.cache_dir.display(),
+                error = %cleanup_err,
+                "failed to remove incomplete tools-dir cache"
+            );
+        }
         return Err(err);
     }
     Ok(())

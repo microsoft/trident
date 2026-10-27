@@ -10,6 +10,8 @@ use std::{
 };
 
 use serde_yaml_ng::Value;
+use tracing::warn;
+
 use tailor_config::OutputArtifactsPolicy;
 
 use crate::path_translate;
@@ -114,12 +116,21 @@ pub(crate) fn apply(
 /// ever matches tailor's own `<STAGE_PREFIX>.<slug>.*` — never a user-named directory.
 pub(crate) fn stale_staging_dirs(image_dir: &Path, slug: &str) -> Vec<PathBuf> {
     let prefix = format!("{STAGE_PREFIX}.{slug}.");
-    let Ok(entries) = std::fs::read_dir(image_dir) else {
-        return Vec::new();
+    let entries = match std::fs::read_dir(image_dir) {
+        Ok(entries) => entries,
+        Err(err) => {
+            warn!(path = %image_dir.display(), error = %err, "failed to scan for stale staging directories");
+            return Vec::new();
+        }
     };
     entries
-        .flatten()
-        .map(|entry| entry.path())
+        .filter_map(|entry| match entry {
+            Ok(entry) => Some(entry.path()),
+            Err(err) => {
+                warn!(path = %image_dir.display(), error = %err, "failed to read staging directory entry");
+                None
+            }
+        })
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
