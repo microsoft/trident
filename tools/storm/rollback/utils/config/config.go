@@ -4,6 +4,7 @@ type TestConfig struct {
 	ArtifactsDir              string `help:"Directory containing artifacts for the VM" default:"/tmp"`
 	OutputPath                string `help:"Path to the output directory for logs and artifacts" default:"./output"`
 	Verbose                   bool   `help:"Enable verbose logging" default:"false"`
+	Flavor                    string `help:"Image flavor under test. Determines which sub-tests run, whether the image is UKI, and whether secure boot is supported." enum:"qemu-grub,qemu,uki" default:"qemu-grub"`
 	HostConfig                string `help:"Host Configuration to use for updates" default:"./input/trident.yaml"`
 	ExtensionName             string `help:"Extension Name to test" default:"test-sysext"`
 	FileServerPort            int    `help:"Port for the cosi and extension file server" default:"8000"`

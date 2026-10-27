@@ -26,13 +26,13 @@ func (s *BuildExtensionImagesScript) Run() error {
 	}
 
 	if s.BuildSysexts {
-		err := buildImage("sysext", s.NumClones)
+		err := buildImage("sysext", s.NumClones, ".")
 		if err != nil {
 			return fmt.Errorf("failed to build sysext images: %w", err)
 		}
 	}
 	if s.BuildConfexts {
-		err := buildImage("confext", s.NumClones)
+		err := buildImage("confext", s.NumClones, ".")
 		if err != nil {
 			return fmt.Errorf("failed to build confext images: %w", err)
 		}
@@ -56,22 +56,38 @@ func (s *BuildExtensionImagesScript) Run() error {
 	return nil
 }
 
-func buildImage(extType string, numClones int) error {
+// BuildSysextImages builds numClones test sysext images into outputDir.
+//
+// Exposed so scenarios can provision their own extension images instead of
+// depending on a pipeline step having built them and moved them into place,
+// which is what makes a local dev-box run possible.
+func BuildSysextImages(outputDir string, numClones int) error {
+	return buildImage("sysext", numClones, outputDir)
+}
+
+// buildImage writes <extType> images into outputDir. The intermediate
+// directory tree is staged in a temp dir so it does not litter outputDir.
+func buildImage(extType string, numClones int, outputDir string) error {
+	stagingRoot, err := os.MkdirTemp("", "storm-extension-build-")
+	if err != nil {
+		return fmt.Errorf("failed to create staging directory: %w", err)
+	}
+	defer os.RemoveAll(stagingRoot)
+
 	for i := 1; i <= numClones; i++ {
 		extName := fmt.Sprintf("test-%s-%d", extType, i)
 		// Create extension-release file
 		var dir string
 		var fileContent string
-		var err error
 		if extType == "sysext" {
-			dir = fmt.Sprintf("%s-image-%d/usr/lib/extension-release.d", extType, i)
+			dir = filepath.Join(stagingRoot, fmt.Sprintf("%s-image-%d", extType, i), "usr/lib/extension-release.d")
 			err = os.MkdirAll(dir, 0755)
 			if err != nil {
 				return fmt.Errorf("failed to create sysext directory %s: %w", dir, err)
 			}
 			fileContent = fmt.Sprintf("ID=_any\nSYSEXT_ID=test-sysext\nSYSEXT_VERSION_ID=%d.0.0\nARCHITECTURE=x86-64\n", i)
 		} else {
-			dir = fmt.Sprintf("%s-image-%d/etc/extension-release.d", extType, i)
+			dir = filepath.Join(stagingRoot, fmt.Sprintf("%s-image-%d", extType, i), "etc/extension-release.d")
 			err = os.MkdirAll(dir, 0755)
 			if err != nil {
 				return fmt.Errorf("failed to create confext directory %s: %w", dir, err)
@@ -86,7 +102,7 @@ func buildImage(extType string, numClones int) error {
 
 		if extType == "sysext" {
 			// Create script that outputs version
-			binDir := fmt.Sprintf("%s-image-%d/usr/bin", extType, i)
+			binDir := filepath.Join(stagingRoot, fmt.Sprintf("%s-image-%d", extType, i), "usr/bin")
 			err := os.MkdirAll(binDir, 0755)
 			if err != nil {
 				return fmt.Errorf("failed to create sysext directory %s: %w", binDir, err)
@@ -103,12 +119,11 @@ func buildImage(extType string, numClones int) error {
 		}
 
 		// Create DDI files using mksquashfs
-		imageDir := fmt.Sprintf("%s-image-%d", extType, i)
-		rawFile := fmt.Sprintf("%s.raw", extName)
+		imageDir := filepath.Join(stagingRoot, fmt.Sprintf("%s-image-%d", extType, i))
+		rawFile := filepath.Join(outputDir, fmt.Sprintf("%s.raw", extName))
 		cmd := exec.Command("mksquashfs", imageDir, rawFile, "-comp", "xz", "-Xbcj", "x86", "-noappend", "-no-xattrs")
-		err = cmd.Run()
-		if err != nil {
-			return fmt.Errorf("failed to create raw file %s: %w", rawFile, err)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to create raw file %s: %w: %s", rawFile, err, string(output))
 		}
 	}
 	return nil
