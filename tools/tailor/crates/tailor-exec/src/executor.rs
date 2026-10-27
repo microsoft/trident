@@ -100,7 +100,15 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
             })?;
         }
         if let Some(build_dir) = arg_builder::build_dir_path(cell, context) {
-            guard::ensure_safe_build_dir(&build_dir)?;
+            // The reap removes `build_dir` recursively, so it must be a strict descendant of the
+            // scratch base (no `.`/`..` escape). Overlap with inputs/outputs is prevented at the base
+            // level by `ensure_build_dir_base_isolated` in the build/convert drivers.
+            let base = context
+                .runtime
+                .build_dir_base
+                .as_deref()
+                .expect("build_dir_path returns Some only when build_dir_base is set");
+            guard::ensure_safe_scratch_dir(&build_dir, base)?;
             fs::create_dir_all(&build_dir).map_err(|source| ExecError::Io {
                 context: format!("failed to create build directory `{}`", build_dir.display()),
                 source,
@@ -168,7 +176,9 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
 
         // Run IC: the single-pass `customize`, or the signed three-pass (`customize` → sign →
         // `inject-files`, `meta/docs/2026-06-29-signing.md` §5). Both remove the working copy and reclaim the
-        // staging tree before propagating any failure.
+        // staging tree before propagating any failure. Cleanup errors are collected (not `?`-returned)
+        // so none of them can short-circuit before the build-dir reap below and leave its scratch.
+        let mut cleanup_err: Option<ExecError> = None;
         let result = if let Some(signer) = context.signer.clone() {
             self.run_signed_passes(
                 cell,
@@ -204,33 +214,31 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
 
             // Reclaim IC's root-owned staging tree. On success: chown so the caller can read the
             // outputs, then remove if the policy is scratch. On an IC failure: reclaim best-effort,
-            // subordinate to the IC error (§3.4, ACL shakeout #2).
+            // subordinate to the IC error (§3.4, ACL shakeout #2). Collect the error rather than
+            // `?`-returning, so a staging-cleanup failure can't skip the build-dir reap below.
             if let Some(plan) = &staging {
-                if ic_run_failed(&result) {
-                    self.reclaim_subordinate(
-                        slice::from_ref(&plan.dir),
-                        &context.runtime,
-                        cancel.clone(),
-                        true,
-                    )
-                    .await?;
+                let dir = slice::from_ref(&plan.dir);
+                let reclaimed = if ic_run_failed(&result) {
+                    self.reclaim_subordinate(dir, &context.runtime, cancel.clone(), true)
+                        .await
                 } else {
-                    janitor::chown_paths(
-                        &self.runtime,
-                        slice::from_ref(&plan.dir),
-                        &context.runtime,
-                        cancel.clone(),
-                    )
-                    .await?;
-                    if plan.reclaim {
-                        janitor::remove_paths(
-                            &self.runtime,
-                            slice::from_ref(&plan.dir),
-                            &context.runtime,
-                            cancel.clone(),
-                        )
-                        .await?;
+                    match janitor::chown_paths(&self.runtime, dir, &context.runtime, cancel.clone())
+                        .await
+                    {
+                        Ok(()) if plan.reclaim => {
+                            janitor::remove_paths(
+                                &self.runtime,
+                                dir,
+                                &context.runtime,
+                                cancel.clone(),
+                            )
+                            .await
+                        }
+                        other => other,
                     }
+                };
+                if let Err(err) = reclaimed {
+                    cleanup_err.get_or_insert(err);
                 }
             }
             result
@@ -242,23 +250,58 @@ impl<R: ContainerRuntime> Executor for IcExecutor<R> {
         // `proc`/`sys`/`dev` mounts under the copy — then a cleanup error must not bury the IC
         // failure (ACL shakeout #2).
         let ic_failed = ic_run_failed(&result);
-        if let Some(copy) = &prepared_tools_dir.rw_copy {
-            self.reclaim_subordinate(
-                slice::from_ref(copy),
-                &context.runtime,
-                cancel.clone(),
-                ic_failed,
-            )
-            .await?;
+        // Run every reclaim even if an earlier one fails, so a cleanup error (e.g. a janitor the
+        // original token cancelled on Ctrl+C) can't short-circuit before the build-dir reap and leave
+        // its root-owned scratch behind. Keep the first cleanup error; an IC failure still takes
+        // precedence below (`result?`), and the per-step subordination still swallows errors when IC
+        // failed so a cleanup hiccup never buries the real IC failure.
+        if let Some(copy) = &prepared_tools_dir.rw_copy
+            && let Err(err) = self
+                .reclaim_subordinate(
+                    slice::from_ref(copy),
+                    &context.runtime,
+                    cancel.clone(),
+                    ic_failed,
+                )
+                .await
+        {
+            cleanup_err.get_or_insert(err);
         }
         // Reclaim the disposable RPM farms (root-owned `repodata/` created by IC's createrepo).
         // Removing the whole farm — not just chowning its repodata — leaves no `.tailor-farm-*`
         // clutter next to the user's RPMs, and runs on the error path too (best-effort when IC failed).
-        if !writable_farms.is_empty() {
-            self.reclaim_subordinate(&writable_farms, &context.runtime, cancel.clone(), ic_failed)
-                .await?;
+        if !writable_farms.is_empty()
+            && let Err(err) = self
+                .reclaim_subordinate(&writable_farms, &context.runtime, cancel.clone(), ic_failed)
+                .await
+        {
+            cleanup_err.get_or_insert(err);
         }
+        // Reclaim the per-cell IC `--build-dir` scratch (`<buildDirBase>/<slug>`). IC writes it
+        // root-owned and does not remove it, so without this it accumulates across builds (undeletable
+        // without sudo) and a crashed cell can leave mounts/loop-backed state under it that collide
+        // with the next cell. Best-effort on IC failure, like the tools-dir/farm reclaims above; the
+        // janitor binds the parent and removes the slug dir as a child, so an own mountpoint is fine.
+        // A fresh cancellation token lets a Ctrl+C/SIGTERM that cancelled the build still finish this
+        // cleanup (otherwise the janitor container is force-removed and the root-owned scratch
+        // survives); the reap always runs even if an earlier reclaim above failed.
+        if let Some(build_dir) = arg_builder::build_dir_path(cell, context)
+            && let Err(err) = self
+                .reclaim_subordinate(
+                    slice::from_ref(&build_dir),
+                    &context.runtime,
+                    CancellationToken::new(),
+                    ic_failed,
+                )
+                .await
+        {
+            cleanup_err.get_or_insert(err);
+        }
+        // IC's own failure is the headline; otherwise surface the first cleanup error.
         let result = result?;
+        if let Some(err) = cleanup_err {
+            return Err(err);
+        }
 
         if result.exit_code != 0 {
             return Err(ExecError::IcFailed {
@@ -473,6 +516,23 @@ impl<R: ContainerRuntime> IcExecutor<R> {
         if let Err(err) = janitor::remove_paths(&self.runtime, &paths, runtime, cancel).await {
             warn!(error = %err, "failed to reclaim signed build scratch (will be swept next run)");
         }
+    }
+
+    /// Remove per-cell scratch directories (`<buildDirBase>/<slug>`), validating each with
+    /// [`guard::ensure_safe_scratch_dir`] **before** removing anything — so a `.`/`..` slug can't
+    /// escape the scratch base. The base is kept clear of inputs/outputs by the caller via
+    /// [`crate::ensure_build_dir_base_isolated`].
+    pub async fn clean_scratch(
+        &self,
+        scratch_dirs: &[PathBuf],
+        base: &Path,
+        runtime: &RuntimeConfig,
+        cancel: CancellationToken,
+    ) -> Result<(), ExecError> {
+        for dir in scratch_dirs {
+            guard::ensure_safe_scratch_dir(dir, base)?;
+        }
+        janitor::remove_paths(&self.runtime, scratch_dirs, runtime, cancel).await
     }
 
     /// Reclaim a janitor-managed scratch path, subordinating the cleanup to a failed IC run: when

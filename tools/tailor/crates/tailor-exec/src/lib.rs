@@ -18,5 +18,6 @@ pub use color::color_enabled;
 pub use container::connection::{ConnectionPlan, Endpoint, Resolution, ResolveInputs, resolve};
 pub use container::runtime::{BollardRuntime, NoopRuntime};
 pub use executor::IcExecutor;
+pub use guard::ensure_build_dir_base_isolated;
 pub use lock::WorktreeLock;
 pub use output_artifacts::{ca_cert_name, uses_output_artifacts};
