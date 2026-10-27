@@ -42,6 +42,28 @@ where
         .with_context(|| format!("Failed to restart unit: {}", unit.as_ref()))
 }
 
+pub fn stop_unit(unit: impl AsRef<str>) -> Result<(), Error> {
+    let unit = unit.as_ref();
+    Dependency::Systemctl
+        .cmd()
+        .args(["stop", unit])
+        .run_and_check()
+        .with_context(|| format!("Failed to stop unit '{unit}'"))
+}
+
+pub fn reboot() -> Result<(), Error> {
+    Dependency::Systemctl.cmd().arg("reboot").run_and_check()?;
+    Ok(())
+}
+
+pub fn poweroff() -> Result<(), Error> {
+    Dependency::Systemctl
+        .cmd()
+        .arg("poweroff")
+        .run_and_check()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

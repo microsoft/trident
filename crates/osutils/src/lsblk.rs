@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use serde::{Deserialize, Serialize};
 
 use sysdefs::osuuid::OsUuid;
@@ -23,6 +23,9 @@ pub struct LsBlkOutput {
 pub struct BlockDevice {
     /// Device name
     pub name: String,
+
+    /// Filesystem label
+    pub label: Option<String>,
 
     /// Filesystem type
     pub fstype: Option<String>,
@@ -173,6 +176,26 @@ pub fn list() -> Result<Vec<BlockDevice>, Error> {
     Ok(parsed)
 }
 
+/// Finds all devices with a filesystem label, including devices nested below disks.
+pub fn devices_by_label(label: impl AsRef<str>) -> Result<Vec<PathBuf>, Error> {
+    let label = label.as_ref();
+    ensure!(!label.is_empty(), "Filesystem label must not be empty");
+    let mut devices = Vec::new();
+    collect_devices_by_label(&list()?, label, &mut devices);
+    devices.sort();
+    devices.dedup();
+    Ok(devices)
+}
+
+fn collect_devices_by_label(devices: &[BlockDevice], label: &str, matches: &mut Vec<PathBuf>) {
+    for device in devices {
+        if device.label.as_deref() == Some(label) {
+            matches.push(device.device_path());
+        }
+        collect_devices_by_label(&device.children, label, matches);
+    }
+}
+
 /// Finds and returns all block devices (and their children) that match a
 /// given predicate.
 ///
@@ -306,6 +329,46 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn label_scan_includes_cdrom_and_detects_duplicate_filesystem_labels() {
+        let devices = vec![
+            BlockDevice {
+                name: "sr0".into(),
+                label: Some("CDROM".into()),
+                blkdev_type: BlockDeviceType::Rom,
+                ..Default::default()
+            },
+            BlockDevice {
+                name: "sda".into(),
+                children: vec![BlockDevice {
+                    name: "sda1".into(),
+                    label: Some("CDROM".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ];
+        let mut matches = Vec::new();
+        collect_devices_by_label(&devices, "CDROM", &mut matches);
+        matches.sort();
+        assert_eq!(
+            matches,
+            [PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sr0")]
+        );
+        assert!(devices_by_label("").is_err());
+    }
+
+    #[test]
+    fn parses_optical_drive_label_from_lsblk_json() {
+        let devices = parse_lsblk_output(
+            r#"{"blockdevices":[{"name":"sr0","size":355497984,"type":"rom","label":"CDROM"}]}"#,
+        )
+        .unwrap();
+        let mut matches = Vec::new();
+        collect_devices_by_label(&devices, "CDROM", &mut matches);
+        assert_eq!(matches, [PathBuf::from("/dev/sr0")]);
+    }
 
     /// Output obtained from running `lsblk --json --bytes --output-all --paths /dev/sda`
     /// on the functional test VM AzL 3.0, lsblk from util-linux 2.40.2
@@ -868,6 +931,7 @@ mod tests {
     fn test_parse_lsblk_output() {
         let expected_block_device_list = vec![BlockDevice {
             name: "/dev/sda".into(),
+            label: None,
             fstype: None,
             fssize: None,
             fsuuid: None,
@@ -881,6 +945,7 @@ mod tests {
             children: vec![
                 BlockDevice {
                     name: "/dev/sda1".into(),
+                    label: None,
                     fstype: Some("vfat".into()),
                     fssize: Some(ByteCount(52293632)),
                     fsuuid: Some(OsUuid::Relaxed("6AA2-09D2".to_string())),
@@ -898,6 +963,7 @@ mod tests {
                 },
                 BlockDevice {
                     name: "/dev/sda2".into(),
+                    label: None,
                     fstype: Some("ext4".into()),
                     fssize: Some(ByteCount(4143841280)),
                     fsuuid: Some("f3c65403-dafc-4dbf-873a-c17d6fb98a2f".into()),
@@ -915,6 +981,7 @@ mod tests {
                 },
                 BlockDevice {
                     name: "/dev/sda3".into(),
+                    label: None,
                     fstype: None,
                     fssize: None,
                     fsuuid: None,
@@ -932,6 +999,7 @@ mod tests {
                 },
                 BlockDevice {
                     name: "/dev/sda4".into(),
+                    label: None,
                     fstype: Some("swap".into()),
                     fssize: None,
                     fsuuid: Some("91180e8c-096a-43d8-88b2-c24a5b5eaee6".into()),
@@ -949,6 +1017,7 @@ mod tests {
                 },
                 BlockDevice {
                     name: "/dev/sda5".into(),
+                    label: None,
                     fstype: Some("ext4".into()),
                     fssize: Some(ByteCount(92500992)),
                     fsuuid: Some("2253b2d0-62db-4ae9-8343-4023a361a9c3".into()),

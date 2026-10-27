@@ -1,0 +1,11 @@
+mode = "autorun"
+serialMode = "logs"
+serialVerbosity = "debug"
+
+[media]
+cdromLabel = "CDROM"
+cosiDirectory = "cosi/"
+
+[autorun]
+reboot = false
+force = false

@@ -1,0 +1,11 @@
+mode = "autorun"
+serialMode = "logs"
+serialVerbosity = "debug"
+
+[media]
+cdromLabel = "TRIDENT_INSTALL"
+cosiDirectory = "cosi/"
+
+[autorun]
+reboot = true
+force = false
