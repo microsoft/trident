@@ -57,15 +57,12 @@ load-bearing — treat a regression in them as a serious bug:
   paths a build produced (the build directory's children, the image cache, the
   per-cell log), never arbitrary locations.
 
-## Supply-chain pinning
+## Registry input identity
 
-Because a moving container tag is a reproducibility hazard (today's `:latest` is
-not tomorrow's), tailor resolves and pins the digests of the images it runs —
-the IC toolchain, tools-directory sources, base images, and the janitor image —
-into `tailor.lock`. Pinning by digest is a **consistency and reproducibility**
-measure under the trusted-host model, not a defense against a compromised
-registry account; run `tailor lock` to freeze digests and `tailor update` to
-refresh them deliberately.
+Registry inputs resolve to digests for a build invocation, but a moving tag can
+select different bytes next time. Digest resolution is not a defense against a
+compromised registry account and does not make a build offline. Build only from
+trusted registries and images within the trusted-host boundary above.
 
 ## Reporting
 

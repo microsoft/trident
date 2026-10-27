@@ -19,6 +19,7 @@ base:
 outputs:
   - format: cosi
 config:
+  previewFeatures: [input-image-oci]  # IC must opt in to downloading an OCI base
   os:
     hostname: gizmo
 ```

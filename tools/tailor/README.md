@@ -37,14 +37,14 @@ The nuance lives in a handful of small, reviewable files instead of N copy-paste
 
 You describe *what* you want; tailor handles the *how*. For each cell it assembles and runs the complete IC invocation through the Docker API (no shelling out):
 
-- **Base resolution** — a local file, an `oci:` reference, or `azureLinux:` (MCR) shorthand, resolved to a digest and pinned in `tailor.lock`.
+- **Base resolution** — a local file, an `oci:` reference, or `azureLinux:` (MCR) shorthand. Registry inputs resolve to digests for each run.
 - **The privileged run** — `--privileged`, a read-only workspace mount plus narrow writable carve-outs, the correct `--platform linux/<arch>`, and **every host path rewritten** into `/host` (an easy-to-get-wrong step you'd otherwise script by hand).
 - **Output & cleanup** — per-format `--output-image-format`, streamed logs, exit/output verification, and **sudo-free cleanup** of the root-owned files IC leaves behind.
-- **Reproducibility** — `tailor build --locked` pins the IC container and base digests; `tailor build --dry-run` prints the exact `docker run …` first.
+- **Iteration** — incremental build stamps avoid unchanged cells; `tailor build --dry-run` previews the container invocation offline. Registry tags can change between builds.
 
 ### Just an `image.yaml`
 
-You don't need a workspace to start. This standalone definition — no `tailor.yaml`, no toolchain to pin — is a complete, buildable image:
+You don't need a workspace to start. This standalone definition — no `tailor.yaml`, no configured toolchain — is a complete, buildable image:
 
 ```yaml
 # image.yaml
@@ -82,27 +82,12 @@ Build it (add `--dry-run` to preview without launching the container):
 tailor build
 ```
 
-From that definition tailor resolves the base image, assembles the full privileged Image Customizer invocation — host paths rewritten into the `/host` mount, the platform set, the output format applied — and runs it:
-
-```text
-docker run \
-  --rm \
-  --privileged \
-  --platform linux/amd64 \
-  -v /home/you/hello:/host/home/you/hello:ro \
-  -v /home/you/hello/.tailor/cache:/host/home/you/hello/.tailor/cache:rw \
-  -v /home/you/hello/artifacts:/host/home/you/hello/artifacts:rw \
-  -v /dev:/dev \
-  mcr.microsoft.com/azurelinux/imagecustomizer:latest \
-  customize \
-  --config-file /host/home/you/hello/.tailor-render.hello_amd64_cosi.ic.yaml \
-  --build-dir /tmp \
-  --image oci:mcr.microsoft.com/azurelinux/3.0/image/minimal-os \
-  --output-image-format cosi \
-  --output-image-file /host/home/you/hello/artifacts/hello_amd64_cosi.cosi
-```
-
-The result is `artifacts/hello_amd64_cosi.cosi`. You wrote no `outputs:` (so it defaulted to `cosi`) and pinned no toolchain (so it used the latest Image Customizer). Grow into a workspace — a shared toolchain, defaults, and many images — only when you need it.
+From that definition tailor resolves the base, chooses `linux/amd64`, rewrites host paths under
+`/host`, and runs IC with `--output-image-format cosi`. The result is
+`artifacts/hello_amd64_cosi.cosi`. You wrote no `outputs:` (so it defaulted to `cosi`) and
+configured no toolchain (so it used the `latest` Image Customizer tag). Run `tailor build --dry-run` to see the
+actual invocation for your environment. Grow into a workspace — a shared toolchain, defaults, and
+many images — only when you need it.
 
 ## Installation
 
@@ -133,8 +118,7 @@ The `advanced` scaffold creates a workspace `tailor.yaml`, a `myimage/image.yaml
 ## Features
 
 - Workspace and standalone image definitions.
-- Multiple Image Customizer toolchains, with a `tailor.lock` lockfile (`lock` to freeze, `update` to
-  refresh) and `--locked` reproducible builds.
+- Multiple Image Customizer toolchains with configurable versions, tags, and pull policies.
 - Matrix expansion over user-defined axes, with `arch` as a typed, reserved axis.
 - Per-axis fragments in `by-<axis>/<value>.yaml` and feature fragments in `by-feature/<name>.yaml`.
 - Deterministic merge model: maps deep-merge, lists append, scalar conflicts require `$set`.
@@ -143,13 +127,14 @@ The `advanced` scaffold creates a workspace `tailor.yaml`, a `myimage/image.yaml
   `inputs:`.
 - Managed tools-dir (`--tools-dir`) for sealed images, with a safety guard that keeps builds off the
   host root.
-- Multiple output formats, `convert` for one-off format changes, and optional post-build `zstd`
-  compression.
+- Multiple output formats, workspace-free `convert`, optional post-build `zstd` compression, and
+  extracted-artifact staging policies.
 - Preview-gated Secure Boot signing (`previewFeatures: [signing]`).
 - `export` rendered configs for a pipeline, third-party license notices via `tailor notice`, and a
   stable exit-code taxonomy (`0`/`1`/`2`/`130`).
 - Dry runs, validation, rendered config snapshots, selectors, exact cell slugs, and portable static
   builds.
+- Order-aware inter-image builds, per-output-directory build locks, and guarded scratch/mount paths.
 
 Run `tailor --version` to see the version of your build; the current version line is `1.x` (see the
 [compatibility policy](COMPATIBILITY.md)).

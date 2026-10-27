@@ -60,9 +60,6 @@ improving them:
 - **Human-readable stdout/stderr.** Log lines, progress output, and diagnostic
   wording are for people, not parsing. A stable machine-readable output mode is
   future work; until it ships, do not screen-scrape tailor's output.
-- **Lockfile format.** `tailor.lock` is generated and consumed by tailor; its
-  on-disk layout may change. Regenerate it with `tailor lock` / `tailor update`
-  rather than editing or parsing it.
 - **Minimum Supported Rust Version (MSRV).** The Rust toolchain used to build
   tailor may move at any time.
 - **Deprecation policy.** There is not yet a formal warn-before-remove cadence.

@@ -1,9 +1,9 @@
 # How-to guides
 
 How-to guides are task-oriented recipes. Most assume a **workspace** (`tailor.yaml` plus one or
-more `image.yaml` files); the execution verbs (`build`, `render` with a real run) additionally need a
-container **engine**, and some steps need a **registry** login or a base-image **catalogue**. Each
-guide notes anything extra it needs.
+more `image.yaml` files); actual `build` and `convert` runs need a container **engine**, while
+`render`, `validate`, and `build --dry-run` do not. Some steps need a **registry** login or a
+base-image **catalogue**. Each guide notes anything extra it needs.
 
 ## Author a workspace
 
@@ -11,6 +11,8 @@ guide notes anything extra it needs.
 - [Add an axis](add-an-axis.md)
 - [Share config with `$include`](share-config-with-include.md)
 - [Override a base per axis](override-a-base-per-axis.md)
+- [Build dependent images](build-dependent-images.md)
+- [Track local build inputs](track-build-inputs.md)
 
 ## Choose a base image
 
@@ -26,19 +28,24 @@ guide notes anything extra it needs.
 - [Change an output format](change-an-output-format.md)
 - [Convert an image format](convert-an-image-format.md)
 - [Set the build directory](set-the-build-directory.md)
+- [Clean and rebuild a cell](clean-and-rebuild.md)
+- [Manage extracted Image Customizer artifacts](manage-extracted-artifacts.md)
+- [Skip experimental cells in bulk runs](skip-experimental-cells.md)
 
-## Pin and reproduce
+## Toolchains
 
-- [Pin the Image Customizer version](pin-the-ic-version.md)
+- [Select an Image Customizer tag](pin-the-ic-version.md)
 - [Use a locally-built Image Customizer image](use-a-local-ic-image.md)
 
 ## Environment and engine
 
 - [Select a container engine (Docker or Podman)](select-a-container-engine.md)
+- [Capture Image Customizer logs](capture-build-logs.md)
 
 ## Pipelines and CI
 
 - [Export configs for a pipeline](export-configs-for-a-pipeline.md)
+- [Generate a CI matrix](generate-a-ci-matrix.md)
 - [Handle exit codes in scripts](handle-exit-codes.md)
 
 ## Signing and preview features
