@@ -31,6 +31,9 @@ func TestVirtualMediaResourceLocation(t *testing.T) {
 						"SessionService": map[string]string{
 							"@odata.id": "/redfish/v1/SessionService",
 						},
+						"Links": map[string]any{
+							"Sessions": map[string]string{"@odata.id": "/redfish/v1/SessionService/Sessions"},
+						},
 					}
 				case "/redfish/v1/SessionService":
 					body = map[string]any{"Sessions": map[string]string{"@odata.id": "/redfish/v1/SessionService/Sessions"}}
@@ -54,10 +57,11 @@ func TestVirtualMediaResourceLocation(t *testing.T) {
 						"Members@odata.count": 1,
 					}
 				case "/redfish/v1/Managers/1", "/redfish/v1/Systems/1":
-					body = map[string]any{"@odata.id": r.URL.Path, "Id": "1", "Name": "Test resource"}
+					resource := map[string]any{"@odata.id": r.URL.Path, "Id": "1", "Name": "Test resource"}
 					if strings.HasPrefix(r.URL.Path, "/redfish/v1/"+location+"/") {
-						body.(map[string]any)["VirtualMedia"] = map[string]string{"@odata.id": mediaPath}
+						resource["VirtualMedia"] = map[string]string{"@odata.id": mediaPath}
 					}
+					body = resource
 				case mediaPath + "/1":
 					body = map[string]any{
 						"@odata.id":  mediaPath + "/1",
