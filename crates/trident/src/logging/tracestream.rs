@@ -326,6 +326,12 @@ impl TraceStream {
                 self.set_servicing_id(servicing_id.to_string());
             }
             Ok(None) => {
+                match self.servicing_id.write() {
+                    Ok(mut val) => {
+                        val.take();
+                    }
+                    Err(_) => warn!("Failed to lock tracestream to clear servicing ID"),
+                }
                 debug!("No servicing ID persisted yet (nothing staged on this datastore)");
             }
             Err(e) => {
@@ -1348,6 +1354,20 @@ mod tests {
             None,
             "installation ID must stay absent when none has ever been created on this datastore"
         );
+    }
+
+    #[test]
+    fn test_idless_datastore_clears_previously_cached_servicing_id() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut datastore = DataStore::open_or_create(&temp_dir.path().join("db.sqlite")).unwrap();
+        let tracestream = TraceStream::default();
+        let shared_handle = tracestream.servicing_id_handle();
+        tracestream.set_servicing_id(uuid::Uuid::new_v4().to_string());
+
+        tracestream.refresh_servicing_id(&mut datastore, false);
+
+        assert!(shared_handle.read().unwrap().is_none());
+        assert!(datastore.servicing_id().unwrap().is_none());
     }
 }
 
