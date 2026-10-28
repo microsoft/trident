@@ -1123,6 +1123,7 @@ mod tests {
                     let stale_id = staging.ensure_installation_id().unwrap();
                     assert_ne!(stale_id, installation_id);
                 }
+                let servicing_id = staging.ensure_servicing_id().unwrap();
                 staging.set_value("staged-image", &"image-hash").unwrap();
                 staging
                     .with_host_status(|status| {
@@ -1141,6 +1142,7 @@ mod tests {
                 let mut staging = super::DataStore::open_or_create(&staging_path).unwrap();
                 staging.inherit_installation_id(installation_id).unwrap();
                 assert_eq!(staging.installation_id().unwrap(), Some(installation_id));
+                assert_eq!(staging.servicing_id().unwrap(), Some(servicing_id));
                 assert_eq!(
                     staging.get_value::<String>("staged-image").unwrap(),
                     Some("image-hash".to_string())
@@ -1155,6 +1157,9 @@ mod tests {
                 for path in [&source_path, &staging_path, &target_path] {
                     let datastore = super::DataStore::open(path).unwrap();
                     assert_eq!(datastore.installation_id().unwrap(), Some(installation_id));
+                    if path != &source_path {
+                        assert_eq!(datastore.servicing_id().unwrap(), Some(servicing_id));
+                    }
                 }
             }
         }

@@ -152,7 +152,8 @@ impl Trident {
     /// Construct without attaching the source datastore's installation ID.
     ///
     /// The CLI's multiboot path defers attachment until `install` has persisted
-    /// the shared identity in the selected staging datastore.
+    /// the shared identity in the selected staging datastore. Startup events
+    /// omit persisted identities regardless of which constructor is used.
     pub fn new_deferring_installation_id(
         config_source: Option<HostConfigurationSource>,
         datastore_path: &Path,

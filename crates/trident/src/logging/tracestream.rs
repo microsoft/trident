@@ -474,13 +474,9 @@ impl TraceSender {
     /// so entries can be correlated back to a specific host installation
     /// and servicing operation.
     ///
-    /// Unlike `installation_id`, `servicing_id` has no `operation_id`
-    /// fallback in `merge_operation_context`: it should stay absent for
-    /// any event fired before the current call's own
-    /// `ensure_and_attach_servicing_id`/`attach_servicing_id_if_present`
-    /// has actually run (e.g. a read-only command that never touches
-    /// servicing at all), rather than appearing to correlate with a
-    /// servicing operation that isn't happening.
+    /// Startup events omit both persisted IDs. Other events retain the
+    /// cached IDs, with a staging command's servicing ID overridden by
+    /// its operation ID in `merge_operation_context`.
     ///
     /// `operation_id`/`command` are deliberately merged here rather than
     /// into the metric's own `value` (as scalar/span fields are): mixing
@@ -493,7 +489,7 @@ impl TraceSender {
     /// `installation_id` is attached only after reading or creating it in
     /// the selected datastore. Until then it stays absent: an unloaded ID
     /// does not establish that this command is creating a new installation.
-    fn additional_fields(&self) -> BTreeMap<String, Value> {
+    fn additional_fields(&self, metric_name: &str) -> BTreeMap<String, Value> {
         let mut fields = ADDITIONAL_FIELDS.clone();
         if let Ok(installation_id) = self.installation_id.read() {
             if let Some(installation_id) = installation_id.as_ref() {
@@ -505,7 +501,7 @@ impl TraceSender {
                 fields.insert("servicing_id".to_string(), json!(servicing_id));
             }
         }
-        merge_operation_context(&mut fields);
+        merge_operation_context(metric_name, &mut fields);
         fields
     }
 
@@ -570,11 +566,12 @@ where
                 .unwrap_or_default()
         };
 
+        let additional_fields = self.additional_fields(&metric_name);
         let entry = TraceEntry {
             timestamp: Utc::now(),
             metric_name,
             value: json!(value),
-            additional_fields: self.additional_fields(),
+            additional_fields,
             platform_info: PLATFORM_INFO.clone(),
         };
 
@@ -654,7 +651,7 @@ where
             timestamp: Utc::now(),
             metric_name: span.name().to_string(),
             value: json!(visitor.fields),
-            additional_fields: self.additional_fields(),
+            additional_fields: self.additional_fields(span.name()),
             platform_info: PLATFORM_INFO.clone(),
         };
 
@@ -714,7 +711,8 @@ fn product_uuid_or_unknown(uuid: Result<String, Error>) -> String {
 /// Merge the current thread's `operation_id`/`command`/`source` (see
 /// `operation_context`), if any, into `fields`. Values the caller already
 /// set (e.g. an event that explicitly names its own `command`) are never
-/// overwritten.
+/// overwritten, except for staging servicing IDs. Both persisted identity
+/// fields are always removed from `command_start` and `trident_start`.
 ///
 /// Shared by both local telemetry sinks (`TraceSender::additional_fields`
 /// below and `AppInsightsSender::send_event`) so the
@@ -723,7 +721,7 @@ fn product_uuid_or_unknown(uuid: Result<String, Error>) -> String {
 /// prior version of this function existed independently in each sink,
 /// which risked the two silently diverging if the rule ever changed in
 /// only one place.
-pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
+pub(crate) fn merge_operation_context(metric_name: &str, fields: &mut BTreeMap<String, Value>) {
     if let Some((operation_id, command, source)) = operation_context::current() {
         fields
             .entry("operation_id".to_string())
@@ -739,16 +737,21 @@ pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
         // `TraceStream::servicing_id` still holds a *previous* operation's
         // value until this invocation's own
         // `ensure_and_attach_servicing_id` runs deeper in the call stack
-        // and overwrites it. For the six commands that will end up
-        // generating their own new servicing ID anyway, that value is
-        // already fully determined the moment this operation's context
-        // exists -- so force it here (unconditionally, not just filling a
-        // gap in the cached value) rather than leaving any earlier
-        // event (e.g. command_start/trident_start) showing a stale,
-        // unrelated operation's ID.
+        // and overwrites it. For the commands that will end up
+        // generating their own new servicing ID anyway (see
+        // `CommandKind::generates_servicing_id`'s doc comment for the
+        // exact set and why), that value is already fully determined the
+        // moment this operation's context exists -- so force it here
+        // (unconditionally, not just filling a missing value) rather than
+        // leaving a servicing event showing a stale, unrelated
+        // operation's ID.
         if command.generates_servicing_id() {
             fields.insert("servicing_id".to_string(), json!(operation_id));
         }
+    }
+    if matches!(metric_name, "command_start" | "trident_start") {
+        fields.remove("installation_id");
+        fields.remove("servicing_id");
     }
 }
 
@@ -820,12 +823,12 @@ mod tests {
             operation_context::OperationSource::Cli,
             || {
                 let mut fields = BTreeMap::new();
-                merge_operation_context(&mut fields);
+                merge_operation_context("test_metric", &mut fields);
                 assert!(fields.contains_key("operation_id"));
                 assert!(!fields.contains_key("installation_id"));
 
                 fields.insert("installation_id".to_string(), json!("persisted-id"));
-                merge_operation_context(&mut fields);
+                merge_operation_context("test_metric", &mut fields);
                 assert_eq!(fields["installation_id"], json!("persisted-id"));
             },
         );
@@ -938,6 +941,82 @@ mod tests {
     }
 
     #[test]
+    fn test_startup_events_omit_ids_without_operation_context() {
+        for name in ["command_start", "trident_start"] {
+            let mut fields = BTreeMap::from([
+                ("installation_id".to_string(), json!("installation")),
+                ("servicing_id".to_string(), json!("servicing")),
+            ]);
+            merge_operation_context(name, &mut fields);
+            assert!(!fields.contains_key("installation_id"));
+            assert!(!fields.contains_key("servicing_id"));
+            assert!(!fields.contains_key("operation_id"));
+        }
+    }
+
+    #[test]
+    fn test_startup_events_omit_persisted_ids() {
+        for command in [
+            CommandKind::install_stage(),
+            CommandKind::install_finalize(),
+        ] {
+            for source in [
+                operation_context::OperationSource::Cli,
+                operation_context::OperationSource::Daemon,
+                operation_context::OperationSource::GrpcClient,
+            ] {
+                let directory = tempfile::tempdir().unwrap();
+                let metrics_path = directory.path().join("metrics.jsonl");
+                let stream = TraceStream::default();
+                stream.set_installation_id("shared-installation".to_string());
+                stream.set_servicing_id("previous-servicing".to_string());
+                let sender = stream
+                    .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+                    .with_filter(filter::LevelFilter::INFO);
+                let _guard = tracing::subscriber::set_default(
+                    tracing_subscriber::Registry::default().with(sender),
+                );
+
+                let operation_id = operation_context::run_with_operation(&command, source, || {
+                    tracing::info!(metric_name = "trident_start", value = 42.0);
+                    tracing::info!(metric_name = "clean_install_start", value = true);
+                    operation_context::current().unwrap().0
+                });
+                let entries: Vec<Value> = BufReader::new(File::open(&metrics_path).unwrap())
+                    .lines()
+                    .map(|line| serde_json::from_str(&line.unwrap()).unwrap())
+                    .collect();
+                assert_eq!(entries.len(), 3);
+                for (entry, name) in
+                    entries
+                        .iter()
+                        .zip(["command_start", "trident_start", "clean_install_start"])
+                {
+                    assert_eq!(entry["metric_name"], name);
+                    let fields = &entry["additional_fields"];
+                    assert_eq!(fields["operation_id"], operation_id);
+                    assert_eq!(fields["command"], command.as_str());
+                    assert_eq!(fields["source"], source.as_str());
+                    if name != "clean_install_start" {
+                        assert!(fields.get("installation_id").is_none());
+                        assert!(fields.get("servicing_id").is_none());
+                    } else {
+                        assert_eq!(fields["installation_id"], "shared-installation");
+                        let servicing_id = if command.generates_servicing_id() {
+                            operation_id.as_str()
+                        } else {
+                            "previous-servicing"
+                        };
+                        assert_eq!(fields["servicing_id"], servicing_id);
+                    }
+                }
+                assert_eq!(entries[1]["value"], 42.0);
+                assert_eq!(entries[2]["value"], true);
+            }
+        }
+    }
+
+    #[test]
     /// Regression test: `TraceStream::set_installation_id` must actually
     /// reach the serialized trace entry's `additional_fields.installation_id`
     /// -- the metric/span tests above only assert on `metric_name`/`value`
@@ -985,8 +1064,7 @@ mod tests {
     /// Regression test for the daemon stale-servicing_id bug: a
     /// long-lived process's cached `servicing_id` (left over from a prior
     /// operation) must NOT leak onto a later staging command's own
-    /// events (e.g. `command_start`/`trident_start`, fired before that
-    /// command's own `refresh_servicing_id` runs). `merge_operation_context`
+    /// servicing events. `merge_operation_context`
     /// must force `servicing_id` to this invocation's own `operation_id`
     /// for any command where `CommandKind::generates_servicing_id` is true, overriding
     /// whatever is currently cached rather than merely filling a gap.

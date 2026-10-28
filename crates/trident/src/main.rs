@@ -186,25 +186,11 @@ fn run_trident(
                     }
                 );
 
-                // Attach this host's installation ID and current servicing
-                // ID to the shared TraceStream before run_with_operation
-                // below fires command_start: Trident::new (further down,
-                // inside the closure) is the usual place installation ID
-                // gets attached, but that's too late for command_start,
-                // which run_with_operation fires immediately, before the
-                // closure even runs. Does not create a *datastore* (see
-                // `TraceStream::attach_ids_if_present`) -- silently does
-                // nothing if the datastore doesn't exist yet, which is
-                // expected for a host's first-ever install. But not purely
-                // read-only: on an existing datastore that predates
-                // `installation_id`, this can perform a one-time migration
-                // write to mint one (see
-                // `DataStore::installation_id_or_migrate`). Skips the
-                // installation-ID half specifically (but still attaches
-                // servicing ID, unaffected by a multiboot swap) when
-                // `defer_installation_id` is set, for the same reason
-                // `Trident::new_deferring_installation_id` is used below.
-                //
+                // Pre-warm persisted IDs for errors that occur before Trident::new can
+                // attach them. Startup events omit both IDs even when they are cached.
+                // This does not create a datastore, but may migrate a legacy installation
+                // ID. Multiboot defers installation-ID attachment until its staging
+                // datastore inherits the source identity.
                 // Load once and reuse the same snapshot for both the
                 // pre-warm attach here and the operation closure below:
                 // calling `AgentConfig::load()` a second time inside the
