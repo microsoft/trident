@@ -149,27 +149,10 @@ impl Trident {
         Self::new_impl(config_source, datastore_path, logstream, tracestream, true)
     }
 
-    /// Identical to [`Self::new`], except it never attaches a persisted
-    /// `installation_id` to `tracestream` at construction time (this
-    /// invocation's earliest events, up to and including `trident_start`,
-    /// have no persisted installation_id attached here -- though
-    /// `merge_operation_context` still backfills `installation_id` with
-    /// this invocation's own `operation_id` as a fallback, so they are not
-    /// entirely unattributed).
+    /// Construct without attaching the source datastore's installation ID.
     ///
-    /// Only meant for the CLI's multiboot install path (see `main.rs`): a
-    /// multiboot install on an already-provisioned host may go on to swap
-    /// to a brand-new temporary datastore inside `Trident::install` (see
-    /// there), distinct from the `datastore_path` given here (the
-    /// existing host's persistent datastore). Attaching *this*
-    /// constructor's installation ID -- the existing host's -- before
-    /// that swap decision is made would misattribute this invocation's
-    /// earliest telemetry to the wrong host installation for the
-    /// remainder of the run. `Trident::install` always attaches the
-    /// correct installation ID (of whichever datastore it ends up using)
-    /// before doing anything else, so it's safe, and strictly better, to
-    /// leave these few earliest events unattributed rather than guess
-    /// wrong.
+    /// The CLI's multiboot path defers attachment until `install` has persisted
+    /// the shared identity in the selected staging datastore.
     pub fn new_deferring_installation_id(
         config_source: Option<HostConfigurationSource>,
         datastore_path: &Path,
@@ -522,6 +505,7 @@ impl Trident {
             // provisioned host. If the host is not provisioned, we can proceed
             // with a clean install. If the host is provisioned, we need to
             // check if a multiboot install was requested.
+            let mut inherited_installation_id = None;
             if datastore.is_persistent() {
                 if !multiboot {
                     // If the host IS provisioned and multiboot is NOT requested
@@ -539,26 +523,26 @@ impl Trident {
                         multiboot install"
                     );
 
+                    inherited_installation_id = Some(datastore.ensure_installation_id());
                     datastore.close();
                     *datastore = DataStore::open_or_create(Path::new(TEMPORARY_DATASTORE_PATH))
                         .message("Failed to create temporary datastore for multiboot install")?;
                 }
             }
 
-            // Create (or read back, if one already exists) this install's
-            // installation ID and attach it to the shared TraceStream, now
-            // that the multiboot swap above (if any) has settled on the
-            // datastore this install actually uses -- see the doc comment
-            // on `new_deferring_installation_id`. Uses `datastore` as it
-            // stands after any multiboot swap above, so a multiboot
-            // install's own (new, eventually-persistent) datastore gets
-            // its own installation ID, not the already-provisioned host's.
-            // Best-effort: a failure here must not block the install
-            // itself, since telemetry attribution is not load-bearing for
-            // servicing outcomes (same invariant `update`'s CIH bootstrap
-            // path already honors below).
-            if let Err(e) = tracestream.ensure_and_attach_installation_id(datastore) {
-                warn!("Failed to create installation ID: {e:?}");
+            // Persist inheritance independently of the telemetry cache. A reused
+            // multiboot datastore may still contain another installation's ID.
+            let installation_id_result = match inherited_installation_id {
+                Some(installation_id) => installation_id.and_then(|id| {
+                    datastore.inherit_installation_id(id)?;
+                    tracestream.set_installation_id(id.to_string());
+                    Ok(())
+                }),
+                None => tracestream.ensure_and_attach_installation_id(datastore),
+            };
+            if let Err(e) = installation_id_result {
+                // Do not mint a different ID when multiboot inheritance fails.
+                warn!("Failed to attach installation ID: {e:?}");
             }
 
             // Use a prefetched image if provided, otherwise load the image

@@ -14,8 +14,8 @@ use trident_api::{
 
 use crate::{logging::operation_context, TRIDENT_SEMVER_VERSION};
 
-/// Key under which the datastore's unique installation ID is stored in the
-/// generic key-value table. This ID is generated once, at the start of
+/// Key under which the shared installation ID is stored in the generic
+/// key-value table. This ID is generated once, at the start of
 /// `Trident::install` (see `DataStore::ensure_installation_id`), and
 /// persisted for the lifetime of the datastore. It is intended to be added
 /// to tracing/telemetry so that all activity for a given host installation
@@ -610,11 +610,11 @@ impl DataStore {
         self.get_value::<Uuid>(INSTALLATION_ID_KEY)
     }
 
-    /// Retrieve this datastore's unique installation ID, generating and
+    /// Retrieve this datastore's installation ID, generating and
     /// persisting a new one on first access.
     ///
-    /// This ID is stable for the lifetime of the datastore (surviving the
-    /// temporary-to-persistent transition performed by `persist`), and is
+    /// Multiboot datastores inherit the source installation's ID instead.
+    /// The ID survives the temporary-to-persistent transition in `persist` and is
     /// intended to be attached to tracing/telemetry so that activity for a
     /// given host installation can be correlated across logs and traces.
     ///
@@ -654,6 +654,15 @@ impl DataStore {
             .structured(InternalError::Internal(
                 "Installation ID missing immediately after being inserted",
             ))
+    }
+
+    /// Persist the source installation's ID in a multiboot staging datastore.
+    ///
+    /// The source datastore is authoritative, even when the reused staging
+    /// datastore contains an older ID. Do not reset its servicing state or
+    /// servicing ID when adopting the shared installation identity.
+    pub fn inherit_installation_id(&mut self, installation_id: Uuid) -> Result<(), TridentError> {
+        self.set_value(INSTALLATION_ID_KEY, &installation_id)
     }
 
     /// Returns this datastore's installation ID, creating one as a
@@ -1039,6 +1048,70 @@ mod tests {
         );
 
         temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_multiboot_installation_id_survives_reopen_and_persist() {
+        for existing_source_id in [false, true] {
+            for existing_staging_id in [false, true] {
+                let directory = tempfile::tempdir().unwrap();
+                let source_path = directory.path().join("source.sqlite");
+                let staging_path = directory.path().join("staging.sqlite");
+                let target_path = directory.path().join("target.sqlite");
+                let mut source = super::DataStore::open_or_create(&source_path).unwrap();
+                if existing_source_id {
+                    source.ensure_installation_id().unwrap();
+                }
+                source
+                    .with_host_status(|status| {
+                        status.servicing_state = super::ServicingState::Provisioned;
+                    })
+                    .unwrap();
+                source.persist(&source_path).unwrap();
+
+                let installation_id = source.ensure_installation_id().unwrap();
+                source.close();
+
+                let mut staging = super::DataStore::open_or_create(&staging_path).unwrap();
+                if existing_staging_id {
+                    let stale_id = staging.ensure_installation_id().unwrap();
+                    assert_ne!(stale_id, installation_id);
+                }
+                staging.set_value("staged-image", &"image-hash").unwrap();
+                staging
+                    .with_host_status(|status| {
+                        status.servicing_state = super::ServicingState::CleanInstallStaged;
+                    })
+                    .unwrap();
+                let host_status = serde_yaml::to_string(staging.host_status()).unwrap();
+
+                staging.inherit_installation_id(installation_id).unwrap();
+                assert_eq!(
+                    serde_yaml::to_string(staging.host_status()).unwrap(),
+                    host_status
+                );
+                drop(staging);
+
+                let mut staging = super::DataStore::open_or_create(&staging_path).unwrap();
+                staging.inherit_installation_id(installation_id).unwrap();
+                assert_eq!(staging.installation_id().unwrap(), Some(installation_id));
+                assert_eq!(
+                    staging.get_value::<String>("staged-image").unwrap(),
+                    Some("image-hash".to_string())
+                );
+                assert_eq!(
+                    staging.host_status().servicing_state,
+                    super::ServicingState::CleanInstallStaged
+                );
+                staging.persist(&target_path).unwrap();
+                drop(staging);
+
+                for path in [&source_path, &staging_path, &target_path] {
+                    let datastore = super::DataStore::open(path).unwrap();
+                    assert_eq!(datastore.installation_id().unwrap(), Some(installation_id));
+                }
+            }
+        }
     }
 
     #[test]
