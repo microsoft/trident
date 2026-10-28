@@ -3,7 +3,7 @@ module tridenttools
 go 1.25.0
 
 require (
-	github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f
+	github.com/bmc-toolbox/bmclib/v2 v2.3.5-0.20260220043303-105a46210c27
 	github.com/digitalocean/go-libvirt v0.0.0-20250512231903-57024326652b
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.19.0
@@ -28,10 +28,13 @@ require (
 )
 
 require (
+	dario.cat/mergo v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/doug-martin/goqu/v9 v9.19.0 // indirect
 	github.com/flatcar/go-omaha v0.0.2-0.20251014063321-4998849bd39c // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
+	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-gorp/gorp/v3 v3.1.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -51,6 +54,8 @@ require (
 	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/rubenv/sql-migrate v1.8.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	go.opentelemetry.io/otel v1.44.0 // indirect
+	go.opentelemetry.io/otel/trace v1.44.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
@@ -80,7 +85,7 @@ require (
 	github.com/VictorLowther/simplexml v0.0.0-20180716164440-0bff93621230 // indirect
 	github.com/VictorLowther/soap v0.0.0-20150314151524-8e36fca84b22 // indirect
 	github.com/alecthomas/kong v1.12.1
-	github.com/bmc-toolbox/common v0.0.0-20240806132831-ba8adc6a35e3 // indirect
+	github.com/bmc-toolbox/common v0.0.0-20250112191656-b6de52e8303d // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -105,7 +110,7 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/stmcginnis/gofish v0.19.0
+	github.com/stmcginnis/gofish v0.20.0
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/vishvananda/netlink v1.3.0
 	github.com/vishvananda/netns v0.0.4 // indirect
