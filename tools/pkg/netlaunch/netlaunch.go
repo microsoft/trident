@@ -217,7 +217,9 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
 			isoLogFunc(r.RemoteAddr)
 			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
-			terminateFunc()
+			if !enable_phonehome_listening {
+				terminateFunc()
+			}
 		})
 	}
 
