@@ -22,6 +22,8 @@ github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f h1:5xXPluh
 github.com/bmc-toolbox/bmclib/v2 v2.0.1-0.20230530141715-da28e42c453f/go.mod h1:a3Ra0ce/LV3wAj7AHuphlHNTx5Sg67iQqtLGr1zoqio=
 github.com/bmc-toolbox/bmclib/v2 v2.3.5-0.20260220043303-105a46210c27 h1:y8iXElxcTfjMcLhsnSi/6B6ucDb8yAqO7YMrtxs+LVI=
 github.com/bmc-toolbox/bmclib/v2 v2.3.5-0.20260220043303-105a46210c27/go.mod h1:2tYJD9JtY1tJxLHhslICrFOZhxE9O4gYMb1nJ5BKI5w=
+github.com/bmc-toolbox/bmclib/v2 v2.3.6-0.20260328073115-d46d3bdb603a h1:FDrV9/Nyjhje5ROK5ZhFnMRw2Opnfjmx+n3kdNGBBK0=
+github.com/bmc-toolbox/bmclib/v2 v2.3.6-0.20260328073115-d46d3bdb603a/go.mod h1:5ZsFJw5aKs3VMd3N764LSW9wXc/WpUFaXV38ebLPvrA=
 github.com/bmc-toolbox/common v0.0.0-20240806132831-ba8adc6a35e3 h1:/BjZSX/sphptIdxpYo4wxAQkgMLyMMgfdl48J9DKNeE=
 github.com/bmc-toolbox/common v0.0.0-20240806132831-ba8adc6a35e3/go.mod h1:Cdnkm+edb6C0pVkyCrwh3JTXAe0iUF9diDG/DztPI9I=
 github.com/bmc-toolbox/common v0.0.0-20250112191656-b6de52e8303d h1:5c0jhS9jNLm1t3GVEESsWv+p6recFRLGW90zp8HDIDs=
@@ -203,6 +205,8 @@ github.com/stmcginnis/gofish v0.19.0 h1:fmxdRZ5WHfs+4ExArMYoeRfoh+SAxLELKtmoVplB
 github.com/stmcginnis/gofish v0.19.0/go.mod h1:lq2jHj2t8Krg0Gx02ABk8MbK7Dz9jvWpO/TGnVksn00=
 github.com/stmcginnis/gofish v0.20.0 h1:hH2V2Qe898F2wWT1loApnkDUrXXiLKqbSlMaH3Y1n08=
 github.com/stmcginnis/gofish v0.20.0/go.mod h1:PzF5i8ecRG9A2ol8XT64npKUunyraJ+7t0kYMpQAtqU=
+github.com/stmcginnis/gofish v0.21.5-0.20260403084051-41fc97fb5a95 h1:Du1PYgdLyb6B6KuTib/USTlqBLdGoEpwyerGlz9G2CA=
+github.com/stmcginnis/gofish v0.21.5-0.20260403084051-41fc97fb5a95/go.mod h1:PzF5i8ecRG9A2ol8XT64npKUunyraJ+7t0kYMpQAtqU=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
 github.com/stretchr/objx v0.5.2 h1:xuMeJ0Sdp5ZMRXx/aWO6RZxdr3beISkG5/G/aIRr3pY=

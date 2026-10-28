@@ -3,7 +3,7 @@ module tridenttools
 go 1.25.0
 
 require (
-	github.com/bmc-toolbox/bmclib/v2 v2.3.5-0.20260220043303-105a46210c27
+	github.com/bmc-toolbox/bmclib/v2 v2.3.6-0.20260328073115-d46d3bdb603a
 	github.com/digitalocean/go-libvirt v0.0.0-20250512231903-57024326652b
 	github.com/dustin/go-humanize v1.0.1
 	github.com/fatih/color v1.19.0
@@ -110,7 +110,7 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/stmcginnis/gofish v0.20.0
+	github.com/stmcginnis/gofish v0.21.5-0.20260403084051-41fc97fb5a95
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/vishvananda/netlink v1.3.0
 	github.com/vishvananda/netns v0.0.4 // indirect

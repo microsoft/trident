@@ -14,7 +14,7 @@ import (
 	"github.com/bmc-toolbox/bmclib/v2"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
-	"github.com/stmcginnis/gofish/redfish"
+	"github.com/stmcginnis/gofish/schemas"
 	"gopkg.in/yaml.v2"
 
 	"tridenttools/pkg/isopatcher"
@@ -303,7 +303,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		}
 
 		log.WithField("url", iso_location).Info("Setting virtual media to ISO")
-		if _, err = client.SetVirtualMedia(bmcCtx, string(redfish.CDMediaType), iso_location); err != nil {
+		if _, err = client.SetVirtualMedia(bmcCtx, string(schemas.CDVirtualMediaType), iso_location); err != nil {
 			return fmt.Errorf("failed to set virtual media: %w", err)
 		}
 
