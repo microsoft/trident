@@ -69,6 +69,7 @@ struct JournalFields(Vec<(String, String)>);
 
 impl JournalFields {
     fn push(&mut self, field: &Field, value: String) {
+        self.0.retain(|(name, _)| name != field.name());
         self.0.push((field.name().to_string(), value));
     }
 
@@ -359,7 +360,13 @@ mod tests {
                 .map(|(_, value)| value.as_str())
                 .collect();
             assert_eq!(names, ["outer", "inner"]);
-            assert_eq!(field(entry, "T_PHASE"), Some(phase));
+            let phases: Vec<_> = entry
+                .fields
+                .iter()
+                .filter(|(key, _)| key == "T_PHASE")
+                .map(|(_, value)| value.as_str())
+                .collect();
+            assert_eq!(phases, [phase]);
             assert_eq!(field(entry, "T_NET_BYTES"), Some("7"));
             assert_eq!(field(entry, "T_ENABLED"), Some("true"));
             assert_eq!(field(entry, "T_VALUE"), Some("2.5"));
