@@ -5,8 +5,12 @@ pub(crate) mod events {
     pub const COMMAND_ERROR: &str = "command_error";
     pub const COMMAND_START: &str = "command_start";
     pub const HOST_CONFIG_FEATURE_USAGE: &str = "host_config_feature_usage";
+    pub const MANUAL_ROLLBACK_RUNTIME_SUCCESS: &str = "manual_rollback_runtime_success";
+    pub const MANUAL_ROLLBACK_START: &str = "manual_rollback_start";
     pub const PEAK_MEMORY_USAGE: &str = "peak_memory_usage";
+    pub const RUNTIME_UPDATE_SUCCESS: &str = "runtime_update_success";
     pub const STREAM_IMAGE_START: &str = "stream_image_start";
+    pub const STREAM_IMAGE_SUCCESS: &str = "stream_image_success";
     pub const TOTAL_CPU_TIME: &str = "total_cpu_time";
     pub const TOTAL_NETWORK_USAGE: &str = "total_network_usage";
     pub const TRIDENT_START: &str = "trident_start";
