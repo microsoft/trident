@@ -14,6 +14,8 @@ pub(crate) mod events {
 }
 
 pub(crate) mod fields {
+    pub const ACL: &str = "acl";
+    pub const ARCH: &str = "arch";
     pub const ASSET_ID: &str = "asset_id";
     pub const COMMAND: &str = "command";
     pub const EXECUTION_TIME: &str = "execution_time";
@@ -28,4 +30,5 @@ pub(crate) mod fields {
     pub const TOTAL_MEMORY_GIB: &str = "total_memory_gib";
     pub const TRIDENT_VERSION: &str = "trident_version";
     pub const VALUE: &str = "value";
+    pub const VM: &str = "vm";
 }
