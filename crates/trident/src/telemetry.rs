@@ -22,6 +22,7 @@ pub(crate) mod fields {
     pub const METRIC_NAME: &str = "metric_name";
     pub const OPERATION_ID: &str = "operation_id";
     pub const OS_RELEASE: &str = "os_release";
+    pub const SERVICING_ID: &str = "servicing_id";
     pub const SOURCE: &str = "source";
     pub const TOTAL_CPU: &str = "total_cpu";
     pub const TOTAL_MEMORY_GIB: &str = "total_memory_gib";
