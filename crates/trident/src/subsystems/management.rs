@@ -271,4 +271,44 @@ mod tests {
             .unwrap_err();
         }
     }
+
+    #[test]
+    fn test_existing_symlinked_agent_config_is_not_modified() {
+        let custom = "/var/lib/trident/custom.sqlite";
+        for (contents, expected_path, should_succeed) in [
+            (
+                "Telemetry=OptIn\n".to_string(),
+                TRIDENT_DATASTORE_PATH_DEFAULT,
+                true,
+            ),
+            ("Telemetry=OptIn\n".to_string(), custom, false),
+            (
+                format!("Telemetry=OptIn\nDatastorePath={custom}\n"),
+                custom,
+                true,
+            ),
+        ] {
+            for verity in [false, true] {
+                let dir = tempfile::tempdir().unwrap();
+                let target = dir.path().join("managed.conf");
+                let config = dir.path().join("trident.conf");
+                fs::write(&target, &contents).unwrap();
+                std::os::unix::fs::symlink("managed.conf", &config).unwrap();
+
+                let result = configure_agent_config(
+                    config.to_str().unwrap(),
+                    Path::new(expected_path),
+                    verity,
+                );
+
+                assert_eq!(result.is_ok(), should_succeed);
+                assert!(fs::symlink_metadata(&config)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink());
+                assert_eq!(fs::read_link(&config).unwrap(), Path::new("managed.conf"));
+                assert_eq!(fs::read_to_string(&target).unwrap(), contents);
+            }
+        }
+    }
 }
