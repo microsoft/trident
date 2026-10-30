@@ -3,6 +3,7 @@ pub(crate) mod events {
     pub const CLEAN_INSTALL_PROVISIONING_SECS: &str = "clean_install_provisioning_secs";
     pub const CLEAN_INSTALL_START: &str = "clean_install_start";
     pub const COMMAND_START: &str = "command_start";
+    pub const HOST_CONFIG_FEATURE_USAGE: &str = "host_config_feature_usage";
     pub const PEAK_MEMORY_USAGE: &str = "peak_memory_usage";
     pub const STREAM_IMAGE_START: &str = "stream_image_start";
     pub const TOTAL_CPU_TIME: &str = "total_cpu_time";
