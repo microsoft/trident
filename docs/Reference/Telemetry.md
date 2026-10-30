@@ -38,14 +38,18 @@ datastore as `trident-metrics-<SERVICING_STATE>-<TIMESTAMP>.jsonl`
 On top of these local copies, Trident can optionally send this same
 best-effort stream of tracing data to Azure Monitor / Application
 Insights. See [Agent Configuration](./Agent-Configuration.md) for how to
-enable it.
+configure it.
 
-Telemetry defaults to **disabled** (`OptOut`). To enable it, add a line to
-the Agent Configuration file:
+Telemetry defaults to **enabled** (`OptIn`) when a usable connection
+string was compiled into the binary. To disable it, add a line to
+`/etc/trident/trident.conf`:
 
 ``` conf
-Telemetry=OptIn
+Telemetry=OptOut
 ```
+
+Alternatively, install `trident-telemetry-optout` to configure the opt-out
+while preserving other agent settings.
 
 ## Host Metadata
 
