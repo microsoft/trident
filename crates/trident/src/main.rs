@@ -1,4 +1,5 @@
 use std::{fs, iter, panic, process::ExitCode};
+use trident::JournaldTracing;
 
 use anyhow::{Context, Error};
 use clap::Parser;
@@ -450,12 +451,10 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
             // only be enabled for the Daemon command. Until then, keep it enabled
             // for all commands to ensure we have tracing info in journald for all
             // commands.
-            match tracing_journald::layer() {
+            match JournaldTracing::new(tracestream.clone()) {
                 Ok(journald_layer) => {
                     layers.push(Box::new(
-                        journald_layer
-                            .with_syslog_identifier("trident-tracing".to_string())
-                            .with_filter(filter::LevelFilter::INFO),
+                        journald_layer.with_filter(filter::LevelFilter::INFO),
                     ));
                 }
                 Err(_) => {

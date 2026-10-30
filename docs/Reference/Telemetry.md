@@ -9,12 +9,19 @@ Trident records enriched metrics and span timings in
 enabled. When journald is available, a separate tracing layer records events
 and spans under the `trident-tracing` syslog identifier.
 
-The outputs are not equivalent. The host metadata and correlation IDs
-described below are added to JSONL records; they are not automatically
-added to journald entries. Retrieve the journald output with:
+Both outputs include the available correlation IDs, command and source.
+Journald uses structured fields `T_OPERATION_ID`, `T_INSTALLATION_ID`,
+`T_SERVICING_ID`, `T_COMMAND` and `T_SOURCE`. IDs are resolved when an event
+is emitted, so later events can include identities loaded after startup.
+`command_start` and `trident_start` omit installation and servicing IDs in
+both outputs. Events outside an operation do not invent an operation ID.
+
+Other host metadata described below is added to JSONL records, not
+automatically to journald entries. Retrieve the journald output with:
 
 ``` bash
 journalctl -t trident-tracing
+journalctl -t trident-tracing T_OPERATION_ID=<operation-id> -o json
 ```
 
 The local metrics file follows process lifetime, not a single servicing
