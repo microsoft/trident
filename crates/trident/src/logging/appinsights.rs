@@ -22,7 +22,10 @@ use std::{
 
 use anyhow::Context;
 use log::trace;
-use serde::Deserialize;
+use serde::{
+    de::{IgnoredAny, SeqAccess, Visitor},
+    Deserialize, Deserializer,
+};
 use serde_json::{json, Value};
 use tracing::{
     field::{Field, Visit},
@@ -110,6 +113,10 @@ pub(crate) fn parse_connection_string(s: &str) -> Option<ConnParts> {
     }
 
     let instrumentation_key = instrumentation_key.filter(|k| !k.is_empty())?;
+
+    if ingestion_endpoint.as_deref() == Some("") || endpoint_suffix.as_deref() == Some("") {
+        return None;
+    }
 
     let ingestion_endpoint = match ingestion_endpoint.filter(|e| !e.is_empty()) {
         Some(explicit) => explicit,
@@ -337,6 +344,44 @@ impl AppInsightsSender {
 struct TrackResponse {
     items_received: u64,
     items_accepted: u64,
+    #[serde(default, deserialize_with = "deserialize_first_track_error")]
+    errors: Option<TrackError>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TrackError {
+    status_code: Option<u16>,
+}
+
+fn deserialize_first_track_error<'de, D>(deserializer: D) -> Result<Option<TrackError>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct FirstError;
+
+    impl<'de> Visitor<'de> for FirstError {
+        type Value = Option<TrackError>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("an array of ingestion errors or null")
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let first = sequence.next_element()?;
+            while sequence.next_element::<IgnoredAny>()?.is_some() {}
+            Ok(first)
+        }
+    }
+
+    deserializer.deserialize_any(FirstError)
 }
 
 /// Response validator for the Application Insights `/v2/track` endpoint
@@ -348,11 +393,17 @@ fn validate_track_response(reader: &mut dyn Read) -> Result<(), anyhow::Error> {
         .context("Failed to parse Application Insights partial-success response body")?;
 
     if response.items_received != 1 || response.items_accepted != 1 {
+        let rejection = response
+            .errors
+            .and_then(|error| error.status_code)
+            .map(|status| format!("; first rejection status {status}"))
+            .unwrap_or_default();
         anyhow::bail!(
             "Application Insights accepted only {} of {} submitted items \
-             (expected exactly 1 of 1 for this single-envelope request)",
+             (expected exactly 1 of 1 for this single-envelope request){}",
             response.items_accepted,
             response.items_received,
+            rejection,
         );
     }
 
@@ -650,6 +701,62 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_track_response_reports_first_rejection_status() {
+        for status in [400, 429, 500] {
+            let body = json!({
+                "itemsReceived": 1,
+                "itemsAccepted": 0,
+                "errors": [
+                    {"index": 0, "statusCode": status, "message": "rejected"},
+                    {"statusCode": 503}
+                ]
+            })
+            .to_string();
+            let error = validate_track_response(&mut body.as_bytes()).unwrap_err();
+            let message = error.to_string();
+            assert!(message.contains("accepted only 0 of 1"));
+            assert!(message.contains(&format!("first rejection status {status}")));
+            assert!(!message.contains("503"));
+        }
+    }
+
+    #[test]
+    fn test_validate_track_response_streams_rejection_details() {
+        let prefix =
+            br#"{"itemsReceived":1,"itemsAccepted":0,"errors":[{"statusCode":429,"message":""#;
+        let suffix = br#""},{"statusCode":500}]}"#;
+        let mut reader = prefix
+            .as_slice()
+            .chain(std::io::repeat(b'x').take(1024 * 1024))
+            .chain(suffix.as_slice());
+
+        let error = validate_track_response(&mut reader).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("first rejection status 429"));
+        assert!(message.len() < 200);
+        assert!(!message.contains("500"));
+    }
+
+    #[test]
+    fn test_validate_track_response_empty_rejection_details() {
+        for errors in [json!([]), Value::Null, json!([{}])] {
+            for accepted in [0, 1] {
+                let body = json!({
+                    "itemsReceived": 1,
+                    "itemsAccepted": accepted,
+                    "errors": errors
+                })
+                .to_string();
+                let result = validate_track_response(&mut body.as_bytes());
+                assert_eq!(result.is_ok(), accepted == 1);
+                if let Err(error) = result {
+                    assert!(error.to_string().contains("accepted only 0 of 1"));
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_validate_track_response_206_zero_zero_is_not_success() {
         // A malformed/impossible response for a single-envelope request --
         // mere equality between the two counts (0 == 0) must NOT be
@@ -747,6 +854,23 @@ mod tests {
             parts.track_url(),
             Some(Url::parse(&format!("{DEFAULT_INGESTION_ENDPOINT}/v2/track")).unwrap())
         );
+    }
+
+    #[test]
+    fn test_parse_connection_string_rejects_explicitly_empty_endpoints() {
+        for connection in [
+            "InstrumentationKey=k;IngestionEndpoint=;",
+            "InstrumentationKey=k;IngestionEndpoint=   ;",
+            "InstrumentationKey=k;EndpointSuffix=;",
+            "InstrumentationKey=k;EndpointSuffix=   ;",
+            "InstrumentationKey=k;IngestionEndpoint=;EndpointSuffix=applicationinsights.azure.cn",
+            "InstrumentationKey=k;IngestionEndpoint=https://region.example/;EndpointSuffix=",
+        ] {
+            assert!(
+                parse_connection_string(connection).is_none(),
+                "accepted {connection}"
+            );
+        }
     }
 
     #[test]
