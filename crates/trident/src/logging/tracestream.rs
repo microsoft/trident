@@ -131,6 +131,10 @@ pub struct TraceStream {
 /// and a flag to disable the tracestream. It also has methods to set the server
 /// and create a TraceSender.
 impl TraceStream {
+    pub(crate) fn correlation_fields(&self, metric_name: &str) -> BTreeMap<String, Value> {
+        correlation_fields(metric_name, &self.installation_id, &self.servicing_id)
+    }
+
     /// Permanently disable the tracestream
     ///
     /// Useful for cases when we know we don't want to send traces to the server
@@ -463,7 +467,7 @@ impl TraceStream {
     /// metrics-writing pipeline against a throwaway temp file instead of a
     /// real, shared host path, so they can be plain `#[test]`s instead of
     /// needing a VM.
-    fn make_trace_sender_with_metrics_path(
+    pub(super) fn make_trace_sender_with_metrics_path(
         &self,
         metrics_file_path: &str,
         truncate: bool,
@@ -596,17 +600,11 @@ impl TraceSender {
     /// does not establish that this command is creating a new installation.
     fn additional_fields(&self, metric_name: &str) -> BTreeMap<String, Value> {
         let mut fields = ADDITIONAL_FIELDS.clone();
-        if let Ok(installation_id) = self.installation_id.read() {
-            if let Some(installation_id) = installation_id.as_ref() {
-                fields.insert(fields::INSTALLATION_ID.to_string(), json!(installation_id));
-            }
-        }
-        if let Ok(servicing_id) = self.servicing_id.read() {
-            if let Some(servicing_id) = servicing_id.as_ref() {
-                fields.insert(fields::SERVICING_ID.to_string(), json!(servicing_id));
-            }
-        }
-        merge_operation_context(metric_name, &mut fields);
+        fields.extend(correlation_fields(
+            metric_name,
+            &self.installation_id,
+            &self.servicing_id,
+        ));
         fields
     }
 
@@ -815,6 +813,26 @@ fn product_uuid_or_unknown(uuid: Result<String, Error>) -> String {
         debug!("Failed to read product uuid: {err:#}");
         "unknown".into()
     })
+}
+
+fn correlation_fields(
+    metric_name: &str,
+    installation_id: &RwLock<Option<String>>,
+    servicing_id: &RwLock<Option<String>>,
+) -> BTreeMap<String, Value> {
+    let mut fields = BTreeMap::new();
+    if let Ok(id) = installation_id.read() {
+        if let Some(id) = id.as_ref() {
+            fields.insert(fields::INSTALLATION_ID.to_string(), json!(id));
+        }
+    }
+    if let Ok(id) = servicing_id.read() {
+        if let Some(id) = id.as_ref() {
+            fields.insert(fields::SERVICING_ID.to_string(), json!(id));
+        }
+    }
+    merge_operation_context(metric_name, &mut fields);
+    fields
 }
 
 /// Merge the current thread's `operation_id`/`command`/`source` (see
