@@ -23,14 +23,41 @@ use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 use crate::command_kind::CommandKind;
 use trident_api::error::TridentError;
 
+/// Reads `CLOCK_BOOTTIME` (nanosecond-resolution time since boot,
+/// including any suspended time -- unlike `sysinfo::System::uptime()` or a
+/// naive `/proc/uptime` parse, which only expose whole-second resolution)
+/// and converts it into the `trident_start` uptime metric value. Used by
+/// `Trident::new`'s startup telemetry (see the `trident_start` call site
+/// in `lib.rs`), which passes it the live `nix::time::clock_gettime`
+/// result.
+///
+/// Best-effort: `clock_gettime` with a valid clock ID essentially never
+/// fails on Linux, but falls back to `f64::NAN` -- which `json!()`
+/// serializes as JSON `null`, a genuine "not available" rather than a
+/// misleading literal zero (see
+/// `test_clock_boottime_uptime_secs_nan_fallback_serializes_as_json_null`
+/// below) -- rather than failing startup if it somehow does.
+pub(crate) fn clock_boottime_uptime_secs(
+    clock_read: Result<nix::sys::time::TimeSpec, nix::errno::Errno>,
+) -> f64 {
+    clock_read
+        .map(|ts| std::time::Duration::from(ts).as_secs_f64())
+        .unwrap_or_else(|e| {
+            warn!("Failed to read CLOCK_BOOTTIME: {e}");
+            f64::NAN
+        })
+}
+
 use osutils::{
     dmi, files,
     osrelease::{OsRelease, OS_RELEASE_PATH},
-    uname,
+    uname, virt,
 };
+use sysdefs::arch::SystemArchitecture;
 
 use crate::{
-    datastore::DataStore, logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION,
+    datastore::DataStore, init::acl, logging::operation_context, TRIDENT_METRICS_FILE_PATH,
+    TRIDENT_VERSION,
 };
 
 lazy_static::lazy_static! {
@@ -811,6 +838,30 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
         "unknown".to_string()
     });
     platform_info.insert("kernel_version".to_string(), json!(kernel_release.trim()));
+
+    // Whether this host is virtualized (see `osutils::virt` for the
+    // detection heuristic and its caveats).
+    platform_info.insert("vm".to_string(), json!(virt::is_virtual()));
+
+    let arch: &'static str = SystemArchitecture::current().into();
+    platform_info.insert("arch".to_string(), json!(arch));
+    // Best-effort: a failure to determine whether this is an ACL (Azure
+    // Container Linux) host must never fail startup, it only means this
+    // one field is missing from every telemetry event for this
+    // invocation. A detection failure is reported as "unknown", not
+    // "false" -- conflating "known non-ACL" with "couldn't tell" would
+    // misclassify a host whose ACL check simply failed to run as
+    // definitively non-ACL.
+    let acl = match acl::is_acl() {
+        Ok(true) => "true",
+        Ok(false) => "false",
+        Err(e) => {
+            warn!("Failed to determine if host is running ACL: {e:?}");
+            "unknown"
+        }
+    };
+    platform_info.insert("acl".to_string(), json!(acl));
+
     platform_info
 }
 
@@ -943,6 +994,63 @@ mod tests {
         assert!(
             metric_found,
             "Expected test metric not found in the local metrics file"
+        );
+    }
+
+    #[test]
+    /// Regression test for a Copilot review finding on PR #778: claimed
+    /// that `clock_boottime_uptime_secs`'s `f64::NAN` fallback, passed
+    /// through `tracing::info!(value = ...)` to
+    /// `TraceEntryVisitor::record_f64`'s `json!(value)`, would make
+    /// `serde_json` unable to serialize the entry, panicking instead of
+    /// staying best-effort. Calls the exact function `lib.rs`'s
+    /// `trident_start` metric uses (see its call site), forcing the
+    /// failure branch with a synthetic `Errno`, then sends the resulting
+    /// value through the real tracing -> visitor -> file-write pipeline
+    /// (not just a standalone `serde_json` snippet): `json!(f64)` goes
+    /// through `Value::from(f64)`, which maps non-finite floats to
+    /// `Value::Null` rather than erroring, so the written line contains a
+    /// valid JSON `"value":null` and the file write completes normally.
+    fn test_clock_boottime_uptime_secs_nan_fallback_serializes_as_json_null() {
+        let uptime_secs = clock_boottime_uptime_secs(Err(nix::errno::Errno::EINVAL));
+        assert!(
+            uptime_secs.is_nan(),
+            "a failed clock read must fall back to NaN, not a misleading literal value"
+        );
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .with_filter(filter::LevelFilter::INFO);
+
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        tracing::info!(metric_name = "trident_start", value = uptime_secs);
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let entry_line = lines
+            .iter()
+            .find(|line| line.contains(r#""metric_name":"trident_start""#))
+            .expect("expected trident_start metric not found in the local metrics file");
+
+        // Confirm the line is valid, parseable JSON (i.e. writing a NaN
+        // value never broke serialization) and that the value field landed
+        // as JSON null rather than a literal 0 or a serialization failure.
+        let parsed: serde_json::Value =
+            serde_json::from_str(entry_line).expect("trace entry line must be valid JSON");
+        assert_eq!(
+            parsed.get("value"),
+            Some(&Value::Null),
+            "NaN metric value should serialize as JSON null, not a literal 0 or an error"
         );
     }
 
@@ -1407,13 +1515,31 @@ mod functional_test {
             "kernel_version".to_string(),
             json!(uname::kernel_release().unwrap().trim()),
         );
+        expected_platform_info.insert("vm".to_string(), json!(virt::is_virtual()));
 
         // Call the function to get the actual result.
         let platform_info = populate_platform_info();
 
-        // Assert that the actual result matches the expected result.
+        let expected_arch: &'static str = SystemArchitecture::current().into();
+        assert_eq!(platform_info.get("arch").unwrap(), &json!(expected_arch));
+        // Host-dependent (like the fields above): just assert the field is
+        // present and one of the values `acl::is_acl()` can actually
+        // produce, rather than a fixed expectation, since whether the VM
+        // running this test is an ACL host isn't controlled by the test.
+        let acl = platform_info.get("acl").unwrap().as_str().unwrap();
+        assert!(
+            ["true", "false", "unknown"].contains(&acl),
+            "unexpected acl value: {acl}"
+        );
+
+        // Assert that the actual result matches the expected result for
+        // every field with a fixed expectation (arch/acl are asserted
+        // separately above since they are host-dependent).
+        let mut actual_platform_info = platform_info;
+        actual_platform_info.remove("arch");
+        actual_platform_info.remove("acl");
         assert_eq!(
-            platform_info, expected_platform_info,
+            actual_platform_info, expected_platform_info,
             "Platform info does not match the expected result"
         );
     }

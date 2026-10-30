@@ -293,7 +293,17 @@ impl Trident {
             ));
         }
 
-        tracing::info!(metric_name = "trident_start");
+        // See `logging::tracestream::clock_boottime_uptime_secs` for the
+        // NaN-fallback rationale and its regression test.
+        let uptime_secs = logging::tracestream::clock_boottime_uptime_secs(
+            nix::time::clock_gettime(nix::time::ClockId::CLOCK_BOOTTIME),
+        );
+        // `acl` and `arch` are process-lifetime, host-level facts (like
+        // `vm`), so they're stamped onto every telemetry event via
+        // `PLATFORM_INFO` (see
+        // `logging::tracestream::populate_platform_info`) instead of
+        // being scoped to just this one metric.
+        tracing::info!(metric_name = "trident_start", value = uptime_secs,);
 
         Ok(Self {
             host_config,
