@@ -59,6 +59,7 @@ pub use crate::{
     },
     grpc_client::client_main,
     logging::{
+        appinsights::AppInsightsSender,
         background_log::BackgroundLog,
         background_uploader::{BackgroundUploadHandle, BackgroundUploader},
         journald::JournaldTracing,
@@ -69,10 +70,11 @@ pub use crate::{
             run_with_captured_operation, save_reboot_operation, take_reboot_operation,
             OperationSource,
         },
+        telemetry_uploader::TelemetryUploader,
         tracestream::TraceStream,
     },
     orchestrate::OrchestratorConnection,
-    reboot::request_reboot_with_wait,
+    reboot::{request_reboot_with_wait, request_reboot_with_wait_and_flush},
     server::server_main,
 };
 
