@@ -66,7 +66,7 @@ impl Phase {
     /// Splits a wire name into its base command name and phase, by
     /// stripping whichever non-empty `suffix()` matches (checked before
     /// falling back to `OneShot`'s empty suffix, which would otherwise
-    /// match trivially). The inverse of `phased_name`.
+    /// match trivially). The inverse of `command_name`.
     fn strip(name: &str) -> (&str, Phase) {
         for phase in [Phase::Stage, Phase::Finalize, Phase::Noop] {
             if let Some(base) = name.strip_suffix(phase.suffix()) {
@@ -91,7 +91,8 @@ impl Phase {
 /// to. Families that can be staged/finalized carry their [`Phase`]
 /// directly, rather than requiring every caller that already has a typed
 /// `Family` to re-parse it back out of the rendered name string.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum_macros::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
 enum Family {
     Install(Phase),
     Update(Phase),
@@ -125,21 +126,6 @@ pub struct CommandKind {
     name: String,
     family: Family,
 }
-
-/// Wire-name literals shared by every place that renders one of these
-/// families' names: the daemon-only named constructors below, and
-/// `Commands::kind`/`ClientCommands::kind` further down (which pass these
-/// as the `base` given to `phased_name`, instead of independently
-/// deriving a name from `Commands::name()`/`ClientCommands::name()` --
-/// those return the *kebab-case, user-facing* command name, e.g.
-/// `"rebuild-raid"`, which is a distinct, Display-only concern from the
-/// snake_case wire name Kusto queries depend on). Each literal below
-/// exists exactly once in the crate; every other reference to a command's
-/// wire name flows through one of these constants or the constructors
-/// built on them.
-const INSTALL_NAME: &str = "install";
-const UPDATE_NAME: &str = "update";
-const ROLLBACK_NAME: &str = "rollback";
 
 impl CommandKind {
     fn new(name: String, family: Family) -> Self {
@@ -178,65 +164,60 @@ impl CommandKind {
         generates_servicing_id_for_family(&self.family)
     }
 
-    /// Shared constructor for the daemon-only named constructors below:
-    /// each gRPC service handler represents a compile-time-fixed
-    /// `(name, Family)` pair (unlike the CLI, which derives it at runtime
-    /// from `--allowed-operations`), so there's no parsing to do -- just a
-    /// literal to hardcode, once, here.
-    fn daemon(name: String, family: Family) -> Self {
-        Self::new(name, family)
+    fn daemon(family: Family) -> Self {
+        let name: &'static str = family.into();
+        Self::new(name.to_string(), family)
     }
 
     /// Shared constructor for the daemon-only stage/finalize command
     /// families (`install`/`update`/`rollback`): derives the wire name
-    /// from `base` and `phase.suffix()` -- the same suffixes `strip`
-    /// parses back out -- so the base name is hardcoded exactly once per
-    /// family instead of once per phase, and can never render a name that
-    /// disagrees with its own classification.
-    fn daemon_phased(base: &str, phase: Phase, family: impl FnOnce(Phase) -> Family) -> Self {
-        Self::daemon(format!("{base}{}", phase.suffix()), family(phase))
+    /// from the family and `phase.suffix()`.
+    fn daemon_phased(phase: Phase, family: impl FnOnce(Phase) -> Family) -> Self {
+        let family = family(phase);
+        let base: &'static str = family.into();
+        Self::new(format!("{base}{}", phase.suffix()), family)
     }
 
     pub fn install() -> Self {
-        Self::daemon_phased(INSTALL_NAME, Phase::OneShot, Family::Install)
+        Self::daemon_phased(Phase::OneShot, Family::Install)
     }
 
     pub fn install_stage() -> Self {
-        Self::daemon_phased(INSTALL_NAME, Phase::Stage, Family::Install)
+        Self::daemon_phased(Phase::Stage, Family::Install)
     }
 
     pub fn install_finalize() -> Self {
-        Self::daemon_phased(INSTALL_NAME, Phase::Finalize, Family::Install)
+        Self::daemon_phased(Phase::Finalize, Family::Install)
     }
 
     pub fn update() -> Self {
-        Self::daemon_phased(UPDATE_NAME, Phase::OneShot, Family::Update)
+        Self::daemon_phased(Phase::OneShot, Family::Update)
     }
 
     pub fn update_stage() -> Self {
-        Self::daemon_phased(UPDATE_NAME, Phase::Stage, Family::Update)
+        Self::daemon_phased(Phase::Stage, Family::Update)
     }
 
     pub fn update_finalize() -> Self {
-        Self::daemon_phased(UPDATE_NAME, Phase::Finalize, Family::Update)
+        Self::daemon_phased(Phase::Finalize, Family::Update)
     }
 
     pub fn rollback() -> Self {
-        Self::daemon_phased(ROLLBACK_NAME, Phase::OneShot, |phase| Family::Rollback {
+        Self::daemon_phased(Phase::OneShot, |phase| Family::Rollback {
             check: false,
             phase,
         })
     }
 
     pub fn rollback_stage() -> Self {
-        Self::daemon_phased(ROLLBACK_NAME, Phase::Stage, |phase| Family::Rollback {
+        Self::daemon_phased(Phase::Stage, |phase| Family::Rollback {
             check: false,
             phase,
         })
     }
 
     pub fn rollback_finalize() -> Self {
-        Self::daemon_phased(ROLLBACK_NAME, Phase::Finalize, |phase| Family::Rollback {
+        Self::daemon_phased(Phase::Finalize, |phase| Family::Rollback {
             check: false,
             phase,
         })
@@ -244,33 +225,30 @@ impl CommandKind {
 
     /// `rollback --check`: a read-only dry run that never stages or
     /// finalizes anything (see [`Family::Rollback`]'s `check` field).
-    /// Shares [`ROLLBACK_NAME`] with the other `rollback*` constructors
-    /// above so its wire name can never drift from theirs, even though
-    /// its classification (`check: true`) is entirely different.
     pub fn rollback_check() -> Self {
-        Self::daemon_phased(ROLLBACK_NAME, Phase::OneShot, |phase| Family::Rollback {
+        Self::daemon_phased(Phase::OneShot, |phase| Family::Rollback {
             check: true,
             phase,
         })
     }
 
     pub fn commit() -> Self {
-        Self::daemon("commit".to_string(), Family::Commit)
+        Self::daemon(Family::Commit)
     }
 
     /// `check_root` is preview-only and not yet implemented server-side;
     /// classified as `Family::Other` (not servicing) to match its stub
     /// behavior today.
     pub fn check_root() -> Self {
-        Self::daemon("check_root".to_string(), Family::Other)
+        Self::new("check_root".to_string(), Family::Other)
     }
 
     pub fn rebuild_raid() -> Self {
-        Self::daemon("rebuild_raid".to_string(), Family::RebuildRaid)
+        Self::daemon(Family::RebuildRaid)
     }
 
     pub fn stream_disk() -> Self {
-        Self::daemon("stream_disk".to_string(), Family::StreamDisk)
+        Self::daemon(Family::StreamDisk)
     }
 }
 
@@ -302,8 +280,11 @@ fn generates_servicing_id_for_family(family: &Family) -> bool {
 /// Shared stage/finalize wire-name derivation, matching
 /// `logging::operation_context::command_name` exactly (that function
 /// remains the single implementation; this just calls it).
-fn phased_name(base: &str, ops: &Operations) -> String {
-    command_name(base, ops)
+fn phased_kind(family: impl Fn(Phase) -> Family, ops: &Operations) -> CommandKind {
+    let base: &'static str = family(Phase::OneShot).into();
+    let name = command_name(base, ops);
+    let phase = Phase::strip(&name).1;
+    CommandKind::new(name, family(phase))
 }
 
 impl Commands {
@@ -343,8 +324,7 @@ impl Commands {
     /// re-deriving it independently from `Operations` -- guaranteeing the
     /// phase can never drift from the suffix that's actually in the wire
     /// name, since it's read straight out of that same string. Uses the
-    /// shared `*_NAME` constants (not `self.name()`, which renders the
-    /// kebab-case Display name) as the `base` passed to `phased_name`, and
+    /// family's snake_case name rather than the kebab-case Display name, and
     /// delegates to the daemon-only named constructors for the families
     /// with no stage/finalize split, so a command's wire name and
     /// `Family` are never independently duplicated between the CLI and
@@ -353,18 +333,10 @@ impl Commands {
         match self {
             Commands::Install {
                 allowed_operations, ..
-            } => {
-                let name = phased_name(INSTALL_NAME, &to_operations(allowed_operations));
-                let phase = Phase::strip(&name).1;
-                CommandKind::new(name, Family::Install(phase))
-            }
+            } => phased_kind(Family::Install, &to_operations(allowed_operations)),
             Commands::Update {
                 allowed_operations, ..
-            } => {
-                let name = phased_name(UPDATE_NAME, &to_operations(allowed_operations));
-                let phase = Phase::strip(&name).1;
-                CommandKind::new(name, Family::Update(phase))
-            }
+            } => phased_kind(Family::Update, &to_operations(allowed_operations)),
             Commands::Rollback {
                 allowed_operations,
                 check,
@@ -373,14 +345,12 @@ impl Commands {
                 if *check {
                     CommandKind::rollback_check()
                 } else {
-                    let name = phased_name(ROLLBACK_NAME, &to_operations(allowed_operations));
-                    let phase = Phase::strip(&name).1;
-                    CommandKind::new(
-                        name,
-                        Family::Rollback {
+                    phased_kind(
+                        |phase| Family::Rollback {
                             check: false,
                             phase,
                         },
+                        &to_operations(allowed_operations),
                     )
                 }
             }
@@ -403,7 +373,7 @@ impl Commands {
 
 impl ClientCommands {
     /// Entry point for `grpc-client` command classification. Like
-    /// `Commands::kind`, uses the shared `*_NAME` constants and the
+    /// `Commands::kind`, uses the derived family names and the
     /// daemon-only named constructors for families with a fixed name,
     /// rather than `self.name()` (the kebab-case, `"client-"`-prefixed
     /// Display name -- irrelevant here). Only the catch-all `Family::Other`
@@ -414,18 +384,10 @@ impl ClientCommands {
         match self {
             ClientCommands::Install {
                 allowed_operations, ..
-            } => {
-                let name = phased_name(INSTALL_NAME, &to_operations(allowed_operations));
-                let phase = Phase::strip(&name).1;
-                CommandKind::new(name, Family::Install(phase))
-            }
+            } => phased_kind(Family::Install, &to_operations(allowed_operations)),
             ClientCommands::Update {
                 allowed_operations, ..
-            } => {
-                let name = phased_name(UPDATE_NAME, &to_operations(allowed_operations));
-                let phase = Phase::strip(&name).1;
-                CommandKind::new(name, Family::Update(phase))
-            }
+            } => phased_kind(Family::Update, &to_operations(allowed_operations)),
             ClientCommands::Rollback {
                 allowed_operations,
                 check,
@@ -434,14 +396,12 @@ impl ClientCommands {
                 if *check {
                     CommandKind::rollback_check()
                 } else {
-                    let name = phased_name(ROLLBACK_NAME, &to_operations(allowed_operations));
-                    let phase = Phase::strip(&name).1;
-                    CommandKind::new(
-                        name,
-                        Family::Rollback {
+                    phased_kind(
+                        |phase| Family::Rollback {
                             check: false,
                             phase,
                         },
+                        &to_operations(allowed_operations),
                     )
                 }
             }
@@ -491,81 +451,54 @@ mod tests {
         TestClientArgs::parse_from(full).inner.command
     }
 
-    /// `INSTALL_NAME`/`UPDATE_NAME`/`ROLLBACK_NAME` are the base names
-    /// `Commands::kind`/`ClientCommands::kind` pass to `phased_name`, and
-    /// what the daemon-only named constructors hardcode -- but
-    /// `Commands::name`/`ClientCommands::name` (used for CLI `Display`
-    /// output, `owns_local_metrics_file`, etc.) hardcode their own,
-    /// entirely independent `"install"`/`"client-install"` literals in
-    /// `cli/mod.rs`/`cli/grpc_client.rs`. Nothing in the type system ties
-    /// the two together, so this test is the only thing that would catch
-    /// someone renaming one without the other.
     #[test]
-    fn shared_name_constants_match_commands_name() {
+    fn family_wire_names_match_commands_name() {
         let install = cli(&["install", "--allowed-operations", "stage,finalize"]);
         let update = cli(&["update", "--allowed-operations", "stage,finalize"]);
         let rollback = cli(&["rollback", "--allowed-operations", "stage,finalize"]);
-        assert_eq!(install.name(), INSTALL_NAME);
-        assert_eq!(update.name(), UPDATE_NAME);
-        assert_eq!(rollback.name(), ROLLBACK_NAME);
+        assert_eq!(install.name(), install.kind().as_str());
+        assert_eq!(update.name(), update.kind().as_str());
+        assert_eq!(rollback.name(), rollback.kind().as_str());
 
         // `ClientCommands::name()` always carries a `"client-"` prefix
         // (see its own `// TODO: remove "client-" prefix` comment); strip
         // it the same way `ClientCommands::kind`'s catch-all arm does
-        // before comparing against the unprefixed shared constants.
+        // before comparing against the unprefixed wire names.
         let client_install = client(&["install", "--allowed-operations", "stage,finalize"]);
         let client_update = client(&["update", "--allowed-operations", "stage,finalize"]);
         let client_rollback = client(&["rollback", "--allowed-operations", "stage,finalize"]);
         assert_eq!(
             client_install.name().trim_start_matches("client-"),
-            INSTALL_NAME
+            client_install.kind().as_str()
         );
         assert_eq!(
             client_update.name().trim_start_matches("client-"),
-            UPDATE_NAME
+            client_update.kind().as_str()
         );
         assert_eq!(
             client_rollback.name().trim_start_matches("client-"),
-            ROLLBACK_NAME
+            client_rollback.kind().as_str()
         );
     }
 
     #[test]
     fn install_update_rollback_phase_suffixes() {
-        assert_eq!(
-            cli(&["install", "--allowed-operations", "stage,finalize"])
-                .kind()
-                .as_str(),
-            "install"
-        );
-        assert_eq!(
-            cli(&["install", "--allowed-operations", "stage"])
-                .kind()
-                .as_str(),
-            "install_stage"
-        );
-        assert_eq!(
-            cli(&["install", "--allowed-operations", "finalize"])
-                .kind()
-                .as_str(),
-            "install_finalize"
-        );
-        assert_eq!(
-            cli(&["install", "--allowed-operations"]).kind().as_str(),
-            "install_noop"
-        );
-        assert_eq!(
-            cli(&["update", "--allowed-operations", "stage"])
-                .kind()
-                .as_str(),
-            "update_stage"
-        );
-        assert_eq!(
-            cli(&["rollback", "--allowed-operations", "stage"])
-                .kind()
-                .as_str(),
-            "rollback_stage"
-        );
+        for command in ["install", "update", "rollback"] {
+            for (operations, suffix) in [
+                ("stage,finalize", ""),
+                ("stage", "_stage"),
+                ("finalize", "_finalize"),
+                ("", "_noop"),
+            ] {
+                let mut args = vec![command, "--allowed-operations"];
+                if !operations.is_empty() {
+                    args.push(operations);
+                }
+                let expected = format!("{command}{suffix}");
+                assert_eq!(cli(&args).kind().as_str(), expected);
+                assert_eq!(client(&args).kind().as_str(), expected);
+            }
+        }
     }
 
     #[test]
