@@ -20,7 +20,7 @@ mod tridentclient;
 use error::TridentClientError;
 use tridentclient::{RebootHandling, TridentClient};
 
-pub fn client_main(args: &ClientArgs) -> ExitCode {
+pub fn client_main(args: &ClientArgs, before_reboot: impl FnOnce()) -> ExitCode {
     // Start the Tokio runtime
     let Ok(runtime) = Builder::new_multi_thread().enable_all().build() else {
         error!("Failed to create Tokio runtime");
@@ -80,7 +80,7 @@ pub fn client_main(args: &ClientArgs) -> ExitCode {
         }
         Ok(ExitKind::Done) => {}
         Ok(ExitKind::NeedsReboot) => {
-            if let Err(e) = crate::request_reboot_with_wait() {
+            if let Err(e) = crate::request_reboot_with_wait_and_flush(before_reboot) {
                 error!("Failed to reboot: {e:?}");
                 return TridentExitCodes::RebootUnsuccessful.into();
             }

@@ -730,7 +730,7 @@ fn main() -> ExitCode {
         telemetry_status.log();
 
         // Run the client command
-        trident::client_main(client_args)
+        trident::client_main(client_args, || telemetry_uploader.flush())
     } else {
         // Initialize the loggers
         let logstream = setup_logging(&args, &bg_uploader, iter::empty());
