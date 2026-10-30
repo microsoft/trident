@@ -135,6 +135,10 @@ pub struct Trident {
     host_config: Option<HostConfiguration>,
     orchestrator: Option<OrchestratorConnection>,
     is_stream_image: bool,
+    /// Kept so `Trident::install` can attach a newly-created installation
+    /// ID to it -- see `DataStore::ensure_installation_id`, only ever
+    /// called from `install`/staging, unlike this constructor.
+    tracestream: TraceStream,
 }
 
 impl Trident {
@@ -143,6 +147,29 @@ impl Trident {
         datastore_path: &Path,
         logstream: Logstream,
         tracestream: TraceStream,
+    ) -> Result<Self, TridentError> {
+        Self::new_impl(config_source, datastore_path, logstream, tracestream, true)
+    }
+
+    /// Construct without attaching the source datastore's installation ID.
+    ///
+    /// The CLI's multiboot path defers attachment until `install` has persisted
+    /// the shared identity in the selected staging datastore.
+    pub fn new_deferring_installation_id(
+        config_source: Option<HostConfigurationSource>,
+        datastore_path: &Path,
+        logstream: Logstream,
+        tracestream: TraceStream,
+    ) -> Result<Self, TridentError> {
+        Self::new_impl(config_source, datastore_path, logstream, tracestream, false)
+    }
+
+    fn new_impl(
+        config_source: Option<HostConfigurationSource>,
+        datastore_path: &Path,
+        logstream: Logstream,
+        tracestream: TraceStream,
+        attach_installation_id: bool,
     ) -> Result<Self, TridentError> {
         let host_config = config_source
             .map(|source| Self::load_host_config(&source))
@@ -218,6 +245,10 @@ impl Trident {
             info!("Running Trident in a container");
         }
 
+        // Attach the persisted installation ID before startup metrics. Defer it
+        // when a multiboot install may select a different datastore.
+        tracestream.attach_ids_if_present(datastore_path, !attach_installation_id);
+
         // Trace features enabled in the Host Configuration.
         if let Some(hc) = &host_config {
             hc.feature_tracing();
@@ -244,6 +275,7 @@ impl Trident {
             host_config,
             orchestrator,
             is_stream_image: false,
+            tracestream,
         })
     }
 
@@ -453,6 +485,7 @@ impl Trident {
             ))?;
 
         let is_stream_image = self.is_stream_image;
+        let tracestream = self.tracestream.clone();
 
         self.execute_and_record_error(datastore, |datastore| {
             host_config
@@ -474,6 +507,7 @@ impl Trident {
             // provisioned host. If the host is not provisioned, we can proceed
             // with a clean install. If the host is provisioned, we need to
             // check if a multiboot install was requested.
+            let mut inherited_installation_id = None;
             if datastore.is_persistent() {
                 if !multiboot {
                     // If the host IS provisioned and multiboot is NOT requested
@@ -491,10 +525,26 @@ impl Trident {
                         multiboot install"
                     );
 
+                    inherited_installation_id = Some(datastore.ensure_installation_id());
                     datastore.close();
                     *datastore = DataStore::open_or_create(Path::new(TEMPORARY_DATASTORE_PATH))
                         .message("Failed to create temporary datastore for multiboot install")?;
                 }
+            }
+
+            // Persist inheritance independently of the telemetry cache. A reused
+            // multiboot datastore may still contain another installation's ID.
+            let installation_id_result = match inherited_installation_id {
+                Some(installation_id) => installation_id.and_then(|id| {
+                    datastore.inherit_installation_id(id)?;
+                    tracestream.set_installation_id(id.to_string());
+                    Ok(())
+                }),
+                None => tracestream.ensure_and_attach_installation_id(datastore),
+            };
+            if let Err(e) = installation_id_result {
+                // Do not mint a different ID when multiboot inheritance fails.
+                warn!("Failed to attach installation ID: {e:?}");
             }
 
             // Use a prefetched image if provided, otherwise load the image
@@ -593,6 +643,8 @@ impl Trident {
                 "update called without Host Configuration set",
             ))?;
 
+        let tracestream = self.tracestream.clone();
+
         self.execute_and_record_error(datastore, |datastore| {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
@@ -635,6 +687,20 @@ impl Trident {
                             status.is_management_os = false;
                         })
                         .message("Failed to initialize datastore")?;
+
+                    // This host has just adopted a datastore via the CIH
+                    // bootstrap path, bypassing `Trident::install` entirely
+                    // -- nothing else will ever create an installation ID for
+                    // it otherwise. Best-effort: a failure here must not
+                    // block the update itself, since telemetry attribution
+                    // is not load-bearing for servicing outcomes. Known
+                    // remaining gap: this invocation's own
+                    // command_start/trident_start (fired even earlier, in
+                    // the CLI/daemon dispatch and Trident::new respectively)
+                    // still won't carry it -- both fire before this point.
+                    if let Err(e) = tracestream.ensure_and_attach_installation_id(datastore) {
+                        warn!("Failed to create installation ID during CIH bootstrap: {e:?}");
+                    }
                 } else {
                     // For non-ACL images, if the datastore is not persistent, return error
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
