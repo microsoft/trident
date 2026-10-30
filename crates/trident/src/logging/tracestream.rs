@@ -1,3 +1,4 @@
+use crate::telemetry::fields;
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -124,7 +125,17 @@ impl TraceStream {
 
     /// Create a Boxed TraceSender
     pub fn make_trace_sender(&self) -> Box<TraceSender> {
-        Box::new(TraceSender::new(self.target.clone()))
+        self.make_trace_sender_with_metrics_path(TRIDENT_METRICS_FILE_PATH)
+    }
+
+    /// Like `make_trace_sender`, but writes the local metrics file to
+    /// `metrics_file_path` instead of the real host path
+    /// (`TRIDENT_METRICS_FILE_PATH`). This lets tests exercise the full
+    /// metrics-writing pipeline against a throwaway temp file instead of a
+    /// real, shared host path, so they can be plain `#[test]`s instead of
+    /// needing a VM.
+    fn make_trace_sender_with_metrics_path(&self, metrics_file_path: &str) -> Box<TraceSender> {
+        Box::new(TraceSender::new(self.target.clone(), metrics_file_path))
     }
 }
 
@@ -141,11 +152,11 @@ struct ExecutionTime(Instant);
 /// the tracing-subscriber crate to handle the events and send them to the
 /// server.
 impl TraceSender {
-    fn new(server: Arc<RwLock<Option<String>>>) -> Self {
+    fn new(server: Arc<RwLock<Option<String>>>, metrics_file_path: &str) -> Self {
         Self {
             server,
             client: reqwest::blocking::Client::new(),
-            metrics_file: match files::create_file(TRIDENT_METRICS_FILE_PATH) {
+            metrics_file: match files::create_file(metrics_file_path) {
                 Ok(f) => Some(f),
                 Err(err) => {
                     eprintln!(
@@ -198,7 +209,11 @@ where
         let mut visitor = TraceEntryVisitor::default();
         event.record(&mut visitor);
 
-        let metric_name = match visitor.fields.get("metric_name").and_then(|v| v.as_str()) {
+        let metric_name = match visitor
+            .fields
+            .get(fields::METRIC_NAME)
+            .and_then(|v| v.as_str())
+        {
             Some(name) => name.to_string(),
             None => {
                 warn!("Event does not have a metric_name field, skipping!");
@@ -210,14 +225,14 @@ where
         let filtered_fields: BTreeMap<String, Value> = visitor
             .fields
             .into_iter()
-            .filter(|(key, _)| key != "metric_name")
+            .filter(|(key, _)| key != fields::METRIC_NAME)
             .collect();
         let value = if filtered_fields.len() > 1 {
             Value::Object(Map::from_iter(filtered_fields))
         } else {
             filtered_fields
                 .into_iter()
-                .find(|(k, _)| k == "value")
+                .find(|(k, _)| k == fields::VALUE)
                 .map(|(_, v)| v)
                 .unwrap_or_default()
         };
@@ -300,7 +315,7 @@ where
         };
         visitor
             .fields
-            .insert("execution_time".to_string(), json!(execution_time));
+            .insert(fields::EXECUTION_TIME.to_string(), json!(execution_time));
 
         let entry = TraceEntry {
             timestamp: Utc::now(),
@@ -366,7 +381,7 @@ fn product_uuid_or_unknown(uuid: Result<String, Error>) -> String {
 fn populate_additional_fields() -> BTreeMap<String, Value> {
     // TODO: Add more additional fields here as needed
     let mut additional_fields = BTreeMap::new();
-    additional_fields.insert("trident_version".to_string(), json!(TRIDENT_VERSION));
+    additional_fields.insert(fields::TRIDENT_VERSION.to_string(), json!(TRIDENT_VERSION));
     additional_fields
 }
 
@@ -395,13 +410,13 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
     let mut sys = System::new();
     sys.refresh_all();
     platform_info.insert(
-        "asset_id".to_string(),
+        fields::ASSET_ID.to_string(),
         json!(product_uuid_or_unknown(dmi::read_product_uuid_raw())),
     );
-    platform_info.insert("os_release".to_string(), json!(get_os_release()));
-    platform_info.insert("total_cpu".to_string(), json!(sys.cpus().len()));
+    platform_info.insert(fields::OS_RELEASE.to_string(), json!(get_os_release()));
+    platform_info.insert(fields::TOTAL_CPU.to_string(), json!(sys.cpus().len()));
     platform_info.insert(
-        "total_memory_gib".to_string(),
+        fields::TOTAL_MEMORY_GIB.to_string(),
         json!((sys.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0)).round() as u64),
     );
 
@@ -412,7 +427,10 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
         );
         "unknown".to_string()
     });
-    platform_info.insert("kernel_version".to_string(), json!(kernel_release.trim()));
+    platform_info.insert(
+        fields::KERNEL_VERSION.to_string(),
+        json!(kernel_release.trim()),
+    );
     platform_info
 }
 
@@ -420,10 +438,17 @@ fn populate_platform_info() -> BTreeMap<String, Value> {
 mod tests {
     use super::*;
 
+    use std::io::{BufRead, BufReader};
+
+    use tracing_subscriber::{filter, layer::SubscriberExt};
+
     #[test]
     fn test_tracestream() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
-        let trace_sender = tracestream.make_trace_sender();
+        let trace_sender =
+            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap());
         assert!(
             trace_sender.get_server().is_none(),
             "tracestream should not have a server"
@@ -442,8 +467,11 @@ mod tests {
 
     #[test]
     fn test_lock() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
         let mut tracestream = TraceStream::default();
-        let trace_sender = tracestream.make_trace_sender();
+        let trace_sender =
+            tracestream.make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap());
 
         assert!(
             trace_sender.get_server().is_none(),
@@ -481,31 +509,24 @@ mod tests {
         let uuid = product_uuid_or_unknown(Ok("6BA7B810-9DAD-11D1-80B4-00C04FD430C8".to_string()));
         assert_eq!(uuid, "6BA7B810-9DAD-11D1-80B4-00C04FD430C8");
     }
-}
 
-#[cfg(feature = "functional-test")]
-#[cfg_attr(not(test), allow(unused_imports, dead_code))]
-mod functional_test {
-    use super::*;
-
-    use std::io::{BufRead, BufReader};
-
-    use tracing_subscriber::{filter, layer::SubscriberExt};
-
-    use pytest_gen::functional_test;
-
-    #[functional_test]
+    #[test]
     fn test_tracestream_write_metric_event_to_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
         let tracestream = TraceStream::default();
         let trace_sender = tracestream
-            .make_trace_sender()
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
             .with_filter(filter::LevelFilter::INFO);
 
-        tracing::subscriber::set_global_default(
+        // Use a thread-local scoped default subscriber (rather than
+        // `set_global_default`) since this is a plain `#[test]` that may run
+        // concurrently with other tests in the same process -- the global
+        // default can only be set once per process, but the scoped default
+        // is per-thread and automatically restored when `_guard` drops.
+        let _guard = tracing::subscriber::set_default(
             tracing_subscriber::Registry::default().with(trace_sender),
-        )
-        .context("Failed to set global default subscriber")
-        .unwrap();
+        );
 
         tracing::info!(metric_name = "test_metric", value = true);
 
@@ -513,7 +534,7 @@ mod functional_test {
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         // Check if the specific metric exists in the file.
-        let file = File::open(TRIDENT_METRICS_FILE_PATH).unwrap();
+        let file = File::open(&metrics_path).unwrap();
         let reader = BufReader::new(file);
         let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
 
@@ -526,6 +547,60 @@ mod functional_test {
             "Expected test metric not found in the local metrics file"
         );
     }
+
+    #[test]
+    fn test_tracestream_write_span_metric_to_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .with_filter(filter::LevelFilter::INFO);
+
+        // See test_tracestream_write_metric_event_to_file for why a scoped
+        // (not global) default subscriber is used here.
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        // Call test function that will create a span
+        simulate_function_span();
+
+        // Ensure the trace system has time to simulate a span.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Check if the specific metric exists in the file.
+        let file = File::open(&metrics_path).unwrap();
+        let reader = BufReader::new(file);
+        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
+
+        let expected_substring = r#""metric_name":"test_span"#;
+        let span_metric_found = lines.iter().any(|line| line.contains(expected_substring));
+
+        // Assert that the expected metric is present in the file.
+        assert!(
+            span_metric_found,
+            "Expected test metric not found in the local metrics file"
+        );
+    }
+
+    // Helper function to test span metrics
+    #[tracing::instrument(name = "test_span", skip_all)]
+    fn simulate_function_span() {}
+}
+
+#[cfg(feature = "functional-test")]
+#[cfg_attr(not(test), allow(unused_imports, dead_code))]
+mod functional_test {
+    use super::*;
+
+    use pytest_gen::functional_test;
+
+    // These two remain functional tests (VM-only) because they assert
+    // against the actual host's hardware/platform info (CPU count, memory,
+    // product UUID, os-release, kernel version) -- unlike the metrics-file
+    // tests above, there's no way to inject a fake value here, so the
+    // result is inherently host-dependent.
 
     #[functional_test]
     fn test_populate_additional_fields() {
@@ -560,42 +635,4 @@ mod functional_test {
             "Platform info does not match the expected result"
         );
     }
-
-    #[functional_test]
-    fn test_tracestream_write_span_metric_to_file() {
-        let tracestream = TraceStream::default();
-        let trace_sender = tracestream
-            .make_trace_sender()
-            .with_filter(filter::LevelFilter::INFO);
-
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::Registry::default().with(trace_sender),
-        )
-        .context("Failed to set global default subscriber")
-        .unwrap();
-
-        // Call test function that will create a span
-        simulate_function_span();
-
-        // Ensure the trace system has time to simulate a span.
-        std::thread::sleep(std::time::Duration::from_millis(100));
-
-        // Check if the specific metric exists in the file.
-        let file = File::open(TRIDENT_METRICS_FILE_PATH).unwrap();
-        let reader = BufReader::new(file);
-        let lines: Vec<String> = reader.lines().map(|l| l.unwrap()).collect();
-
-        let expected_substring = r#""metric_name":"test_span"#;
-        let span_metric_found = lines.iter().any(|line| line.contains(expected_substring));
-
-        // Assert that the expected metric is present in the file.
-        assert!(
-            span_metric_found,
-            "Expected test metric not found in the local metrics file"
-        );
-    }
-
-    // Helper function to test span metrics
-    #[tracing::instrument(name = "test_span", skip_all)]
-    fn simulate_function_span() {}
 }

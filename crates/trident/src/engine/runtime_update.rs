@@ -1,3 +1,4 @@
+use crate::telemetry::events;
 use std::time::Instant;
 
 use log::{debug, error, info, trace, warn};
@@ -205,7 +206,7 @@ fn finalize_or_rollback_runtime_update(
     // Metric for update time in seconds
     if let Some(start_time) = update_start_time {
         tracing::info!(
-            metric_name = "update_time_secs",
+            metric_name = events::UPDATE_TIME_SECS,
             value = start_time.elapsed().as_secs_f64(),
             servicing_type = format!("{:?}", ServicingType::RuntimeUpdate)
         );
