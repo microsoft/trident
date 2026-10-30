@@ -61,6 +61,7 @@ pub use crate::{
     logging::{
         background_log::BackgroundLog,
         background_uploader::BackgroundUploader,
+        journald::JournaldTracing,
         logfwd::LogForwarder,
         logstream::Logstream,
         operation_context::{

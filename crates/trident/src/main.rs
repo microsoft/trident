@@ -1,4 +1,5 @@
 use std::{fs, iter, panic, process::ExitCode};
+use trident::JournaldTracing;
 
 use anyhow::{Context, Error};
 use clap::Parser;
@@ -396,45 +397,83 @@ fn setup_logging(
 }
 
 fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
-    use tracing_subscriber::{filter, layer::SubscriberExt, Layer};
+    use tracing_subscriber::{filter, layer::SubscriberExt, Layer, Registry};
 
     let tracestream = TraceStream::default();
 
+    // Every command reachable from run_trident needs a subscriber
+    // installed here -- not just the servicing ones -- so that ordinary
+    // logging (journald) and, for the servicing commands, command_start/
+    // command_error all reach a real subscriber instead of the default
+    // one, which is none at all: tracing silently drops every event with
+    // no subscriber installed. The fast "exit early" commands (validate,
+    // get, diagnose, offline-initialize, rollback --check, start-network)
+    // don't emit command_start/command_error or any other metric_name
+    // event themselves (see run_trident), but still get a subscriber here
+    // -- see the local_sender truncate-vs-append comment below for why.
+    // StartNetwork's own `tracestream.disable()` (see run_trident) still
+    // applies regardless -- it only suppresses a later `set_server` call
+    // from configuring a remote phone-home target before the network
+    // exists, not the local metrics-file/journald layers installed here,
+    // which need no network.
     match &args.command {
         Commands::Commit { .. }
         | Commands::Daemon { .. }
         | Commands::GrpcClient { .. }
         | Commands::Install { .. }
         | Commands::RebuildRaid { .. }
-        | Commands::Rollback { check: false, .. }
-        | Commands::Update { .. } => {
+        | Commands::Rollback { .. }
+        | Commands::Update { .. }
+        | Commands::Validate { .. }
+        | Commands::Get { .. }
+        | Commands::Diagnose { .. }
+        | Commands::OfflineInitialize { .. }
+        | Commands::StartNetwork { .. } => {
+            // Truncating the local metrics file is only correct for a
+            // process that actually owns the file's lifecycle for this
+            // run; every other command must append instead, since simply
+            // *opening* the file with truncation is destructive on its
+            // own regardless of whether that command emits any
+            // command_start/command_error/metric_name event of its own
+            // (most don't; see run_trident). See
+            // `Commands::owns_local_metrics_file` for the exact rule and
+            // why it can't be derived from `is_servicing()`/`Family`.
+            let local_sender = if args.command.owns_local_metrics_file() {
+                tracestream.make_trace_sender()
+            } else {
+                tracestream.make_trace_sender_appending()
+            };
+            let mut layers: Vec<Box<dyn Layer<Registry> + Send + Sync>> = vec![Box::new(
+                local_sender.with_filter(filter::LevelFilter::INFO),
+            )];
+
             // As functionality moves to the Daemon, move the journald layer to
             // only be enabled for the Daemon command. Until then, keep it enabled
             // for all commands to ensure we have tracing info in journald for all
             // commands.
-            let baseline_tracing = tracing_subscriber::Registry::default().with(
-                tracestream
-                    .make_trace_sender()
-                    .with_filter(filter::LevelFilter::INFO),
-            );
-            if let Ok(journald_layer) = tracing_journald::layer() {
-                tracing::subscriber::set_global_default(
-                    baseline_tracing.with(
-                        journald_layer
-                            .with_syslog_identifier("trident-tracing".to_string())
-                            .with_filter(filter::LevelFilter::INFO),
-                    ),
-                )
-                .context("Failed to set global default subscriber")?;
-            } else {
-                eprintln!("Failed to connect to journald, falling back to tracing without journald support");
-                tracing::subscriber::set_global_default(baseline_tracing)
-                    .context("Failed to set global default subscriber")?;
+            match JournaldTracing::new(tracestream.clone()) {
+                Ok(journald_layer) => {
+                    layers.push(Box::new(
+                        journald_layer.with_filter(filter::LevelFilter::INFO),
+                    ));
+                }
+                Err(_) => {
+                    eprintln!("Failed to connect to journald, falling back to tracing without journald support");
+                }
             }
+
+            tracing::subscriber::set_global_default(Registry::default().with(layers))
+                .context("Failed to set global default subscriber")?;
         }
-        _ => {
-            // no op
-        }
+        // pytest-generator does no meaningful work of its own (just
+        // generates functional-test wrappers at build/dev time) -- no
+        // telemetry needed. Listed explicitly, rather than via a wildcard
+        // fallback, so the compiler forces this match to be revisited
+        // whenever a new command variant is added, instead of it silently
+        // falling through to "no subscriber" the way the commands above
+        // used to.
+        #[cfg(feature = "pytest-generator")]
+        Commands::Pytest => {}
     }
 
     Ok(tracestream)
