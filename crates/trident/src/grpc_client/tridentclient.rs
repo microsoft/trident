@@ -285,7 +285,10 @@ async fn handle_servicing_response_stream(
         }
     }
 
-    Ok(ExitKind::Done)
+    Err(TridentClientError::ResponseError(
+        "servicing stream".to_string(),
+        tonic::Status::unavailable("Servicing stream ended before the final response"),
+    ))
 }
 
 async fn handle_servicing_response(
@@ -363,4 +366,120 @@ async fn handle_servicing_response(
     }
 
     Ok(ControlFlow::Continue(()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use hyper::{body::Bytes, Response};
+    use tokio::{net::TcpListener, sync::oneshot, task::JoinSet, time::timeout};
+
+    use super::*;
+
+    async fn assert_mid_stream_reset_is_transport_failure(
+        reason: h2::Reason,
+        expected_code: tonic::Code,
+    ) {
+        let mut server = JoinSet::new();
+        timeout(Duration::from_secs(10), async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let (reset, reset_requested) = oneshot::channel();
+            server.spawn(async move {
+                let (socket, _) = listener.accept().await.unwrap();
+                let mut connection = h2::server::handshake(socket).await.unwrap();
+                let (_request, mut respond) = connection.accept().await.unwrap().unwrap();
+                let response = Response::builder()
+                    .status(200)
+                    .header("content-type", "application/grpc")
+                    .body(())
+                    .unwrap();
+                let mut stream = respond.send_response(response, false).unwrap();
+                // An empty protobuf message establishes a readable gRPC stream.
+                stream
+                    .send_data(Bytes::from_static(&[0, 0, 0, 0, 0]), false)
+                    .unwrap();
+                tokio::select! {
+                    requested = reset_requested => {
+                        requested.unwrap();
+                        stream.send_reset(reason);
+                    }
+                    _ = connection.accept() => panic!("connection closed before the reset"),
+                }
+                while let Some(request) = connection.accept().await {
+                    request.unwrap();
+                }
+            });
+
+            let channel = Endpoint::from_shared(format!("http://{address}"))
+                .unwrap()
+                .connect()
+                .await
+                .unwrap();
+            let mut client = StreamingServiceClient::new(channel);
+            let mut stream = client
+                .stream_disk(StreamDiskRequest::default())
+                .await
+                .unwrap()
+                .into_inner();
+            assert!(stream.message().await.unwrap().is_some());
+            reset.send(()).unwrap();
+
+            let error = handle_servicing_response_stream(stream).await.unwrap_err();
+            let TridentClientError::ResponseError(_, ref status) = error else {
+                panic!("expected a mid-stream response error: {error}");
+            };
+            assert_eq!(status.code(), expected_code);
+            assert_eq!(
+                std::error::Error::source(status).is_some(),
+                reason != h2::Reason::CANCEL,
+            );
+            assert!(super::super::is_transport_failure(&Err(error.into())));
+            drop(client);
+            server.join_next().await.unwrap().unwrap();
+        })
+        .await
+        .expect("the stream reset test must finish within its deadline");
+    }
+
+    #[tokio::test]
+    async fn test_mid_stream_http2_cancel_is_a_transport_failure() {
+        // Hyper 1.8.1 maps CANCEL to EOF instead of retaining a status source.
+        assert_mid_stream_reset_is_transport_failure(h2::Reason::CANCEL, tonic::Code::Unavailable)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_mid_stream_http2_internal_reset_is_a_transport_failure() {
+        assert_mid_stream_reset_is_transport_failure(
+            h2::Reason::INTERNAL_ERROR,
+            tonic::Code::Internal,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_completed_servicing_response_preserves_exit_kind() {
+        for reboot in [
+            RebootStatus::RebootNotRequired,
+            RebootStatus::RebootStarted,
+            RebootStatus::RebootRequired,
+        ] {
+            let response = ServicingResponse {
+                response: Some(ResponseBody::Completed(trident_proto::v1::Completed {
+                    status: StatusCode::Success.into(),
+                    reboot_status: reboot.into(),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            };
+            let result = handle_servicing_response(response).await.unwrap();
+            if reboot == RebootStatus::RebootRequired {
+                assert!(matches!(result, ControlFlow::Break(ExitKind::NeedsReboot)));
+            } else {
+                assert!(matches!(result, ControlFlow::Break(ExitKind::Done)));
+            }
+        }
+    }
 }
