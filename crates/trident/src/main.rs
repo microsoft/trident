@@ -647,8 +647,8 @@ fn main() -> ExitCode {
     let telemetry_enabled = match AgentConfig::load() {
         Ok(config) => config.telemetry_enabled(),
         Err(error) => {
-            eprintln!("Failed to load agent configuration: {error:?}");
-            return TridentExitCodes::SetupFailed.into();
+            eprintln!("Failed to load agent configuration, disabling telemetry: {error:?}");
+            false
         }
     };
 
