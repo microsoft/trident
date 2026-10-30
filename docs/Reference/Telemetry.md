@@ -17,10 +17,11 @@ added to journald entries. Retrieve the journald output with:
 journalctl -t trident-tracing
 ```
 
-The local metrics file is truncated when a tracing-enabled process starts,
-then accumulates that process's records. A daemon can therefore retain
-metrics from multiple gRPC requests in one file. `diagnose` preserves and
-packages the existing file without initializing this tracing output.
+The local metrics file follows process lifetime, not a single servicing
+operation. Commands that own the file's lifecycle truncate it at startup;
+other commands, including `diagnose` and the gRPC client, append instead.
+A daemon can accumulate records from multiple gRPC requests in one file.
+`diagnose` packages the existing metrics file.
 
 ## Host Metadata
 
