@@ -17,6 +17,7 @@ pub(crate) mod fields {
     pub const ASSET_ID: &str = "asset_id";
     pub const COMMAND: &str = "command";
     pub const EXECUTION_TIME: &str = "execution_time";
+    pub const INSTALLATION_ID: &str = "installation_id";
     pub const KERNEL_VERSION: &str = "kernel_version";
     pub const METRIC_NAME: &str = "metric_name";
     pub const OPERATION_ID: &str = "operation_id";
