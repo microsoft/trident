@@ -24,14 +24,15 @@ DatastorePath=/special/path/to/my-datastore.sqlite
 
 ## Telemetry
 
-The `Telemetry` setting records the preference for sending data to
-Application Insights. Recording this preference alone does not upload
-data: delivery also requires Application Insights runtime integration
-and a connection string compiled into the binary using
-`AZURE_MONITOR_CONNECTION_STRING`.
+Trident can optionally send telemetry data to Azure Monitor / Application
+Insights. See [Telemetry](./Telemetry.md) for what data is collected and
+how delivery failures are handled. This requires an Application Insights
+connection string to have been compiled into the Trident binary at build
+time (via the `AZURE_MONITOR_CONNECTION_STRING` environment variable); if
+no connection string was compiled in, this setting has no effect.
 
-The preference defaults to **OptOut**. To record an opt-in preference,
-add a line to the Agent Configuration file:
+Telemetry defaults to **disabled** (`OptOut`). To enable it, add a line to
+the Agent Configuration file:
 
 ``` conf
 Telemetry=OptIn
