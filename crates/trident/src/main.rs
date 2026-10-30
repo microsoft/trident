@@ -643,12 +643,14 @@ fn main() -> ExitCode {
 
     // Whether best-effort Application Insights telemetry is enabled. Loaded
     // early (before logging/tracing is set up) since the decision feeds
-    // directly into setup_tracing(). A configuration read error disables
-    // uploads; commands needing the configuration report the structured
-    // error through their normal execution path.
-    let telemetry_enabled = AgentConfig::load()
-        .map(|config| config.telemetry_enabled())
-        .unwrap_or(false);
+    // directly into setup_tracing().
+    let telemetry_enabled = match AgentConfig::load() {
+        Ok(config) => config.telemetry_enabled(),
+        Err(error) => {
+            eprintln!("Failed to load agent configuration: {error:?}");
+            return TridentExitCodes::SetupFailed.into();
+        }
+    };
 
     // Application Insights telemetry gets its own dedicated uploader/queue,
     // entirely separate from `bg_uploader` (which carries real log

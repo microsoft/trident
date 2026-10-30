@@ -98,15 +98,24 @@ pub(crate) fn parse_connection_string(s: &str) -> Option<ConnParts> {
         if part.is_empty() {
             continue;
         }
-        let Some((key, value)) = part.split_once('=') else {
-            continue;
-        };
+        let (key, value) = part.split_once('=')?;
         match key.trim().to_ascii_lowercase().as_str() {
+            "" => return None,
             "instrumentationkey" => instrumentation_key = Some(value.trim().to_string()),
             "ingestionendpoint" => {
-                ingestion_endpoint = Some(value.trim().trim_end_matches('/').to_string())
+                let endpoint = value.trim().trim_end_matches('/');
+                if endpoint.is_empty() {
+                    return None;
+                }
+                ingestion_endpoint = Some(endpoint.to_string());
             }
-            "endpointsuffix" => endpoint_suffix = Some(value.trim().trim_matches('/').to_string()),
+            "endpointsuffix" => {
+                let suffix = value.trim().trim_matches('/');
+                if suffix.is_empty() {
+                    return None;
+                }
+                endpoint_suffix = Some(suffix.to_string());
+            }
             "location" => location = Some(value.trim().to_string()),
             _ => {}
         }
@@ -114,13 +123,9 @@ pub(crate) fn parse_connection_string(s: &str) -> Option<ConnParts> {
 
     let instrumentation_key = instrumentation_key.filter(|k| !k.is_empty())?;
 
-    if ingestion_endpoint.as_deref() == Some("") || endpoint_suffix.as_deref() == Some("") {
-        return None;
-    }
-
-    let ingestion_endpoint = match ingestion_endpoint.filter(|e| !e.is_empty()) {
+    let ingestion_endpoint = match ingestion_endpoint {
         Some(explicit) => explicit,
-        None => match endpoint_suffix.filter(|s| !s.is_empty()) {
+        None => match endpoint_suffix {
             // Sovereign-cloud form: derive the ingestion endpoint from
             // EndpointSuffix (+ optional Location), rather than assuming the
             // public endpoint. The ingestion prefix is always `dc`
@@ -865,11 +870,57 @@ mod tests {
             "InstrumentationKey=k;EndpointSuffix=   ;",
             "InstrumentationKey=k;IngestionEndpoint=;EndpointSuffix=applicationinsights.azure.cn",
             "InstrumentationKey=k;IngestionEndpoint=https://region.example/;EndpointSuffix=",
+            "InstrumentationKey=k;IngestionEndpoint=;IngestionEndpoint=https://region.example/",
+            "InstrumentationKey=k;EndpointSuffix= ;EndpointSuffix=applicationinsights.azure.cn",
+            "InstrumentationKey=k;IngestionEndpoint=/;IngestionEndpoint=https://region.example/",
+            "InstrumentationKey=k;EndpointSuffix=/;EndpointSuffix=applicationinsights.azure.cn",
         ] {
             assert!(
                 parse_connection_string(connection).is_none(),
                 "accepted {connection}"
             );
+        }
+    }
+
+    #[test]
+    fn test_parse_connection_string_rejects_malformed_fields() {
+        for connection in [
+            "InstrumentationKey=k;EndpointSuffix",
+            "InstrumentationKey=k;IngestionEndpoint",
+            "InstrumentationKey=k; EndpointSuffix ;",
+            "InstrumentationKey=k;UnknownField",
+            "InstrumentationKey=k;=value",
+            "InstrumentationKey=k;   =value",
+            "EndpointSuffix;InstrumentationKey=k",
+        ] {
+            assert!(
+                parse_connection_string(connection).is_none(),
+                "accepted {connection}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_connection_string_preserves_valid_fields() {
+        for (connection, expected) in [
+            ("InstrumentationKey=k", DEFAULT_INGESTION_ENDPOINT),
+            (" ; InstrumentationKey = k ; ; ", DEFAULT_INGESTION_ENDPOINT),
+            ("InstrumentationKey=k;UnknownField=value", DEFAULT_INGESTION_ENDPOINT),
+            (
+                " instrumentationkey = k ; ingestionendpoint = https://region.example/ ; ",
+                "https://region.example",
+            ),
+            (
+                "InstrumentationKey=k;EndpointSuffix=applicationinsights.azure.cn;Location=chinaeast2",
+                "https://chinaeast2.dc.applicationinsights.azure.cn",
+            ),
+            (
+                "InstrumentationKey=k;IngestionEndpoint=https://first.example/;IngestionEndpoint=https://last.example/",
+                "https://last.example",
+            ),
+        ] {
+            let parts = parse_connection_string(connection).expect(connection);
+            assert_eq!(parts.ingestion_endpoint, expected);
         }
     }
 
