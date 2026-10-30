@@ -22,7 +22,6 @@ pub(crate) mod events {
 pub(crate) mod fields {
     pub const ACL: &str = "acl";
     pub const ARCH: &str = "arch";
-    pub const ASSET_ID: &str = "asset_id";
     pub const COMMAND: &str = "command";
     pub const EXECUTION_TIME: &str = "execution_time";
     pub const INSTALLATION_ID: &str = "installation_id";

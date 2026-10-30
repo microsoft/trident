@@ -30,12 +30,16 @@ other commands, including `diagnose` and the gRPC client, append instead.
 A daemon can accumulate records from multiple gRPC requests in one file.
 `diagnose` packages the existing metrics file.
 
+The local metrics file can be found here: `/var/log/trident-metrics.jsonl`.
+Servicing paths later copy the current file beside the configured
+datastore as `trident-metrics-<SERVICING_STATE>-<TIMESTAMP>.jsonl`
+(under `/var/lib/trident` when using the default datastore path).
+
 ## Host Metadata
 
 Every recorded event also includes as much of the following host metadata
 as is available at the time:
 
-- `asset_id`: the host's DMI product UUID (a stable hardware identifier).
 - `os_release`: the `VERSION` field from `/etc/os-release`.
 - `kernel_version`: the running kernel release (`uname -r`).
 - `total_cpu`: the number of CPUs.
@@ -81,7 +85,7 @@ Later events include the persistent IDs when available.
 
 ## Correlation ID Lifecycle
 
-The four correlation-style fields above have deliberately different
+The three correlation-style fields above have deliberately different
 lifetimes -- some outlive many servicing operations, some are recreated on
 every reinstall, and some exist only for a single command invocation. The
 diagram below shows how each behaves across a representative sequence of
@@ -131,18 +135,10 @@ gantt
     section installation_id
     installation_id #1 (since install #1) :done, inst1, 2024-01-01, 9d
     installation_id #2 (since install #2) :done, inst2, 2024-01-10, 2d
-
-    section asset_id
-    asset_id (never recreated)            :active, asset1, 2024-01-01, 11d
 ```
 
 Reading the diagram by row, from most to least stable:
 
-- **`asset_id`**: identifies the physical machine itself, via its DMI
-  product UUID. The most stable of the four -- read directly from
-  hardware rather than the datastore, so it survives every reinstall,
-  including the second `install` (day 10) that recreates
-  `installation_id`.
 - **`installation_id`**: normally created once at the first `install`
   and shared by its multiboot environments. A multiboot install inherits
   the running OS's installation ID, persisting it in the staging datastore
@@ -159,7 +155,7 @@ Reading the diagram by row, from most to least stable:
   invocation that stages something new (`install`, `update`,
   `update-stage`, `rollback`) -- note `update-finalize` does *not*
   regenerate it, since finalize-only invocations only read the value back.
-- **`operation_id`**: the shortest-lived of the four, minted fresh for
+- **`operation_id`**: the shortest-lived of the three, minted fresh for
   every single command invocation and never reused.
 
 ## Command Errors
