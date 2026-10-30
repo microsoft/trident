@@ -218,11 +218,9 @@ impl DataStore {
             // closed datastore (see `close()`) cannot be read from, and
             // silently treating it as having no key-value rows would drop
             // its data while still reporting a successful persist.
-            let key_values = Self::read_key_values(
-                self.db
-                    .as_ref()
-                    .structured(ServicingError::from(DatastoreError::WriteToClosedDatastore))?,
-            )?;
+            let key_values = Self::read_key_values(self.db.as_ref().structured(
+                ServicingError::from(DatastoreError::ReadFromClosedDatastore),
+            )?)?;
 
             let persistent_db = Self::make_datastore(path)?;
             let mut persistent_status = self.host_status.clone();
@@ -341,30 +339,36 @@ impl DataStore {
         destination: &sqlite::Connection,
         key_values: &[(String, String)],
     ) -> Result<(), TridentError> {
+        let Some((first_key, _)) = key_values.first() else {
+            return Ok(());
+        };
+        let write_error = |key: &str, source: sqlite::Error| {
+            TridentError::with_source(
+                ServicingError::Datastore {
+                    inner: DatastoreError::WriteKeyValue {
+                        key: key.to_string(),
+                    },
+                },
+                source.into(),
+            )
+        };
+        let mut insert_statement = destination
+            .prepare(
+                "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
+                 ON CONFLICT(key) DO UPDATE SET contents = excluded.contents",
+            )
+            .map_err(|error| write_error(first_key, error))?;
+
         for (key, contents) in key_values {
-            let mut insert_statement = destination
-                .prepare(
-                    "INSERT INTO keyvalue (key, contents) VALUES (?, ?) \
-                     ON CONFLICT(key) DO UPDATE SET contents = excluded.contents",
-                )
-                .structured(ServicingError::Datastore {
-                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
-                })?;
+            let write_error = |error| write_error(key, error);
+            insert_statement.reset().map_err(write_error)?;
             insert_statement
                 .bind((1, key.as_str()))
-                .structured(ServicingError::Datastore {
-                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
-                })?;
-            insert_statement.bind((2, contents.as_str())).structured(
-                ServicingError::Datastore {
-                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
-                },
-            )?;
+                .map_err(write_error)?;
             insert_statement
-                .next()
-                .structured(ServicingError::Datastore {
-                    inner: DatastoreError::WriteKeyValue { key: key.clone() },
-                })?;
+                .bind((2, contents.as_str()))
+                .map_err(write_error)?;
+            insert_statement.next().map_err(write_error)?;
         }
 
         Ok(())
@@ -458,46 +462,38 @@ impl DataStore {
         &self,
         key: &str,
     ) -> Result<Option<T>, TridentError> {
-        let db = self
-            .db
-            .as_ref()
-            .structured(ServicingError::from(DatastoreError::OpenDatastore))?;
+        let db = self.db.as_ref().structured(ServicingError::from(
+            DatastoreError::ReadFromClosedDatastore,
+        ))?;
+        let read_error = |source: sqlite::Error| {
+            TridentError::with_source(
+                ServicingError::Datastore {
+                    inner: DatastoreError::ReadKeyValue {
+                        key: key.to_string(),
+                    },
+                },
+                source.into(),
+            )
+        };
 
         let mut statement = db
             .prepare("SELECT contents FROM keyvalue WHERE key = ?")
-            .structured(ServicingError::Datastore {
-                inner: DatastoreError::ReadKeyValue {
-                    key: key.to_string(),
-                },
-            })?;
-        statement
-            .bind((1, key))
-            .structured(ServicingError::Datastore {
-                inner: DatastoreError::ReadKeyValue {
-                    key: key.to_string(),
-                },
-            })?;
+            .map_err(read_error)?;
+        statement.bind((1, key)).map_err(read_error)?;
 
-        match statement.next().structured(ServicingError::Datastore {
-            inner: DatastoreError::ReadKeyValue {
-                key: key.to_string(),
-            },
-        })? {
+        match statement.next().map_err(read_error)? {
             State::Row => {
-                let contents =
-                    statement
-                        .read::<String, _>(0)
-                        .structured(ServicingError::Datastore {
-                            inner: DatastoreError::ReadKeyValue {
+                let contents = statement.read::<String, _>(0).map_err(read_error)?;
+                let value = serde_json::from_str(&contents).map_err(|source| {
+                    TridentError::with_source(
+                        ServicingError::Datastore {
+                            inner: DatastoreError::DeserializeValue {
                                 key: key.to_string(),
                             },
-                        })?;
-                let value =
-                    serde_json::from_str(&contents).structured(ServicingError::Datastore {
-                        inner: DatastoreError::DeserializeValue {
-                            key: key.to_string(),
                         },
-                    })?;
+                        source.into(),
+                    )
+                })?;
                 Ok(Some(value))
             }
             State::Done => Ok(None),
@@ -724,7 +720,7 @@ mod tests {
 
     #[test]
     /// Regression test: `persist` on a closed temporary datastore must
-    /// fail with `WriteToClosedDatastore` rather than silently treating
+    /// fail with `ReadFromClosedDatastore` rather than silently treating
     /// the closed connection as having no key-value rows and reporting a
     /// successful persist that actually dropped all of its data.
     fn test_persist_on_closed_datastore_fails() {
@@ -742,13 +738,94 @@ mod tests {
         assert_eq!(
             datastore.persist(&datastore_path).unwrap_err().kind(),
             &ErrorKind::Servicing(ServicingError::Datastore {
-                inner: DatastoreError::WriteToClosedDatastore
+                inner: DatastoreError::ReadFromClosedDatastore
             })
         );
         assert!(
             !datastore_path.exists(),
             "persist should not create a destination datastore when the source is closed"
         );
+    }
+
+    #[test]
+    fn test_get_value_on_closed_datastore_reports_read_error() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut datastore =
+            super::DataStore::open_or_create(&temp_dir.path().join("db.sqlite")).unwrap();
+        datastore.close();
+
+        assert_eq!(
+            datastore.get_value::<String>("key").unwrap_err().kind(),
+            &ErrorKind::Servicing(ServicingError::Datastore {
+                inner: DatastoreError::ReadFromClosedDatastore
+            })
+        );
+    }
+
+    #[test]
+    fn test_write_key_values_rebinds_every_row() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db = super::DataStore::make_datastore(&temp_dir.path().join("db.sqlite")).unwrap();
+        let rows = [
+            ("first".to_string(), "1".to_string()),
+            ("second".to_string(), "2".to_string()),
+            ("first".to_string(), "3".to_string()),
+        ];
+
+        super::DataStore::write_key_values(&db, &rows).unwrap();
+        let mut stored = super::DataStore::read_key_values(&db).unwrap();
+        stored.sort();
+        assert_eq!(
+            stored,
+            vec![
+                ("first".to_string(), "3".to_string()),
+                ("second".to_string(), "2".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_get_value_preserves_error_key_and_cause() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let datastore =
+            super::DataStore::open_or_create(&temp_dir.path().join("db.sqlite")).unwrap();
+        datastore
+            .set_value("invalid-number", &"not a number")
+            .unwrap();
+
+        let error = datastore.get_value::<u64>("invalid-number").unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &ErrorKind::Servicing(ServicingError::Datastore {
+                inner: DatastoreError::DeserializeValue {
+                    key: "invalid-number".to_string()
+                }
+            })
+        );
+        assert!(error
+            .unstructured("read failed")
+            .root_cause()
+            .is::<serde_json::Error>());
+
+        datastore
+            .db
+            .as_ref()
+            .unwrap()
+            .execute("DROP TABLE keyvalue")
+            .unwrap();
+        let error = datastore.get_value::<String>("missing-table").unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &ErrorKind::Servicing(ServicingError::Datastore {
+                inner: DatastoreError::ReadKeyValue {
+                    key: "missing-table".to_string()
+                }
+            })
+        );
+        assert!(error
+            .unstructured("read failed")
+            .root_cause()
+            .is::<sqlite::Error>());
     }
 
     #[test]
@@ -791,11 +868,18 @@ mod tests {
             let result = super::DataStore::write_persistent_data(
                 &db,
                 &host_status,
-                &[("force-fail".to_string(), "test-value".to_string())],
+                &[
+                    ("first".to_string(), "test-value".to_string()),
+                    ("force-fail".to_string(), "test-value".to_string()),
+                ],
             );
-            assert!(
-                result.is_err(),
-                "write_persistent_data should fail when a key-value insert is rejected"
+            assert_eq!(
+                result.unwrap_err().kind(),
+                &ErrorKind::Servicing(ServicingError::Datastore {
+                    inner: DatastoreError::WriteKeyValue {
+                        key: "force-fail".to_string()
+                    }
+                })
             );
         }
 
@@ -806,6 +890,7 @@ mod tests {
              even though the HostStatus write within the same transaction succeeded \
              before the key-value write failed"
         );
+        assert_eq!(datastore.get_value::<String>("first").unwrap(), None);
 
         temp_dir.close().unwrap();
     }

@@ -742,6 +742,9 @@ pub enum DatastoreError {
     #[error("Failed to read from datastore")]
     ReadDatastore,
 
+    #[error("Failed to read from datastore as it is closed")]
+    ReadFromClosedDatastore,
+
     #[error("Failed to read key '{key}' from datastore")]
     ReadKeyValue { key: String },
 
