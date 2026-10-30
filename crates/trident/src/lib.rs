@@ -60,7 +60,7 @@ pub use crate::{
     grpc_client::client_main,
     logging::{
         background_log::BackgroundLog,
-        background_uploader::BackgroundUploader,
+        background_uploader::{BackgroundUploadHandle, BackgroundUploader},
         journald::JournaldTracing,
         logfwd::LogForwarder,
         logstream::Logstream,
