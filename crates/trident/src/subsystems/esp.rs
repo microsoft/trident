@@ -101,7 +101,9 @@ pub fn set_uefi_fallback_contents(
             &source_esp_dir_name,
             &ctx.servicing_type,
             ctx.install_index,
-            ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD),
+            servicing_state == ServicingState::CleanInstallStaged
+                && ctx.servicing_type == ServicingType::CleanInstall
+                && ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD),
         )?;
     } else {
         debug!(
@@ -464,7 +466,9 @@ fn copy_mshv_esp_payload(
     destination_esp: &Path,
     ctx: &EngineContext,
 ) -> Result<(), Error> {
-    if !ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD) {
+    if ctx.servicing_type != ServicingType::CleanInstall
+        || !ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD)
+    {
         return Ok(());
     }
 
@@ -611,7 +615,7 @@ fn copy_boot_files_for_uefi_fallback(
     source_esp_name: &str,
     servicing_type: &ServicingType,
     install_index: usize,
-    preserve_mshv_payload: bool,
+    preserve_mshv_second_stage: bool,
 ) -> Result<(), Error> {
     let esp_dir_path = path::join_relative(mount_point, esp_mount_path).join(ESP_EFI_DIRECTORY);
     if skip_uefi_fallback_copy(
@@ -635,31 +639,41 @@ fn copy_boot_files_for_uefi_fallback(
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     );
-    // HvLoader chains to EFI/BOOT/second.efi. Fallback replacement normally
-    // removes files not present in AZLA/AZLB, so retain this source-ESP payload.
-    let preserved_files = if preserve_mshv_payload {
-        &[MSHV_SECOND_STAGE_EFI_FILENAME][..]
+    if preserve_mshv_second_stage {
+        replace_boot_files_preserving_mshv_second_stage(&source_esp_dir_path, &uefi_fallback_path)
     } else {
-        &[]
-    };
-    replace_boot_files_preserving(&source_esp_dir_path, &uefi_fallback_path, preserved_files)
-        .context(format!(
-            "Failed to copy boot files from directory '{}' to directory '{}'",
-            source_esp_dir_path.display(),
-            uefi_fallback_path.display()
-        ))?;
+        replace_boot_files(&source_esp_dir_path, &uefi_fallback_path)
+    }
+    .context(format!(
+        "Failed to copy boot files from directory '{}' to directory '{}'",
+        source_esp_dir_path.display(),
+        uefi_fallback_path.display()
+    ))?;
     Ok(())
 }
 
 /// Copies boot files from one folder to another.
 pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
-    replace_boot_files_preserving(from_dir, to_dir, &[])
+    replace_boot_files_impl(from_dir, to_dir, false)
 }
 
-fn replace_boot_files_preserving(
+/// Replaces Trident-managed fallback boot files while retaining MSHV's
+/// `EFI/BOOT/second.efi`.
+///
+/// MSHV's EFI-tree loader chains through this file, but it is not stored in
+/// AZLA. A normal fallback replacement would therefore delete it after the
+/// clean-install provisioning step copied it from the source ESP.
+fn replace_boot_files_preserving_mshv_second_stage(
     from_dir: &Path,
     to_dir: &Path,
-    preserved_file_names: &[&str],
+) -> Result<(), Error> {
+    replace_boot_files_impl(from_dir, to_dir, true)
+}
+
+fn replace_boot_files_impl(
+    from_dir: &Path,
+    to_dir: &Path,
+    preserve_mshv_second_stage: bool,
 ) -> Result<(), Error> {
     trace!(
         "Copying boot files from '{}' to '{}'",
@@ -700,7 +714,8 @@ fn replace_boot_files_preserving(
             let orig_file_name_string = orig_file_name.to_string_lossy();
             // Skip files that end with .new
             if !orig_file_name_string.ends_with(".new")
-                && !preserved_file_names.contains(&orig_file_name_string.as_ref())
+                && !(preserve_mshv_second_stage
+                    && orig_file_name_string == MSHV_SECOND_STAGE_EFI_FILENAME)
             {
                 let new_file_name = format!("{orig_file_name_string}.old");
                 let to_path = to_dir.join(new_file_name);
@@ -1558,7 +1573,10 @@ mod tests {
             fs::create_dir_all(source_path.parent().unwrap()).unwrap();
             fs::write(&source_path, relative_path).unwrap();
         }
-        let mut ctx = EngineContext::default();
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::CleanInstall,
+            ..Default::default()
+        };
         ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
 
         copy_mshv_esp_payload(source_esp.path(), destination_esp.path(), &ctx).unwrap();
@@ -1590,7 +1608,10 @@ mod tests {
         let managed_file = destination_esp.path().join("EFI/AZLA/bootx64.efi");
         fs::create_dir_all(managed_file.parent().unwrap()).unwrap();
         fs::write(&managed_file, "managed").unwrap();
-        let mut ctx = EngineContext::default();
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::CleanInstall,
+            ..Default::default()
+        };
         ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
 
         let error =
@@ -1601,6 +1622,28 @@ mod tests {
             "unexpected error: {error:#}"
         );
         assert_eq!(fs::read_to_string(managed_file).unwrap(), "managed");
+        for relative_path in MSHV_ESP_PAYLOAD_PATHS {
+            assert!(!destination_esp.path().join(relative_path).exists());
+        }
+    }
+
+    #[test]
+    fn test_mshv_esp_payload_flag_enabled_is_ignored_outside_clean_install() {
+        let source_esp = TempDir::new().unwrap();
+        let destination_esp = TempDir::new().unwrap();
+        for relative_path in MSHV_ESP_PAYLOAD_PATHS {
+            let source_path = source_esp.path().join(relative_path);
+            fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            fs::write(source_path, relative_path).unwrap();
+        }
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            ..Default::default()
+        };
+        ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
+
+        copy_mshv_esp_payload(source_esp.path(), destination_esp.path(), &ctx).unwrap();
+
         for relative_path in MSHV_ESP_PAYLOAD_PATHS {
             assert!(!destination_esp.path().join(relative_path).exists());
         }

@@ -241,7 +241,7 @@ pub mod internal_params {
     /// Run extra partition and filesystem checks before reboot.
     pub const PRE_REBOOT_CHECKS: &str = "preRebootChecks";
 
-    /// Preserve the MSHV EFI payload during file-based ESP deployment.
+    /// Preserve the MSHV EFI payload during clean-install file-based ESP deployment.
     pub const PRESERVE_MSHV_ESP_PAYLOAD: &str = "preserveMshvEspPayload";
 
     /// Re-encrypt the encrypted LUKS2 volumes in-place on clean install, instead of initializing
