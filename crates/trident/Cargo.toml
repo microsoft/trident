@@ -84,6 +84,7 @@ pytest_gen = { path = "../pytest_gen", optional = true }
 pytest = { path = "../pytest", optional = true }
 
 [dev-dependencies]
+h2 = { workspace = true }
 indoc = { workspace = true }
 maplit = { workspace = true }
 mockito = { workspace = true }

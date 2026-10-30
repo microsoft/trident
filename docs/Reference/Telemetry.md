@@ -56,7 +56,10 @@ as is available at the time:
 - `trident_version`: the running Trident version.
 - `installation_id`: an ID that lets separate events be correlated back to
   the same host installation over time, including its multiboot
-  environments.
+  environments. It is absent until an installation identity is loaded or
+  created; an `operation_id` is not a substitute.
+  `grpc-client` does not attach datastore-backed IDs, so its events omit
+  this field. The daemon handling the request attaches its own IDs.
 - `servicing_id`: an ID that lets events emitted across a whole servicing
   operation (an install, update, or manual rollback) be correlated with
   each other.
@@ -65,12 +68,11 @@ as is available at the time:
 - `command`: which command produced the event (e.g. `install`, `update`,
   `update_stage`, `update_finalize`, `commit`, `rollback`, `rebuild_raid`).
 - `source`: which of Trident's entry points produced the event -- `cli` (a
-  command run directly, without a daemon) or `daemon` (a command the
-  daemon executed for a gRPC request). A third entry point, `grpc-client`
-  (the CLI acting as a client, relaying a command to a running daemon),
-  is defined but not currently wired up to produce this enrichment --
-  see `logging::operation_context`'s module doc for why that's not
-  considered a gap worth closing.
+  command run directly, without a daemon), `daemon` (a command the daemon
+  executed for a gRPC request), or `grpc-client` (the CLI acting as a
+  client, relaying a command to a running daemon). All three are wired up
+  to produce `operation_id`/`command`/`source`; `grpc-client` does not
+  attach persisted `installation_id`/`servicing_id` (see above).
 
 `command_start` and `trident_start` always omit `installation_id` and
 `servicing_id`, even when those IDs are already cached. These startup
@@ -159,3 +161,31 @@ Reading the diagram by row, from most to least stable:
   regenerate it, since finalize-only invocations only read the value back.
 - **`operation_id`**: the shortest-lived of the four, minted fresh for
   every single command invocation and never reused.
+
+## Command Errors
+
+If a *servicing* command (`install`, `update`, `commit`, `rollback`,
+`rebuild_raid`, `stream_disk`, and their gRPC/`grpc-client` equivalents)
+fails (except for the admission-control rejections below), a
+`command_error` event is also sent (tagged with the same
+`operation_id`/`command` as above), breaking the failure down into:
+
+- `kind`: the top-level error category (e.g. `internal`, `invalid-input`,
+  `servicing`, `initialization`).
+- `subkind`: the specific error within that category (e.g.
+  `check-root-privileges`), when one applies.
+- `location`: the `file:line` in Trident's source where the error was
+  originally raised.
+
+A `grpc-client` invocation only fires its own `command_error` when the
+daemon it talked to never actually responded (a transport-level failure:
+the daemon's socket wasn't found, the connection was refused, or it
+dropped mid-call). For daemon-reported command failures, the daemon's own
+`command_error` already has full `kind`/`subkind`/`location` fidelity, so
+`grpc-client` stays silent rather than reporting the same failure again
+under a generic classification.
+
+Admission-control rejections for a busy daemon (connection or servicing
+lock contention) or an unprovisioned host intentionally emit no
+`command_error` from either the daemon or the client. Consequently,
+`command_error` is not a count of every failed invocation.
