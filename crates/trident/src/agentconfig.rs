@@ -10,8 +10,25 @@ use trident_api::{
     error::{InvalidInputError, ReportError, TridentError},
 };
 
+/// Whether Trident should attempt to send tracing data to Application
+/// Insights (best-effort, and only when a connection string was compiled
+/// into the binary -- see [`crate::AZURE_MONITOR_CONNECTION_STRING`]).
+///
+/// Defaults to [`TelemetryPreference::OptOut`]: telemetry is disabled unless
+/// a user has explicitly opted in via the Agent Configuration file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TelemetryPreference {
+    /// Sending telemetry to Application Insights is disabled.
+    #[default]
+    OptOut,
+    /// Telemetry is enabled, best-effort, provided a connection string was
+    /// compiled into this Trident binary.
+    OptIn,
+}
+
 pub struct AgentConfig {
     datastore: PathBuf,
+    telemetry: TelemetryPreference,
 }
 
 impl AgentConfig {
@@ -24,6 +41,7 @@ impl AgentConfig {
         let path = path.as_ref();
         let mut config = Self {
             datastore: TRIDENT_DATASTORE_PATH_DEFAULT.into(),
+            telemetry: TelemetryPreference::default(),
         };
 
         let contents = match std::fs::read_to_string(path) {
@@ -43,8 +61,20 @@ impl AgentConfig {
         };
 
         for line in contents.lines() {
-            if let Some(path) = line.strip_prefix("DatastorePath=") {
-                config.datastore = path.trim().into();
+            if let Some(value) = line.strip_prefix("DatastorePath=") {
+                config.datastore = value.trim().into();
+            } else if let Some(value) = line.strip_prefix("Telemetry=") {
+                config.telemetry = match value.trim().to_ascii_lowercase().as_str() {
+                    "optin" => TelemetryPreference::OptIn,
+                    "optout" => TelemetryPreference::OptOut,
+                    other => {
+                        debug!(
+                            "Unrecognized Telemetry setting '{other}' in agent \
+                             configuration file, defaulting to OptOut"
+                        );
+                        TelemetryPreference::OptOut
+                    }
+                };
             }
         }
 
@@ -54,6 +84,13 @@ impl AgentConfig {
     /// Get the datastore path from the AgentConfig.
     pub fn datastore_path(&self) -> &Path {
         &self.datastore
+    }
+
+    /// Whether telemetry (best-effort tracing to Application Insights) is
+    /// enabled per the agent configuration file. Defaults to `false`
+    /// (opt-out) when unset or unrecognized.
+    pub fn telemetry_enabled(&self) -> bool {
+        matches!(self.telemetry, TelemetryPreference::OptIn)
     }
 }
 
@@ -128,5 +165,74 @@ mod tests {
             ),
             "got {error:?}"
         );
+    }
+
+    #[test]
+    fn test_defaults_when_file_missing() {
+        let config = AgentConfig::load_from_path("/nonexistent/path/for/trident-tests.conf")
+            .expect("load_from_path should not fail even if the file is missing");
+        assert_eq!(
+            config.datastore_path(),
+            Path::new(TRIDENT_DATASTORE_PATH_DEFAULT)
+        );
+        assert!(
+            !config.telemetry_enabled(),
+            "telemetry must default to OptOut"
+        );
+    }
+
+    #[test]
+    fn test_telemetry_optin() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trident.conf");
+        std::fs::write(&path, "Telemetry=OptIn\n").unwrap();
+
+        let config = AgentConfig::load_from_path(path.to_str().unwrap()).unwrap();
+        assert!(config.telemetry_enabled());
+    }
+
+    #[test]
+    fn test_telemetry_optout_explicit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trident.conf");
+        std::fs::write(&path, "Telemetry=OptOut\n").unwrap();
+
+        let config = AgentConfig::load_from_path(path.to_str().unwrap()).unwrap();
+        assert!(!config.telemetry_enabled());
+    }
+
+    #[test]
+    fn test_telemetry_is_case_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trident.conf");
+        std::fs::write(&path, "Telemetry=OPTIN\n").unwrap();
+
+        let config = AgentConfig::load_from_path(path.to_str().unwrap()).unwrap();
+        assert!(config.telemetry_enabled());
+    }
+
+    #[test]
+    fn test_telemetry_unrecognized_value_defaults_optout() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trident.conf");
+        std::fs::write(&path, "Telemetry=maybe\n").unwrap();
+
+        let config = AgentConfig::load_from_path(path.to_str().unwrap()).unwrap();
+        assert!(!config.telemetry_enabled());
+    }
+
+    #[test]
+    fn test_datastore_and_telemetry_together() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trident.conf");
+        std::fs::write(
+            &path,
+            "DatastorePath=/custom/path.sqlite\nTelemetry=OptIn\n",
+        )
+        .unwrap();
+
+        let config = AgentConfig::load_from_path(path.to_str().unwrap()).unwrap();
+        assert!(config.telemetry_enabled());
+        assert_eq!(config.datastore_path(), Path::new("/custom/path.sqlite"));
     }
 }
