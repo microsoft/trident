@@ -1,3 +1,4 @@
+use crate::telemetry::events;
 use std::{
     collections::{BTreeMap, HashMap},
     path::{Path, PathBuf},
@@ -453,6 +454,46 @@ impl EngineContext {
     pub(crate) fn image_distro(&self) -> Distro {
         self.image_os_release().get_distro()
     }
+
+    /// Trace the current servicing specification, not superseded settings.
+    /// Empty extensions remove old extensions, absent Netplan removes the old
+    /// runtime configuration, and hooks execute only the current scripts.
+    pub fn feature_tracing(&self) {
+        let spec = &self.spec;
+        tracing::info!(
+            netplan = spec.os.netplan.is_some(),
+            selinux = match spec.os.selinux.mode {
+                Some(mode) => mode.to_string(),
+                _ => "none".to_string(),
+            },
+            modules = !spec.os.modules.is_empty(),
+            sysexts = !spec.os.sysexts.is_empty(),
+            confexts = !spec.os.confexts.is_empty(),
+            services_enabled = !spec.os.services.enable.is_empty(),
+            services_disabled = !spec.os.services.disable.is_empty(),
+            kernel_command_line_options =
+                !spec.os.kernel_command_line.extra_command_line.is_empty(),
+            uefi_fallback_mode = Into::<&str>::into(spec.os.uefi_fallback),
+            post_configure_scripts = !spec.scripts.post_configure.is_empty(),
+            pre_servicing_scripts = !spec.scripts.pre_servicing.is_empty(),
+            post_provision_scripts = !spec.scripts.post_provision.is_empty(),
+            encryption = match &spec.storage.encryption {
+                Some(encryption) => encryption
+                    .pcrs
+                    .iter()
+                    .map(|pcr| pcr.to_num().to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                _ => "".to_string(),
+            },
+            ab_update = spec.storage.ab_update.is_some(),
+            software_raid = !spec.storage.raid.software.is_empty(),
+            usr_verity = spec.storage.verity.iter().any(|v| v.name == "usr"),
+            root_verity = spec.storage.verity.iter().any(|v| v.name == "root"),
+            internal_params = spec.internal_params.get_set_params().join(","),
+            metric_name = events::HOST_CONFIG_FEATURE_USAGE,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -885,5 +926,345 @@ mod tests {
             .unwrap_err();
         ctx.get_first_backing_partition(&"non-existant".to_owned())
             .unwrap_err();
+    }
+
+    mod feature_tracing_tests {
+        use std::{
+            collections::BTreeMap,
+            sync::{Arc, Mutex},
+        };
+
+        use netplan_types::NetworkConfig;
+        use tracing::{field::Visit, Event, Subscriber};
+        use tracing_subscriber::{
+            layer::{Context, SubscriberExt},
+            registry::LookupSpan,
+            Layer, Registry,
+        };
+        use url::Url;
+
+        use sysdefs::tpm2::Pcr;
+        use trident_api::{
+            config::{
+                self, Encryption, Extension, KernelCommandLine, Module, Os, Script, Scripts,
+                Selinux, SelinuxMode, Services, SoftwareRaidArray as ConfigSoftwareRaidArray,
+                UefiFallbackMode,
+            },
+            primitives::hash::Sha384Hash,
+        };
+
+        use super::*;
+
+        #[derive(Default)]
+        struct MetricVisitor {
+            fields: BTreeMap<String, String>,
+        }
+
+        impl Visit for MetricVisitor {
+            fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+                if field.name() != "message" {
+                    self.fields
+                        .insert(field.name().to_string(), value.to_string());
+                }
+            }
+
+            fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                if field.name() != "message" {
+                    self.fields
+                        .insert(field.name().to_string(), value.to_string());
+                }
+            }
+
+            fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+                if field.name() != "message" {
+                    self.fields
+                        .insert(field.name().to_string(), format!("{value:?}"));
+                }
+            }
+        }
+
+        #[derive(Clone, Default)]
+        struct MetricsCaptureLayer {
+            events: Arc<Mutex<BTreeMap<String, String>>>,
+        }
+
+        impl<S> Layer<S> for MetricsCaptureLayer
+        where
+            S: Subscriber + for<'a> LookupSpan<'a>,
+        {
+            fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+                let mut visitor = MetricVisitor::default();
+                event.record(&mut visitor);
+
+                let mut events = self
+                    .events
+                    .lock()
+                    .expect("metric events mutex should not be poisoned");
+
+                for (key, value) in visitor.fields {
+                    events.insert(key, value);
+                }
+            }
+        }
+
+        fn trace_feature_metrics(execute: impl FnOnce()) -> BTreeMap<String, String> {
+            let layer = MetricsCaptureLayer::default();
+            let events = Arc::clone(&layer.events);
+
+            {
+                let subscriber = Registry::default().with(layer);
+                tracing::subscriber::with_default(subscriber, || {
+                    execute();
+                });
+            }
+
+            events
+                .lock()
+                .expect("metric events mutex should not be poisoned")
+                .clone()
+        }
+
+        #[test]
+        fn test_feature_tracing_cleared_extensions_are_not_reported() {
+            let mut ctx = EngineContext {
+                spec: non_default_host_config(),
+                spec_old: non_default_host_config(),
+                ..Default::default()
+            };
+            ctx.spec.os.sysexts.clear();
+            ctx.spec.os.confexts.clear();
+
+            let metrics = trace_feature_metrics(|| ctx.feature_tracing());
+            assert_eq!(metrics["sysexts"], "false");
+            assert_eq!(metrics["confexts"], "false");
+        }
+
+        #[test]
+        fn test_feature_tracing_omitted_scripts_are_not_reported() {
+            let mut ctx = EngineContext {
+                spec: non_default_host_config(),
+                spec_old: non_default_host_config(),
+                ..Default::default()
+            };
+            ctx.spec.scripts = Scripts::default();
+
+            let metrics = trace_feature_metrics(|| ctx.feature_tracing());
+            for field in [
+                "pre_servicing_scripts",
+                "post_provision_scripts",
+                "post_configure_scripts",
+            ] {
+                assert_eq!(metrics[field], "false");
+            }
+        }
+
+        #[test]
+        fn test_feature_tracing_defaults() {
+            let ctx = EngineContext::default();
+            let metrics = trace_feature_metrics(|| ctx.feature_tracing());
+
+            let expected = BTreeMap::from([
+                (
+                    "metric_name".to_string(),
+                    "host_config_feature_usage".to_string(),
+                ),
+                ("ab_update".to_string(), "false".to_string()),
+                ("confexts".to_string(), "false".to_string()),
+                ("encryption".to_string(), "".to_string()),
+                ("internal_params".to_string(), "".to_string()),
+                (
+                    "kernel_command_line_options".to_string(),
+                    "false".to_string(),
+                ),
+                ("modules".to_string(), "false".to_string()),
+                ("netplan".to_string(), "false".to_string()),
+                ("post_configure_scripts".to_string(), "false".to_string()),
+                ("post_provision_scripts".to_string(), "false".to_string()),
+                ("pre_servicing_scripts".to_string(), "false".to_string()),
+                ("root_verity".to_string(), "false".to_string()),
+                ("selinux".to_string(), "none".to_string()),
+                ("services_disabled".to_string(), "false".to_string()),
+                ("services_enabled".to_string(), "false".to_string()),
+                ("software_raid".to_string(), "false".to_string()),
+                ("sysexts".to_string(), "false".to_string()),
+                ("uefi_fallback_mode".to_string(), "conservative".to_string()),
+                ("usr_verity".to_string(), "false".to_string()),
+            ]);
+
+            assert_eq!(metrics, expected);
+        }
+
+        /// Builds a fully-populated Host Configuration exercising every field
+        /// checked by `feature_tracing`.
+        fn non_default_host_config() -> HostConfiguration {
+            let mut config = HostConfiguration {
+                os: Os {
+                    selinux: Selinux {
+                        mode: Some(SelinuxMode::Enforcing),
+                    },
+                    modules: vec![Module {
+                        name: "loop".to_string(),
+                        ..Default::default()
+                    }],
+                    services: Services {
+                        enable: vec!["sshd".to_string()],
+                        disable: vec!["debug-shell".to_string()],
+                    },
+                    kernel_command_line: KernelCommandLine {
+                        extra_command_line: vec!["console=ttyS0".to_string()],
+                    },
+                    uefi_fallback: UefiFallbackMode::Disabled,
+                    sysexts: vec![Extension {
+                        url: Url::parse("http://example.com/ext1.raw").unwrap(),
+                        sha384: Sha384Hash::from("a".repeat(96)),
+                        path: None,
+                    }],
+                    confexts: vec![Extension {
+                        url: Url::parse("http://example.com/ext2.raw").unwrap(),
+                        sha384: Sha384Hash::from("b".repeat(96)),
+                        path: None,
+                    }],
+                    netplan: Some(NetworkConfig {
+                        version: 2,
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                scripts: Scripts {
+                    pre_servicing: vec![Script::default()],
+                    post_provision: vec![Script::default()],
+                    post_configure: vec![Script::default()],
+                },
+                storage: Storage {
+                    encryption: Some(Encryption {
+                        pcrs: vec![Pcr::Pcr7, Pcr::Pcr11],
+                        ..Default::default()
+                    }),
+                    ab_update: Some(config::AbUpdate {
+                        volume_pairs: vec![],
+                    }),
+                    raid: config::Raid {
+                        software: vec![ConfigSoftwareRaidArray {
+                            id: "raid0".into(),
+                            name: "md0".to_string(),
+                            level: config::RaidLevel::Raid1,
+                            devices: vec!["disk-a".into(), "disk-b".into()],
+                        }],
+                        sync_timeout: None,
+                    },
+                    verity: vec![
+                        config::VerityDevice {
+                            id: "usr".into(),
+                            name: "usr".to_string(),
+                            data_device_id: "usr-data".into(),
+                            hash_device_id: "usr-hash".into(),
+                            ..Default::default()
+                        },
+                        config::VerityDevice {
+                            id: "root".into(),
+                            name: "root".to_string(),
+                            data_device_id: "root-data".into(),
+                            hash_device_id: "root-hash".into(),
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            config.internal_params.set_flag("preview-feature-flag");
+            config
+        }
+
+        fn non_default_expected_metrics() -> BTreeMap<String, String> {
+            BTreeMap::from([
+                (
+                    "metric_name".to_string(),
+                    "host_config_feature_usage".to_string(),
+                ),
+                ("ab_update".to_string(), "true".to_string()),
+                ("confexts".to_string(), "true".to_string()),
+                ("encryption".to_string(), "7,11".to_string()),
+                (
+                    "internal_params".to_string(),
+                    "preview-feature-flag".to_string(),
+                ),
+                (
+                    "kernel_command_line_options".to_string(),
+                    "true".to_string(),
+                ),
+                ("modules".to_string(), "true".to_string()),
+                ("netplan".to_string(), "true".to_string()),
+                ("post_configure_scripts".to_string(), "true".to_string()),
+                ("post_provision_scripts".to_string(), "true".to_string()),
+                ("pre_servicing_scripts".to_string(), "true".to_string()),
+                ("root_verity".to_string(), "true".to_string()),
+                ("selinux".to_string(), "enforcing".to_string()),
+                ("services_disabled".to_string(), "true".to_string()),
+                ("services_enabled".to_string(), "true".to_string()),
+                ("software_raid".to_string(), "true".to_string()),
+                ("sysexts".to_string(), "true".to_string()),
+                ("uefi_fallback_mode".to_string(), "disabled".to_string()),
+                ("usr_verity".to_string(), "true".to_string()),
+            ])
+        }
+
+        /// A clean install has `spec_old == HostConfiguration::default()`, so
+        /// `spec` alone must drive every field.
+        #[test]
+        fn test_feature_tracing_non_defaults_install() {
+            let ctx = EngineContext {
+                spec: non_default_host_config(),
+                spec_old: HostConfiguration::default(),
+                ..Default::default()
+            };
+
+            let metrics = trace_feature_metrics(|| ctx.feature_tracing());
+            assert_eq!(metrics, non_default_expected_metrics());
+        }
+
+        /// An update whose Host Configuration fully restates every field
+        /// should behave identically to install: `spec` alone drives the
+        /// metric.
+        #[test]
+        fn test_feature_tracing_non_defaults_update_fully_specified() {
+            let ctx = EngineContext {
+                spec: non_default_host_config(),
+                spec_old: non_default_host_config(),
+                ..Default::default()
+            };
+
+            let metrics = trace_feature_metrics(|| ctx.feature_tracing());
+            assert_eq!(metrics, non_default_expected_metrics());
+        }
+
+        #[test]
+        fn test_feature_tracing_update_does_not_revive_old_features() {
+            let ctx = EngineContext {
+                spec: HostConfiguration::default(),
+                spec_old: non_default_host_config(),
+                ..Default::default()
+            };
+
+            let expected = trace_feature_metrics(|| EngineContext::default().feature_tracing());
+
+            let metrics = trace_feature_metrics(|| ctx.feature_tracing());
+            assert_eq!(metrics, expected);
+        }
+
+        /// internal_params is per-invocation (e.g. one-off preview flags) and
+        /// must NOT fall back to spec_old -- an update that doesn't restate a
+        /// preview flag should report it as unset for this invocation.
+        #[test]
+        fn test_feature_tracing_internal_params_does_not_fall_back() {
+            let ctx = EngineContext {
+                spec: HostConfiguration::default(),
+                spec_old: non_default_host_config(),
+                ..Default::default()
+            };
+
+            let metrics = trace_feature_metrics(|| ctx.feature_tracing());
+            assert_eq!(metrics.get("internal_params").unwrap(), "");
+        }
     }
 }
