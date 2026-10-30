@@ -35,7 +35,7 @@ oci-client = { workspace = true }
 procfs = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["stream"] }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -64,7 +64,7 @@ hyper = { workspace = true }
 prost-types = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
-tokio-util = { workspace = true }
+tokio-util = { workspace = true, features = ["io-util"] }
 tonic = { workspace = true }
 tonic-middleware = { workspace = true }
 
