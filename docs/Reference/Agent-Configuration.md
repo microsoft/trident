@@ -31,13 +31,26 @@ connection string to have been compiled into the Trident binary at build
 time (via the `AZURE_MONITOR_CONNECTION_STRING` environment variable); if
 no connection string was compiled in, this setting has no effect.
 
-Telemetry defaults to **disabled** (`OptOut`). To enable it, add a line to
+Telemetry defaults to **enabled** (`OptIn`). To disable it, add a line to
 the Agent Configuration file:
 
 ``` conf
-Telemetry=OptIn
+Telemetry=OptOut
 ```
 
 The value is case-insensitive (`OptIn`, `optin`, and `OPTIN` are all
-equivalent); any value other than a case-insensitive match for `OptIn`
-(including an absent `Telemetry` line) is treated as `OptOut`.
+equivalent). A missing file or absent `Telemetry` line uses `OptIn`;
+unrecognized values disable telemetry defensively.
+
+Alternatively, install the opt-out RPM:
+
+``` bash
+tdnf install trident-telemetry-optout
+```
+
+Installing or upgrading this package sets `Telemetry=OptOut`, creating
+`/etc/trident/trident.conf` if needed and preserving all other settings.
+The configuration is left in place when the package is removed; to
+re-enable telemetry, set `Telemetry=OptIn` explicitly.
+Changes take effect on the next Trident invocation; restart a running
+Trident daemon to apply them there.

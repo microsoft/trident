@@ -104,6 +104,32 @@ and its dependencies for managing the lifecycle of Azure Linux hosts.
 
 # ------------------------------------------------------------------------------
 
+%package telemetry-optout
+Summary:        Disable Trident telemetry
+BuildArch:      noarch
+Requires:       %{name} = %{version}-%{release}
+Requires(post): grep
+Requires(post): sed
+
+%description telemetry-optout
+Disable Trident telemetry by setting Telemetry=OptOut in the agent
+configuration, preserving other settings. The configuration remains
+opted out after this package is removed.
+
+%files telemetry-optout
+%license LICENSE
+
+%post telemetry-optout
+set -e
+config=/etc/%{name}/%{name}.conf
+if [ -f "$config" ] && grep -q '^Telemetry=' "$config"; then
+    sed -i --follow-symlinks 's/^Telemetry=.*/Telemetry=OptOut/' "$config"
+else
+    printf '\nTelemetry=OptOut\n' >> "$config"
+fi
+
+# ------------------------------------------------------------------------------
+
 %package provisioning
 Summary:        Trident files for the provisioning OS
 Requires:       %{name} = %{version}-%{release}
