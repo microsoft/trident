@@ -166,8 +166,7 @@ pub(super) fn backoff_for_failures(consecutive_failures: u32) -> Duration {
 /// Used by the telemetry ring loop to tell "skipped due to cooldown" from
 /// an upload that was actually attempted.
 pub(super) enum AttemptOutcome {
-    Succeeded,
-    Failed,
+    Attempted { succeeded: bool },
     SkippedCooldown,
 }
 
@@ -216,7 +215,7 @@ pub(super) async fn attempt_upload(
             // future failure starts from the base cooldown rather
             // than a previously-escalated one.
             origin_cooldowns.remove(&origin);
-            AttemptOutcome::Succeeded
+            AttemptOutcome::Attempted { succeeded: true }
         }
         Err(e) => {
             error!("Background upload failed: {e}");
@@ -246,7 +245,7 @@ pub(super) async fn attempt_upload(
                 }
             );
 
-            AttemptOutcome::Failed
+            AttemptOutcome::Attempted { succeeded: false }
         }
     }
 }
@@ -388,7 +387,7 @@ mod tests {
                 });
                 let mut cooldowns = OriginCooldowns::new();
                 let outcome = attempt_upload(&mut cooldowns, upload).await;
-                succeeded = matches!(outcome, AttemptOutcome::Succeeded);
+                succeeded = matches!(outcome, AttemptOutcome::Attempted { succeeded: true });
                 cooled_down = !cooldowns.is_empty();
             });
             release_tx.send(()).unwrap();
@@ -432,7 +431,10 @@ mod tests {
         run_in_runtime(async {
             let mut cooldowns = OriginCooldowns::new();
             let outcome = attempt_upload(&mut cooldowns, mock_upload(url, body)).await;
-            assert!(matches!(outcome, AttemptOutcome::Succeeded));
+            assert!(matches!(
+                outcome,
+                AttemptOutcome::Attempted { succeeded: true }
+            ));
         });
         mock.assert();
     }
@@ -459,7 +461,10 @@ mod tests {
             let mut cooldowns = OriginCooldowns::new();
             let fail_url = Url::parse(&server.url()).unwrap().join("/fail").unwrap();
             let outcome = attempt_upload(&mut cooldowns, mock_upload(fail_url, "will-fail")).await;
-            assert!(matches!(outcome, AttemptOutcome::Failed));
+            assert!(matches!(
+                outcome,
+                AttemptOutcome::Attempted { succeeded: false }
+            ));
 
             // Same origin, still within the cooldown window: should be
             // skipped outright rather than attempted.
@@ -493,7 +498,10 @@ mod tests {
         run_in_runtime(async {
             let mut cooldowns = OriginCooldowns::new();
             let outcome = attempt_upload(&mut cooldowns, mock_upload(url, "redirect-me")).await;
-            assert!(matches!(outcome, AttemptOutcome::Failed));
+            assert!(matches!(
+                outcome,
+                AttemptOutcome::Attempted { succeeded: false }
+            ));
         });
 
         redirect_mock.assert();
@@ -550,7 +558,10 @@ mod tests {
         run_in_runtime(async {
             let mut cooldowns = OriginCooldowns::new();
             let outcome = attempt_upload(&mut cooldowns, mock_upload(url, "redirect-me")).await;
-            assert!(matches!(outcome, AttemptOutcome::Succeeded));
+            assert!(matches!(
+                outcome,
+                AttemptOutcome::Attempted { succeeded: true }
+            ));
         });
 
         redirect_mock.assert();

@@ -86,6 +86,7 @@ pub fn server_main(
     default_socket_path: impl AsRef<Path>,
     logstream: Logstream,
     tracestream: TraceStream,
+    flush_telemetry: impl FnOnce(),
 ) -> ExitCode {
     // Start the Tokio runtime
     let Ok(runtime) = Builder::new_multi_thread().enable_all().build() else {
@@ -168,11 +169,11 @@ pub fn server_main(
         ExitKind::Done => TridentExitCodes::Success.into(),
 
         // Reboot requested
-        ExitKind::NeedsReboot => reboot(shutdown_signals),
+        ExitKind::NeedsReboot => reboot(shutdown_signals, flush_telemetry),
     }
 }
 
-fn reboot(signals: ShutdownSignals) -> ExitCode {
+fn reboot(signals: ShutdownSignals, flush_telemetry: impl FnOnce()) -> ExitCode {
     // Reuse the just-finished servicing operation's own operation_id/
     // command (captured via `save_reboot_operation` from inside
     // `servicing_request`'s closure, before that operation's own
@@ -190,7 +191,7 @@ fn reboot(signals: ShutdownSignals) -> ExitCode {
     // shutdown signal never arriving) distinguishable in telemetry from a
     // successful one.
     let reboot_result: Result<(), TridentError> = operation_context::run_reboot_command(|| {
-        reboot::request_reboot().structured(ServicingError::Reboot)?;
+        reboot::request_reboot(flush_telemetry).structured(ServicingError::Reboot)?;
 
         // Wait for either a shutdown signal or the reboot timeout.
         signals

@@ -1,9 +1,9 @@
-use std::{fs, iter, panic, process::ExitCode};
+use std::{fs, iter, panic, process::ExitCode, time::Duration};
 use trident::JournaldTracing;
 
 use anyhow::{Context, Error};
 use clap::Parser;
-use log::{error, info, LevelFilter, Log};
+use log::{error, info, warn, LevelFilter, Log};
 
 use osutils::logging::{filter::LogFilter, multilog::MultiLogger};
 use trident::{
@@ -11,9 +11,9 @@ use trident::{
     cli::{self, Cli, Commands, GetKind, TridentExitCodes},
     init::offline,
     manual_rollback::{self, utils::ManualRollbackRequestKind},
-    run_command, run_reboot_command, save_reboot_operation, validation, BackgroundLog,
-    BackgroundUploader, DataStore, ExitKind, LogForwarder, Logstream, OperationSource, TraceStream,
-    Trident, TRIDENT_BACKGROUND_LOG_PATH,
+    run_command, run_reboot_command, save_reboot_operation, validation, AppInsightsSender,
+    BackgroundLog, BackgroundUploader, DataStore, ExitKind, LogForwarder, Logstream,
+    OperationSource, TelemetryUploader, TraceStream, Trident, TRIDENT_BACKGROUND_LOG_PATH,
 };
 use trident_api::{
     config::HostConfigurationSource,
@@ -407,10 +407,82 @@ fn setup_logging(
     Ok(logstream)
 }
 
-fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
+/// Whether the Application Insights tracing layer ended up active on this
+/// invocation, and why not when it didn't. Computed by [`setup_tracing`] and
+/// surfaced via [`TelemetryStatus::log`] once real logging is available, so
+/// operators can tell -- from the logs alone, without reading source --
+/// whether telemetry should be expected to actually reach Application
+/// Insights, rather than silently assuming it based on the `Telemetry=`
+/// setting alone (a bad/unreachable connection string, for example, fails
+/// silently otherwise).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TelemetryStatus {
+    /// Tracing/telemetry setup does not apply to this command at all (the
+    /// `Commands::Pytest` arm in [`setup_tracing`], gated behind the
+    /// `pytest-generator` feature) -- not logged. Only ever constructed
+    /// when that feature is enabled; every other command now gets a real
+    /// subscriber installed.
+    #[cfg_attr(not(feature = "pytest-generator"), allow(dead_code))]
+    NotApplicable,
+    /// `Telemetry=OptOut` (the default): telemetry was never attempted.
+    OptedOut,
+    /// Opted in, but no usable `AZURE_MONITOR_CONNECTION_STRING` was
+    /// compiled into this binary at build time (missing, empty, or failed
+    /// to parse).
+    NoConnectionString,
+    /// Opted in with a connection string, but the dedicated telemetry
+    /// background uploader is unavailable (failed to start, or its handle
+    /// was already closed).
+    UploaderUnavailable,
+    /// Opted in, connection string valid, uploader available: telemetry is
+    /// actively being sent.
+    Enabled,
+}
+
+impl TelemetryStatus {
+    /// Log this status through the real logging pipeline. Must only be
+    /// called after logging has been initialized (`setup_logging`) --
+    /// calling it earlier would silently no-op, since the `log` facade
+    /// drops everything until a logger is registered.
+    fn log(self) {
+        match self {
+            TelemetryStatus::NotApplicable => {}
+            TelemetryStatus::OptedOut => {
+                info!(
+                    "Telemetry: disabled (Telemetry=OptOut, the default, in agent configuration)"
+                );
+            }
+            TelemetryStatus::NoConnectionString => {
+                info!(
+                    "Telemetry: opted in, but no usable Application Insights connection string \
+                     was compiled into this binary -- telemetry is a no-op"
+                );
+            }
+            TelemetryStatus::UploaderUnavailable => {
+                warn!(
+                    "Telemetry: opted in, but the telemetry background uploader is \
+                     unavailable -- telemetry is a no-op"
+                );
+            }
+            TelemetryStatus::Enabled => {
+                info!("Telemetry: enabled, sending tracing data to Application Insights");
+            }
+        }
+    }
+}
+
+fn setup_tracing(
+    args: &Cli,
+    telemetry_enabled: bool,
+    // Dedicated to Application Insights telemetry. This is separate from the
+    // log-forwarding `BackgroundUploader` so slow telemetry cannot delay real
+    // log uploads. `None` means telemetry is disabled or unavailable.
+    telemetry_uploader: Option<&TelemetryUploader>,
+) -> Result<(TraceStream, TelemetryStatus), Error> {
     use tracing_subscriber::{filter, layer::SubscriberExt, Layer, Registry};
 
     let tracestream = TraceStream::default();
+    let telemetry_status;
 
     // Every command reachable from run_trident needs a subscriber
     // installed here -- not just the servicing ones -- so that ordinary
@@ -473,6 +545,34 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
                 }
             }
 
+            // Best-effort Application Insights telemetry: enable it only when
+            // the user opted in and a usable connection string was compiled in.
+            // Startup never fails here; telemetry just becomes a no-op, and
+            // `telemetry_status` records why for later logging.
+            telemetry_status = if !telemetry_enabled {
+                TelemetryStatus::OptedOut
+            } else {
+                // A missing or closed uploader just leaves telemetry as a
+                // no-op; tracing setup must still succeed.
+                match telemetry_uploader.and_then(|u| u.get_handle()) {
+                    Some(handle) => match AppInsightsSender::from_connection_string(
+                        trident::AZURE_MONITOR_CONNECTION_STRING,
+                        handle,
+                        tracestream.installation_id_handle(),
+                        tracestream.servicing_id_handle(),
+                    ) {
+                        Some(sender) => {
+                            // Measure spans before TraceSender performs synchronous HTTP I/O.
+                            layers
+                                .insert(0, Box::new(sender.with_filter(filter::LevelFilter::INFO)));
+                            TelemetryStatus::Enabled
+                        }
+                        None => TelemetryStatus::NoConnectionString,
+                    },
+                    None => TelemetryStatus::UploaderUnavailable,
+                }
+            };
+
             tracing::subscriber::set_global_default(Registry::default().with(layers))
                 .context("Failed to set global default subscriber")?;
         }
@@ -484,10 +584,48 @@ fn setup_tracing(args: &Cli) -> Result<TraceStream, Error> {
         // falling through to "no subscriber" the way the commands above
         // used to.
         #[cfg(feature = "pytest-generator")]
-        Commands::Pytest => {}
+        Commands::Pytest => {
+            telemetry_status = TelemetryStatus::NotApplicable;
+        }
     }
 
-    Ok(tracestream)
+    Ok((tracestream, telemetry_status))
+}
+
+/// How long to wait for the telemetry uploader to drain before abandoning
+/// it. Telemetry must not meaningfully delay shutdown.
+const TELEMETRY_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(5);
+
+/// Maximum number of pending telemetry uploads queued at once.
+/// This caps memory if the endpoint is merely slow; once full, the oldest
+/// not-yet-attempted event is dropped in favor of the newest.
+const TELEMETRY_QUEUE_CAPACITY: usize = 1000;
+
+/// Wraps a `TelemetryUploader` so every `main` exit path shuts it down with
+/// a bounded deadline. `TelemetryUploader`'s own `Drop` waits unboundedly,
+/// which is fine for real log delivery but not for telemetry.
+struct TelemetryUploaderGuard(Option<TelemetryUploader>);
+
+impl TelemetryUploaderGuard {
+    fn flush(&self) {
+        if let Some(uploader) = self.0.as_ref() {
+            if !uploader.flush_with_deadline(TELEMETRY_SHUTDOWN_DEADLINE) {
+                log::debug!("Telemetry uploader did not flush before the reboot deadline");
+            }
+        }
+    }
+
+    fn shutdown(&mut self) {
+        if let Some(uploader) = self.0.take() {
+            uploader.shutdown_with_deadline(TELEMETRY_SHUTDOWN_DEADLINE);
+        }
+    }
+}
+
+impl Drop for TelemetryUploaderGuard {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
 }
 
 fn main() -> ExitCode {
@@ -503,13 +641,46 @@ fn main() -> ExitCode {
         }
     };
 
+    // Whether best-effort Application Insights telemetry is enabled. Loaded
+    // early (before logging/tracing is set up) since the decision feeds
+    // directly into setup_tracing().
+    let telemetry_enabled = match AgentConfig::load() {
+        Ok(config) => config.telemetry_enabled(),
+        Err(error) => {
+            eprintln!("Failed to load agent configuration, disabling telemetry: {error:?}");
+            false
+        }
+    };
+
+    // Application Insights telemetry gets its own dedicated uploader/queue,
+    // entirely separate from `bg_uploader` (which carries real log
+    // forwarding): a `TelemetryUploader` rather than a `BackgroundUploader`,
+    // so a slow-but-successful telemetry endpoint can never build a backlog
+    // that delays operational log uploads. Failure to start is not fatal:
+    // telemetry simply becomes a no-op, mirroring failure handling on the
+    // handle itself.
+    let telemetry_uploader = telemetry_enabled
+        .then(|| match TelemetryUploader::new(TELEMETRY_QUEUE_CAPACITY) {
+            Ok(uploader) => Some(uploader),
+            Err(e) => {
+                eprintln!("Failed to initialize telemetry uploader, disabling telemetry: {e:?}");
+                None
+            }
+        })
+        .flatten();
+    // Wrapped immediately so every return path in main() below shuts it
+    // down with a bounded deadline, not TelemetryUploader's own unbounded
+    // Drop.
+    let telemetry_uploader = TelemetryUploaderGuard(telemetry_uploader);
+
     // Initialize the telemetry flow
-    let tracestream = setup_tracing(&args);
-    if let Err(e) = tracestream {
+    let tracing_setup = setup_tracing(&args, telemetry_enabled, telemetry_uploader.0.as_ref());
+    if let Err(e) = tracing_setup {
         // Defer to stderr since logging is not yet initialized.
         eprintln!("Failed to initialize tracing: {e:?}");
         return TridentExitCodes::SetupFailed.into();
     }
+    let (tracestream, telemetry_status) = tracing_setup.unwrap();
 
     if let Commands::Daemon {
         inactivity_timeout,
@@ -535,13 +706,15 @@ fn main() -> ExitCode {
 
         // Log version on startup
         info!("Trident version: {}", trident::TRIDENT_VERSION);
+        telemetry_status.log();
 
         trident::server_main(
             log_forwarder,
             *inactivity_timeout,
             socket_path,
             logstream.unwrap(),
-            tracestream.unwrap(),
+            tracestream,
+            || telemetry_uploader.flush(),
         )
     } else if let Commands::GrpcClient(client_args) = &args.command {
         let logstream = setup_logging(&args, &bg_uploader, iter::empty());
@@ -554,8 +727,10 @@ fn main() -> ExitCode {
             error!("Failed to initialize logstream from environment: {e:?}");
         }
 
+        telemetry_status.log();
+
         // Run the client command
-        trident::client_main(client_args)
+        trident::client_main(client_args, || telemetry_uploader.flush())
     } else {
         // Initialize the loggers
         let logstream = setup_logging(&args, &bg_uploader, iter::empty());
@@ -564,15 +739,32 @@ fn main() -> ExitCode {
             return TridentExitCodes::SetupFailed.into();
         }
 
+        telemetry_status.log();
+
         // Invoke Trident
-        match run_trident(logstream.unwrap(), tracestream.unwrap(), &args) {
+        match run_trident(logstream.unwrap(), tracestream, &args) {
             Ok(ExitKind::Done) => {}
             Err(e) => {
                 error!("{e:?}");
                 return TridentExitCodes::Failed.into();
             }
             Ok(ExitKind::NeedsReboot) => {
-                if let Err(e) = run_reboot_command(trident::request_reboot_with_wait) {
+                // Reuse the just-completed install/update/etc.'s own
+                // operation_id/command (captured via save_reboot_operation
+                // just before that command's own run_command scope ended)
+                // rather than leaving `trident_system_reboot` untagged, or
+                // minting an unrelated fresh "reboot" identity: the reboot
+                // is a direct continuation of that same servicing
+                // operation, not an independent one, so telemetry should
+                // correlate it back to the same operation_id.
+                // run_reboot_command also still fires command_error on a
+                // failed reboot -- falling back to a fresh, untagged
+                // command if nothing was captured -- matching every other
+                // command's error-reporting contract instead of silently
+                // dropping this one on the floor.
+                if let Err(e) = run_reboot_command(|| {
+                    trident::request_reboot_with_wait_and_flush(|| telemetry_uploader.flush())
+                }) {
                     error!("Failed to reboot: {e:?}");
                     return TridentExitCodes::RebootUnsuccessful.into();
                 }
@@ -580,5 +772,49 @@ fn main() -> ExitCode {
         }
 
         TridentExitCodes::Success.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pre_reboot_flush_keeps_uploader_open_for_errors() {
+        let mut server = mockito::Server::new();
+        let reboot = server
+            .mock("POST", "/reboot")
+            .with_status(200)
+            .expect(1)
+            .create();
+        let error = server
+            .mock("POST", "/error")
+            .with_status(200)
+            .expect(1)
+            .create();
+        let uploader = TelemetryUploader::new(4).unwrap();
+        let handle = uploader.get_handle().unwrap();
+        let guard = TelemetryUploaderGuard(Some(uploader));
+        let url = reqwest::Url::parse(&server.url()).unwrap();
+        handle
+            .upload(
+                &url.join("reboot").unwrap(),
+                b"reboot".to_vec(),
+                Duration::from_secs(2),
+                None,
+            )
+            .unwrap();
+        guard.flush();
+        reboot.assert();
+        handle
+            .upload(
+                &url.join("error").unwrap(),
+                b"failure".to_vec(),
+                Duration::from_secs(2),
+                None,
+            )
+            .unwrap();
+        drop(guard);
+        error.assert();
     }
 }
