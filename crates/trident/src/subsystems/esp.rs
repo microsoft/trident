@@ -101,8 +101,7 @@ pub fn set_uefi_fallback_contents(
             &source_esp_dir_name,
             &ctx.servicing_type,
             ctx.install_index,
-            servicing_state == ServicingState::CleanInstallStaged
-                && ctx.servicing_type == ServicingType::CleanInstall
+            ctx.servicing_type == ServicingType::CleanInstall
                 && ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD),
         )?;
     } else {
