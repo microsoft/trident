@@ -78,6 +78,7 @@ pub fn client_main(args: &ClientArgs, before_reboot: impl FnOnce()) -> ExitCode 
             error!("Client failed: {:?}", e);
             return TridentExitCodes::Failed.into();
         }
+        // Daemon-owned reboot may drop pending client telemetry.
         Ok(ExitKind::Done) => {}
         Ok(ExitKind::NeedsReboot) => {
             if let Err(e) = crate::request_reboot_with_wait_and_flush(before_reboot) {
