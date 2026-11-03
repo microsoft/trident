@@ -9,6 +9,7 @@ setup the disk layout for A/B update.
 Available images:
 
 - regular
+- with verity
 
 ## Additional Prerequisites
 
@@ -23,9 +24,12 @@ To build the base image, run:
 | Image type | Make command | Output path |
 | ---------- | ------------ | ----------- |
 | Regular | `make artifacts/trident-vm-grub-testimage.qcow2` | `artifacts/trident-vm-grub-testimage.qcow2` |
+| With verity `qcow2` | `make artifacts/trident-vm-grub-verity-testimage.qcow2` | `artifacts/trident-vm-grub-verity-testimage.qcow2` |
+| With verity fixed size `vhd` | `make artifacts/trident-vm-grub-verity-azure-testimage.vhd` | `artifacts/trident-vm-grub-verity-azure-testimage.vhd` |
 
 To build the update images, run:
 
 | Image type | Make command | Output path |
 | ---------- | ------------ | ----------- |
 | Regular | `make artifacts/trident-vm-grub-testimage.cosi` | `artifacts/trident-vm-grub-testimage.cosi` |
+| With verity | `make artifacts/trident-vm-grub-verity-testimage.cosi` | `artifacts/trident-vm-grub-verity-testimage.cosi` |

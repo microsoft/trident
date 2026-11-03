@@ -1,0 +1,54 @@
+bootType: efi
+disks:
+  - partitionTableType: gpt
+    partitions:
+      - id: esp
+        type: esp
+        size: 8M
+      - id: boot
+        size: 256M
+      - id: root
+        size: 4G
+      - id: root-hash
+        size: 128M
+      - id: var
+        size: 1G
+      - id: trident-overlay
+        size: 32M
+      - id: srv
+        size: 1G
+      - id: home
+        size: 32M
+verity:
+  - id: rootverity
+    name: root
+    dataDeviceId: root
+    hashDeviceId: root-hash
+    dataDeviceMountIdType: uuid
+    hashDeviceMountIdType: uuid
+filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: boot
+    type: ext4
+    mountPoint: /boot
+  - deviceId: rootverity
+    type: ext4
+    mountPoint:
+      path: /
+      options: defaults,ro
+  - deviceId: var
+    type: ext4
+    mountPoint: /var
+  - deviceId: trident-overlay
+    type: ext4
+    mountPoint: /var/lib/trident-overlay
+  - deviceId: srv
+    type: ext4
+    mountPoint: /srv
+  - deviceId: home
+    type: ext4
+    mountPoint: /home

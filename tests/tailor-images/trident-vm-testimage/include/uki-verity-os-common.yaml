@@ -1,0 +1,41 @@
+bootloader:
+  resetType: hard-reset
+selinux:
+  mode: disabled
+uki:
+  mode: create
+kernelCommandLine:
+  extraCommandLine:
+    - console=tty0
+    - console=tty1
+    - console=ttyS0
+    - rd.debug
+    - loglevel=6
+    - log_buf_len=1M
+    - systemd.journald.forward_to_console=1
+    - rd.hostonly=0
+packages:
+  install:
+    - device-mapper
+    - dnf
+    - efibootmgr
+    - iproute
+    - iptables
+    - jq
+    - kexec-tools
+    - lvm2
+    - openssh-server
+    - systemd-boot
+    - systemd-udev
+    - trident-service
+    - veritysetup
+    - vim
+    - netplan
+  remove:
+    - grub2-efi-binary
+users:
+  - name: testuser
+    sshPublicKeyPaths:
+      - base/files/id_rsa.pub
+    secondaryGroups:
+      - wheel
