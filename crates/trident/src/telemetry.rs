@@ -2,6 +2,7 @@ pub(crate) mod events {
     pub const AVERAGE_MEMORY_USAGE: &str = "average_memory_usage";
     pub const CLEAN_INSTALL_PROVISIONING_SECS: &str = "clean_install_provisioning_secs";
     pub const CLEAN_INSTALL_START: &str = "clean_install_start";
+    pub const COMMAND_ERROR: &str = "command_error";
     pub const COMMAND_START: &str = "command_start";
     pub const HOST_CONFIG_FEATURE_USAGE: &str = "host_config_feature_usage";
     pub const PEAK_MEMORY_USAGE: &str = "peak_memory_usage";
