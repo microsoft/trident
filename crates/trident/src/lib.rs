@@ -1,3 +1,4 @@
+use crate::telemetry::events;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -46,6 +47,7 @@ mod reboot;
 mod server;
 pub mod stream;
 mod subsystems;
+mod telemetry;
 pub mod validation;
 
 pub use crate::{
@@ -228,7 +230,7 @@ impl Trident {
             ));
         }
 
-        tracing::info!(metric_name = "trident_start");
+        tracing::info!(metric_name = events::TRIDENT_START);
 
         Ok(Self {
             host_config,
@@ -725,7 +727,7 @@ impl Trident {
         image_url: &Url,
         hash: &str,
     ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
-        tracing::info!(metric_name = "stream_image_start", value = true,);
+        tracing::info!(metric_name = events::STREAM_IMAGE_START, value = true,);
         let mut image_source = ConfigOsImage {
             url: image_url.clone(),
             sha384: ImageSha384::new(hash)?,
