@@ -802,6 +802,7 @@ mod tests {
             extra_params: Vec::new(),
             input_deps: Vec::new(),
             tools_dir: None,
+            signing: None,
             skip: false,
             skip_pins: Vec::new(),
         }
