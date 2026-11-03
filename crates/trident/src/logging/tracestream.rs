@@ -241,14 +241,26 @@ impl TraceStream {
     /// servicing ID yet), so it's still worth attaching even when
     /// `skip_installation_id` is true.
     ///
-    /// Safe to call from anywhere, any number of times, before any point
-    /// that wants either ID attached: this is the single implementation
-    /// shared by every read-only-in-the-common-case attach call site (the
-    /// CLI's dispatch, the daemon's startup attach, and the daemon's
-    /// per-request backstop), so a correctness fix to this logic only
-    /// needs to happen once.
+    /// Refresh servicing IDs only before servicing starts or while holding
+    /// its lock. Rejected requests must use the installation-only path so
+    /// a stale datastore read cannot overwrite an active operation's ID.
     /// Known edge case: multiboot finalize may prewarm the source `servicing_id`.
     pub fn attach_ids_if_present(&self, datastore_path: &Path, skip_installation_id: bool) {
+        self.attach_ids_from_path(datastore_path, skip_installation_id, true);
+    }
+
+    /// Attaches or migrates the installation ID without touching the shared
+    /// servicing ID. Safe for rejected requests outside the servicing lock.
+    pub fn attach_installation_id_if_present(&self, datastore_path: &Path) {
+        self.attach_ids_from_path(datastore_path, false, false);
+    }
+
+    fn attach_ids_from_path(
+        &self,
+        datastore_path: &Path,
+        skip_installation_id: bool,
+        attach_servicing_id: bool,
+    ) {
         if !datastore_path.exists() {
             return;
         }
@@ -275,7 +287,9 @@ impl TraceStream {
             }
         }
 
-        self.attach_servicing_id_if_present(&datastore);
+        if attach_servicing_id {
+            self.attach_servicing_id_if_present(&datastore);
+        }
     }
 
     /// Ensures `datastore` has an installation ID -- creating one if this
@@ -984,6 +998,34 @@ mod tests {
                 merge_operation_context("test_metric", &mut fields);
                 assert_eq!(fields["installation_id"], json!("persisted-id"));
             },
+        );
+    }
+
+    #[test]
+    fn test_installation_only_attachment_preserves_active_servicing_id() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("datastore.sqlite");
+        let mut datastore = DataStore::open_or_create(&path).unwrap();
+        let installation = datastore.ensure_installation_id().unwrap().to_string();
+        let persisted_servicing = datastore.ensure_servicing_id().unwrap().to_string();
+        drop(datastore);
+
+        let stream = TraceStream::default();
+        stream.set_servicing_id("active-stage".to_string());
+        stream.attach_installation_id_if_present(&path);
+        assert_eq!(
+            *stream.installation_id_handle().read().unwrap(),
+            Some(installation)
+        );
+        assert_eq!(
+            *stream.servicing_id_handle().read().unwrap(),
+            Some("active-stage".to_string())
+        );
+
+        stream.attach_ids_if_present(&path, false);
+        assert_eq!(
+            *stream.servicing_id_handle().read().unwrap(),
+            Some(persisted_servicing)
         );
     }
 
