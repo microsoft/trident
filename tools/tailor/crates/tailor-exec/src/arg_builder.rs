@@ -4,7 +4,10 @@ use std::{
 };
 
 use tailor_config::{Access, BaseSource, ExtraParam, Operation};
-use tailor_core::{Cell, ExecError, ExecutionContext, RuntimeConfig, artifact_name, output_slug};
+use tailor_core::{
+    Cell, ExecError, ExecutionContext, RuntimeConfig, artifact_name, intermediate_artifact_name,
+    output_slug,
+};
 
 use crate::{guard, path_translate, working_copy};
 
@@ -264,13 +267,13 @@ fn push_log_flags(args: &mut Vec<String>, cell: &Cell, context: &ExecutionContex
 /// (clone-suffixed so clones never collide).
 pub(crate) fn intermediate_path(cell: &Cell, context: &ExecutionContext) -> PathBuf {
     let slug = output_slug(cell.slug.as_ref(), context.clone_index);
-    context.output_dir.join(format!("{slug}.intermediate.raw"))
+    context.output_dir.join(intermediate_artifact_name(&slug))
 }
 pub(crate) fn artifact_path(cell: &Cell, context: &ExecutionContext) -> PathBuf {
-    let slug = output_slug(cell.slug.as_ref(), context.clone_index);
+    let name = output_slug(cell.slug.as_ref(), context.clone_index);
     context
         .output_dir
-        .join(artifact_name(&slug, cell.output.format))
+        .join(artifact_name(&name, cell.output.format))
 }
 
 /// The host path of the per-cell IC log when on-disk persistence is enabled, else `None`
