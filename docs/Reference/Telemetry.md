@@ -35,10 +35,23 @@ Servicing paths later copy the current file beside the configured
 datastore as `trident-metrics-<SERVICING_STATE>-<TIMESTAMP>.jsonl`
 (under `/var/lib/trident` when using the default datastore path).
 
+On top of these local copies, Trident can optionally send this same
+best-effort stream of tracing data to Azure Monitor / Application
+Insights. See [Agent Configuration](./Agent-Configuration.md) for how to
+enable it.
+
+Telemetry defaults to **disabled** (`OptOut`). To enable it, add a line to
+the Agent Configuration file:
+
+``` conf
+Telemetry=OptIn
+```
+
 ## Host Metadata
 
-Every recorded event also includes as much of the following host metadata
-as is available at the time:
+Every event sent also includes as much of the following host metadata as
+is available at the time, so operators should be aware this leaves the
+host along with the metrics/spans themselves:
 
 - `os_release`: the `VERSION` field from `/etc/os-release`.
 - `kernel_version`: the running kernel release (`uname -r`).
@@ -185,3 +198,13 @@ Admission-control rejections for a busy daemon (connection or servicing
 lock contention) or an unprovisioned host intentionally emit no
 `command_error` from either the daemon or the client. Consequently,
 `command_error` is not a count of every failed invocation.
+
+## Delivery
+
+Telemetry delivery is always best-effort and never affects servicing
+outcomes, but failures are not all logged at the same level: a failure to
+serialize an event, or to enqueue it because the background uploader has
+already shut down, is logged at trace level, while a failure to actually
+deliver an event (e.g. no network connectivity, or a non-2xx response from
+Application Insights) is logged at error level, so operators can find
+remote-delivery problems in normal logs.
