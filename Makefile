@@ -538,7 +538,7 @@ generate-functional-test-manifest: .cargo/config
 
 .PHONY: validate-configs
 validate-configs: target/release/trident
-	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/tailor-images|tests/images|tests/azl-installer)'))
+	$(eval DETECTED_HC_FILES := $(shell grep -R '^storage:' . --include '*.yaml' -l | grep -E -v '\./(target|dev|azure-linux-image-tools|crates/docbuilder|tests/images|tests/images|tests/azl-installer)'))
 	@for file in $(DETECTED_HC_FILES); do \
 		echo "Validating $$file"; \
 		$< validate $$file -v info || exit 1; \
@@ -621,13 +621,13 @@ run-attendedinstaller-simulator: bin/attendedinstaller-simulator
 
 # Test image paths
 ARTIFACTS_TEST_IMAGE_DIR := artifacts/test-image
-AZL_INSTALLER_DIR := tests/tailor-images/azl-installer
+AZL_INSTALLER_DIR := tests/images/azl-installer
 AZL_INSTALLER_ISO_DIR := $(AZL_INSTALLER_DIR)/iso
 
 # If regular.cosi is not present, download runtime images
 $(ARTIFACTS_TEST_IMAGE_DIR)/regular.cosi: download-runtime-images
 
-include tests/tailor-images/targets.mk
+include tests/images/targets.mk
 
 .PHONY: validate
 validate: $(TRIDENT_CONFIG) target/release/trident
@@ -925,7 +925,7 @@ download-trident-container-installer-iso:
 
 # TRIDENT VM UPDATE IMAGES
 
-VM_IMAGE_PATH_PREFIX = tests/tailor-images/trident-vm-testimage/base
+VM_IMAGE_PATH_PREFIX = tests/images/trident-vm-testimage/base
 
 artifacts/rpm-overrides:
 	@mkdir -p artifacts/rpm-overrides
@@ -960,12 +960,12 @@ $(QEMU_GUEST_IMAGE):
 BAREMETAL_IMAGE = artifacts/baremetal.vhdx
 $(BAREMETAL_IMAGE):
 	@mkdir -p artifacts
-	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- --manifest tests/tailor-images/tailor.yaml bases download baremetal
+	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- --manifest tests/images/tailor.yaml bases download baremetal
 
 CORE_SELINUX_IMAGE = artifacts/core_selinux.vhdx
 $(CORE_SELINUX_IMAGE):
 	@mkdir -p artifacts
-	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- --manifest tests/tailor-images/tailor.yaml bases download core_selinux
+	$(CARGO_TAILOR) run --manifest-path tools/tailor/Cargo.toml --quiet -- --manifest tests/images/tailor.yaml bases download core_selinux
 
 CORE_ARM64_IMAGE_NAME ?= core_vhdx-arm64-3.0-stable
 CORE_ARM64_IMAGE_VERSION ?= *

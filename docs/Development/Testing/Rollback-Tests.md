@@ -7,7 +7,7 @@ sidebar_position: 8
 Rollback tests validate manual rollback and runtime update workflows using
 `storm-trident run rollback`. Like [servicing tests](Servicing-Tests.md),
 they start from a pre-built VM image defined in
-`tests/tailor-images/trident-vm-testimage/`, but focus specifically on the rollback
+`tests/images/trident-vm-testimage/`, but focus specifically on the rollback
 chain: A/B updates, runtime updates (sysexts and netplan), and rolling each
 back in sequence.
 
@@ -21,7 +21,7 @@ extensions:
 | `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | Sysexts supported | Required |
 | `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | Not supported | Not needed |
 
-All image configs live under `tests/tailor-images/trident-vm-testimage/`: the
+All image configs live under `tests/images/trident-vm-testimage/`: the
 matrix is defined in `image.yaml`, and each scenario's specific configuration
 lives under `by-scenario/` (e.g. `by-scenario/usr-verity.yaml` and
 `by-scenario/grub-verity.yaml`). The base image is `qemu_guest` (see

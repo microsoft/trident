@@ -47,7 +47,7 @@ See [E2E Tests](E2E-Tests.md) for full setup and run instructions.
 ## Servicing and Rollback Testing
 
 Servicing and rollback tests use pre-built VM images (defined in
-`tests/tailor-images/trident-vm-testimage/`) to test multi-update workflows and
+`tests/images/trident-vm-testimage/`) to test multi-update workflows and
 manual rollback chains without using `netlaunch` or an installer ISO.
 
 - [Servicing Tests](Servicing-Tests.md) — multi-update loop with optional
