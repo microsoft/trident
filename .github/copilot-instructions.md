@@ -454,9 +454,10 @@ These rules apply to agents writing code:
 These rules apply to agents writing code:
 
 - Before completing a code change, run `scripts/cloud-agent/validate.sh`. It
-  performs source-only validation and does not require VM image artifacts.
+  performs source-only validation for Trident and the separate Tailor workspace
+  and does not require VM image artifacts.
 - If validation fails, fix the failure and rerun the failed group
-  (`format`, `rust`, or `go`) before rerunning the default full suite.
+  (`format`, `rust`, `go`, or `tailor`) before rerunning the default full suite.
 - Documentation-only changes may skip the suite when it is not applicable,
   but the pull request **Validation** section must record that it was not run
   and explain why.

@@ -3,10 +3,11 @@
 set -euo pipefail
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+readonly TAILOR_RUST_TOOLCHAIN="1.98.1"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/cloud-agent/validate.sh [all|format|rust|go]
+Usage: scripts/cloud-agent/validate.sh [all|format|rust|go|tailor]
 
 Runs source-only validation that does not require VM image artifacts.
 The default group is "all".
@@ -51,6 +52,29 @@ validate_go() {
     )
 }
 
+validate_tailor() (
+    local scratch_dir
+    scratch_dir="$(mktemp -d)"
+    trap 'rm -rf "$scratch_dir"' EXIT
+
+    # Tailor uses public crates.io. Copy its self-contained workspace outside
+    # the repository so both Cargo and nested Cargo commands from build scripts
+    # cannot inherit Trident's private crates.io replacement.
+    tar --exclude=target -C "$REPO_ROOT/tools/tailor" -cf - . |
+        tar -C "$scratch_dir" -xf -
+    cd "$scratch_dir"
+    run cargo "+$TAILOR_RUST_TOOLCHAIN" fmt --all --check
+    run cargo "+$TAILOR_RUST_TOOLCHAIN" clippy \
+        --workspace \
+        --all-targets \
+        --locked \
+        -- \
+        -D warnings
+    run cargo "+$TAILOR_RUST_TOOLCHAIN" test \
+        --workspace \
+        --locked
+)
+
 main() {
     cd "$REPO_ROOT"
 
@@ -59,6 +83,7 @@ main() {
             validate_format
             validate_rust
             validate_go
+            validate_tailor
             ;;
         format)
             validate_format
@@ -68,6 +93,9 @@ main() {
             ;;
         go)
             validate_go
+            ;;
+        tailor)
+            validate_tailor
             ;;
         -h | --help)
             usage

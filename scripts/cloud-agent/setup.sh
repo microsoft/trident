@@ -3,6 +3,7 @@
 set -euxo pipefail
 
 readonly RUST_TOOLCHAIN="1.93.1"
+readonly TAILOR_RUST_TOOLCHAIN="1.98.1"
 readonly PROTOC_GEN_GO_VERSION="v1.36.11"
 readonly PROTOC_GEN_GO_GRPC_VERSION="v1.6.2"
 readonly DATA_DISK_MOUNT="/mnt/storage"
@@ -24,6 +25,7 @@ sudo apt-get install -y --no-install-recommends \
     libssl-dev \
     pkg-config \
     python3-pip \
+    sbsigntool \
     unzip
 
 python3 -m pip install --user --disable-pip-version-check "black==24.1.0"
@@ -45,6 +47,9 @@ export PATH="$HOME/.cargo/bin:$PATH"
 echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
 rustup toolchain install "$RUST_TOOLCHAIN" \
+    --profile minimal \
+    --component clippy,rustfmt
+rustup toolchain install "$TAILOR_RUST_TOOLCHAIN" \
     --profile minimal \
     --component clippy,rustfmt
 rustup default "$RUST_TOOLCHAIN"
