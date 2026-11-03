@@ -1291,6 +1291,7 @@ mod tests {
             base,
             base_image: None,
             rpm_sources: vec![PathBuf::from("/rpms/one")],
+            extra_dependencies: Vec::new(),
             extra_params: Vec::new(),
             input_deps: Vec::new(),
             tools_dir: None,
