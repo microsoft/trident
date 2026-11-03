@@ -1,0 +1,33 @@
+# Synthetic matrix image (NOT a real config) — the test suite's "complex operations" oracle.
+#
+# Top level is TAILOR config; everything under `config:` is opaque Image Customizer config. This one
+# image exercises, across its fragments (by-edition/, by-arch/, by-channel/):
+#   • matrix expansion           edition[2] × arch[2] × channel[2] = 8 cells
+#   • list append + deep merge   shared install list grows per fragment
+#   • $remove                    `pro` drops a baseline package
+#   • $replace                   `pro` swaps the output list (cosi → raw)
+#   • $set                       `edge` overrides the base wholesale (path → oci)
+#   • $include                   each edition splices a storage layout
+#   • params + interpolation     ${bootPkg} (nested ${efiArch}), ${arch}
+#   • rpmSources / previewFeatures  tailor passthrough vs opaque IC passthrough
+name: gizmo
+
+matrix:
+  edition: [lite, pro]
+  arch:    [amd64, arm64]
+  channel: [stable, edge]
+
+outputs:
+  - format: cosi                 # default for every cell; `pro` $replaces it with raw
+
+config:
+  os:
+    kernelCommandLine:
+      extraCommandLine:
+        - console=ttyS0
+        - quiet
+    packages:
+      install:
+        - gizmo-core             # baseline, kept by `lite`, removed by `pro`
+        - base-extra             # baseline, removed by `pro` via $remove
+        - "${bootPkg}"           # param from by-channel (nested ${efiArch} on edge)

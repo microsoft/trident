@@ -16,7 +16,10 @@ fn run(device_path: impl AsRef<Path>, tag: &str) -> Result<String, Error> {
         .output_and_check()
         .context("Failed to execute blkid")?;
 
-    Ok(output.trim().to_owned())
+    // Trim only the line ending blkid appends. A general trim would eat
+    // leading and trailing spaces, which are legal in a filesystem label and
+    // must survive if the label is to be reproduced faithfully.
+    Ok(output.trim_end_matches(['\n', '\r']).to_owned())
 }
 
 fn get_filesystem_uuid_raw(device_path: impl AsRef<Path>) -> Result<String, Error> {
@@ -34,6 +37,15 @@ pub fn get_filesystem_uuid(device_path: impl AsRef<Path>) -> Result<Uuid, Error>
 
 pub fn get_partition_label(device_path: impl AsRef<Path>) -> Result<String, Error> {
     run(device_path, "PARTLABEL")
+}
+
+/// Returns the filesystem label of the filesystem at `device_path`, which may
+/// be a block device or a filesystem image file.
+///
+/// This is the label `/dev/disk/by-label/` is built from, and is distinct from
+/// the GPT partition name returned by [`get_partition_label`].
+pub fn get_filesystem_label(device_path: impl AsRef<Path>) -> Result<String, Error> {
+    run(device_path, "LABEL")
 }
 
 #[cfg(feature = "functional-test")]

@@ -7,16 +7,17 @@
 //! rollback). See the design doc for the full state-machine rationale;
 //! keep it in sync with this file if the design changes.
 
-use std::{collections::BTreeMap, future::Future, time::Duration};
+use std::{collections::BTreeMap, future, future::Future, time::Duration};
 
 use anyhow::{anyhow, Context, Error};
 use backoff::{backoff::Backoff, ExponentialBackoffBuilder};
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use k8s_openapi::api::core::v1::Node;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use semver::Version;
 use tokio::{pin, select, task, time};
+use tokio_util::sync::CancellationToken;
 use url::Url;
 use uuid::Uuid;
 
@@ -32,8 +33,9 @@ use crate::{
         SCHEMA_VERSION,
     },
     core::{
-        config::AgentConfig,
-        nebraska::{CheckOutcome, Client as NebraskaClient, ProgressEvent},
+        config::{AgentConfig, KubernetesConfig},
+        cosi_sha384,
+        nebraska::{CheckOutcome, Client as NebraskaClient, CookieStore, ProgressEvent},
         trident::{CompletedResponse, TridentClient, TridentClientError},
         version::{current_active_version, FALLBACK_ALWAYS_VERSION},
     },
@@ -49,6 +51,18 @@ const NODE_READ_BACKOFF: Duration = Duration::from_secs(2);
 /// Cap on the backoff delay in `get_node_with_retry`, so retries never
 /// slow to an unreasonably long cadence during an extended outage.
 const NODE_READ_BACKOFF_MAX: Duration = Duration::from_secs(30);
+
+/// After a Node is confirmed gone, logging "still waiting" at every
+/// backoff tick (as often as every ~30s) would be log spam across a
+/// long maintenance window. Only re-announce the wait at this cadence,
+/// so the fact that the agent is still alive and looking stays visible
+/// without flooding journald.
+const NODE_GONE_REANNOUNCE_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+/// Delay before re-establishing the Node watch stream after it ends on its
+/// own (which shouldn't normally happen). Without this, a stream that keeps
+/// ending immediately would otherwise spin in a tight reconnect loop.
+const WATCH_STREAM_RESTART_BACKOFF: Duration = Duration::from_secs(2);
 
 /// The machine-id source used for every Nebraska request this module makes,
 /// event reports included. Must match the source used by `handle_stage`'s
@@ -93,21 +107,91 @@ impl NebraskaReport {
 
 pub struct Orchestrator {
     config: AgentConfig,
+    /// The agent's own Node name, resolved once at construction time (see
+    /// `from_config`'s retry-with-backoff resolution) and held fixed for
+    /// the orchestrator's whole lifetime - the identity this process
+    /// reconciles against doesn't change without a restart.
+    node_name: String,
     k8s: NodeClient,
     state: StateStore,
+    /// Persists Nebraska's load-balancer affinity cookie across requests
+    /// and reboots. Deliberately separate from `state`: see
+    /// `core::nebraska::CookieStore`'s docs for why.
+    nebraska_cookie: CookieStore,
     annotation_keys: AnnotationKeys,
 }
 
 impl Orchestrator {
-    pub async fn from_config(config: AgentConfig) -> Result<Self, Error> {
+    /// Builds the orchestrator, including resolving `node_name` - retrying
+    /// indefinitely with the same capped-exponential-backoff-with-jitter
+    /// policy as `get_node_with_retry`/`await_node_recreation` if
+    /// `node_name_source` is `kubelet-cert` and the cert isn't readable yet
+    /// (see `resolve_node_name_with_retry`). Returns `Ok(None)` if
+    /// `shutdown` fires during that retry, mirroring
+    /// `recover_from_trident_state`/`await_node_recreation`'s own
+    /// `Ok(None)`/`Ok(false)` so `main.rs` can exit promptly instead of
+    /// blocking indefinitely.
+    pub async fn from_config(
+        config: AgentConfig,
+        shutdown: &CancellationToken,
+    ) -> Result<Option<Self>, Error> {
+        let Some(node_name) =
+            Self::resolve_node_name_with_retry(&config.kubernetes, shutdown).await?
+        else {
+            return Ok(None);
+        };
         let k8s = NodeClient::new(&config.kubernetes).await?;
         let annotation_keys = AnnotationKeys::new(&config.kubernetes.annotation_prefix);
-        Ok(Self {
+        Ok(Some(Self {
             state: StateStore::new(config.orchestration.state_path.clone()),
+            nebraska_cookie: CookieStore::new(config.orchestration.cookie_path.clone()),
             config,
+            node_name,
             k8s,
             annotation_keys,
-        })
+        }))
+    }
+
+    /// Resolves `node_name` once, retrying indefinitely (capped exponential
+    /// backoff + jitter, same `NODE_READ_BACKOFF`/`NODE_READ_BACKOFF_MAX`
+    /// policy as `get_node_with_retry`) if resolution fails - e.g.
+    /// `node_name_source=kubelet-cert` and kubelet hasn't finished writing
+    /// its client cert yet. Treated the same way a missing Node object
+    /// (`NodeGone`) already is: a plausible, expected startup race to wait
+    /// out, not a reason to crash the process. Races every sleep against
+    /// `shutdown`, returning `Ok(None)` if it fires first.
+    async fn resolve_node_name_with_retry(
+        kubernetes: &KubernetesConfig,
+        shutdown: &CancellationToken,
+    ) -> Result<Option<String>, Error> {
+        let mut backoff = ExponentialBackoffBuilder::new()
+            .with_initial_interval(NODE_READ_BACKOFF)
+            .with_max_interval(NODE_READ_BACKOFF_MAX)
+            .with_multiplier(2.0)
+            .with_randomization_factor(1.0)
+            .with_max_elapsed_time(None)
+            .build();
+        loop {
+            match kubernetes.resolve_node_name_once() {
+                Ok(node_name) => return Ok(Some(node_name)),
+                Err(err) => {
+                    // `max_elapsed_time(None)` means `next_backoff()` never
+                    // returns `None` in practice, but fall back to the cap
+                    // instead of unwrapping, so this can't panic even if
+                    // that invariant ever changes.
+                    let delay = backoff.next_backoff().unwrap_or(NODE_READ_BACKOFF_MAX);
+                    warn!(
+                        "failed to resolve node_name (node_name_source={:?}), retrying in \
+                         {delay:?}: {err:#}",
+                        kubernetes.node_name_source
+                    );
+                    select! {
+                        _ = shutdown.cancelled() => return Ok(None),
+                        _ = time::sleep(delay) => {}
+                    }
+                }
+            }
+        }
     }
 
     /// Issues a real `systemctl reboot`. Routed through the repo's
@@ -115,83 +199,308 @@ impl Orchestrator {
     /// non-zero exit produces the same uniform, actionable error type used
     /// everywhere else in the codebase (see crates/trident/src/reboot.rs for
     /// the same pattern).
-    fn reboot(&self) -> Result<(), Error> {
-        Dependency::Systemctl
+    fn reboot(
+        &self,
+        operation: Operation,
+        operation_id: &str,
+        boot_marker: &str,
+    ) -> Result<(), Error> {
+        info!(
+            "requesting systemctl reboot: operation={operation:?}, \
+             operation_id={operation_id}, boot_id={boot_marker}"
+        );
+        let started = time::Instant::now();
+        let result = Dependency::Systemctl
             .cmd()
             .arg("reboot")
             .run_and_check()
-            .context("failed to issue systemctl reboot")
+            .context("failed to issue systemctl reboot");
+        match &result {
+            Ok(()) => info!(
+                "systemctl reboot returned successfully after {}: operation={operation:?}, \
+                 operation_id={operation_id}, boot_id={boot_marker}",
+                humantime::format_duration(started.elapsed())
+            ),
+            Err(err) => error!(
+                "systemctl reboot failed after {}: operation={operation:?}, \
+                 operation_id={operation_id}, boot_id={boot_marker}: {err:#}",
+                humantime::format_duration(started.elapsed())
+            ),
+        }
+        result
     }
 
-    pub async fn run(&self) -> Result<(), Error> {
-        match self.recover_from_trident_state().await {
-            Ok(LoopControl::Continue) => {}
-            Ok(LoopControl::ExitForReboot) => return Ok(()),
-            Err(err) => {
-                if self.log_and_swallow_node_gone(&err, "recovering persisted state") {
+    /// Drives the agent until `shutdown` is cancelled (e.g. SIGTERM/SIGINT,
+    /// see `main.rs`) or a reboot is armed. A Node 404 (`NodeGone`) is no
+    /// longer treated as a reason to exit the process (see `await_node_recreation`
+    /// for why, and `config::OrchestrationConfig::node_gone_max_wait` for the
+    /// opt-in bound on how long this will wait before giving up): the
+    /// orchestrator parks until the Node reappears (or was never really
+    /// gone - a transient 404), then re-runs startup recovery and re-opens
+    /// the watch from scratch. This is safe because nothing here caches k8s
+    /// state across the gap: the Node snapshot is always re-read fresh, and
+    /// `state.json` (pendingCommit / completed cache) is purely local and
+    /// untouched by a 404.
+    ///
+    /// `recover_from_trident_state` and `reconcile_node` are themselves
+    /// raced against `shutdown` below (rather than just awaited), so a
+    /// SIGTERM/SIGINT during a long-running stage/finalize/rollback/commit
+    /// RPC still makes `run()` return promptly instead of blocking for up
+    /// to `OrchestrationConfig::stage_timeout`/`finalize_timeout`. Dropping
+    /// that in-flight RPC this way is safe for the same reason an
+    /// ungraceful kill of the agent already was before this change: every
+    /// servicing operation is resumable from `state.json`
+    /// (`PendingCommit`/completed cache) or reconstructable from tridentd's
+    /// own state (see `resume_pending_commit` and
+    /// `reconstruct_without_state`), and nothing here commits agent-local
+    /// state until after the RPC returns - so there is no partial write to
+    /// clean up, only a retry to make on next start.
+    pub async fn run(&self, shutdown: CancellationToken) -> Result<(), Error> {
+        loop {
+            let recovery_result = select! {
+                _ = shutdown.cancelled() => {
+                    info!(
+                        "shutdown requested while recovering trident state; exiting (any \
+                         in-flight post-reboot commit resumes from state.json on next start)"
+                    );
                     return Ok(());
                 }
-                return Err(err);
-            }
-        }
-        let mut stream = self
-            .k8s
-            .watch_node(self.config.kubernetes.node_name.clone());
-        // Watch-stream errors are tolerated indefinitely, so a transient
-        // reconnect hiccup doesn't abort the whole orchestrator the way a
-        // bare `node?` would. No extra sleep here (unlike
-        // `get_node_with_retry`): `kube::runtime::watcher`'s own
-        // `default_backoff()` (see `k8s::NodeClient::watch_node`) already
-        // delays before the stream's next reconnect attempt, so sleeping
-        // here as well would only stack a second, redundant delay on top
-        // of it.
-        //
-        // A bounded give-up-eventually budget for this loop was tried and
-        // repeatedly found to be unsound: a long-lived watch has no clean
-        // notion of "consecutive" failures like a one-shot retry does - a
-        // quiet Node produces no stream item on a successful reconnect, so
-        // there's no reliable signal to tell an isolated, otherwise-healthy
-        // blip apart from a genuinely ongoing outage. Retrying forever here
-        // is the simple, correct choice until a real need for a bound (and
-        // a real recovery signal to bound it safely) arises. A running
-        // `errors_since_last_node_event` count is still logged with every
-        // failure - purely for operator visibility into an ongoing outage -
-        // but nothing here decides anything based on it. Note this counts
-        // errors since the last *Node event*, not truly consecutive
-        // failures: a healthy reconnect between two errors produces no
-        // stream item, so it wouldn't reset this counter either.
-        let mut errors_since_last_node_event = 0u64;
-        while let Some(item) = stream.next().await {
-            let node = match item {
-                Ok(node) => {
-                    errors_since_last_node_event = 0;
-                    node
-                }
-                Err(err) => {
-                    let err: Error = err.into();
-                    if self.log_and_swallow_node_gone(&err, "watching node") {
-                        return Ok(());
-                    }
-                    errors_since_last_node_event += 1;
-                    warn!(
-                        "transient error watching node {} (errors since last node event: {errors_since_last_node_event}): {err:#}",
-                        self.config.kubernetes.node_name
-                    );
-                    continue;
-                }
+                result = self.recover_from_trident_state(&shutdown) => result,
             };
-            match self.reconcile_node(&node).await {
-                Ok(LoopControl::Continue) => {}
-                Ok(LoopControl::ExitForReboot) => return Ok(()),
+            match recovery_result {
+                Ok(Some(LoopControl::Continue)) => {}
+                Ok(Some(LoopControl::ExitForReboot)) => {
+                    info!(
+                        "exiting annotation loop after successful reboot invocation during startup recovery"
+                    );
+                    return Ok(());
+                }
+                Ok(None) => return Ok(()), // shutdown requested while recovering
                 Err(err) => {
-                    if self.log_and_swallow_node_gone(&err, "reconciling node") {
-                        return Ok(());
+                    if self.is_node_gone_error(&err) {
+                        if !self.await_node_recreation(&shutdown).await? {
+                            return Ok(()); // shutdown requested while waiting
+                        }
+                        continue;
                     }
                     return Err(err);
                 }
             }
+            let mut stream = self.k8s.watch_node(self.node_name.clone());
+            // Watch-stream errors are tolerated indefinitely, so a transient
+            // reconnect hiccup doesn't abort the whole orchestrator the way a
+            // bare `node?` would. No extra sleep here (unlike
+            // `get_node_with_retry`): `kube::runtime::watcher`'s own
+            // `default_backoff()` (see `k8s::NodeClient::watch_node`) already
+            // delays before the stream's next reconnect attempt, so sleeping
+            // here as well would only stack a second, redundant delay on top
+            // of it.
+            //
+            // A bounded give-up-eventually budget for this loop was tried and
+            // repeatedly found to be unsound: a long-lived watch has no clean
+            // notion of "consecutive" failures like a one-shot retry does - a
+            // quiet Node produces no stream item on a successful reconnect, so
+            // there's no reliable signal to tell an isolated, otherwise-healthy
+            // blip apart from a genuinely ongoing outage. Retrying forever here
+            // is the simple, correct choice until a real need for a bound (and
+            // a real recovery signal to bound it safely) arises. A running
+            // `errors_since_last_node_event` count is still logged with every
+            // failure - purely for operator visibility into an ongoing outage -
+            // but nothing here decides anything based on it. Note this counts
+            // errors since the last *Node event*, not truly consecutive
+            // failures: a healthy reconnect between two errors produces no
+            // stream item, so it wouldn't reset this counter either.
+            let mut errors_since_last_node_event = 0u64;
+            let mut node_gone = false;
+            loop {
+                let item = select! {
+                    _ = shutdown.cancelled() => {
+                        info!(
+                            "shutdown requested while watching node {}",
+                            self.node_name
+                        );
+                        return Ok(());
+                    }
+                    item = stream.next() => item,
+                };
+                let Some(item) = item else {
+                    break; // stream ended on its own
+                };
+                let node = match item {
+                    Ok(node) => {
+                        errors_since_last_node_event = 0;
+                        node
+                    }
+                    Err(err) => {
+                        let err: Error = err.into();
+                        if self.is_node_gone_error(&err) {
+                            node_gone = true;
+                            break;
+                        }
+                        errors_since_last_node_event += 1;
+                        warn!(
+                            "transient error watching node {} (errors since last node event: {errors_since_last_node_event}): {err:#}",
+                            self.node_name
+                        );
+                        continue;
+                    }
+                };
+                let reconcile_result = select! {
+                    _ = shutdown.cancelled() => {
+                        info!(
+                            "shutdown requested while reconciling node {}; exiting (any \
+                             in-flight stage/finalize/rollback/commit resumes from \
+                             state.json on next start)",
+                            self.node_name
+                        );
+                        return Ok(());
+                    }
+                    result = self.reconcile_node(&node) => result,
+                };
+                match reconcile_result {
+                    Ok(LoopControl::Continue) => {}
+                    Ok(LoopControl::ExitForReboot) => {
+                        info!(
+                            "exiting annotation loop after successful reboot invocation during node reconciliation"
+                        );
+                        return Ok(());
+                    }
+                    Err(err) => {
+                        if self.is_node_gone_error(&err) {
+                            node_gone = true;
+                            break;
+                        }
+                        return Err(err);
+                    }
+                }
+            }
+            if node_gone {
+                if !self.await_node_recreation(&shutdown).await? {
+                    return Ok(());
+                }
+                continue;
+            }
+            // Stream ended on its own (shouldn't normally happen). Back off
+            // briefly before re-establishing it defensively, so a stream that
+            // keeps ending immediately doesn't spin in a tight retry loop.
+            select! {
+                _ = shutdown.cancelled() => return Ok(()),
+                _ = time::sleep(WATCH_STREAM_RESTART_BACKOFF) => {}
+            }
         }
-        Ok(())
+    }
+
+    /// Parks here while the agent's own Node object doesn't exist, polling
+    /// with the same capped-exponential-backoff-with-jitter policy used by
+    /// `get_node_with_retry`, until either the Node reappears (`Ok(true)`),
+    /// `shutdown` is cancelled (`Ok(false)`), or
+    /// `config.orchestration.node_gone_max_wait` elapses without the Node
+    /// coming back (`Err`, preserving the old fail-fast/exit behavior as an
+    /// opt-in bound - see that field's docs). With no bound configured
+    /// (the default), this waits indefinitely: at most one cheap GET every
+    /// `NODE_READ_BACKOFF_MAX`, an acceptable idle cost in exchange for not
+    /// permanently killing the agent on a transient 404 or a delete+recreate.
+    async fn await_node_recreation(&self, shutdown: &CancellationToken) -> Result<bool, Error> {
+        let node_name = &self.node_name;
+        info!("node {node_name} no longer exists; waiting for it to reappear");
+        let started = time::Instant::now();
+        let mut last_announced = started;
+        let max_wait = self.config.orchestration.node_gone_max_wait;
+        // Fixed deadline derived once up front, rather than re-deriving a
+        // "remaining time" from `started.elapsed()` on every iteration: lets
+        // us cap each sleep to the remaining budget below, so `max_wait`
+        // behaves as a true upper bound instead of being exceedable by up to
+        // one backoff interval.
+        let deadline = max_wait.map(|m| started + m);
+        let mut backoff = ExponentialBackoffBuilder::new()
+            .with_initial_interval(NODE_READ_BACKOFF)
+            .with_max_interval(NODE_READ_BACKOFF_MAX)
+            .with_multiplier(2.0)
+            .with_randomization_factor(1.0)
+            .with_max_elapsed_time(None)
+            .build();
+        loop {
+            let delay = backoff.next_backoff().unwrap_or(NODE_READ_BACKOFF_MAX);
+            let delay = match deadline {
+                Some(deadline) => {
+                    let now = time::Instant::now();
+                    if now >= deadline {
+                        return Err(Self::node_gone_deadline_error(node_name, max_wait));
+                    }
+                    delay.min(deadline - now)
+                }
+                None => delay,
+            };
+            select! {
+                _ = shutdown.cancelled() => {
+                    info!("shutdown requested while waiting for node {node_name} to reappear");
+                    return Ok(false);
+                }
+                _ = time::sleep(delay) => {}
+            }
+            let get_result = select! {
+                _ = shutdown.cancelled() => {
+                    info!("shutdown requested while polling for node {node_name} recreation");
+                    return Ok(false);
+                }
+                // Also bound the GET itself by the deadline, not just the
+                // pre-sleep check above: without this branch, a stalled API
+                // server could hold this future past `max_wait` indefinitely,
+                // defeating the whole point of `node_gone_max_wait` as an
+                // upper bound.
+                _ = Self::until_deadline(deadline) => {
+                    return Err(Self::node_gone_deadline_error(node_name, max_wait));
+                }
+                result = self.k8s.get_node(node_name) => result,
+            };
+            match get_result {
+                Ok(_) => {
+                    info!(
+                        "node {node_name} reappeared after {}; resuming",
+                        humantime::format_duration(started.elapsed())
+                    );
+                    return Ok(true);
+                }
+                Err(K8sClientError::NodeGone) => {
+                    if last_announced.elapsed() >= NODE_GONE_REANNOUNCE_INTERVAL {
+                        info!(
+                            "still waiting for node {node_name} to reappear ({} elapsed)",
+                            humantime::format_duration(started.elapsed())
+                        );
+                        last_announced = time::Instant::now();
+                    }
+                }
+                Err(err) => {
+                    warn!("transient error polling for node {node_name} recreation: {err:#}");
+                }
+            }
+        }
+    }
+
+    /// Resolves to nothing until `deadline` (if any) is reached, so it can
+    /// be used as a `select!` branch that bounds another future by a
+    /// possibly-absent deadline. Never resolves when `deadline` is `None`
+    /// (an unconfigured `node_gone_max_wait` means "wait indefinitely"),
+    /// mirroring the same `Option` semantics used for the pre-sleep check
+    /// above.
+    async fn until_deadline(deadline: Option<time::Instant>) {
+        match deadline {
+            Some(deadline) => time::sleep_until(deadline).await,
+            None => future::pending().await,
+        }
+    }
+
+    /// Builds the "gave up waiting for the node to reappear" error, shared
+    /// between the pre-sleep deadline check and the deadline branch that
+    /// bounds the recreation GET itself, so the message can't drift between
+    /// the two call sites.
+    fn node_gone_deadline_error(node_name: &str, max_wait: Option<Duration>) -> Error {
+        anyhow!(
+            "node {node_name} did not reappear within {} (TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT); giving up",
+            humantime::format_duration(
+                max_wait.expect("deadline is only set when max_wait is set")
+            )
+        )
     }
 
     /// Startup recovery. Order matters: a pending post-reboot `commit()` is
@@ -203,18 +512,23 @@ impl Orchestrator {
     /// publish is already best-effort/retried (see
     /// `best_effort_publish_terminal`), so deferring the k8s read this far
     /// costs nothing when k8s is healthy and avoids a crash-loop when it
-    /// isn't.
-    async fn recover_from_trident_state(&self) -> Result<LoopControl, Error> {
+    /// isn't. Returns `Ok(None)` if `shutdown` fires while retrying the
+    /// Node read, mirroring `await_node_recreation`'s `Ok(false)` so `run()`
+    /// can exit promptly instead of blocking on an indefinite retry loop.
+    async fn recover_from_trident_state(
+        &self,
+        shutdown: &CancellationToken,
+    ) -> Result<Option<LoopControl>, Error> {
         let persisted = self.state.load()?;
 
         if let Some(pending) = persisted.pending_commit.clone() {
             self.resume_pending_commit(pending).await?;
-            return Ok(LoopControl::Continue);
+            return Ok(Some(LoopControl::Continue));
         }
 
-        let node = self
-            .get_node_with_retry(&self.config.kubernetes.node_name)
-            .await?;
+        let Some(node) = self.get_node_with_retry(&self.node_name, shutdown).await? else {
+            return Ok(None); // shutdown requested while retrying
+        };
         let snapshot = Snapshot::from_node(&node, &self.annotation_keys);
 
         if let Some(request) = snapshot.request.clone() {
@@ -236,7 +550,7 @@ impl Orchestrator {
                     if !matches {
                         self.publish_status(&operation).await?;
                     }
-                    return Ok(LoopControl::Continue);
+                    return Ok(Some(LoopControl::Continue));
                 }
             }
         }
@@ -244,9 +558,10 @@ impl Orchestrator {
         if let Some(request) = snapshot.request {
             return self
                 .reconstruct_without_pending_record(&request, snapshot.operation_status.as_ref())
-                .await;
+                .await
+                .map(Some);
         }
-        Ok(LoopControl::Continue)
+        Ok(Some(LoopControl::Continue))
     }
 
     async fn reconcile_node(&self, node: &Node) -> Result<LoopControl, Error> {
@@ -451,10 +766,16 @@ impl Orchestrator {
                 Version::parse(FALLBACK_ALWAYS_VERSION)
                     .expect("invariant: FALLBACK_ALWAYS_VERSION is valid semver")
             });
+        let cookie_enabled = self.config.orchestration.cookie_enabled;
+        let cookie_store = self.nebraska_cookie.clone();
+        let cookie_lifetime = self.config.orchestration.cookie_lifetime;
         let outcome = task::spawn_blocking({
             let current_version = current_version.clone();
             move || {
-                let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+                let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+                if cookie_enabled {
+                    client = client.with_cookie_store(cookie_store, cookie_lifetime);
+                }
                 client.check_for_update(&current_version)
             }
         })
@@ -539,18 +860,14 @@ impl Orchestrator {
         // Nebraska's reported hash is required, not optional: it is Trident's
         // only signal to verify the downloaded image's identity before
         // installing it, so a missing/unusable hash is a hard failure here
-        // rather than a silently-skipped check. See
-        // `PackageHash::to_cosi_sha384` for why this needs converting (our
-        // Nebraska deployment stores a base64 SHA-384 in the field Omaha
-        // calls `sha1`) rather than being forwarded as-is. Checked before the
+        // rather than a silently-skipped check. Checked before the
         // DownloadStarted event below so a bad hash fails the request instead
         // of reporting a download that will never usefully start.
-        let hash = match offered
-            .primary
-            .hash
-            .as_ref()
-            .ok_or_else(|| "Nebraska offered no package hash".to_string())
-            .and_then(|h| h.to_cosi_sha384().map_err(|err| err.to_string()))
+        let hash = match cosi_sha384::resolve_cosi_sha384(
+            &offered.primary,
+            self.config.cosi_sha384.source,
+        )
+        .map_err(|err| err.to_string())
         {
             Ok(hash) => hash,
             Err(err) => {
@@ -591,7 +908,7 @@ impl Orchestrator {
                 in_progress,
                 client.update_stage(
                     &offered.primary.url,
-                    Some(&hash),
+                    Some(hash.as_str()),
                     self.config.orchestration.stage_timeout,
                 ),
             )
@@ -693,6 +1010,16 @@ impl Orchestrator {
                 client.update_finalize(self.config.orchestration.finalize_timeout),
             )
             .await;
+        match &result {
+            Ok(response) => info!(
+                "Trident update finalize returned: operation_id={}, reboot_status={:?}",
+                request.operation_id, response.reboot_status
+            ),
+            Err(err) => error!(
+                "Trident update finalize failed: operation_id={}: {err:#}",
+                request.operation_id
+            ),
+        }
         if let Some(ref v) = current_ver {
             self.report_nebraska_event(&request, finalize_nebraska_report(v, &result))
                 .await;
@@ -707,7 +1034,7 @@ impl Orchestrator {
                     from_version: from_version.clone(),
                     to_version: to_version.clone(),
                     started_utc: started,
-                    boot_marker,
+                    boot_marker: boot_marker.clone(),
                 })?;
                 let terminal = finalize_success_status(
                     &request,
@@ -719,7 +1046,7 @@ impl Orchestrator {
                     warn!("failed to record finalize completion in state.json: {err}");
                 }
                 self.best_effort_publish_terminal(&terminal).await;
-                match self.reboot() {
+                match self.reboot(Operation::Finalize, &request.operation_id, &boot_marker) {
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
                         if let Some(ref v) = current_ver {
@@ -754,11 +1081,11 @@ impl Orchestrator {
                 // update_finalize returned success but did not report a
                 // reboot as required - nothing was actually armed (e.g.
                 // nothing staged to finalize; mirrors handle_rollback's
-                // ManualRollbackAb check below). Treating any Ok(_) as
-                // "boot armed" here previously meant only the agent-local
-                // NotStaged cache guard above stood between a no-op
-                // finalize and a real reboot + a false-positive Success -
-                // Trident's own response is the authoritative signal now.
+                // ManualRollbackAb check below). Trident's own response is
+                // the authoritative signal for whether a reboot was armed;
+                // treating any Ok(_) here as "boot armed" would let a no-op
+                // finalize produce a false-positive Success with no reboot
+                // ever following it.
                 let status = UpdateStatus::new(
                     &request,
                     Operation::Finalize,
@@ -864,7 +1191,7 @@ impl Orchestrator {
                     from_version: from_version.clone(),
                     to_version: None,
                     started_utc: started,
-                    boot_marker,
+                    boot_marker: boot_marker.clone(),
                 })?;
                 let terminal =
                     rollback_finalize_success_status(&request, from_version.clone(), started);
@@ -872,7 +1199,7 @@ impl Orchestrator {
                     warn!("failed to record rollback completion in state.json: {err}");
                 }
                 self.best_effort_publish_terminal(&terminal).await;
-                match self.reboot() {
+                match self.reboot(Operation::Rollback, &request.operation_id, &boot_marker) {
                     Ok(()) => Ok(LoopControl::ExitForReboot),
                     Err(err) => {
                         let status = UpdateStatus::new(
@@ -905,20 +1232,24 @@ impl Orchestrator {
 
     async fn resume_pending_commit(&self, pending: PendingCommit) -> Result<(), Error> {
         let current_boot = current_boot_marker()?;
+        info!(
+            "recovering pending commit: operation={:?}, operation_id={}, \
+             previous_boot_id={}, current_boot_id={current_boot}",
+            pending.operation, pending.operation_id, pending.boot_marker
+        );
         if current_boot == pending.boot_marker {
             // No reboot has happened since finalize/rollback armed this
             // boot - the agent restarted (crash, watchdog, crash-loop)
             // without the reboot ever taking effect. Re-issue it instead of
-            // just waiting: previously this branch only logged and
-            // returned, so a reboot inhibited/delayed past the original
-            // process exit left the node armed-but-never-rebooting
-            // forever, showing `finalize: Success` with no commit until an
-            // external watchdog eventually wiped it.
+            // just logging and returning: otherwise a reboot inhibited or
+            // delayed past the original process exit would leave the node
+            // armed-but-never-rebooting forever, showing `finalize: Success`
+            // with no commit until an external watchdog eventually wiped it.
             info!(
                 "pending commit {} is still waiting for the reboot to happen; re-issuing reboot",
                 pending.operation_id
             );
-            if let Err(err) = self.reboot() {
+            if let Err(err) = self.reboot(pending.operation, &pending.operation_id, &current_boot) {
                 let now = Utc::now();
                 let status = UpdateStatus::new(
                     &pending.request,
@@ -1191,14 +1522,10 @@ impl Orchestrator {
         );
         info!(
             "sending {annotation_key} annotation to node {}: {status:?}",
-            self.config.kubernetes.node_name
+            self.node_name
         );
         self.k8s
-            .patch_node_metadata(
-                &self.config.kubernetes.node_name,
-                BTreeMap::new(),
-                annotations,
-            )
+            .patch_node_metadata(&self.node_name, BTreeMap::new(), annotations)
             .await?;
         Ok(())
     }
@@ -1210,7 +1537,7 @@ impl Orchestrator {
                 Err(err) if self.is_node_gone_error(&err) => {
                     info!(
                         "stopping terminal status publish because node {} no longer exists",
-                        self.config.kubernetes.node_name
+                        self.node_name
                     );
                     return;
                 }
@@ -1227,10 +1554,20 @@ impl Orchestrator {
     /// pile onto an API server that's already struggling. Only used by
     /// `recover_from_trident_state`'s "no pending commit to resume" branch;
     /// the pending-commit resume itself never touches k8s at all (see that
-    /// function's docs). `NodeGone` is returned immediately without
-    /// retrying, since it's terminal - the node was deleted, and no amount
-    /// of retrying changes that.
-    async fn get_node_with_retry(&self, name: &str) -> Result<Node, K8sClientError> {
+    /// function's docs).
+    ///
+    /// `NodeGone` is returned immediately without retrying, rather than
+    /// being retried like other errors - but it is *not* terminal for the
+    /// agent as a whole: the caller (`run()`) treats it as a signal to pause
+    /// via `await_node_recreation` rather than exiting. Both the GET itself
+    /// and the backoff sleep are raced against `shutdown`, so a SIGTERM/
+    /// SIGINT during startup recovery returns promptly (`Ok(None)`) instead
+    /// of blocking process exit on an in-flight retry loop.
+    async fn get_node_with_retry(
+        &self,
+        name: &str,
+        shutdown: &CancellationToken,
+    ) -> Result<Option<Node>, K8sClientError> {
         let mut backoff = ExponentialBackoffBuilder::new()
             .with_initial_interval(NODE_READ_BACKOFF)
             .with_max_interval(NODE_READ_BACKOFF_MAX)
@@ -1239,8 +1576,12 @@ impl Orchestrator {
             .with_max_elapsed_time(None)
             .build();
         loop {
-            match self.k8s.get_node(name).await {
-                Ok(node) => return Ok(node),
+            let get_result = select! {
+                _ = shutdown.cancelled() => return Ok(None),
+                result = self.k8s.get_node(name) => result,
+            };
+            match get_result {
+                Ok(node) => return Ok(Some(node)),
                 Err(err @ K8sClientError::NodeGone) => return Err(err),
                 Err(err) => {
                     // `max_elapsed_time(None)` means `next_backoff()` never
@@ -1251,7 +1592,10 @@ impl Orchestrator {
                     warn!(
                         "transient error reading node {name} during startup recovery, retrying in {delay:?}: {err:#}"
                     );
-                    time::sleep(delay).await;
+                    select! {
+                        _ = shutdown.cancelled() => return Ok(None),
+                        _ = time::sleep(delay) => {}
+                    }
                 }
             }
         }
@@ -1262,18 +1606,6 @@ impl Orchestrator {
             err.downcast_ref::<K8sClientError>(),
             Some(K8sClientError::NodeGone)
         )
-    }
-
-    fn log_and_swallow_node_gone(&self, err: &Error, context: &str) -> bool {
-        if self.is_node_gone_error(err) {
-            info!(
-                "stopping trident-acl-agent while {context}: node {} no longer exists",
-                self.config.kubernetes.node_name
-            );
-            true
-        } else {
-            false
-        }
     }
 
     async fn run_with_status_heartbeat<F>(&self, status: UpdateStatus, future: F) -> F::Output
@@ -1292,7 +1624,7 @@ impl Orchestrator {
                         if self.is_node_gone_error(&err) {
                             info!(
                                 "stopping heartbeats because node {} no longer exists",
-                                self.config.kubernetes.node_name
+                                self.node_name
                             );
                             stop_heartbeats = true;
                         } else {
@@ -1363,8 +1695,14 @@ impl Orchestrator {
             }
         };
         let label = report.label();
+        let cookie_enabled = self.config.orchestration.cookie_enabled;
+        let cookie_store = self.nebraska_cookie.clone();
+        let cookie_lifetime = self.config.orchestration.cookie_lifetime;
         let result = task::spawn_blocking(move || {
-            let client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+            let mut client = NebraskaClient::new(endpoint, app_id, track, machine_id);
+            if cookie_enabled {
+                client = client.with_cookie_store(cookie_store, cookie_lifetime);
+            }
             match report {
                 NebraskaReport::Progress { version, event } => {
                     client.report_progress(&version, event)
@@ -1996,8 +2334,331 @@ mod tests {
     const MOCK_RPC_TIMEOUT: Duration = Duration::from_secs(5);
     use crate::{
         annotations::{RequestedOperation, SCHEMA_VERSION},
-        core::trident::mock::{connect_mock_client, MockTridentdConfig, Outcome},
+        core::{
+            config::{CookieLifetime, NodeNameSource},
+            trident::mock::{connect_mock_client, MockTridentdConfig, Outcome},
+        },
     };
+
+    async fn cookie_orchestrator(
+        dir: &std::path::Path,
+        enabled: bool,
+        lifetime: CookieLifetime,
+    ) -> Orchestrator {
+        use crate::core::config::{KubernetesConfig, OrchestrationConfig};
+
+        let kubeconfig = dir.join("kubeconfig");
+        std::fs::write(
+            &kubeconfig,
+            "apiVersion: v1\nkind: Config\ncurrent-context: test\ncontexts:\n- name: test\n  context:\n    cluster: test\n    user: test\nclusters:\n- name: test\n  cluster:\n    server: http://127.0.0.1:1\nusers:\n- name: test\n  user: {}\n",
+        )
+        .unwrap();
+        let config = AgentConfig {
+            kubernetes: KubernetesConfig {
+                kubeconfig,
+                ..Default::default()
+            },
+            orchestration: OrchestrationConfig {
+                state_path: dir.join("state.json"),
+                cookie_path: dir.join("nebraska-cookie"),
+                cookie_enabled: enabled,
+                cookie_lifetime: lifetime,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let shutdown = CancellationToken::new();
+        Orchestrator::from_config(config, &shutdown)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn per_update_cookie_is_not_reloaded_when_initial_check_sets_none() {
+        use mockito::Matcher;
+
+        let mut server = mockito::Server::new_async().await;
+        for (enabled, lifetime) in [
+            (true, CookieLifetime::PerUpdate),
+            (true, CookieLifetime::PerMessage),
+            (false, CookieLifetime::PerUpdate),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let orchestrator = cookie_orchestrator(dir.path(), enabled, lifetime).await;
+            orchestrator
+                .nebraska_cookie
+                .save("ASLBSA=previous")
+                .unwrap();
+            let expected_cookie = if enabled && lifetime == CookieLifetime::PerMessage {
+                Matcher::Exact("ASLBSA=previous".to_string())
+            } else {
+                Matcher::Missing
+            };
+            let response = r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/><updatecheck status="noupdate"/></app></response>"#;
+            let check = server
+                .mock("POST", "/v1/update/")
+                .match_header("cookie", expected_cookie.clone())
+                .match_body(Matcher::Regex("<updatecheck".to_string()))
+                .with_status(200)
+                .with_body(response)
+                .expect(1)
+                .create_async()
+                .await;
+            let endpoint = Url::parse(&format!("{}/v1/update/", server.url())).unwrap();
+            initial_cookie_check(&orchestrator, endpoint.clone()).await;
+            check.assert_async().await;
+
+            let progress = server
+                .mock("POST", "/v1/update/")
+                .match_header("cookie", expected_cookie)
+                .match_body(Matcher::Regex("<event ".to_string()))
+                .with_status(200)
+                .with_header("set-cookie", "ASLBSA=progress; Path=/")
+                .with_body(response)
+                .expect(1)
+                .create_async()
+                .await;
+            let mut request = request(RequestedOperation::Stage);
+            request.server = Some(endpoint);
+            request.app_id = Some("app-1".to_string());
+            request.track = Some("stable".to_string());
+            orchestrator
+                .report_nebraska_event(
+                    &request,
+                    NebraskaReport::Progress {
+                        version: Version::new(1, 0, 0),
+                        event: ProgressEvent::DownloadStarted,
+                    },
+                )
+                .await;
+            progress.assert_async().await;
+            assert_eq!(
+                orchestrator.nebraska_cookie.load().unwrap().as_deref(),
+                if enabled && lifetime == CookieLifetime::PerUpdate {
+                    None
+                } else if enabled {
+                    Some("ASLBSA=progress")
+                } else {
+                    Some("ASLBSA=previous")
+                },
+            );
+        }
+    }
+
+    async fn initial_cookie_check(orchestrator: &Orchestrator, endpoint: Url) {
+        let store = orchestrator.nebraska_cookie.clone();
+        let enabled = orchestrator.config.orchestration.cookie_enabled;
+        let lifetime = orchestrator.config.orchestration.cookie_lifetime;
+        task::spawn_blocking(move || {
+            let mut client = NebraskaClient::new(
+                endpoint,
+                "app-1",
+                "stable",
+                crate::core::nebraska::MachineId::new("mid-1").unwrap(),
+            );
+            if enabled {
+                client = client.with_cookie_store(store, lifetime);
+            }
+            client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn per_update_cookie_resets_when_an_unfinished_stage_restarts() {
+        let mut server = mockito::Server::new_async().await;
+        let endpoint = Url::parse(&format!("{}/v1/update/", server.url())).unwrap();
+        let response = r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/><updatecheck status="noupdate"/></app></response>"#;
+        let dir = tempfile::tempdir().unwrap();
+        let orchestrator = cookie_orchestrator(dir.path(), true, CookieLifetime::PerUpdate).await;
+        let first = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=first-attempt; Path=/")
+            .with_body(response)
+            .expect(1)
+            .create_async()
+            .await;
+        initial_cookie_check(&orchestrator, endpoint.clone()).await;
+        first.assert_async().await;
+        drop(orchestrator);
+
+        let restarted = cookie_orchestrator(dir.path(), true, CookieLifetime::PerUpdate).await;
+        assert_eq!(
+            restarted.nebraska_cookie.load().unwrap().as_deref(),
+            Some("ASLBSA=first-attempt"),
+        );
+        let completion = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", "ASLBSA=first-attempt")
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=ignored; Path=/")
+            .with_body(response)
+            .expect(1)
+            .create_async()
+            .await;
+        let mut request = request(RequestedOperation::Finalize);
+        request.server = Some(endpoint.clone());
+        request.app_id = Some("app-1".to_string());
+        request.track = Some("stable".to_string());
+        restarted
+            .report_nebraska_event(
+                &request,
+                NebraskaReport::Completed {
+                    previous: Version::new(1, 0, 0),
+                    current: Version::new(2, 0, 0),
+                },
+            )
+            .await;
+        completion.assert_async().await;
+        assert_eq!(
+            restarted.nebraska_cookie.load().unwrap().as_deref(),
+            Some("ASLBSA=first-attempt")
+        );
+
+        let next = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=second-attempt; Path=/")
+            .with_body(response)
+            .expect(1)
+            .create_async()
+            .await;
+        initial_cookie_check(&restarted, endpoint).await;
+        next.assert_async().await;
+        assert_eq!(
+            restarted.nebraska_cookie.load().unwrap().as_deref(),
+            Some("ASLBSA=second-attempt"),
+        );
+    }
+
+    #[tokio::test]
+    async fn disabled_cookie_is_not_adopted_by_completion_report_retries() {
+        let dir = tempfile::tempdir().unwrap();
+        let orchestrator = cookie_orchestrator(dir.path(), false, CookieLifetime::PerUpdate).await;
+        orchestrator
+            .nebraska_cookie
+            .save("ASLBSA=previous")
+            .unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let first = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_header("set-cookie", "ASLBSA=fresh; Path=/")
+            .with_body(r#"<response protocol="3.0" server="n"><app appid="app-1" status="error-updateInProgressOnInstance"><event status="ok"/><updatecheck status="error-internal"/></app></response>"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let retry = server
+            .mock("POST", "/v1/update/")
+            .match_header("cookie", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_body(r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><event status="ok"/><updatecheck status="noupdate"/></app></response>"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let mut request = request(RequestedOperation::Finalize);
+        request.server = Some(Url::parse(&format!("{}/v1/update/", server.url())).unwrap());
+        request.app_id = Some("app-1".to_string());
+        request.track = Some("stable".to_string());
+        orchestrator
+            .report_nebraska_event(
+                &request,
+                NebraskaReport::Completed {
+                    previous: Version::new(1, 0, 0),
+                    current: Version::new(2, 0, 0),
+                },
+            )
+            .await;
+        first.assert_async().await;
+        retry.assert_async().await;
+        assert_eq!(
+            orchestrator.nebraska_cookie.load().unwrap().as_deref(),
+            Some("ASLBSA=previous"),
+        );
+    }
+
+    // --- node_name resolution retry (microsoft/trident#839 follow-up) ---
+
+    /// Proves resolve_node_name_with_retry actually *retries* (keeps
+    /// looping/sleeping) rather than bailing out with an error on the
+    /// first failed resolution attempt - the whole point of treating an
+    /// unreadable kubelet-cert as a transient startup race, analogous to
+    /// the Node object itself not existing yet, rather than a fatal
+    /// condition. Points kubelet_cert_path at a guaranteed-missing tempdir
+    /// path rather than relying on DEFAULT_KUBELET_CLIENT_CERT being absent
+    /// on whatever machine runs this test, so KubeletCert source fails
+    /// deterministically every attempt regardless of host state; cancelling
+    /// shutdown shortly after starting (well under NODE_READ_BACKOFF's 2s
+    /// initial interval) and asserting Ok(None) - not an Err - proves the
+    /// loop was still patiently retrying (parked in its backoff sleep)
+    /// rather than having already given up.
+    #[tokio::test]
+    async fn resolve_node_name_with_retry_keeps_retrying_instead_of_erroring() {
+        let dir = tempfile::tempdir().unwrap();
+        let kubernetes = KubernetesConfig {
+            node_name_source: NodeNameSource::KubeletCert,
+            kubelet_cert_path: dir.path().join("kubelet-client-current.pem"),
+            ..Default::default()
+        };
+        let shutdown = CancellationToken::new();
+        let shutdown_clone = shutdown.clone();
+        tokio::spawn(async move {
+            time::sleep(Duration::from_millis(50)).await;
+            shutdown_clone.cancel();
+        });
+        let result = Orchestrator::resolve_node_name_with_retry(&kubernetes, &shutdown).await;
+        assert!(
+            matches!(result, Ok(None)),
+            "expected Ok(None) (shutdown interrupted an in-progress retry), got {result:?}"
+        );
+    }
+
+    /// Hostname source must resolve immediately on the very first attempt -
+    /// no retry loop, no backoff sleep - since hostname_node_name() always
+    /// succeeds (it has its own internal fallback). Bounds the whole call
+    /// well under NODE_READ_BACKOFF's 2s initial interval to prove no sleep
+    /// was entered at all.
+    #[tokio::test]
+    async fn resolve_node_name_with_retry_hostname_source_resolves_without_retrying() {
+        let kubernetes = KubernetesConfig::default(); // Hostname is the default source
+        let shutdown = CancellationToken::new();
+        let result = time::timeout(
+            Duration::from_millis(500),
+            Orchestrator::resolve_node_name_with_retry(&kubernetes, &shutdown),
+        )
+        .await
+        .expect("must resolve well under one NODE_READ_BACKOFF interval")
+        .unwrap();
+        assert!(matches!(result, Some(name) if !name.is_empty()));
+    }
+
+    /// An explicit override must resolve immediately too, regardless of
+    /// node_name_source - same "no retry needed" guarantee as the hostname
+    /// case above, via a different code path
+    /// (KubernetesConfig::resolve_node_name_once's override branch).
+    #[tokio::test]
+    async fn resolve_node_name_with_retry_explicit_override_resolves_without_retrying() {
+        let kubernetes = KubernetesConfig {
+            node_name_override: Some("node-42".to_string()),
+            node_name_source: NodeNameSource::KubeletCert,
+            ..Default::default()
+        };
+        let shutdown = CancellationToken::new();
+        let result = time::timeout(
+            Duration::from_millis(500),
+            Orchestrator::resolve_node_name_with_retry(&kubernetes, &shutdown),
+        )
+        .await
+        .expect("must resolve well under one NODE_READ_BACKOFF interval")
+        .unwrap();
+        assert_eq!(result, Some("node-42".to_string()));
+    }
 
     fn request(operation: RequestedOperation) -> UpdateRequest {
         UpdateRequest {

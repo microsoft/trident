@@ -1,0 +1,18 @@
+# by-channel/edge.yaml — the edge channel.
+#
+#   • `bootPkg` is arch-specialized: its value itself contains ${efiArch} (resolved from by-arch),
+#     so one line yields boot-edge-x64 (amd64) / boot-edge-aa64 (arm64) — nested interpolation.
+#   • the base is $set wholesale to an OCI reference (overriding by-arch's local path), with
+#     ${arch} interpolated into the platform.
+#   • `rpmSources` is a TAILOR field: tailor passes it to IC as --rpm-source, untouched.
+params:
+  bootPkg: "boot-edge-${efiArch}"
+
+base:
+  $set:
+    oci:
+      uri: "registry.example/gizmo/base:edge"
+      platform: "linux/${arch}"
+
+rpmSources:
+  - repos/edge.repo

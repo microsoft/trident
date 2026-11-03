@@ -1,0 +1,28 @@
+# A single image exercising many tailor features in one real build:
+#   - an `azureLinux` (MCR) base, digest-pinned and downloaded by IC (needs the input-image-oci
+#     preview feature, declared below);
+#   - a matrix axis (`flavor`) → multiple cells;
+#   - per-axis fragments (by-flavor/) that set a parameter;
+#   - parameter interpolation (`${hostname}`) into the IC config;
+#   - `$include` to splice in a shared storage layout.
+name: appliance
+
+base:
+  azureLinux:
+    version: "3.0"
+    variant: minimal-os
+
+matrix:
+  flavor: [min, net]
+
+config:
+  # `azureLinux`/`oci` bases are downloaded by IC's OCI input, which is a preview feature. tailor is
+  # config-opaque, so the opt-in lives here in the user's IC config.
+  previewFeatures:
+    - input-image-oci
+  os:
+    hostname: "${hostname}"
+    bootloader:
+      resetType: hard-reset
+  storage:
+    $include: ./include/storage.yaml

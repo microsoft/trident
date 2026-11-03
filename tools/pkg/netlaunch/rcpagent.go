@@ -9,7 +9,6 @@ import (
 	"time"
 	rcpagent "tridenttools/pkg/rcp/agent"
 	rcpclient "tridenttools/pkg/rcp/client"
-	"tridenttools/pkg/rcp/tlscerts"
 	"tridenttools/pkg/tridentgrpc"
 
 	"github.com/google/uuid"
@@ -33,20 +32,34 @@ func newRcpAgentFileDownload(name string, destination string, mode os.FileMode, 
 }
 
 type rcpAgentConfigBuilder struct {
-	rcpConf      *rcpagent.RcpAgentConfiguration
-	mux          *http.ServeMux
-	AnnounceIp   string
-	announceHttp string
-	rcpListener  *rcpclient.RcpListener
+	rcpConf       *rcpagent.RcpAgentConfiguration
+	mux           *http.ServeMux
+	AnnounceIp    string
+	announceHttp  string
+	rcpListener   *rcpclient.RcpListener
+	clientCertPEM []byte
+	clientKeyPEM  []byte
+	serverCertPEM []byte
 }
 
-func newRcpAgentConfigBuilder(mux *http.ServeMux, announceIp string, announceHttpAddress string, rcpListener *rcpclient.RcpListener) *rcpAgentConfigBuilder {
+func newRcpAgentConfigBuilder(
+	mux *http.ServeMux,
+	announceIp string,
+	announceHttpAddress string,
+	rcpListener *rcpclient.RcpListener,
+	clientCertPEM []byte,
+	clientKeyPEM []byte,
+	serverCertPEM []byte,
+) *rcpAgentConfigBuilder {
 	return &rcpAgentConfigBuilder{
-		rcpConf:      &rcpagent.RcpAgentConfiguration{},
-		mux:          mux,
-		AnnounceIp:   announceIp,
-		announceHttp: announceHttpAddress,
-		rcpListener:  rcpListener,
+		rcpConf:       &rcpagent.RcpAgentConfiguration{},
+		mux:           mux,
+		AnnounceIp:    announceIp,
+		announceHttp:  announceHttpAddress,
+		rcpListener:   rcpListener,
+		clientCertPEM: clientCertPEM,
+		clientKeyPEM:  clientKeyPEM,
+		serverCertPEM: serverCertPEM,
 	}
 }
 
@@ -72,12 +85,14 @@ func (b *rcpAgentConfigBuilder) build() *rcpagent.RcpAgentConfiguration {
 		b.rcpConf.ClientAddress = fmt.Sprintf("%s:%d", b.AnnounceIp, b.rcpListener.Port)
 		b.rcpConf.ServerAddress = tridentgrpc.DefaultTridentSocketPath
 
-		// Populate TLS certs for mutual authentication
-		clientCert, clientKey, serverCert := tlscerts.ClientTlsData()
+		// Populate TLS certs for mutual authentication. These are generated
+		// fresh for this specific test session (see
+		// tlscerts.NewEphemeralSession), not embedded in the binary, so they
+		// have no value outside this one run.
 		b.rcpConf.RcpClientTls = rcpagent.RcpTlsClientData{
-			ClientCert: base64.StdEncoding.EncodeToString(clientCert),
-			ClientKey:  base64.StdEncoding.EncodeToString(clientKey),
-			ServerCert: base64.StdEncoding.EncodeToString(serverCert),
+			ClientCert: base64.StdEncoding.EncodeToString(b.clientCertPEM),
+			ClientKey:  base64.StdEncoding.EncodeToString(b.clientKeyPEM),
+			ServerCert: base64.StdEncoding.EncodeToString(b.serverCertPEM),
 		}
 	}
 

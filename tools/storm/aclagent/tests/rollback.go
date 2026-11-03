@@ -35,6 +35,11 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	productUUID, err := readVmProductUUID(vmConfig.VMConfig, vmIP)
+	if err != nil {
+		return err
+	}
+
 	// Rollback doesn't stage a new image from Nebraska - it re-activates the
 	// previously-finalized volume trident already has on disk - so only the
 	// fake apiserver is needed here, not the Nebraska/image-server mocks
@@ -42,7 +47,7 @@ func RunRollback(testConfig stormaclconfig.TestConfig, vmConfig stormvmconfig.Al
 	// all (see prepareVmForAclAgent); rollback's PatchSteps leave
 	// `server`/`appId` unset too, since Nebraska is never queried during a
 	// rollback request.
-	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}))
+	nodeStore := stormproxies.NewNodeStore(stormproxies.NewSeedNode(testConfig.NodeName, map[string]string{}, productUUID))
 	apiServer := stormproxies.NewAPIServer(testConfig.NodeName, nodeStore)
 	_, apiServerStop, err := apiServer.ListenAndServe(ctx, fmt.Sprintf("%s:%d", testConfig.HostEndpointIP, testConfig.APIServerPort))
 	if err != nil {

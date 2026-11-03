@@ -197,23 +197,6 @@ and should probably address, we issue a non-fatal error with an `ERROR` log.
 
 *Example 1.*
 
-The illustrative code snippet below refers to a scenario where the customer is
-requesting to ignore the hash of an image in the Host Configuration. Before
-deploying the image onto the block device, Trident should produce a `WARN` log
-because streaming an unverified payload onto a block device is a potential
-security concern.
-
-```rust
-match image.sha384 {
-    ImageSha384::Ignored => {
-        warn!("Ignoring SHA384 for image from '{}'", image_url);
-    }
-    ...
-}
-```
-
-*Example 2.*
-
 Taken from the logic in `src/lib.rs`, the code below addresses the scenario
 where the customer has updated the Host Configuration but did not include
 `stage` under the allowed operations section. This means that the servicing

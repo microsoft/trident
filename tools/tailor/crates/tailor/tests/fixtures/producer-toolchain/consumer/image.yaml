@@ -1,0 +1,13 @@
+# Consumer image: uses the workspace default toolchain (ic) and depends on the
+# `producer` image, so building `consumer` pulls `producer` into the build closure.
+name: consumer
+dependsOn: [producer]
+
+base:
+  azureLinux:
+    version: "3.0"
+    variant: minimal-os
+
+config:
+  os:
+    hostname: consumer

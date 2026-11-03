@@ -840,13 +840,22 @@
 
             function makeFileLink(file, line) {
                 const ref = commitInput.value.trim();
-                const text = escapeHtml(file + ":" + line);
+                // Coerce to a safe non-negative integer. `line` comes from
+                // JSON.parse of an attacker-controllable log file; without
+                // this, a string value like `1"><img src=x onerror=...>`
+                // would be interpolated raw into the URL/href below.
+                const parsedLine = Number.isInteger(line) ? line : parseInt(line, 10);
+                const safeLine = Number.isFinite(parsedLine) && parsedLine >= 0 ? parsedLine : 0;
+                const text = escapeHtml(file + ":" + safeLine);
                 if (ref) {
                     // If ref looks like a semver tag (e.g. "0.21.0"), prefix with "v"
                     const gitRef = /^\d+\.\d+\.\d+$/.test(ref) ? "v" + ref : ref;
                     const encodedFile = file.split("/").map(encodeURIComponent).join("/");
-                    const url = `https://github.com/microsoft/trident/blob/${encodeURIComponent(gitRef)}/${encodedFile}#L${line}`;
-                    return `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
+                    const url = `https://github.com/microsoft/trident/blob/${encodeURIComponent(gitRef)}/${encodedFile}#L${safeLine}`;
+                    // Defense in depth: escape the fully-built URL before
+                    // embedding it in an HTML attribute, even though every
+                    // component above is now numeric or encodeURIComponent'd.
+                    return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${text}</a>`;
                 }
                 return text;
             }

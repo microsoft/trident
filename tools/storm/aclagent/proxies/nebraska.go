@@ -95,6 +95,28 @@ type NebraskaProxy struct {
 	api         *api.API
 	handler     *omaha.Handler
 	appID       string
+
+	// affinityCookieValue simulates the Azure App Service-style
+	// load-balancer affinity cookie (e.g. "ASLBSA") that fronts the real
+	// production Nebraska deployment. Real Nebraska's own Omaha handler
+	// never sets this itself - it's purely an infrastructure-level artifact
+	// - so this proxy injects it the same way App Service does (issued on
+	// any request that doesn't already carry it, stable thereafter), purely
+	// so storm can exercise trident-acl-agent's cookie persistence/echo
+	// behavior end-to-end. See
+	// crates/trident-acl-agent/src/core/nebraska/cookie_store.rs. Set once
+	// in ListenAndServe before the server starts accepting requests, never
+	// mutated afterward, so it's safe to read from Handler() without a lock.
+	affinityCookieValue string
+
+	// cookieMu protects the request-classification counters below, which
+	// Handler() updates on every request (concurrently, in principle) and
+	// storm tests read after a scenario completes via
+	// RequestsMissingCookie/RequestsWithCorrectCookie/RequestsWithWrongCookie.
+	cookieMu                  sync.Mutex
+	requestsMissingCookie     int
+	requestsWithCorrectCookie int
+	requestsWithWrongCookie   int
 }
 
 // ExpectedUpdateStatusSequence is the ordered sequence of Nebraska instance
@@ -136,6 +158,17 @@ func (p *NebraskaProxy) Handler() http.Handler {
 			return
 		}
 		defer r.Body.Close()
+
+		// Simulate the Azure App Service-style load-balancer affinity
+		// cookie described in affinityCookieValue's doc comment: issue it
+		// (with the attributes a real one would carry) on any request that
+		// doesn't already have it, and classify every request by whether it
+		// carried the right cookie, no cookie, or a stale/wrong one.
+		p.recordAffinityCookie(r.Header.Get("Cookie"))
+		if r.Header.Get("Cookie") == "" {
+			w.Header().Set("Set-Cookie", p.affinityCookieValue+"; Path=/; HttpOnly")
+		}
+
 		ip := r.RemoteAddr
 		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 			ip = host
@@ -145,9 +178,67 @@ func (p *NebraskaProxy) Handler() http.Handler {
 			http.Error(w, fmt.Sprintf("nebraska omaha handler error: %v", err), http.StatusInternalServerError)
 			return
 		}
+		response, err := labelCosiPackage(buf.Bytes(), p.Scenario.PackageName)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("nebraska package label error: %v", err), http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/xml")
-		_, _ = w.Write(buf.Bytes())
+		_, _ = w.Write(response)
 	})
+}
+
+// recordAffinityCookie classifies one incoming request's raw Cookie header
+// against the simulated affinity cookie this proxy issues (see
+// affinityCookieValue), updating the counters RequestsMissingCookie,
+// RequestsWithCorrectCookie, and RequestsWithWrongCookie read from.
+func (p *NebraskaProxy) recordAffinityCookie(cookieHeader string) {
+	p.cookieMu.Lock()
+	defer p.cookieMu.Unlock()
+	switch {
+	case cookieHeader == "":
+		p.requestsMissingCookie++
+	case cookieHeader == p.affinityCookieValue:
+		p.requestsWithCorrectCookie++
+	default:
+		p.requestsWithWrongCookie++
+	}
+}
+
+// AffinityCookie returns the exact `name=value` this proxy's simulated
+// load-balancer affinity cookie carries (see affinityCookieValue), for
+// storm tests that want to assert the value persisted on a VM
+// (/var/lib/trident-acl-agent/nebraska-cookie) matches what this proxy
+// actually issued.
+func (p *NebraskaProxy) AffinityCookie() string {
+	return p.affinityCookieValue
+}
+
+// RequestsMissingCookie returns how many requests this proxy has served
+// with no Cookie header at all, including diagnostic probes before affinity
+// is established and the initial check of each per-update staging attempt.
+func (p *NebraskaProxy) RequestsMissingCookie() int {
+	p.cookieMu.Lock()
+	defer p.cookieMu.Unlock()
+	return p.requestsMissingCookie
+}
+
+// RequestsWithCorrectCookie returns how many requests arrived already
+// carrying exactly the affinity cookie this proxy issued.
+func (p *NebraskaProxy) RequestsWithCorrectCookie() int {
+	p.cookieMu.Lock()
+	defer p.cookieMu.Unlock()
+	return p.requestsWithCorrectCookie
+}
+
+// RequestsWithWrongCookie returns how many requests arrived carrying a
+// Cookie header that does not match the affinity cookie this proxy issued.
+// Always 0 for a correct trident-acl-agent; nonzero means the agent sent a
+// stale or corrupted cookie value.
+func (p *NebraskaProxy) RequestsWithWrongCookie() int {
+	p.cookieMu.Lock()
+	defer p.cookieMu.Unlock()
+	return p.requestsWithWrongCookie
 }
 
 // ListenAndServe starts an ephemeral Postgres container, applies Nebraska's
@@ -213,6 +304,11 @@ func (p *NebraskaProxy) ListenAndServe(ctx context.Context, listenAddr string) (
 		stopEphemeralPostgres(containerID)
 		return nil, nil, fmt.Errorf("failed to seed Nebraska scenario: %w", err)
 	}
+
+	// Stable for this proxy's whole lifetime (see affinityCookieValue's doc
+	// comment); must be set before the server below starts accepting
+	// requests, since Handler() reads it on every request.
+	p.affinityCookieValue = fmt.Sprintf("ASLBSA=storm%d", time.Now().UnixNano())
 
 	listener, err = net.Listen("tcp", listenAddr)
 	if err != nil {
@@ -281,20 +377,15 @@ func (p *NebraskaProxy) seed() error {
 		baseURL = "https://example.invalid/images/"
 	}
 
-	// Our real Nebraska deployment puts a base64-encoded SHA-384 (of the
-	// COSI's metadata section) into the package's "hash" field, in place of
-	// a real SHA-1 (see PackageHash::to_cosi_sha384 in
-	// crates/trident-acl-agent/src/core/nebraska/client.rs for the
-	// trident-acl-agent side of this conversion). Reproduce that quirk
-	// here: decode Scenario.SHA384's hex digest back to raw bytes and
-	// re-encode as base64, so trident-acl-agent's to_cosi_sha384()
-	// round-trips it back to the same hex string Trident's COSI validation
-	// expects. The package.hash column is varchar(64), which a
-	// base64-encoded 48-byte SHA-384 fits exactly (48 bytes -> 64 base64
-	// chars, no padding).
+	// Upstream Nebraska has no package labels. Store the base64 metadata
+	// digest in its hash column, then re-encode it as hex in cosi.metadata.sha384 in
+	// Handler's response adapter. The legacy hash is removed on the wire.
 	sha384Bytes, err := hex.DecodeString(p.Scenario.SHA384)
 	if err != nil {
 		return fmt.Errorf("failed to decode scenario SHA384 %q as hex: %w", p.Scenario.SHA384, err)
+	}
+	if p.Scenario.Available && len(sha384Bytes) != 48 {
+		return fmt.Errorf("scenario SHA384 must contain 48 bytes, got %d", len(sha384Bytes))
 	}
 	packageHash := base64.StdEncoding.EncodeToString(sha384Bytes)
 

@@ -99,6 +99,7 @@ pub enum Dependency {
     Efivar,
     Efibootmgr,
     Eject,
+    Fatlabel,
     Findmnt,
     #[strum(serialize = "grub2-mkconfig")]
     Grub2Mkconfig,

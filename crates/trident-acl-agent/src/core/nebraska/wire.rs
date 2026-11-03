@@ -6,6 +6,8 @@
 //! protocol's invariants (whitelisted events, mandatory `track`, unbraced
 //! machine id) can only be satisfied through the validated builders.
 
+use std::collections::BTreeMap;
+
 use quick_xml::{
     events::{BytesDecl, Event},
     Writer,
@@ -325,6 +327,9 @@ pub(super) struct Package {
     /// The package hash as sent by Nebraska: base64-encoded SHA-1 of the package
     /// *file*. Optional because Nebraska omits the attribute when a package has
     /// no hash.
+    ///
+    /// This is the fallback source for the COSI metadata SHA-384: see
+    /// [`Package::cosi_sha384_base64`].
     #[serde(default, rename = "@hash")]
     pub(super) hash: Option<String>,
 
@@ -340,6 +345,48 @@ pub(super) struct Package {
     /// when the attribute is absent.
     #[serde(default, rename = "@required")]
     pub(super) required: bool,
+
+    /// Arbitrary key/value labels from the `<labels>` child element,
+    /// copied as-is into `nebraska::client::PackageFile` for callers to
+    /// interpret (this protocol layer has no opinion on which labels
+    /// matter). A flat map rather than a `Vec` of key/value pairs since
+    /// lookups are always by key; see [`deserialize_labels`].
+    #[serde(default, rename = "labels", deserialize_with = "deserialize_labels")]
+    pub(super) labels: BTreeMap<String, String>,
+}
+
+/// Deserializes a `<labels>` child element (`<label key="..." value="..."/>`
+/// repeated children) into a flat key/value map.
+fn deserialize_labels<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Debug, Deserialize)]
+    struct LabelsWire {
+        #[serde(default, rename = "label")]
+        labels: Vec<LabelWire>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct LabelWire {
+        #[serde(rename = "@key")]
+        key: String,
+
+        #[serde(rename = "@value")]
+        value: String,
+    }
+
+    // Option<LabelsWire> so a missing <labels> element (the
+    // #[serde(default, ...)] case on the field above) deserializes cleanly
+    // as `None` instead of erroring on the absent unit value.
+    let wire = Option::<LabelsWire>::deserialize(deserializer)?
+        .unwrap_or(LabelsWire { labels: Vec::new() });
+
+    // Last duplicate key wins: Nebraska has no documented uniqueness
+    // guarantee for label keys, and silently preferring the last-in-document
+    // value is simpler than failing deserialization over a case that isn't
+    // expected to occur in practice.
+    Ok(wire.labels.into_iter().map(|l| (l.key, l.value)).collect())
 }
 
 /// Parses a Nebraska response body.

@@ -1,0 +1,37 @@
+# Producer for the inter-image "base-of" chain: a plain raw disk built from an Azure Linux base.
+# `derived` consumes this raw as its `base: { image: base-os }`. `skip: true` keeps it out of the
+# bulk `tailor build` (which builds `appliance`); the E2E builds the chain explicitly with
+# `tailor build derived`, which pulls `base-os` in first.
+name: base-os
+skip: true
+
+base:
+  azureLinux:
+    version: "3.0"
+    variant: minimal-os
+
+outputs:
+  - format: raw
+
+config:
+  previewFeatures:
+    - input-image-oci
+  os:
+    hostname: base-os
+    bootloader:
+      resetType: hard-reset
+  storage:
+    bootType: efi
+    disks:
+      - partitionTableType: gpt
+        maxSize: 4G
+        partitions:
+          - { id: esp, type: esp, size: 8M }
+          - { id: rootfs, size: grow }
+    filesystems:
+      - deviceId: esp
+        type: fat32
+        mountPoint: { path: /boot/efi, options: "umask=0077" }
+      - deviceId: rootfs
+        type: ext4
+        mountPoint: { path: / }

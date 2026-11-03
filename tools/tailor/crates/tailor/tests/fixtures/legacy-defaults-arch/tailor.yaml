@@ -1,0 +1,16 @@
+# Synthetic workspace (NOT a real config) — uses the removed workspace `defaults.architectures`
+# field, which `deny_unknown_fields` now rejects. Arch comes from a `matrix.arch` axis or a base's
+# own `arch`, never a workspace default.
+schemaVersion: 1
+
+toolchains:
+  default: ic
+  entries:
+    - name: ic
+      container: registry.example/imagecustomizer
+      version: "1.0.0"
+
+defaults:
+  architectures: [amd64]
+  outputs:
+    - format: cosi

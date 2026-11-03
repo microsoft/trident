@@ -2593,7 +2593,7 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ISC License (ISC)
 
 Used by:
-    - rustls-webpki 0.103.13
+    - rustls-webpki 0.103.15
 
 Except as otherwise noted, this project is licensed under the following
 (ISC-style) terms:
@@ -3723,7 +3723,7 @@ MIT License (MIT)
 
 Used by:
     - hyper-rustls 0.27.9
-    - rustls 0.23.43
+    - rustls 0.23.46
     - rustls-native-certs 0.8.4
     - rustls-pemfile 2.2.0
 
@@ -4392,7 +4392,7 @@ SOFTWARE.
 MIT License (MIT)
 
 Used by:
-    - h2 0.4.7
+    - h2 0.4.20
 
 Copyright (c) 2017 h2 authors
 
@@ -7554,7 +7554,7 @@ SOFTWARE.
 MIT License (MIT)
 
 Used by:
-    - quick-xml 0.39.2
+    - quick-xml 0.41.0
 
 The MIT License (MIT)
 

@@ -1,0 +1,27 @@
+# Offline exercise of the `inputs:` embed (Phase 2). `iso` bases on `base-os` and embeds
+# `appliance`'s COSI as an IC `additionalFiles` source via `${inputs.payload}`. `appliance` has a
+# `flavor` axis that `iso` lacks, so the input pins `flavor: net`. Both producers are resolved by
+# name — no hand-written `../…/artifacts/…` path. `skip: true`: the E2E only validates/renders it
+# offline (embedding a real COSI would bloat the build), which is enough to exercise resolution,
+# arch pairing, and the pin.
+name: iso
+skip: true
+
+base:
+  image: base-os
+
+inputs:
+  - name: payload
+    image: appliance
+    output: cosi
+    cell: { flavor: net }
+
+outputs:
+  - format: cosi
+
+config:
+  os:
+    hostname: iso
+    additionalFiles:
+      - source: "${inputs.payload}"
+        destination: /images/appliance.cosi

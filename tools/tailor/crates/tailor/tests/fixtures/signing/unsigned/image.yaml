@@ -1,0 +1,8 @@
+name: unsigned
+base:
+  path: ./base.img
+outputs:
+  - format: cosi
+config:
+  os:
+    hostname: unsigned
