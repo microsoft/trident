@@ -26,7 +26,7 @@ use trident_proto::v1::{
 use crate::{
     agentconfig::AgentConfig,
     command_kind::CommandKind,
-    logging::logfwd::LogForwarder,
+    logging::{logfwd::LogForwarder, operation_context},
     server::{activitytracker::ActivityTracker, support::stream::StreamWithLock},
     ExitKind, Logstream, TraceStream,
 };
@@ -231,6 +231,35 @@ impl TridentServer {
             );
             return Err(Status::failed_precondition("Host is not provisioned"));
         }
+
+        // Tag every metric/tracing event `f` fires (on whatever thread it
+        // ultimately runs on -- see `spawn_servicing_task`, which runs it
+        // via `tokio::task::spawn_blocking`, giving it a dedicated OS
+        // thread for its whole duration) with `command`/`operation_id`, the
+        // same way the CLI path does for its own dispatch. `name` already
+        // matches the CLI's own command-naming convention (see
+        // `command_name` in `main.rs`) for stage/finalize granularity.
+        //
+        // If `f` decides a reboot is needed, also capture this operation's
+        // context (while it's still installed) via `save_reboot_operation`,
+        // so `server::reboot` -- which runs later, after this whole
+        // request and even the daemon's main event loop have returned --
+        // can tag `trident_system_reboot` with this same servicing
+        // operation's identity instead of leaving it untagged.
+        let kind_for_closure = kind.clone();
+        let f = move || {
+            operation_context::run_with_operation(
+                &kind_for_closure,
+                operation_context::OperationSource::Daemon,
+                || {
+                    let result = f();
+                    if let Ok((ExitKind::NeedsReboot, ..)) = &result {
+                        operation_context::save_reboot_operation();
+                    }
+                    result
+                },
+            )
+        };
 
         // Create the gRPC response channel
         let (tx, rx) = mpsc::unbounded_channel();
