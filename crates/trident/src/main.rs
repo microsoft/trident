@@ -166,7 +166,60 @@ fn run_trident(
                     }
                 }
 
+                // Determine this up front, before the pre-warm attach
+                // below: a multiboot install may swap to a brand-new
+                // temporary datastore inside `Trident::install` (see
+                // there), distinct from `datastore_path` here (the
+                // existing host's persistent datastore) -- so skip
+                // attaching an installation ID from the pre-swap datastore
+                // until `install` has settled on which one it actually
+                // uses, rather than attaching the existing host's here and
+                // having it (and every event emitted before the swap
+                // decision) be wrong for the rest of the run. See
+                // `new_deferring_installation_id`'s doc comment for the
+                // full rationale.
+                let defer_installation_id = matches!(
+                    args.command,
+                    Commands::Install {
+                        multiboot: true,
+                        ..
+                    }
+                );
+
+                // Attach this host's installation ID and current servicing
+                // ID to the shared TraceStream before run_with_operation
+                // below fires command_start: Trident::new (further down,
+                // inside the closure) is the usual place installation ID
+                // gets attached, but that's too late for command_start,
+                // which run_with_operation fires immediately, before the
+                // closure even runs. Does not create a *datastore* (see
+                // `TraceStream::attach_ids_if_present`) -- silently does
+                // nothing if the datastore doesn't exist yet, which is
+                // expected for a host's first-ever install. But not purely
+                // read-only: on an existing datastore that predates
+                // `installation_id`, this can perform a one-time migration
+                // write to mint one (see
+                // `DataStore::installation_id_or_migrate`). Skips the
+                // installation-ID half specifically (but still attaches
+                // servicing ID, unaffected by a multiboot swap) when
+                // `defer_installation_id` is set, for the same reason
+                // `Trident::new_deferring_installation_id` is used below.
+                //
+                // Load once and reuse the same snapshot for both the
+                // pre-warm attach here and the operation closure below:
+                // calling `AgentConfig::load()` a second time inside the
+                // closure could observe a different `DatastorePath` (e.g. a
+                // CIH bootstrap swap between the two reads), leaving the
+                // ID cached on `tracestream` here attributed to a
+                // different datastore than the one the operation actually
+                // runs against.
                 let agent_config_result = AgentConfig::load();
+                if let Ok(agent_config) = &agent_config_result {
+                    tracestream.attach_ids_if_present(
+                        agent_config.datastore_path(),
+                        defer_installation_id,
+                    );
+                }
 
                 run_with_operation(&kind, OperationSource::Cli, || {
                     // config_path was already validated (existence-checked)
@@ -185,14 +238,29 @@ fn run_trident(
                             .message("Datastore file does not exist");
                     }
 
-                    let mut trident = Trident::new(
-                        config_path.map(HostConfigurationSource::File),
-                        agent_config.datastore_path(),
-                        logstream.clone(),
-                        tracestream.clone(),
-                    )
+                    let mut trident = if defer_installation_id {
+                        Trident::new_deferring_installation_id(
+                            config_path.map(HostConfigurationSource::File),
+                            agent_config.datastore_path(),
+                            logstream.clone(),
+                            tracestream.clone(),
+                        )
+                    } else {
+                        Trident::new(
+                            config_path.map(HostConfigurationSource::File),
+                            agent_config.datastore_path(),
+                            logstream.clone(),
+                            tracestream.clone(),
+                        )
+                    }
                     .message("Failed to initialize Trident")?;
 
+                    // `Trident::new` (or `Trident::new_deferring_installation_id`
+                    // for a multiboot install) has already attached this
+                    // host's persisted installation ID -- if any -- to the
+                    // shared TraceStream, so every trace/metric emitted
+                    // from here on -- including "trident_start" -- carries
+                    // it once available.
                     let mut datastore = DataStore::open_or_create(agent_config.datastore_path())
                         .message("Failed to open datastore")?;
 
