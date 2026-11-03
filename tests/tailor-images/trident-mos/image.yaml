@@ -1,0 +1,23 @@
+name: trident-mos
+
+base:
+  ref: baremetal
+
+outputs:
+  - format: iso
+
+extraDependencies:
+  - ./iso.yaml
+  - ./files
+  - ./post-install.sh
+  - ../common
+  - ../../../artifacts/rcp-agent
+  - ../../../packaging/static-pcrlock-files
+  - ../../../packaging/selinux-policy-trident
+  - ../../../packaging/systemd/trident-install.service
+  - ../../../packaging/systemd/tridentd.socket
+  - ../../../packaging/systemd/tridentd.service
+  - ../../../tools/cmd/rcp-agent/rcp-agent.service
+
+config:
+  $include: ./iso.yaml
