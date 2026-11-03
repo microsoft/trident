@@ -424,7 +424,7 @@ enum TelemetryStatus {
     /// subscriber installed.
     #[cfg_attr(not(feature = "pytest-generator"), allow(dead_code))]
     NotApplicable,
-    /// `Telemetry=OptOut` (the default): telemetry was never attempted.
+    /// Telemetry was disabled by agent configuration.
     OptedOut,
     /// Opted in, but no usable `AZURE_MONITOR_CONNECTION_STRING` was
     /// compiled into this binary at build time (missing, empty, or failed
@@ -448,9 +448,7 @@ impl TelemetryStatus {
         match self {
             TelemetryStatus::NotApplicable => {}
             TelemetryStatus::OptedOut => {
-                info!(
-                    "Telemetry: disabled (Telemetry=OptOut, the default, in agent configuration)"
-                );
+                info!("Telemetry: disabled by agent configuration");
             }
             TelemetryStatus::NoConnectionString => {
                 info!(
