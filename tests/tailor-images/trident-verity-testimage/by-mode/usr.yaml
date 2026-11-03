@@ -1,0 +1,14 @@
+signing: true
+config:
+  os:
+    $include: ./include/usr-os-common.yaml
+  storage:
+    $include: ./include/usr-storage.yaml
+  output:
+    artifacts:
+      items:
+        - ukis
+      path: ./output
+  previewFeatures:
+    - uki
+    - output-artifacts
