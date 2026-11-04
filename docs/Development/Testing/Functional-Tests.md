@@ -99,6 +99,40 @@ To run a subset of tests, use the `FILTER` variable:
 make functional-test FILTER="custom/test_trident_e2e.py -k test_name"
 ```
 
+### GitHub cloud agent
+
+The GitHub cloud agent uses an existing functional-test image rather than
+building one during the task. The image pin is recorded in
+`scripts/cloud-agent/functional-artifact.json` and includes the ADO build,
+source commit, expected image size, and SHA-256.
+
+On the 1ES runner, install the optional libvirt/QEMU dependencies once:
+
+```bash
+bash scripts/cloud-agent/setup-functional.sh
+```
+
+Run the bounded smoke suite:
+
+```bash
+scripts/cloud-agent/validate.sh functional
+```
+
+The smoke suite verifies the pinned ADO artifact, creates the VM, proves SSH
+connectivity, and runs the positive `helpers` functional tests. It stores the
+large image under `/mnt/storage/trident-cloud-agent/functional` and symlinks it
+to `artifacts/trident-functest.qcow2`.
+
+Run the complete functional suite when the changed behavior requires it:
+
+```bash
+bash scripts/cloud-agent/run-functional.sh full
+```
+
+The generated `provenance.json` beside the cached image records the exact build
+and artifact used. Include its build ID, source commit, and image SHA-256 in the
+pull request validation evidence.
+
 ## Architecture
 
 This section explains the architecture of how functional tests work and
