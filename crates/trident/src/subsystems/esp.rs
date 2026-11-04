@@ -101,8 +101,6 @@ pub fn set_uefi_fallback_contents(
             &source_esp_dir_name,
             &ctx.servicing_type,
             ctx.install_index,
-            ctx.servicing_type == ServicingType::CleanInstall
-                && ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD),
         )?;
     } else {
         debug!(
@@ -111,6 +109,35 @@ pub fn set_uefi_fallback_contents(
         );
     }
     Ok(())
+}
+
+/// Configures clean-install UEFI fallback while retaining MSHV's second-stage
+/// loader when the provisional MSHV internal parameter is enabled.
+pub fn set_clean_install_uefi_fallback_contents(
+    ctx: &EngineContext,
+    mount_point: &Path,
+) -> Result<(), Error> {
+    if !ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD) {
+        return set_uefi_fallback_contents(ctx, ServicingState::CleanInstallStaged, mount_point);
+    }
+
+    let second_stage_path = path::join_relative(mount_point, ctx.esp_mount_path.as_path())
+        .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+        .join(MSHV_SECOND_STAGE_EFI_FILENAME);
+    let second_stage = fs::read(&second_stage_path).context(format!(
+        "Failed to preserve MSHV second-stage loader '{}'",
+        second_stage_path.display()
+    ))?;
+
+    let fallback_result =
+        set_uefi_fallback_contents(ctx, ServicingState::CleanInstallStaged, mount_point);
+    let restore_result = fs::write(&second_stage_path, second_stage).context(format!(
+        "Failed to restore MSHV second-stage loader '{}'",
+        second_stage_path.display()
+    ));
+
+    fallback_result?;
+    restore_result
 }
 
 /// Performs file-based deployment of ESP images from the OS image.
@@ -451,7 +478,7 @@ fn copy_file_artifacts(
         );
     }
 
-    copy_mshv_esp_payload(
+    copy_mshv_esp_payload_for_clean_install(
         temp_mount_dir,
         &path::join_relative(mount_point, &ctx.esp_mount_path),
         ctx,
@@ -460,7 +487,7 @@ fn copy_file_artifacts(
     Ok(())
 }
 
-fn copy_mshv_esp_payload(
+fn copy_mshv_esp_payload_for_clean_install(
     source_esp: &Path,
     destination_esp: &Path,
     ctx: &EngineContext,
@@ -614,7 +641,6 @@ fn copy_boot_files_for_uefi_fallback(
     source_esp_name: &str,
     servicing_type: &ServicingType,
     install_index: usize,
-    preserve_mshv_second_stage: bool,
 ) -> Result<(), Error> {
     let esp_dir_path = path::join_relative(mount_point, esp_mount_path).join(ESP_EFI_DIRECTORY);
     if skip_uefi_fallback_copy(
@@ -638,12 +664,7 @@ fn copy_boot_files_for_uefi_fallback(
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     );
-    if preserve_mshv_second_stage {
-        replace_boot_files_preserving_mshv_second_stage(&source_esp_dir_path, &uefi_fallback_path)
-    } else {
-        replace_boot_files(&source_esp_dir_path, &uefi_fallback_path)
-    }
-    .context(format!(
+    replace_boot_files(&source_esp_dir_path, &uefi_fallback_path).context(format!(
         "Failed to copy boot files from directory '{}' to directory '{}'",
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
@@ -653,27 +674,6 @@ fn copy_boot_files_for_uefi_fallback(
 
 /// Copies boot files from one folder to another.
 pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
-    replace_boot_files_impl(from_dir, to_dir, false)
-}
-
-/// Replaces Trident-managed fallback boot files while retaining MSHV's
-/// `EFI/BOOT/second.efi`.
-///
-/// MSHV's EFI-tree loader chains through this file, but it is not stored in
-/// AZLA. A normal fallback replacement would therefore delete it after the
-/// clean-install provisioning step copied it from the source ESP.
-fn replace_boot_files_preserving_mshv_second_stage(
-    from_dir: &Path,
-    to_dir: &Path,
-) -> Result<(), Error> {
-    replace_boot_files_impl(from_dir, to_dir, true)
-}
-
-fn replace_boot_files_impl(
-    from_dir: &Path,
-    to_dir: &Path,
-    preserve_mshv_second_stage: bool,
-) -> Result<(), Error> {
     trace!(
         "Copying boot files from '{}' to '{}'",
         from_dir.display(),
@@ -712,10 +712,7 @@ fn replace_boot_files_impl(
             let orig_file_name = orig_path.file_name();
             let orig_file_name_string = orig_file_name.to_string_lossy();
             // Skip files that end with .new
-            if !orig_file_name_string.ends_with(".new")
-                && !(preserve_mshv_second_stage
-                    && orig_file_name_string == MSHV_SECOND_STAGE_EFI_FILENAME)
-            {
+            if !orig_file_name_string.ends_with(".new") {
                 let new_file_name = format!("{orig_file_name_string}.old");
                 let to_path = to_dir.join(new_file_name);
                 fs::rename(orig_path.path(), &to_path).context(format!(
@@ -1541,7 +1538,7 @@ mod tests {
         fs::create_dir_all(managed_file.parent().unwrap()).unwrap();
         fs::write(&managed_file, "managed").unwrap();
 
-        copy_mshv_esp_payload(
+        copy_mshv_esp_payload_for_clean_install(
             source_esp.path(),
             destination_esp.path(),
             &EngineContext::default(),
@@ -1578,7 +1575,8 @@ mod tests {
         };
         ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
 
-        copy_mshv_esp_payload(source_esp.path(), destination_esp.path(), &ctx).unwrap();
+        copy_mshv_esp_payload_for_clean_install(source_esp.path(), destination_esp.path(), &ctx)
+            .unwrap();
 
         for relative_path in MSHV_ESP_PAYLOAD_PATHS {
             assert_eq!(
@@ -1613,8 +1611,12 @@ mod tests {
         };
         ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
 
-        let error =
-            copy_mshv_esp_payload(source_esp.path(), destination_esp.path(), &ctx).unwrap_err();
+        let error = copy_mshv_esp_payload_for_clean_install(
+            source_esp.path(),
+            destination_esp.path(),
+            &ctx,
+        )
+        .unwrap_err();
 
         assert!(
             format!("{error:#}").contains(missing_path),
@@ -1641,7 +1643,8 @@ mod tests {
         };
         ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
 
-        copy_mshv_esp_payload(source_esp.path(), destination_esp.path(), &ctx).unwrap();
+        copy_mshv_esp_payload_for_clean_install(source_esp.path(), destination_esp.path(), &ctx)
+            .unwrap();
 
         for relative_path in MSHV_ESP_PAYLOAD_PATHS {
             assert!(!destination_esp.path().join(relative_path).exists());
@@ -1681,8 +1684,7 @@ mod tests {
         };
         ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
 
-        set_uefi_fallback_contents(&ctx, ServicingState::CleanInstallStaged, mount_point.path())
-            .unwrap();
+        set_clean_install_uefi_fallback_contents(&ctx, mount_point.path()).unwrap();
 
         assert_eq!(
             fs::read_to_string(fallback_dir.join(BOOT_EFI)).unwrap(),
