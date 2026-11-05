@@ -26,6 +26,7 @@ sudo NEEDRESTART_MODE=a apt-get install -y --no-install-recommends \
     python3-netifaces \
     qemu-efi \
     qemu-kvm \
+    qemu-utils \
     virt-manager \
     zstd
 
