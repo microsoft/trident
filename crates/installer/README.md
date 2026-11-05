@@ -55,7 +55,9 @@ filesystem or a FAT filesystem on a GPT USB partition. Set it to the actual
 label on the installation medium (Image Customizer ISO output uses `CDROM`).
 The older `cdromLabel` key is accepted as an alias; setting both is an error.
 Media is mounted read-only with filesystem auto-detection at
-`/run/trident/installer-media`. Duplicate labels are rejected. Optional
+`/run/trident/installer-media`. Media discovery waits up to 60 seconds for
+USB/BMC block-device enumeration before reporting a missing source. Duplicate
+labels are rejected. Optional
 `installer/installer.toml` on the mounted media can
 override mode, image directory, and autorun options, but not bootstrap media
 discovery or `serialMode`. Relative HC paths are media-relative; absolute paths and `file://`
@@ -143,6 +145,10 @@ checks. It does not change HC installs or manually supplied recovery URLs.
 **With force enabled, an ISO left in the boot path can reimage the machine on
 every boot.** Remove or deprioritize the media after installation.
 Mounted or read-only potential stream targets are never force-overwritten.
+If the installer USB itself is the smallest disk fitting the COSI, streaming
+stops rather than overwriting it; use a USB smaller than the COSI's original
+disk size or an HC selecting an explicit target. The current StreamDisk RPC
+cannot exclude a specific disk.
 **HC installation intentionally has no repeat-install/Force guard:** the HC is
 the operator's authority to overwrite its selected disks. Remove ISO media or
 correct boot order to avoid repeated HC-driven installations.

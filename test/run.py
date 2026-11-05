@@ -26,7 +26,7 @@ CODE_CANDIDATES = [
 ]
 
 
-def command(iso, scratch, code, memory, cpus, display, vnc=None):
+def command(iso, scratch, code, memory, cpus, display, vnc=None, usb_media=None):
     acceleration = (
         ["-enable-kvm", "-cpu", "host"] if os.access("/dev/kvm", os.W_OK) else []
     )
@@ -66,6 +66,17 @@ def command(iso, scratch, code, memory, cpus, display, vnc=None):
                 f"unix:{scratch / 'monitor.sock'},server=on,wait=off",
                 "-vnc",
                 f"127.0.0.1:{vnc}",
+            ]
+        )
+    if usb_media is not None:
+        launch.extend(
+            [
+                "-device",
+                "qemu-xhci,id=usb",
+                "-drive",
+                f"if=none,id=installer-usb,file={usb_media},format=raw,readonly=on",
+                "-device",
+                "usb-storage,bus=usb.0,drive=installer-usb,bootindex=3",
             ]
         )
     return launch
@@ -165,6 +176,11 @@ def main():
         description="Boot the installer ISO in a disposable UEFI VM"
     )
     parser.add_argument("--iso", type=Path)
+    parser.add_argument(
+        "--usb-media",
+        type=Path,
+        help="Attach a GPT/FAT USB image read-only; never pass a host block device",
+    )
     displays = parser.add_mutually_exclusive_group()
     displays.add_argument("--display", default="gtk", choices=["gtk", "sdl", "none"])
     displays.add_argument(
@@ -203,7 +219,10 @@ def main():
     if iso is None or not iso.is_file():
         parser.error("Build the ISO first, or provide --iso PATH")
     iso = iso.resolve()
-    if "," in str(iso):
+    usb_media = args.usb_media.resolve() if args.usb_media is not None else None
+    if usb_media is not None and not usb_media.is_file():
+        parser.error("--usb-media must be a regular image file, not a physical device")
+    if any("," in str(path) for path in (iso, usb_media) if path is not None):
         parser.error("QEMU drive paths containing commas are not supported")
     code = next((path for path in CODE_CANDIDATES if path.is_file()), None)
     if code is None:
@@ -231,6 +250,7 @@ def main():
                     args.cpus,
                     args.display,
                     args.vnc,
+                    usb_media,
                 )
             )
         )
@@ -253,7 +273,14 @@ def main():
             check=True,
         )
         launch = command(
-            iso, scratch, code, args.memory, args.cpus, args.display, args.vnc
+            iso,
+            scratch,
+            code,
+            args.memory,
+            args.cpus,
+            args.display,
+            args.vnc,
+            usb_media,
         )
         print(
             f"ISO: {iso}\nDisposable disk: {scratch / 'disk.qcow2'}\nSerial log: {scratch / 'serial.log'}",
