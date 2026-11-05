@@ -30,9 +30,9 @@ serialMode = "logs"
 serialVerbosity = "debug"
 
 [media]
-cdromLabel = "TRIDENT_INSTALL"
+filesystemLabel = "TRD_INSTALL"
 cosiDirectory = "cosi/"
-# Instead of cdromLabel, supply mountPath for already-mounted media.
+# Instead of filesystemLabel, supply mountPath for already-mounted media.
 
 [autorun]
 # If omitted, use /etc/trident/config.yaml when that file exists.
@@ -49,8 +49,14 @@ an error rather than showing an unfinished serial TUI.
 `serialVerbosity` defaults to `debug` and accepts `off`, `error`, `warn`,
 `info`, `debug`, and `trace`.
 
-Media is mounted read-only at `/run/trident/installer-media`. Duplicate labels
-are rejected. Optional `installer/installer.toml` on the mounted media can
+`media.filesystemLabel` is a filesystem label, not a CD-ROM device name. The
+FAT-compatible default (`TRD_INSTALL`, 11 characters) can identify an ISO9660
+filesystem or a FAT filesystem on a GPT USB partition. Set it to the actual
+label on the installation medium (Image Customizer ISO output uses `CDROM`).
+The older `cdromLabel` key is accepted as an alias; setting both is an error.
+Media is mounted read-only with filesystem auto-detection at
+`/run/trident/installer-media`. Duplicate labels are rejected. Optional
+`installer/installer.toml` on the mounted media can
 override mode, image directory, and autorun options, but not bootstrap media
 discovery or `serialMode`. Relative HC paths are media-relative; absolute paths and `file://`
 refer to the live filesystem. HTTP(S) HC sources are supported.

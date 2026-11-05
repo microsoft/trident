@@ -13,7 +13,7 @@ pub(super) const DEFAULT_CONFIG: &str = "/etc/trident/installer.toml";
 pub(super) const DEFAULT_HOST_CONFIGURATION: &str = "/etc/trident/config.yaml";
 pub(super) const MEDIA_CONFIG: &str = "installer/installer.toml";
 pub(super) const MEDIA_MOUNT: &str = "/run/trident/installer-media";
-pub(super) const DEFAULT_MEDIA_LABEL: &str = "TRIDENT_INSTALL";
+pub(super) const DEFAULT_MEDIA_LABEL: &str = "TRD_INSTALL";
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -73,8 +73,8 @@ impl SerialVerbosity {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Media {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cdrom_label: Option<String>,
+    #[serde(default, alias = "cdromLabel", skip_serializing_if = "Option::is_none")]
+    pub filesystem_label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mount_path: Option<PathBuf>,
     #[serde(default = "default_cosi_directory")]
@@ -84,7 +84,7 @@ pub(super) struct Media {
 impl Default for Media {
     fn default() -> Self {
         Self {
-            cdrom_label: None,
+            filesystem_label: None,
             mount_path: None,
             cosi_directory: default_cosi_directory(),
         }
@@ -144,13 +144,13 @@ impl Config {
             "serialMode = \"ui\" is not implemented yet; use \"logs\""
         );
         ensure!(
-            self.media.cdrom_label.is_none() || self.media.mount_path.is_none(),
-            "media.cdromLabel and media.mountPath are mutually exclusive"
+            self.media.filesystem_label.is_none() || self.media.mount_path.is_none(),
+            "media.filesystemLabel and media.mountPath are mutually exclusive"
         );
-        if let Some(label) = &self.media.cdrom_label {
+        if let Some(label) = &self.media.filesystem_label {
             ensure!(
                 !label.trim().is_empty(),
-                "media.cdromLabel must not be empty"
+                "media.filesystemLabel must not be empty"
             );
         }
         if let Some(path) = &self.media.mount_path {
@@ -197,8 +197,10 @@ impl Config {
         );
         if let Some(media) = overlay.get("media") {
             ensure!(
-                media.get("cdromLabel").is_none() && media.get("mountPath").is_none(),
-                "Media configuration cannot change bootstrap cdromLabel or mountPath"
+                media.get("filesystemLabel").is_none()
+                    && media.get("cdromLabel").is_none()
+                    && media.get("mountPath").is_none(),
+                "Media configuration cannot change bootstrap filesystemLabel or mountPath"
             );
         }
         let mut base = TomlValue::try_from(self)?;
@@ -288,6 +290,7 @@ mod tests {
         assert!(config.autorun.reboot);
         assert!(!config.autorun.force);
         assert_eq!(config.media.cosi_directory, Path::new("cosi"));
+        assert_eq!(DEFAULT_MEDIA_LABEL.len(), 11);
         Config::parse("mode = 'interactive'")
             .unwrap()
             .require_autorun()
@@ -324,7 +327,7 @@ mod tests {
         let config = Config::parse(include_str!("../../../packaging/installer.toml")).unwrap();
         config.require_autorun().unwrap();
         assert_eq!(
-            config.media.cdrom_label.as_deref(),
+            config.media.filesystem_label.as_deref(),
             Some(DEFAULT_MEDIA_LABEL)
         );
         assert!(config.autorun.reboot);
@@ -335,7 +338,7 @@ mod tests {
         Config::parse(indoc! {"
             mode = 'autorun'
             [media]
-            cdromLabel = 'TEST'
+            filesystemLabel = 'TEST'
             mountPath = '/media'
         "})
         .unwrap_err();
@@ -379,9 +382,23 @@ mod tests {
         assert!(!config.autorun.reboot);
         assert!(config.autorun.force);
         assert_eq!(config.media.cosi_directory, Path::new("cosi"));
+        fs::write(&path, "[media]\nfilesystemLabel = 'OTHER'").unwrap();
+        config.overlay(root.path()).unwrap_err();
         fs::write(&path, "[media]\ncdromLabel = 'OTHER'").unwrap();
         config.overlay(root.path()).unwrap_err();
         fs::write(&path, "serialMode = 'ui'").unwrap();
         config.overlay(root.path()).unwrap_err();
+    }
+
+    #[test]
+    fn legacy_cdrom_label_alias_still_mounts_the_same_filesystem() {
+        let legacy = Config::parse("mode = 'autorun'\n[media]\ncdromLabel = 'CDROM'").unwrap();
+        let generic =
+            Config::parse("mode = 'autorun'\n[media]\nfilesystemLabel = 'CDROM'").unwrap();
+        assert_eq!(legacy, generic);
+        Config::parse(
+            "mode = 'autorun'\n[media]\ncdromLabel = 'CDROM'\nfilesystemLabel = 'TRD_INSTALL'",
+        )
+        .unwrap_err();
     }
 }
