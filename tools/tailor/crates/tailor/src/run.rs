@@ -13,6 +13,9 @@ use std::{
 
 use indexmap::IndexMap;
 use serde::Serialize;
+use tokio_util::sync::CancellationToken;
+use tracing::warn;
+
 use tailor_config::{
     Arch, BaseImageCatalogue, BaseSource, ImageDefinition, Operation, OutputArtifactsPolicy,
     OutputFormat, OutputSpec, PreviewFeature, PullPolicy, RenderedCell, Runtime, ToolConfig,
@@ -32,7 +35,6 @@ use tailor_exec::{
     BollardRuntime, IcExecutor, NoopRuntime, ResolveInputs, WorktreeLock, ca_cert_name, resolve,
 };
 use tailor_resolve::{OciFetcher, OciResolver};
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     cli::{
@@ -1344,7 +1346,9 @@ async fn convert(args: &ConvertArgs, engine: &EngineOverride) -> Result<(), AppE
         }),
         _ => Ok(()),
     };
-    let _ = fs::remove_dir_all(&staging);
+    if let Err(err) = fs::remove_dir_all(&staging) {
+        warn!(path = %staging.display(), error = %err, "failed to remove convert staging directory");
+    }
     let result = result.map_err(AppError::from)?;
     if result.exit_code != 0 {
         return Err(AppError::Message(format!(
@@ -1575,7 +1579,9 @@ async fn build(
     // unreachable (`meta/docs/2026-06-29-container-runtimes.md` §4-§5).
     let runtime = establish_runtime(engine, &tool).await?;
     let base_hash_cache_dir = output_dir.join(TAILOR_STATE_DIR).join(BASE_HASH_CACHE_DIR);
-    let _ = fs::create_dir_all(&base_hash_cache_dir);
+    if let Err(err) = fs::create_dir_all(&base_hash_cache_dir) {
+        warn!(path = %base_hash_cache_dir.display(), error = %err, "base hash cache unavailable; files will be rehashed");
+    }
     let resolver = OciResolver::with_cache_dir(base_hash_cache_dir.clone());
     let lock = Lockfile::read(&workspace.root.join(LOCK_FILE))?;
     // Resolve toolchains and tools-dir sources over the full dependency closure
@@ -1675,15 +1681,17 @@ async fn clean(
 
     let mut paths = Vec::new();
     for target in &targets {
-        // A signed image also drops an enrollable CA cert beside each cell's image (§6); remove it
-        // too. Lenient on config: `validate` surfaces signing errors; cleanup should not fail on them.
-        let signed = tailor_config::resolve_signing(
+        // Keep cleanup lenient on invalid signing config, but surface the skipped CA cert.
+        let signed = match tailor_config::resolve_signing(
             target.definition.signing.as_ref(),
             tool.signing.as_ref(),
-        )
-        .ok()
-        .flatten()
-        .is_some();
+        ) {
+            Ok(signing) => signing.is_some(),
+            Err(err) => {
+                warn!(image = target.name(), error = %err, "cannot resolve signing during clean; CA certificate may remain");
+                false
+            }
+        };
         for cell in cells_selected(target, selector)? {
             paths.push(output_dir.join(tailor_core::artifact_name(
                 cell.slug.as_ref(),
