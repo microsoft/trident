@@ -20,6 +20,18 @@ tailor --manifest tests/images/tailor.yaml build tui-installer \
 
 The generated ISO is `tests/images/artifacts/tui-installer_amd64_iso.iso`.
 Build this image with Tailor, not the legacy `testimages.py` CLI.
+To view the installer in a disposable VM:
+
+```console
+python3 test/run.py --iso tests/images/artifacts/tui-installer_amd64_iso.iso --vnc
+```
+
+Connect a VNC viewer to `vnc://127.0.0.1:5901`; the VM waits for a viewer
+before booting. If the VM host is remote, tunnel that port as described in
+[`test/README.md`](../../../test/README.md#over-ssh-including-from-a-wayland-desktop).
+Use `--disk-size` when the COSI needs more than the launcher's default 8 GiB
+disposable target disk.
+
 The checked-in configuration uses `filesystemLabel = "CDROM"` to match Image
 Customizer ISO output; change it if the image is copied to differently labelled
 media. `trident-installer` is optional in the RPM build, but its package must
