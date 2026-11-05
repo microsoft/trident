@@ -1,7 +1,7 @@
-# 0000 Slot-Owned MSHV Boot Payloads
+# 0924 Slot-Owned MSHV Boot Payloads
 
 - Date: 2026-11-05
-- RFC PR: Not opened.
+- RFC PR: [microsoft/trident#924](https://github.com/microsoft/trident/pull/924)
 - Issue: Not created.
 - Status: Draft proposal; not implemented or boot-validated.
 
