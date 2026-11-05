@@ -40,36 +40,6 @@ stages:
     displayName: Download images and tools for testing
 
     jobs:
-      # Always required:
-      - job: Gotools
-        displayName: "Download go-tools"
-        timeoutInMinutes: 10
-        pool:
-          type: linux
-
-        variables:
-          ob_outputDirectory: /tmp/build
-          ob_artifactBaseName: "go-tools"
-
-        steps:
-          - task: DownloadPipelineArtifact@2
-            inputs:
-              source: specific
-              project: "ECF"
-              definition: ${{ parameters.definition }}
-              runVersion: ${{ parameters.runVersion }}
-              branchName: "refs/heads/${{ parameters.branch }}"
-              runId: ${{ parameters.tridentPipelineRunId }}
-              allowFailedBuilds: ${{ parameters.allowFailedBuilds }}
-              artifactName: $(ob_artifactBaseName)
-              patterns: |
-                netlaunch
-                netlisten
-                mkcosi
-                storm-trident
-                virtdeploy
-              targetPath: $(ob_outputDirectory)
-
       # Servicing images:
       - ${{ if eq(parameters.servicingImages, true) }}:
           - job: SSHKeys

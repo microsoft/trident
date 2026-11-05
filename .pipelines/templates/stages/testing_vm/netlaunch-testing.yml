@@ -56,6 +56,8 @@ stages:
       - DefineTests_VM_${{ parameters.runtimeEnv }}
       - ${{ if eq(parameters.testingRun, true) }}:
           - DownloadTestingElements
+          # go-tools is published by BuildingTools, not by DownloadTestingElements.
+          - BuildingTools
       - ${{ else }}:
           - BuildingTools
           - ${{ if eq(parameters.runtimeEnv, 'container') }}:
