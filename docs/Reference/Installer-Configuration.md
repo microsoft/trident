@@ -30,11 +30,52 @@ force = false
 Only `mode` is required. Other fields may be omitted; unknown fields and
 invalid values are errors.
 
+## Selecting Install or StreamDisk
+
+`mode = "autorun"` means **start without an interactive source picker**. It
+does not choose the Trident operation; `mode = "install"` and `mode = "stream"`
+are not valid TOML settings. After looking for media and applying any
+[media-local overrides](#optional-configuration-on-the-media), autorun makes
+this choice:
+
+| Priority | Condition | Operation |
+| --- | --- | --- |
+| 1 | `autorun.hostConfiguration` is set | **Install** using that Host Configuration, even if a COSI is present. |
+| 2 | Otherwise, `/etc/trident/config.yaml` exists in the live OS | **Install** using that file, even if a COSI is present. |
+| 3 | Otherwise, media contains a `.cosi` file | **StreamDisk** using the first regular COSI in `media.cosiDirectory`, sorted by filename. |
+| 4 | Neither source is available | Show recovery actions on the graphical console, or report an error without one. |
+
+For example, to **Install** from a Host Configuration placed on an
+Image Customizer ISO:
+
+```toml
+# /etc/trident/installer.toml in the live installer OS
+mode = "autorun"
+
+[media]
+filesystemLabel = "CDROM"
+
+[autorun]
+hostConfiguration = "installer/host.yaml"
+reboot = false
+```
+
+Put `installer/host.yaml` on the ISO filesystem (not only in the live OS).
+If its `image.url` is `installer://image`, also put a COSI in `cosi/`; the
+marker resolves to the first discovered COSI, but the operation remains
+**Install**, with disk layout taken from the Host Configuration. An explicit
+image URL in the Host Configuration does not require a media COSI. See the
+[Host Configuration reference](./Host-Configuration/Host-Configuration.md)
+for its YAML schema. To **StreamDisk** instead, leave
+`autorun.hostConfiguration` unset *and* ensure
+`/etc/trident/config.yaml` is absent from the live OS. A specified but
+invalid Host Configuration fails rather than falling back to streaming.
+
 ## Fields
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `mode` | **Required** | Only `"autorun"` works. `"interactive"` is reserved and rejected. |
+| `mode` | **Required** | Only `"autorun"` works; this is a startup mode, not the Install/StreamDisk selector. `"interactive"` is reserved and rejected. |
 | `serialMode` | `"logs"` | Sends plain installer and Trident log records to active serial consoles, without a serial TUI. `"ui"` is reserved and rejected. |
 | `serialVerbosity` | `"debug"` | Serial log filter: `"off"`, `"error"`, `"warn"`, `"info"`, `"debug"`, or `"trace"`. Independent of the on-screen log filter, which starts at Debug. |
 | `media.filesystemLabel` | `"TRD_INSTALL"` | Exact filesystem label to find on optical media or a USB partition. `TRD_INSTALL` fits FAT's 11-character label limit; Image Customizer ISOs use `CDROM` instead. |
@@ -62,12 +103,11 @@ source does not wait for media.
 | File URL | `"file:///etc/trident/config.yaml"` | A file in the live installer OS. |
 | HTTP(S) URL | `"https://example.com/host.yaml"` | Fetched over the network. |
 
-Host Configuration input must be valid YAML and is limited to 2 MiB. A
-configured or default Host Configuration takes priority over COSI streaming;
-an invalid or unreadable one is an error, **not** permission to fall back to
-a COSI. A Host Configuration image URL of `installer://image` resolves to the
-first discovered COSI on the media; it fails if no COSI is available. Authored
-disk paths and image checksums remain unchanged.
+Host Configuration input must be valid YAML and is limited to 2 MiB. A Host
+Configuration image URL of `installer://image` fails if no COSI is available.
+Authored disk paths and image checksums remain unchanged. Even with an
+explicit Host Configuration source, autorun checks for media first (up to
+the 60-second label-discovery wait) so it can resolve `installer://image`.
 
 Without a Host Configuration, the first regular COSI in `cosiDirectory` is
 streamed. If neither source is available, the graphical console offers
@@ -80,12 +120,19 @@ installer USB.
 
 After finding or mounting media, the installer merges
 `installer/installer.toml` from its root over the bootstrap configuration.
-For example:
+For example, this media-local file selects **Install** without changing the
+bootstrap file baked into the live OS:
 
 ```toml
+# /installer/installer.toml on the media
 [autorun]
+hostConfiguration = "installer/host.yaml"
 reboot = false
 ```
+
+The bootstrap `media.filesystemLabel` must already match the media for this
+overlay to be found. Place the referenced `installer/host.yaml` on the same
+media.
 
 The media file can change `serialVerbosity`, `media.cosiDirectory`, `mode`,
 and `autorun` options. It cannot change `serialMode`,
