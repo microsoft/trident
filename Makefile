@@ -581,6 +581,7 @@ bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 
 bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtdeploy/*
 	@mkdir -p bin
+	cd tools && go generate pkg/tridentgrpc/grpc.go
 	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
 bin/rcp-agent: tools/cmd/rcp-agent/* tools/go.sum tools/pkg/rcp/* tools/pkg/rcp/proxy/* tools/pkg/rcp/agent/*
