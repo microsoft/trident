@@ -18,7 +18,7 @@ graph TD
 | Crate | Responsibility |
 | --- | --- |
 | `tailor-config` | Parse `tailor.yaml`/`image.yaml`, expand matrices, merge fragments, interpolate params, render cells. |
-| `tailor-core` | Domain model, build plans, lockfile/stamp logic, orchestration, and port traits. |
+| `tailor-core` | Domain model, build plans, incremental stamps, orchestration, and port traits. |
 | `tailor-resolve` | Resolve toolchain and base image digests/hashes. |
 | `tailor-exec` | Docker/Bollard execution adapter, IC arg construction, path translation, cleanup. |
 | `tailor-sign` | Host-side signing backends for the `Signer` port (openssl/`sbsign`); preview-gated. |
