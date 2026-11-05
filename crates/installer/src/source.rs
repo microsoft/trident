@@ -51,6 +51,7 @@ pub(super) enum Plan {
 }
 
 impl Plan {
+    /// Describes the selected source for the progress window.
     pub(super) fn description(&self) -> String {
         match self {
             Self::Install { source, .. } => format!("Install from {source}"),
@@ -59,6 +60,9 @@ impl Plan {
     }
 }
 
+/// Resolves installation media and returns an install or stream plan with progress callbacks.
+///
+/// Only autorun waits for media enumeration; explicit recovery sources proceed immediately.
 pub(super) fn prepare_with_progress(
     settings: &Config,
     request: &Request,
@@ -69,6 +73,7 @@ pub(super) fn prepare_with_progress(
 }
 
 #[cfg(test)]
+/// Prepares a plan from an already-mounted media root for tests.
 fn prepare_from_media(
     settings: &Config,
     request: &Request,
@@ -77,6 +82,7 @@ fn prepare_from_media(
     prepare_from_media_with_progress(settings, request, root, &mut |_| Ok(()))
 }
 
+/// Merges media settings and selects a Host Configuration before falling back to the first COSI.
 fn prepare_from_media_with_progress(
     settings: &Config,
     request: &Request,
@@ -145,6 +151,10 @@ fn prepare_from_media_with_progress(
     Ok((settings, plan))
 }
 
+/// Finds labelled media and mounts it read-only, or validates a configured mount path.
+///
+/// When `wait_for_media` is set, waits up to the discovery timeout for late USB partitions.
+/// A pre-existing mount must belong to the selected device and be read-only.
 fn media_root(
     settings: &Config,
     wait_for_media: bool,
@@ -216,6 +226,7 @@ fn media_root(
     Ok(Some(target.into()))
 }
 
+/// Accepts only credential-free HTTP(S) URLs for manually entered recovery sources.
 pub(super) fn remote_url(source: &str) -> Result<Url, Error> {
     let url = Url::parse(source).context("Enter an absolute http:// or https:// URL")?;
     ensure!(
@@ -229,6 +240,9 @@ pub(super) fn remote_url(source: &str) -> Result<Url, Error> {
     Ok(url)
 }
 
+/// Resolves local, remote, or media-relative Host Configuration sources.
+///
+/// Media-relative paths must resolve beneath the media root.
 fn source_url(source: &str, root: Option<&Path>) -> Result<Url, Error> {
     if source.starts_with('/') {
         return file_url(Path::new(source));
@@ -253,11 +267,13 @@ fn source_url(source: &str, root: Option<&Path>) -> Result<Url, Error> {
     file_url(&path)
 }
 
+/// Converts a local path to a `file://` URL, preserving URL escaping.
 fn file_url(path: &Path) -> Result<Url, Error> {
     Url::from_file_path(path)
         .map_err(|()| anyhow!("Cannot convert '{}' to a file URL", path.display()))
 }
 
+/// Opens a local file or a time-limited HTTP(S) response for source inspection.
 fn reader(url: &Url) -> Result<Box<dyn Read>, Error> {
     match url.scheme() {
         "file" => {
@@ -280,6 +296,7 @@ fn reader(url: &Url) -> Result<Box<dyn Read>, Error> {
     }
 }
 
+/// Reads a Host Configuration as UTF-8 while enforcing the configured byte limit.
 fn read_text(url: &Url) -> Result<String, Error> {
     let mut text = String::new();
     reader(url)?
@@ -292,6 +309,7 @@ fn read_text(url: &Url) -> Result<String, Error> {
     Ok(text)
 }
 
+/// Parses and validates a Host Configuration, resolving `installer://image` to the chosen COSI.
 pub(super) fn resolve_host_configuration(
     text: &str,
     selected: Option<&Path>,
@@ -331,6 +349,7 @@ struct ImageMetadata {
     fs_uuid: Option<String>,
 }
 
+/// Extracts and checks COSI disk metadata within a bounded archive read.
 fn metadata(reader: impl Read) -> Result<Metadata, Error> {
     let mut archive = Archive::new(reader.take(MAX_METADATA_BYTES));
     for entry in archive.entries().context("Invalid COSI archive")? {
@@ -368,6 +387,9 @@ fn metadata(reader: impl Read) -> Result<Metadata, Error> {
     bail!("COSI metadata.json was not found within the metadata read limit")
 }
 
+/// Checks disk eligibility and reports whether a complete matching image is already present.
+///
+/// `force` bypasses only the repeat-install guard, not the installer-media safety check.
 pub(super) fn stream_preflight(image: &Url, force: bool) -> Result<bool, Error> {
     let metadata = metadata(reader(image)?)?;
     let devices = lsblk::list().context("Failed to inspect attached disks")?;
@@ -394,6 +416,7 @@ pub(super) fn stream_preflight(image: &Url, force: bool) -> Result<bool, Error> 
     Ok(contains_image(&devices, &expected))
 }
 
+/// Refuses streaming if Trident could choose a mounted or read-only smallest fitting disk.
 fn ensure_stream_target_safe(devices: &[BlockDevice], required: u64) -> Result<(), Error> {
     let candidates = devices
         .iter()
@@ -421,7 +444,9 @@ fn ensure_stream_target_safe(devices: &[BlockDevice], required: u64) -> Result<(
     Ok(())
 }
 
+/// Checks whether every filesystem UUID in the COSI is present on attached devices.
 fn contains_image(devices: &[BlockDevice], expected: &HashSet<String>) -> bool {
+    /// Collects filesystem UUIDs recursively, normalizing case for matching.
     fn collect(devices: &[BlockDevice], present: &mut HashSet<String>) {
         for device in devices {
             if let Some(uuid) = &device.fsuuid {
@@ -446,6 +471,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    /// Ensures recovery sources cannot silently fall back to local files or other schemes.
     fn remote_sources_are_explicit_and_limited() {
         remote_url("https://example.com/image.cosi").unwrap();
         for invalid in [
@@ -459,6 +485,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures the image marker needs a COSI and leaves other image URLs untouched.
     fn marker_requires_an_image_and_does_not_touch_other_urls() {
         let yaml = valid_host_configuration();
         resolve_host_configuration(yaml, None).unwrap_err();
@@ -480,6 +507,7 @@ mod tests {
         );
     }
 
+    /// Provides a valid Host Configuration containing the installer image marker.
     fn valid_host_configuration() -> &'static str {
         indoc! {"
             storage:
@@ -508,6 +536,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures Host Configuration takes priority and invalid input never falls back to COSI.
     fn host_configuration_wins_and_invalid_hc_never_falls_back() {
         let root = TempDir::new().unwrap();
         fs::create_dir(root.path().join("cosi")).unwrap();
@@ -531,6 +560,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures an oversized Host Configuration is rejected before parsing.
     fn configuration_read_limit_is_enforced() {
         let root = TempDir::new().unwrap();
         let path = root.path().join("oversized.yaml");
@@ -544,6 +574,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures unreadable and missing COSI metadata cannot pass preflight.
     fn truncated_and_missing_metadata_are_errors() {
         metadata(Cursor::new(b"not a tar file")).unwrap_err();
         let mut builder = TarBuilder::new(Vec::new());
@@ -552,6 +583,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures repeat-install detection requires every expected filesystem UUID.
     fn repeat_guard_requires_the_complete_nonempty_uuid_set() {
         let devices = vec![BlockDevice {
             children: vec![BlockDevice {
@@ -568,6 +600,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures a small installer USB is skipped and an eligible mounted USB is refused.
     fn smaller_gpt_usb_media_is_not_a_stream_target() {
         let media = BlockDevice {
             name: "sdb".into(),

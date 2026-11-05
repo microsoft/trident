@@ -16,6 +16,7 @@ SPEC.loader.exec_module(VM)
 
 class VmCommandTests(unittest.TestCase):
     def test_usb_media_is_a_read_only_gpt_image_with_lower_boot_priority(self):
+        """The USB fixture is attached read-only behind the disposable disk."""
         image = Path("/tmp/disposable-installer-usb.raw")
         launch = VM.command(
             Path("/tmp/installer-test.iso"),
@@ -35,11 +36,15 @@ class VmCommandTests(unittest.TestCase):
         self.assertNotIn("-virtfs", launch)
 
     def test_follows_new_serial_records_without_replaying_firmware_escape_codes(self):
+        """Only complete and newly appended installer records reach the console."""
+
         class RunningProcess:
             def __init__(self):
+                """Create a flag for simulated guest completion."""
                 self.finished = threading.Event()
 
             def poll(self):
+                """Return an exit status only after the guest finishes."""
                 return 0 if self.finished.is_set() else None
 
         process = RunningProcess()
@@ -48,6 +53,7 @@ class VmCommandTests(unittest.TestCase):
             output = io.StringIO()
 
             def guest():
+                """Write firmware noise followed by incremental installer records."""
                 time.sleep(0.03)
                 with serial.open("w") as log:
                     log.write("\x1b[2JWelcome to firmware\r\n")
@@ -74,6 +80,7 @@ class VmCommandTests(unittest.TestCase):
             )
 
     def test_vnc_is_headless_and_bound_to_loopback(self):
+        """VNC mode pauses boot and binds only the loopback interface."""
         launch = VM.command(
             Path("/tmp/installer-test.iso"),
             Path("/tmp/installer-test-owned"),
@@ -93,8 +100,11 @@ class VmCommandTests(unittest.TestCase):
         self.assertNotIn("gtk", launch)
 
     def test_vnc_connection_resumes_paused_guest_after_viewer_handshake(self):
+        """A viewer handshake must precede the QMP continue command."""
+
         class RunningProcess:
             def poll(self):
+                """Simulate a still-running guest."""
                 return None
 
         with tempfile.TemporaryDirectory() as directory:
@@ -103,6 +113,7 @@ class VmCommandTests(unittest.TestCase):
             ready = []
 
             def monitor_server():
+                """Serve the minimal QMP handshake and a viewer connection event."""
                 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
                     listener.bind(str(monitor))
                     listener.listen(1)
@@ -136,6 +147,7 @@ class VmCommandTests(unittest.TestCase):
             self.assertEqual(ready, [True])
 
     def test_vm_exposes_only_new_disposable_storage(self):
+        """Only the new qcow2 disk may be a writable guest storage device."""
         scratch = Path("/tmp/installer-test-owned")
         launch = VM.command(
             Path("/tmp/installer-test.iso"),

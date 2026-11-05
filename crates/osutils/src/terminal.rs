@@ -32,17 +32,20 @@ pub fn set_vt_palette(output: &mut impl Write, colours: &[(u8, u8, u8, u8)]) -> 
     output.flush()
 }
 
+/// Restores the Linux virtual console's built-in ANSI colour palette.
 pub fn reset_vt_palette(output: &mut impl Write) -> io::Result<()> {
     output.write_all(b"\x1b]R")?;
     output.flush()
 }
 
+/// Reads the active kernel consoles, resolving `tty0` to the graphical `tty1`.
 pub fn active_consoles() -> Result<Vec<PathBuf>, Error> {
     let active = fs::read_to_string(ACTIVE_CONSOLES_PATH)
         .context("Failed to read active kernel consoles")?;
     console_paths(&active)
 }
 
+/// Validates console names before producing unique `/dev` paths.
 fn console_paths(active: &str) -> Result<Vec<PathBuf>, Error> {
     let mut consoles = Vec::new();
     for name in active.split_whitespace() {
@@ -64,6 +67,7 @@ fn console_paths(active: &str) -> Result<Vec<PathBuf>, Error> {
     Ok(consoles)
 }
 
+/// Prefers `tty1` for the TUI and otherwise uses the first active console.
 pub fn preferred_console(consoles: &[PathBuf]) -> Result<&Path, Error> {
     consoles
         .iter()
@@ -76,6 +80,9 @@ pub fn preferred_console(consoles: &[PathBuf]) -> Result<&Path, Error> {
         .context("No console available")
 }
 
+/// Claims a character terminal as the controlling TTY and redirects stdin/stdout to it.
+///
+/// The caller must stop competing getty units before attaching.
 pub fn attach(path: impl AsRef<Path>) -> Result<File, Error> {
     let path = path.as_ref();
     let terminal = OpenOptions::new()
@@ -106,6 +113,7 @@ pub fn attach(path: impl AsRef<Path>) -> Result<File, Error> {
     Ok(terminal)
 }
 
+/// Transfers foreground terminal ownership while blocking `SIGTTOU` during the handoff.
 pub(crate) fn set_foreground_group(terminal: &File, group: Pid) -> io::Result<()> {
     let mut blocked = SigSet::empty();
     blocked.add(Signal::SIGTTOU);
@@ -117,6 +125,7 @@ pub(crate) fn set_foreground_group(terminal: &File, group: Pid) -> io::Result<()
     Ok(())
 }
 
+/// Runs an interactive Bash on the supplied terminal and returns when it exits.
 pub fn shell(terminal: &File) -> Result<(), Error> {
     Dependency::Bash
         .cmd()
@@ -130,6 +139,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Ensures graphical console aliases are deduplicated and invalid names fail.
     fn graphical_console_wins_and_aliases_are_deduplicated() {
         let consoles = console_paths("ttyS0 tty0 tty1").unwrap();
         assert_eq!(
@@ -145,6 +155,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures VT palette slots are encoded correctly and out-of-range slots fail.
     fn linux_vt_palette_sequences_set_rgb_slots_and_reset() {
         let mut output = Vec::new();
         set_vt_palette(&mut output, &[(0, 11, 17, 24), (15, 229, 234, 236)]).unwrap();

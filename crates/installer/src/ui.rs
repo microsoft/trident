@@ -76,6 +76,8 @@ const VT_PALETTE: &[(u8, Color, Color)] = &[
     (15, COLOR_INFO, Color::White),
 ];
 
+/// Maps known theme RGB colors to distinct ANSI roles on Linux VTs.
+/// Other colors and non-VT terminals retain the original value.
 fn theme_color(color: Color, linux_vt: bool) -> Color {
     if !linux_vt {
         return color;
@@ -87,6 +89,7 @@ fn theme_color(color: Color, linux_vt: bool) -> Color {
         .unwrap_or(color)
 }
 
+/// Builds the Linux VT palette entries, rejecting any theme slot without an RGB value.
 fn vt_rgb_palette() -> Result<Vec<(u8, u8, u8, u8)>, io::Error> {
     VT_PALETTE
         .iter()
@@ -152,6 +155,7 @@ enum LogSource {
 }
 
 impl LogSource {
+    /// Returns the source tag used in both displayed and mirrored diagnostics.
     fn label(self) -> &'static str {
         match self {
             Self::Inst => "INST",
@@ -159,6 +163,7 @@ impl LogSource {
         }
     }
 
+    /// Uses the source's theme color or its Linux VT equivalent.
     fn color(self, linux_vt: bool) -> Color {
         theme_color(
             match self {
@@ -180,11 +185,13 @@ struct LogEntry {
 }
 
 impl LogEntry {
+    /// Formats elapsed time as a minutes-and-seconds prefix without wrapping at an hour.
     fn prefix(&self) -> String {
         let seconds = self.elapsed.as_secs();
         format!("{:02}:{:02} [", seconds / 60, seconds % 60)
     }
 
+    /// Prefixes each line of a diagnostic for plain output and serial mirrors.
     fn plain(&self) -> String {
         let prefix = format!("{}{}:{}] ", self.prefix(), self.source.label(), self.level);
         display_text(&self.message)
@@ -194,6 +201,7 @@ impl LogEntry {
             .join("\n")
     }
 
+    /// Styles the source and severity separately, highlighting result records as a whole.
     fn styled(&self, linux_vt: bool) -> Line<'_> {
         let level = Style::default().fg(theme_color(
             self.result_color.unwrap_or(log_color(self.level)),
@@ -242,6 +250,7 @@ struct Model {
 }
 
 impl Model {
+    /// Starts on the progress screen with default display and serial log levels.
     fn new() -> Self {
         Self {
             screen: Screen::Progress,
@@ -267,6 +276,7 @@ impl Model {
         }
     }
 
+    /// Records a failure, preserving any earlier uncertainty and cancelling automatic reboot.
     fn fail(&mut self, details: String, uncertain: bool) -> LogEntry {
         self.details = details.clone();
         self.uncertain |= uncertain;
@@ -279,6 +289,7 @@ impl Model {
         self.result_log(LogLevel::Error, format!("FAILURE: {details}"), COLOR_ERROR)
     }
 
+    /// Retains a bounded, single-line display copy while returning the full diagnostic.
     fn log(&mut self, source: LogSource, level: LogLevel, message: String) -> LogEntry {
         let entry = LogEntry {
             elapsed: self.started.elapsed(),
@@ -306,6 +317,7 @@ impl Model {
         entry
     }
 
+    /// Marks an installer result record with a color even when logs are filtered.
     fn result_log(&mut self, level: LogLevel, message: String, color: Color) -> LogEntry {
         let mut entry = self.log(LogSource::Inst, level, message);
         entry.result_color = Some(color);
@@ -315,6 +327,7 @@ impl Model {
         entry
     }
 
+    /// Applies a worker event to the current screen and returns its diagnostic record.
     fn event(&mut self, event: Event) -> LogEntry {
         match event {
             Event::InstallerLog { level, message } => self.log(
@@ -407,6 +420,7 @@ impl Model {
         }
     }
 
+    /// Lists actions in keyboard-selection order for the current screen.
     fn choices(&self) -> Vec<&'static str> {
         match self.screen {
             Screen::Recovery => vec![
@@ -424,6 +438,7 @@ impl Model {
         }
     }
 
+    /// Shows the log panel on result screens unless full error details are open.
     fn showing_logs(&self) -> bool {
         matches!(
             self.screen,
@@ -431,6 +446,8 @@ impl Model {
         ) || self.screen == Screen::Error && !self.error_details_open
     }
 
+    /// Updates navigation for a key press and returns an action only when one is requested.
+    /// URL entry and the verbosity picker consume keys before screen-level shortcuts.
     fn key(&mut self, key: KeyEvent, demo: bool) -> Option<Action> {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return None;
@@ -636,6 +653,7 @@ struct DemoShell {
 }
 
 impl DemoShell {
+    /// Edits simulated input without executing it; returns true on exit or Escape.
     fn key(&mut self, key: KeyEvent) -> bool {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return false;
@@ -666,6 +684,7 @@ impl DemoShell {
         false
     }
 
+    /// Includes the simulation warning, recent responses, and sanitized prompt input.
     fn text(&self) -> String {
         format!(
             "{DEMO_SHELL_NOTICE}\n\n{}\n\ndemo$ {}",
@@ -685,6 +704,7 @@ pub(super) struct Output {
 }
 
 impl Output {
+    /// Persists the complete event in the diagnostic file, if one is configured.
     fn record(&mut self, event: &Event) -> Result<(), Error> {
         if let Some(log) = &mut self.log {
             writeln!(log, "{event:#?}").context("Failed to preserve installer diagnostics")?;
@@ -693,6 +713,7 @@ impl Output {
         Ok(())
     }
 
+    /// Sends visible records to serial mirrors, dropping mirrors that fail to write.
     fn announce(&mut self, entry: &LogEntry, verbosity: LevelFilter) {
         if !log_visible(entry.level, verbosity) {
             return;
@@ -717,6 +738,7 @@ struct Display {
 }
 
 impl Display {
+    /// Creates a terminal display and enters its alternate screen.
     fn new(linux_vt: bool) -> Result<Self, Error> {
         let mut display = Self {
             terminal: Terminal::new(CrosstermBackend::new(io::stdout()))?,
@@ -727,6 +749,7 @@ impl Display {
         Ok(display)
     }
 
+    /// Restores raw-mode drawing and the VT palette after a shell exits.
     fn resume(&mut self) -> Result<(), Error> {
         terminal::enable_raw_mode()?;
         self.active = true;
@@ -738,6 +761,8 @@ impl Display {
         Ok(())
     }
 
+    /// Leaves raw mode and the alternate screen so an interactive shell can use the terminal.
+    /// On Linux VTs, also clears the old UI and restores the original palette.
     fn suspend(&mut self) -> Result<(), Error> {
         let restore = (|| -> Result<(), Error> {
             terminal::disable_raw_mode()?;
@@ -766,6 +791,7 @@ impl Display {
 }
 
 impl Drop for Display {
+    /// Attempts terminal restoration if the display was not explicitly suspended.
     fn drop(&mut self) {
         if self.active {
             if let Err(error) = self.suspend() {
@@ -775,6 +801,8 @@ impl Drop for Display {
     }
 }
 
+/// Starts a demo run or reloads live configuration for each installation attempt.
+/// Configuration read errors are reported as events rather than worker failures.
 fn spawn_operation(
     config_path: Option<PathBuf>,
     request: Request,
@@ -807,6 +835,9 @@ fn spawn_operation(
     })
 }
 
+/// Runs the installer event loop, starting autorun and offering recovery on a terminal.
+/// Noninteractive runs return after work completes and fail if recovery needs user input;
+/// `plain` selects text output instead of the full-screen display.
 pub(super) async fn run(
     config_path: Option<PathBuf>,
     scenario: Option<Scenario>,
@@ -1082,6 +1113,7 @@ pub(super) async fn run(
     }
 }
 
+/// Removes terminal control characters while retaining newlines and expanding tabs.
 fn display_text(text: &str) -> String {
     text.chars()
         .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
@@ -1089,6 +1121,7 @@ fn display_text(text: &str) -> String {
         .replace('\t', "    ")
 }
 
+/// Compares an RPC severity against the chosen filter, treating unspecified as a warning.
 fn log_visible(level: LogLevel, verbosity: LevelFilter) -> bool {
     let level = match level {
         LogLevel::Error => Level::Error,
@@ -1100,6 +1133,7 @@ fn log_visible(level: LogLevel, verbosity: LevelFilter) -> bool {
     level.to_level_filter() <= verbosity
 }
 
+/// Selects the severity color, treating unspecified severity as a warning.
 fn log_color(level: LogLevel) -> Color {
     match level {
         LogLevel::Error => COLOR_ERROR,
@@ -1110,6 +1144,7 @@ fn log_color(level: LogLevel) -> Color {
     }
 }
 
+/// Provides the short status heading for each installer screen.
 fn title(screen: Screen) -> &'static str {
     match screen {
         Screen::Progress => "INSTALLING",
@@ -1124,6 +1159,7 @@ fn title(screen: Screen) -> &'static str {
     }
 }
 
+/// Gives panels a consistent ASCII border and VT-aware background.
 fn block(title: &str, linux_vt: bool) -> Block<'_> {
     Block::default()
         .borders(Borders::ALL)
@@ -1133,12 +1169,14 @@ fn block(title: &str, linux_vt: bool) -> Block<'_> {
         .title(title)
 }
 
+/// Finds the widest wordmark row for layout and centering.
 fn wordmark_width() -> usize {
     TRIDENT_WORDMARK
         .iter()
         .fold(0, |width, row| width.max(row.len()))
 }
 
+/// Reserves wordmark space only when both the terminal width and height fit it.
 fn header_height(viewport: Rect) -> u16 {
     if usize::from(viewport.width) >= wordmark_width()
         && viewport.height >= MIN_WORDMARK_TERMINAL_HEIGHT
@@ -1149,6 +1187,7 @@ fn header_height(viewport: Rect) -> u16 {
     }
 }
 
+/// Draws the wordmark when space permits, plus status and the demo warning.
 fn render_header(
     frame: &mut Frame,
     area: Rect,
@@ -1186,6 +1225,7 @@ fn render_header(
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
 }
 
+/// Draws a visibly simulated shell without presenting it as a real terminal.
 fn render_demo_shell(frame: &mut Frame, shell: &DemoShell) {
     frame.render_widget(
         Block::default().style(Style::default().bg(COLOR_BACKGROUND)),
@@ -1205,6 +1245,7 @@ fn render_demo_shell(frame: &mut Frame, shell: &DemoShell) {
     );
 }
 
+/// Filters and scrolls retained logs, moving the latest result to the end on result screens.
 fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
     let (title, color) = match model.screen {
         Screen::Success => ("SUCCESS - Installation complete", COLOR_SUCCESS),
@@ -1263,6 +1304,7 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
         .wrap(Wrap { trim: false })
 }
 
+/// Draws the current screen, actions, log controls, and any pending reboot countdown.
 fn render(frame: &mut Frame, model: &Model, demo: bool) {
     frame.render_widget(
         Block::default().style(Style::default().bg(theme_color(COLOR_BACKGROUND, model.linux_vt))),
@@ -1387,6 +1429,7 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
     }
 }
 
+/// Overlays the display-only log filter without modifying the stored diagnostics.
 fn render_verbosity_picker(frame: &mut Frame, model: &Model) {
     let viewport = frame.area();
     let width = viewport.width.min(44);
@@ -1438,6 +1481,7 @@ mod tests {
     use tempfile::TempDir;
     use trident_proto::v1::{Completed, RebootStatus, ServicingResponse, StatusCode};
 
+    /// A failed serial destination is removed without blocking healthy mirrors.
     #[test]
     fn unavailable_serial_mirror_does_not_stop_the_installer() {
         let root = TempDir::new().unwrap();
@@ -1482,10 +1526,12 @@ mod tests {
         );
     }
 
+    /// Creates an unmodified Enter press for navigation tests.
     fn enter() -> KeyEvent {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
     }
 
+    /// Demo commands never reach the host, and `exit` closes the simulation.
     #[test]
     fn demo_shell_never_executes_commands_and_exit_returns() {
         let root = TempDir::new().unwrap();
@@ -1503,6 +1549,7 @@ mod tests {
         assert!(shell.key(enter()));
     }
 
+    /// The demo shell advertises that it cannot execute commands.
     #[test]
     fn demo_shell_is_visibly_simulated() {
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
@@ -1520,6 +1567,7 @@ mod tests {
         assert!(text.contains("Commands are never executed"), "{text}");
     }
 
+    /// The full-size header and background keep their intended colors and spacing.
     #[test]
     fn wordmark_and_background_use_clear_neutrals_palette_at_80_by_24() {
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
@@ -1557,6 +1605,7 @@ mod tests {
         assert!(text.contains("ALL ACTIONS SIMULATED"), "{text}");
     }
 
+    /// Changing display verbosity hides entries without deleting retained logs.
     #[test]
     fn live_verbosity_picker_filters_without_discarding_logs() {
         let mut model = Model::new();
@@ -1584,6 +1633,7 @@ mod tests {
         assert_eq!(model.logs.len(), 2);
     }
 
+    /// Preparation events replace the initial idle activity with the current step.
     #[test]
     fn preparation_steps_replace_the_idle_status() {
         let mut model = Model::new();
@@ -1594,6 +1644,7 @@ mod tests {
         assert_eq!(model.activity, step);
     }
 
+    /// RPC log severities and the Trident source receive independent colors.
     #[test]
     fn rpc_logs_are_coloured_by_severity() {
         let mut model = Model::new();
@@ -1629,6 +1680,7 @@ mod tests {
         }
     }
 
+    /// VT palette slots distinguish log severities without changing RGB-mode colors.
     #[test]
     fn linux_vt_palette_uses_distinct_slots_for_a1_log_levels() {
         let entries = vt_rgb_palette().unwrap();
@@ -1674,6 +1726,7 @@ mod tests {
         }
     }
 
+    /// The source and verbosity indicator both fit on the standard-width status line.
     #[test]
     fn operation_and_verbosity_share_one_line() {
         let mut model = Model::new();
@@ -1688,6 +1741,7 @@ mod tests {
         assert!(row.contains("Logs: DEBUG [V]"), "{row}");
     }
 
+    /// Serial filtering preserves line prefixes and does not change display filtering.
     #[test]
     fn serial_verbosity_filters_independently_of_display() {
         let mut model = Model::new();
@@ -1726,6 +1780,7 @@ mod tests {
         assert_eq!(model.logs.len(), 6);
     }
 
+    /// Installer logger events retain their own source tag and severity styling.
     #[test]
     fn installer_logger_records_use_inst_source_and_colour() {
         let mut model = Model::new();
@@ -1749,6 +1804,7 @@ mod tests {
         assert_eq!(model.logs.len(), 1);
     }
 
+    /// The autorun default schedules a reboot when servicing requires one.
     #[test]
     fn headless_autorun_keeps_automatic_reboot_enabled_by_default() {
         let config = Config::parse("mode = 'autorun'\nserialMode = 'logs'").unwrap();
@@ -1765,6 +1821,7 @@ mod tests {
         assert!(model.reboot_at.is_some());
     }
 
+    /// Missing inputs produce a tagged failure record suitable for serial output.
     #[test]
     fn errors_for_missing_inputs_are_tagged_for_serial_without_a_tui() {
         let mut model = Model::new();
@@ -1779,6 +1836,7 @@ mod tests {
         );
     }
 
+    /// A success result remains highlighted even when earlier logs are filtered out.
     #[test]
     fn success_keeps_prior_logs_and_highlights_the_final_record() {
         let mut model = Model::new();
@@ -1845,6 +1903,7 @@ mod tests {
         assert!(!text.contains("Earlier disk action"));
     }
 
+    /// Failures show prior logs first while still allowing full diagnostic details.
     #[test]
     fn failure_shows_logs_by_default_and_keeps_full_details_accessible() {
         let mut model = Model::new();
@@ -1901,6 +1960,7 @@ mod tests {
         assert!(!model.error_details_open);
     }
 
+    /// Compact layouts retain the application heading and available actions.
     #[test]
     fn small_terminals_use_a_readable_compact_header() {
         assert_eq!(
@@ -1927,6 +1987,7 @@ mod tests {
         assert!(text.contains("Shell"), "{text}");
     }
 
+    /// Recovery reports invalid reloaded configuration instead of using defaults.
     #[tokio::test]
     async fn recovery_reloads_configuration_without_using_defaults_on_error() {
         let root = TempDir::new().unwrap();
@@ -1946,6 +2007,7 @@ mod tests {
         }
     }
 
+    /// Continuing from an error opens recovery; shell actions leave their screen unchanged.
     #[test]
     fn error_continue_and_shell_keep_the_originating_screen() {
         let mut model = Model::new();
@@ -1963,6 +2025,7 @@ mod tests {
         assert!(matches!(model.key(enter(), false), Some(Action::Reboot)));
     }
 
+    /// Force reinstall opens with Cancel selected and needs a second confirmation.
     #[test]
     fn force_is_never_the_default_and_requires_confirmation() {
         let mut model = Model::new();
@@ -1975,6 +2038,7 @@ mod tests {
         assert_eq!(model.screen, Screen::AlreadyPresent);
     }
 
+    /// Standard-size result and recovery screens expose their expected actions.
     #[test]
     fn screens_render_at_80_by_24_with_visible_actions() {
         for screen in [

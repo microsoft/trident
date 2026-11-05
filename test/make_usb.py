@@ -16,6 +16,7 @@ SECTOR_SIZE = 512
 
 
 def build_usb(cosi, output, size_mib):
+    """Create a new GPT/FAT32 image smaller than the COSI's target disk."""
     source = cosi.resolve(strict=True)
     info = metadata(source)
     if size_mib < 512:
@@ -67,6 +68,7 @@ def build_usb(cosi, output, size_mib):
 
 
 def main():
+    """Validate image-builder arguments and create a disposable USB fixture."""
     parser = argparse.ArgumentParser(
         description="Create a GPT/FAT32 USB image for installer VM testing"
     )

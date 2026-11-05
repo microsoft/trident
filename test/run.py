@@ -27,6 +27,7 @@ CODE_CANDIDATES = [
 
 
 def command(iso, scratch, code, memory, cpus, display, vnc=None, usb_media=None):
+    """Construct QEMU arguments with disposable storage and read-only install media."""
     acceleration = (
         ["-enable-kvm", "-cpu", "host"] if os.access("/dev/kvm", os.W_OK) else []
     )
@@ -84,12 +85,14 @@ def command(iso, scratch, code, memory, cpus, display, vnc=None, usb_media=None)
 
 class Qmp:
     def __init__(self, connection, process):
+        """Track the QMP connection and viewer state for a paused guest."""
         self.connection = connection
         self.process = process
         self.pending = b""
         self.viewer_connected = False
 
     def receive(self):
+        """Read a QMP response or event, updating the VNC connection state."""
         while b"\n" not in self.pending:
             if self.process.poll() is not None:
                 raise RuntimeError("QEMU exited while waiting for a VNC viewer")
@@ -108,6 +111,7 @@ class Qmp:
         return message
 
     def execute(self, command):
+        """Send a QMP command and wait for its matching response."""
         request = {"execute": command, "id": command}
         self.connection.sendall(json.dumps(request).encode() + b"\n")
         while True:
@@ -119,6 +123,7 @@ class Qmp:
 
 
 def wait_for_vnc_viewer(process, monitor_path, on_ready):
+    """Resume the paused guest only after the VNC monitor reports a viewer."""
     deadline = time.monotonic() + QMP_STARTUP_TIMEOUT_SECONDS
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         while True:
@@ -147,6 +152,7 @@ def wait_for_vnc_viewer(process, monitor_path, on_ready):
 
 
 def follow_serial(process, path, output=sys.stdout, interval=SERIAL_POLL_SECONDS):
+    """Print new installer records from serial, excluding firmware and escape codes."""
     stream = None
     pending = ""
     try:
@@ -172,6 +178,7 @@ def follow_serial(process, path, output=sys.stdout, interval=SERIAL_POLL_SECONDS
 
 
 def main():
+    """Launch a disposable VM, optionally wait for VNC, and follow serial logs."""
     parser = argparse.ArgumentParser(
         description="Boot the installer ISO in a disposable UEFI VM"
     )
@@ -297,6 +304,7 @@ def main():
             if args.vnc is not None:
 
                 def show_vnc_instructions():
+                    """Print loopback VNC connection instructions before guest boot."""
                     print(
                         f"Guest paused; VNC on localhost:{port} only. Tunnel from your local machine:\n"
                         f"  ssh -N -L {port}:127.0.0.1:{port} USER@HOST\n"

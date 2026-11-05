@@ -46,6 +46,7 @@ struct Args {
     system_console: bool,
 }
 
+/// Starts logging and the installer runtime, returning a failing exit code on startup errors.
 fn main() -> ExitCode {
     env_logger::Builder::from_default_env()
         .filter_level(LevelFilter::Info)
@@ -86,6 +87,7 @@ fn main() -> ExitCode {
     }
 }
 
+/// Sets up private diagnostics and optional console ownership before starting the UI.
 async fn run(args: Args) -> Result<(), Error> {
     let mut linux_vt = false;
     let mut output = Output {
