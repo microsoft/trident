@@ -64,7 +64,7 @@ pub(super) fn prepare_with_progress(
     request: &Request,
     mut progress: impl FnMut(&str) -> Result<(), Error>,
 ) -> Result<(Config, Plan), Error> {
-    let root = media_root(settings, &mut progress)?;
+    let root = media_root(settings, matches!(request, Request::Autorun), &mut progress)?;
     prepare_from_media_with_progress(settings, request, root.as_deref(), &mut progress)
 }
 
@@ -147,6 +147,7 @@ fn prepare_from_media_with_progress(
 
 fn media_root(
     settings: &Config,
+    wait_for_media: bool,
     progress: &mut impl FnMut(&str) -> Result<(), Error>,
 ) -> Result<Option<PathBuf>, Error> {
     if let Some(path) = &settings.media.mount_path {
@@ -168,7 +169,7 @@ fn media_root(
     let mut attempts = 0;
     let devices = loop {
         let devices = lsblk::devices_by_label(label)?;
-        if !devices.is_empty() || Instant::now() >= deadline {
+        if !devices.is_empty() || !wait_for_media || Instant::now() >= deadline {
             break devices;
         }
         if attempts % 5 == 0 {

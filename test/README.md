@@ -63,13 +63,16 @@ replacement without changing the running guest's CD-ROM.
 The installer finds a filesystem by label, so it can read COSI files from an
 optical ISO9660 filesystem or a GPT USB partition (FAT32 in this fixture).
 `filesystemLabel = "TRD_INSTALL"` fits FAT32's 11-character label limit.
-Image Customizer ISO output is labelled `CDROM`, so use the test ISO with
-`filesystemLabel` changed to `TRD_INSTALL` when exercising the separate USB
-medium; keep the two media labels distinct to avoid ambiguous discovery.
+Image Customizer ISO output is labelled `CDROM`. To build the USB test ISO,
+temporarily set `filesystemLabel = "TRD_INSTALL"` in
+`test/installer/files/installer.toml`, run
+`python3 test/build.py --skip-rpms --output-dir test/.work/gpt-usb-ready`,
+and restore `filesystemLabel = "CDROM"` afterward. Keep the two media labels
+distinct to avoid ambiguous discovery.
 
 ```console
 python3 test/make_usb.py --cosi test/installer/cosi/payload.cosi
-python3 test/run.py --iso test/.work/gpt-usb-iso/installer_amd64_iso.iso \
+python3 test/run.py --iso test/.work/gpt-usb-ready/installer_amd64_iso.iso \
   --usb-media test/.work/installer-usb.raw --vnc --keep
 ```
 
@@ -81,6 +84,8 @@ than the COSI's 4 GiB original disk, so Trident cannot select it as an install
 target. A larger USB that could be the smallest eligible disk is rejected by
 the installer preflight rather than being overwritten; the StreamDisk RPC
 does not yet accept a target disk override.
+This fixture exercises a Rufus-style GPT/FAT32 layout, not Rufus itself or
+NTFS; non-FAT media require filesystem support in the live OS.
 
 ## Over SSH, including from a Wayland desktop
 
