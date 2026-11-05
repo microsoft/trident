@@ -1,10 +1,12 @@
 # TUI installer ISO
 
 Tailor builds an Azure Linux 3 ISO with the `trident-installer` RPM and Trident's
-gRPC daemon. The installer boots in autorun mode, mounts the `CDROM`-labelled
-ISO read-only, and streams the staged COSI. It does **not** enter demo mode:
-boot only with a disposable target disk. The success screen remains visible
-until an operator chooses Reboot.
+gRPC daemon. The ISO recipe installs only the RPM and adds the
+`trident.installer=1` boot flag; the RPM enables the service and excludes
+competing gettys on that boot. The installer mounts the `CDROM`-labelled ISO
+read-only and streams the staged COSI. It does **not** enter demo mode: boot
+only with a disposable target disk. The packaged configuration reboots
+automatically after successful installation when Trident requires it.
 
 Stage matching Trident RPMs (including `trident-installer`) in `rpms/` and an
 Azure Linux COSI in `cosi/payload.cosi`. These inputs are local and ignored by
@@ -43,7 +45,7 @@ that address's localhost port over SSH. When finished, stop netlaunch and run
 `bin/virtdeploy clean --namespace tui-installer-demo` to remove only this VM,
 its disk, and its libvirt network.
 
-The checked-in configuration uses `filesystemLabel = "CDROM"` to match Image
-Customizer ISO output; change it if the image is copied to differently labelled
-media. `trident-installer` is optional in the RPM build, but its package must
-be present in `rpms/` for this image to build.
+With no explicit `filesystemLabel`, `CDROM` and `TRD_INSTALL` are recognized.
+If both media are present, specify one in the bootstrap TOML to disambiguate.
+`trident-installer` is optional in the RPM build, but its package must be
+present in `rpms/` for this image to build.

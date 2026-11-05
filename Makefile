@@ -229,7 +229,7 @@ target/$(DISTRO)/release/trident target/$(DISTRO)/release/trident-acl-agent targ
 			-p installer
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
-bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/etc/installer.toml packaging/systemd/*.service packaging/rpm/trident.spec packaging/selinux-policy-trident/* LICENSE NOTICE version-vars azl-version-vars
+bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/etc/installer.toml packaging/systemd/*.service packaging/systemd/*/*.conf packaging/rpm/trident.spec packaging/selinux-policy-trident/* LICENSE NOTICE version-vars azl-version-vars
 	@case "$@" in \
 		*$(DISTRO).tar.gz) ;; \
 		*) echo "Invalid target '$@' for DISTRO '$(DISTRO)'. Expected target ending in '$(DISTRO).tar.gz'."; exit 1 ;; \
@@ -263,7 +263,7 @@ bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/etc/instal
 # backward compatibility; other distros use the in-container distro build.
 TRIDENT_RPM_BIN_DIR := $(if $(filter azl3,$(DISTRO)),target/release,target/$(DISTRO)/release)
 
-bin/trident-rpms.tar.gz: azl-version-vars packaging/docker/Dockerfile.azl packaging/etc/installer.toml packaging/systemd/*.service packaging/rpm/trident.spec $(TRIDENT_RPM_BIN_DIR)/trident $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent $(TRIDENT_RPM_BIN_DIR)/trident-installer packaging/selinux-policy-trident/* LICENSE NOTICE
+bin/trident-rpms.tar.gz: azl-version-vars packaging/docker/Dockerfile.azl packaging/etc/installer.toml packaging/systemd/*.service packaging/systemd/*/*.conf packaging/rpm/trident.spec $(TRIDENT_RPM_BIN_DIR)/trident $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent $(TRIDENT_RPM_BIN_DIR)/trident-installer packaging/selinux-policy-trident/* LICENSE NOTICE
 	@mkdir -p bin/
 	@if [ ! -f bin/trident ] || ! cmp -s $(TRIDENT_RPM_BIN_DIR)/trident bin/trident; then \
 		cp $(TRIDENT_RPM_BIN_DIR)/trident bin/trident; \

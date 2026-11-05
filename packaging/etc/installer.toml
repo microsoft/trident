@@ -3,7 +3,6 @@ serialMode = "logs"
 serialVerbosity = "debug"
 
 [media]
-filesystemLabel = "TRD_INSTALL"
 cosiDirectory = "cosi/"
 
 [autorun]

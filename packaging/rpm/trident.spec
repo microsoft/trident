@@ -255,16 +255,25 @@ The Trident ACL components required to orchestrate servicing of ACL images.
 Summary:        Trident Linux Installer console for installer media
 Requires:       %{name} = %{version}-%{release}
 Requires:       bash
+Requires:       device-mapper
+Requires:       squashfs-tools
+Requires:       veritysetup
+Requires:       curl
+Requires:       less
+Requires:       iproute
 Conflicts:      %{name}-install-service
 
 %description installer
 Autorun installer, recovery console, and local demonstration UI.
-Enable trident-installer.service explicitly in the installer ISO recipe.
+The service starts only when the ISO boot command line has trident.installer=1.
 
 %files installer
 %license LICENSE NOTICE
 %{_bindir}/%{name}-installer
 %{_unitdir}/%{name}-installer.service
+%{_unitdir}/multi-user.target.wants/%{name}-installer.service
+%{_unitdir}/getty@tty1.service.d/%{name}-installer.conf
+%{_unitdir}/serial-getty@.service.d/%{name}-installer.conf
 %config(noreplace) /etc/%{name}/installer.toml
 
 %preun installer
@@ -337,6 +346,10 @@ install -D -m 755 target/release/%{name}-acl-agent %{buildroot}/%{_bindir}/%{nam
 install -D -m 755 target/release/%{name}-installer %{buildroot}/%{_bindir}/%{name}-installer
 install -D -m 644 packaging/systemd/%{name}-acl-agent.service %{buildroot}%{_unitdir}/%{name}-acl-agent.service
 install -D -m 644 packaging/systemd/%{name}-installer.service %{buildroot}%{_unitdir}/%{name}-installer.service
+install -d %{buildroot}%{_unitdir}/multi-user.target.wants
+ln -s ../%{name}-installer.service %{buildroot}%{_unitdir}/multi-user.target.wants/%{name}-installer.service
+install -D -m 644 packaging/systemd/getty@tty1.service.d/%{name}-installer.conf %{buildroot}%{_unitdir}/getty@tty1.service.d/%{name}-installer.conf
+install -D -m 644 packaging/systemd/serial-getty@.service.d/%{name}-installer.conf %{buildroot}%{_unitdir}/serial-getty@.service.d/%{name}-installer.conf
 install -D -m 644 packaging/etc/installer.toml %{buildroot}/etc/%{name}/installer.toml
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages

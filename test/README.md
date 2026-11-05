@@ -21,8 +21,9 @@ output; UEFI firmware output may still appear before the installer starts.
 With only a serial console active, autorun runs without a TUI and honors
 `autorun.reboot`; missing inputs or an already-present image produce tagged
 errors instead of waiting for a keyboard response.
-The ISO disables `getty@tty1.service` and logind's automatic virtual gettys so
-they cannot reclaim the installer's graphical keyboard after startup. The
+The RPM's getty drop-ins skip serial and tty1 gettys only when the ISO boots
+with `trident.installer=1`, so they cannot reclaim the installer's keyboard
+or mix prompts into serial logs. The
 installer mirrors source-discovery stages to the serial log; an idle-looking
 progress screen can be diagnosed there without sending keys to the guest.
 
@@ -62,13 +63,12 @@ replacement without changing the running guest's CD-ROM.
 
 The installer finds a filesystem by label, so it can read COSI files from an
 optical ISO9660 filesystem or a GPT USB partition (FAT32 in this fixture).
-`filesystemLabel = "TRD_INSTALL"` fits FAT32's 11-character label limit.
-Image Customizer ISO output is labelled `CDROM`. To build the USB test ISO,
-temporarily set `filesystemLabel = "TRD_INSTALL"` in
+By default it accepts `TRD_INSTALL` (FAT-compatible) or `CDROM`
+(Image Customizer ISO). When both are attached, specify which to use. To
+build the USB test ISO, temporarily add `filesystemLabel = "TRD_INSTALL"` in
 `test/installer/files/installer.toml`, run
 `python3 test/build.py --skip-rpms --output-dir test/.work/gpt-usb-ready`,
-and restore `filesystemLabel = "CDROM"` afterward. Keep the two media labels
-distinct to avoid ambiguous discovery.
+and remove that line afterward.
 
 ```console
 python3 test/make_usb.py --cosi test/installer/cosi/payload.cosi
