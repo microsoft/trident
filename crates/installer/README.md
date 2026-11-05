@@ -22,6 +22,8 @@ exits when complete.
 ## Configuration
 
 Read `/etc/trident/installer.toml` or the path supplied with `--config`.
+See the [Installer Configuration reference](../../docs/Reference/Installer-Configuration.md)
+for all fields, defaults, and media-overlay rules.
 `mode` is mandatory. All other fields are optional:
 
 ```toml
