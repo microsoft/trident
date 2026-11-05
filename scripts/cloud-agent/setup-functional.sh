@@ -27,6 +27,8 @@ sudo NEEDRESTART_MODE=a apt-get install -y --no-install-recommends \
     qemu-efi \
     qemu-kvm \
     qemu-utils \
+    swtpm \
+    swtpm-tools \
     virt-manager \
     zstd
 
