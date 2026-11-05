@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trident Slot Loader Manifest v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "sysexts": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/extension"
+      }
+    },
+    "confexts": {
+      "type": "array",
+      "default": [],
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/extension"
+      }
+    }
+  },
+  "$defs": {
+    "extension": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "description": "Filename stem shared by <name>.raw and extension-release.<name>.",
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "anyOf": [
+              {"enum": [".", ".."]},
+              {"pattern": "[/\\\\\\u0000-\\u001f\\u007f]"}
+            ]
+          }
+        }
+      }
+    }
+  }
+}
