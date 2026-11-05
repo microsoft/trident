@@ -3,7 +3,7 @@ serialMode = "logs"
 serialVerbosity = "debug"
 
 [media]
-cdromLabel = "TRIDENT_INSTALL"
+filesystemLabel = "TRD_INSTALL"
 cosiDirectory = "cosi/"
 
 [autorun]

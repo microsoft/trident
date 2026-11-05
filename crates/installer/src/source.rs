@@ -157,7 +157,7 @@ fn media_root(
     }
     let label = settings
         .media
-        .cdrom_label
+        .filesystem_label
         .as_deref()
         .unwrap_or(config::DEFAULT_MEDIA_LABEL);
     progress("Looking for installer media by filesystem label")?;
@@ -358,6 +358,25 @@ pub(super) fn stream_preflight(image: &Url, force: bool) -> Result<bool, Error> 
         .as_ref()
         .context("COSI disk metadata is missing")?
         .size;
+    ensure_stream_target_safe(&devices, required)?;
+    if force {
+        return Ok(false);
+    }
+    let expected = metadata
+        .images
+        .iter()
+        .filter_map(|image| image.fs_uuid.as_deref())
+        .filter(|uuid| !uuid.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect::<HashSet<_>>();
+    ensure!(
+        !expected.is_empty(),
+        "COSI has no filesystem UUIDs for repeat-install protection"
+    );
+    Ok(contains_image(&devices, &expected))
+}
+
+fn ensure_stream_target_safe(devices: &[BlockDevice], required: u64) -> Result<(), Error> {
     let candidates = devices
         .iter()
         .filter(|device| device.blkdev_type == BlockDeviceType::Disk)
@@ -377,25 +396,11 @@ pub(super) fn stream_preflight(image: &Url, force: bool) -> Result<bool, Error> 
     for device in candidates.iter().filter(|device| device.size == minimum) {
         ensure!(
             !device.readonly && device.get_all_mountpoints_recursive().is_empty(),
-            "StreamDisk could select a read-only or mounted disk '{}'; refusing to overwrite live media",
+            "StreamDisk could select mounted or read-only disk '{}', possibly the installer USB; refusing to overwrite installation media. Use media smaller than the COSI disk size or a Host Configuration with an explicit target disk",
             device.device_path().display()
         );
     }
-    if force {
-        return Ok(false);
-    }
-    let expected = metadata
-        .images
-        .iter()
-        .filter_map(|image| image.fs_uuid.as_deref())
-        .filter(|uuid| !uuid.is_empty())
-        .map(str::to_ascii_lowercase)
-        .collect::<HashSet<_>>();
-    ensure!(
-        !expected.is_empty(),
-        "COSI has no filesystem UUIDs for repeat-install protection"
-    );
-    Ok(contains_image(&devices, &expected))
+    Ok(())
 }
 
 fn contains_image(devices: &[BlockDevice], expected: &HashSet<String>) -> bool {
@@ -542,5 +547,35 @@ mod tests {
             &devices,
             &HashSet::from(["uuid-1".into(), "uuid-2".into()])
         ));
+    }
+
+    #[test]
+    fn smaller_gpt_usb_media_is_not_a_stream_target() {
+        let media = BlockDevice {
+            name: "sdb".into(),
+            size: 2 * 1024 * 1024 * 1024,
+            blkdev_type: BlockDeviceType::Disk,
+            children: vec![BlockDevice {
+                name: "sdb1".into(),
+                label: Some("TRD_INSTALL".into()),
+                mountpoints: vec![config::MEDIA_MOUNT.into()],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let target = BlockDevice {
+            name: "vda".into(),
+            size: 8 * 1024 * 1024 * 1024,
+            blkdev_type: BlockDeviceType::Disk,
+            ..Default::default()
+        };
+        let required = 4 * 1024 * 1024 * 1024;
+        ensure_stream_target_safe(&[media.clone(), target.clone()], required).unwrap();
+        let larger_media = BlockDevice {
+            size: 6 * 1024 * 1024 * 1024,
+            ..media
+        };
+        let error = ensure_stream_target_safe(&[larger_media, target], required).unwrap_err();
+        assert!(error.to_string().contains("installer USB"), "{error:#}");
     }
 }

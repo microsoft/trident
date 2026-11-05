@@ -370,6 +370,22 @@ mod tests {
         assert_eq!(matches, [PathBuf::from("/dev/sr0")]);
     }
 
+    #[test]
+    fn parses_gpt_usb_partition_label_from_lsblk_json() {
+        let devices = parse_lsblk_output(
+            r#"{"blockdevices":[{"name":"sdb","size":1073741824,"type":"disk","pttype":"gpt","children":[{"name":"sdb1","size":1069547520,"type":"part","fstype":"vfat","label":"TRD_INSTALL"}]}]}"#,
+        )
+        .unwrap();
+        let mut matches = Vec::new();
+        collect_devices_by_label(&devices, "TRD_INSTALL", &mut matches);
+        assert_eq!(matches, [PathBuf::from("/dev/sdb1")]);
+        assert_eq!(
+            devices[0].partition_table_type,
+            Some(PartitionTableType::Gpt)
+        );
+        assert!(devices[0].label.is_none());
+    }
+
     /// Output obtained from running `lsblk --json --bytes --output-all --paths /dev/sda`
     /// on the functional test VM AzL 3.0, lsblk from util-linux 2.40.2
     const SAMPLE_LSBLK_OUTPUT: &str = indoc::indoc! {
