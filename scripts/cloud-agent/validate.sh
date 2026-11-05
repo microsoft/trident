@@ -47,8 +47,7 @@ validate_go() {
     )
     (
         cd tools/installer
-        # Go 1.25 vet rejects a pre-existing logrus Errorf call in this module.
-        run go test -mod=readonly -vet=off ./...
+        run go test -mod=readonly ./...
     )
 }
 
