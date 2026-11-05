@@ -25,6 +25,7 @@ pub(super) enum Scenario {
     Disconnect,
 }
 
+/// Emits a simulated servicing sequence without connecting to Trident or touching disks.
 pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Error> {
     client::send(
         &tx,
@@ -99,6 +100,7 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
     .await
 }
 
+/// Wraps a demo gRPC response in the same event shape used by a real install.
 async fn response(tx: &Sender<Event>, response: ResponseBody) -> Result<(), Error> {
     client::send(
         tx,

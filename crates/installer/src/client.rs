@@ -31,6 +31,7 @@ use crate::{
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Applies configured force only to autorun streams, while respecting explicit confirmation.
 fn stream_force_requested(automatic: bool, configured: bool, confirmed: bool) -> bool {
     confirmed || (automatic && configured)
 }
@@ -65,6 +66,7 @@ pub(super) enum Completion {
     Failure(String),
 }
 
+/// Interprets Trident's final response, rejecting invalid or daemon-managed reboot states.
 pub(super) fn completion(completed: Completed) -> Result<Completion, Error> {
     match StatusCode::try_from(completed.status).context("Invalid final status code")? {
         StatusCode::Success => {
@@ -101,6 +103,7 @@ pub(super) fn completion(completed: Completed) -> Result<Completion, Error> {
     }
 }
 
+/// Renders a structured Trident error as readable multi-line diagnostics.
 fn format_error(error: &RemoteError) -> String {
     let category = match ErrorCategory::try_from(error.kind) {
         Ok(ErrorCategory::Unspecified) => "Unspecified",
@@ -128,6 +131,10 @@ fn format_error(error: &RemoteError) -> String {
     details
 }
 
+/// Prepares a source, checks stream safety, and forwards Trident's gRPC responses to the UI.
+///
+/// After an uncertain previous operation, `require_idle` prevents a new write until the daemon
+/// confirms it is idle. Ambiguous RPC failures are reported as uncertain instead of retrying.
 pub(super) async fn execute(
     settings: Config,
     request: Request,
@@ -262,6 +269,7 @@ pub(super) async fn execute(
     receive(response, &tx).await
 }
 
+/// Connects to the Trident daemon with a bounded connection timeout.
 async fn connect(address: &str) -> Result<Channel, Error> {
     Endpoint::new(address.to_owned())?
         .connect_timeout(CONNECTION_TIMEOUT)
@@ -270,6 +278,7 @@ async fn connect(address: &str) -> Result<Channel, Error> {
         .with_context(|| format!("Failed to connect to Trident at '{address}'"))
 }
 
+/// Starts the selected gRPC operation, leaving reboot control to the installer.
 async fn start(channel: Channel, plan: Plan) -> Result<Streaming<ServicingResponse>, Status> {
     let reboot = Some(RebootManagement {
         handling: RebootHandling::CallerHandlesReboot.into(),
@@ -300,6 +309,7 @@ async fn start(channel: Channel, plan: Plan) -> Result<Streaming<ServicingRespon
     }
 }
 
+/// Forwards a servicing stream until completion; missing final responses leave the result unknown.
 async fn receive(
     mut stream: Streaming<ServicingResponse>,
     tx: &Sender<Event>,
@@ -334,6 +344,7 @@ async fn receive(
     }
 }
 
+/// Sends an installer event, returning an error if the UI receiver has closed.
 pub(super) async fn send(tx: &Sender<Event>, event: Event) -> Result<(), Error> {
     tx.send(event)
         .await
@@ -367,6 +378,7 @@ mod tests {
     type ResponseStream = Iter<IntoIter<Result<ServicingResponse, Status>>>;
 
     #[test]
+    /// Ensures a configured force flag does not affect manually chosen streams.
     fn only_automatic_streams_use_configured_force() {
         assert!(!stream_force_requested(true, false, false));
         assert!(stream_force_requested(true, true, false));
@@ -374,6 +386,7 @@ mod tests {
         assert!(stream_force_requested(false, false, true));
     }
 
+    /// Builds a valid completed response for gRPC client tests.
     fn successful() -> Completed {
         Completed {
             status: StatusCode::Success.into(),
@@ -384,6 +397,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures final responses reject invalid statuses and unexpected reboot behavior.
     fn final_response_is_strict() {
         assert_eq!(
             completion(successful()).unwrap(),
@@ -417,6 +431,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures structured errors retain useful diagnostics without debug formatting.
     fn errors_are_readable_without_debug_dumps() {
         let error = RemoteError {
             kind: ErrorCategory::ServicingError.into(),
@@ -447,6 +462,7 @@ mod tests {
     impl StreamingService for Fake {
         type StreamDiskStream = ResponseStream;
 
+        /// Returns a sample stream, optionally omitting completion to simulate a disconnect.
         async fn stream_disk(
             &self,
             request: TonicRequest<StreamDiskRequest>,
@@ -493,6 +509,7 @@ mod tests {
         type InstallStageStream = ResponseStream;
         type InstallFinalizeStream = ResponseStream;
 
+        /// Captures an install request and returns a completed response.
         async fn install(
             &self,
             request: TonicRequest<InstallRequest>,
@@ -506,6 +523,7 @@ mod tests {
             )])))
         }
 
+        /// Rejects stage-only requests, which the fake does not support.
         async fn install_stage(
             &self,
             _: TonicRequest<StageInstallRequest>,
@@ -513,6 +531,7 @@ mod tests {
             Err(Status::unimplemented("test only supports full install"))
         }
 
+        /// Rejects finalize-only requests, which the fake does not support.
         async fn install_finalize(
             &self,
             _: TonicRequest<FinalizeInstallRequest>,
@@ -522,6 +541,7 @@ mod tests {
     }
 
     #[tokio::test]
+    /// Ensures the full Host Configuration reaches gRPC with caller-managed reboot.
     async fn install_sends_full_configuration_and_caller_managed_reboot() {
         let root = TempDir::new().unwrap();
         let path = root.path().join("trident.sock");
@@ -569,6 +589,7 @@ mod tests {
     }
 
     #[tokio::test]
+    /// Ensures a Unix gRPC stream retains trace logs and detects missing completion.
     async fn real_unix_transport_preserves_trace_and_detects_missing_completion() {
         for complete in [true, false] {
             let root = TempDir::new().unwrap();

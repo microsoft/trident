@@ -187,6 +187,7 @@ pub fn devices_by_label(label: impl AsRef<str>) -> Result<Vec<PathBuf>, Error> {
     Ok(devices)
 }
 
+/// Adds paths of devices with an exact filesystem-label match, including descendants.
 fn collect_devices_by_label(devices: &[BlockDevice], label: &str, matches: &mut Vec<PathBuf>) {
     for device in devices {
         if device.label.as_deref() == Some(label) {
@@ -331,6 +332,7 @@ mod tests {
     use super::*;
 
     #[test]
+    /// Ensures optical and partition labels both match, and rejects an empty label.
     fn label_scan_includes_cdrom_and_detects_duplicate_filesystem_labels() {
         let devices = vec![
             BlockDevice {
@@ -360,6 +362,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures optical-drive labels survive parsing the `lsblk` JSON tree.
     fn parses_optical_drive_label_from_lsblk_json() {
         let devices = parse_lsblk_output(
             r#"{"blockdevices":[{"name":"sr0","size":355497984,"type":"rom","label":"CDROM"}]}"#,
@@ -371,6 +374,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures a GPT USB partition's label is found beneath its parent disk.
     fn parses_gpt_usb_partition_label_from_lsblk_json() {
         let devices = parse_lsblk_output(
             r#"{"blockdevices":[{"name":"sdb","size":1073741824,"type":"disk","pttype":"gpt","children":[{"name":"sdb1","size":1069547520,"type":"part","fstype":"vfat","label":"TRD_INSTALL"}]}]}"#,

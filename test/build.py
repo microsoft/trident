@@ -19,11 +19,13 @@ GIB = 1024**3
 
 
 def run(command, **kwargs):
+    """Run a build command and fail if it exits unsuccessfully."""
     print("+", shlex.join(map(str, command)), flush=True)
     subprocess.run(list(map(str, command)), check=True, **kwargs)
 
 
 def metadata(path):
+    """Validate that the fixture is a supported non-ACL Azure Linux COSI."""
     with tarfile.open(path, "r:") as archive:
         member = archive.getmember("metadata.json")
         if not member.isfile() or member.size > 16 * 1024**2:
@@ -51,6 +53,7 @@ def metadata(path):
 
 
 def stage_cosi(path):
+    """Copy the validated COSI into the ISO recipe and record its disk size."""
     path = path.resolve(strict=True)
     info = metadata(path)
     destination = IMAGE / "cosi/payload.cosi"
@@ -76,6 +79,7 @@ def stage_cosi(path):
 
 
 def build_rpms():
+    """Build the Trident RPMs in a container and stage the installer sub-package."""
     run(["make", ".cargo/config", "OVERRIDE_RUST_FEED=true"], cwd=REPO)
     version = tomllib.loads((REPO / "crates/trident/Cargo.toml").read_text())[
         "package"
@@ -170,6 +174,7 @@ def build_rpms():
 
 
 def main():
+    """Parse fixture options and build or validate the installer ISO."""
     parser = argparse.ArgumentParser(
         description="Build a Tailor ISO with the current Trident Linux Installer"
     )

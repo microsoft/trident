@@ -231,6 +231,10 @@ pub struct Command {
 }
 
 impl Command {
+    /// Runs a command in the terminal's foreground process group with attached stdio.
+    ///
+    /// Restores the parent's foreground group after the child exits and rejects piped stdin.
+    /// Nonzero exits are returned as [`DependencyError`] values.
     pub fn run_interactive(&self, terminal: &File) -> Result<(), Box<DependencyError>> {
         let binary = self.dependency.path()?;
         let execute = || -> Result<Output, io::Error> {

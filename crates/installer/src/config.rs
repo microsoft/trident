@@ -58,6 +58,7 @@ pub(super) enum SerialVerbosity {
 }
 
 impl SerialVerbosity {
+    /// Converts the configured serial level into the log filter used when mirroring records.
     pub(super) fn filter(self) -> LevelFilter {
         match self {
             Self::Off => LevelFilter::Off,
@@ -82,6 +83,7 @@ pub(super) struct Media {
 }
 
 impl Default for Media {
+    /// Leaves media discovery on the default label and searches the `cosi/` directory.
     fn default() -> Self {
         Self {
             filesystem_label: None,
@@ -91,6 +93,7 @@ impl Default for Media {
     }
 }
 
+/// Returns the relative COSI directory used when the media config omits it.
 fn default_cosi_directory() -> PathBuf {
     "cosi".into()
 }
@@ -107,6 +110,7 @@ pub(super) struct Autorun {
 }
 
 impl Default for Autorun {
+    /// Enables reboot after a successful install but never forces a repeat stream.
     fn default() -> Self {
         Self {
             host_configuration: None,
@@ -116,11 +120,13 @@ impl Default for Autorun {
     }
 }
 
+/// Enables reboot when the autorun configuration does not specify a preference.
 fn default_reboot() -> bool {
     true
 }
 
 impl Config {
+    /// Reads and validates the bootstrap installer configuration from disk.
     pub(super) fn read(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref();
         let text = fs::read_to_string(path).with_context(|| {
@@ -132,12 +138,14 @@ impl Config {
         Self::parse(&text)
     }
 
+    /// Parses installer TOML, rejecting unknown fields and unsupported settings.
     pub(super) fn parse(text: &str) -> Result<Self, Error> {
         let config: Self = toml::from_str(text).context("Invalid installer TOML configuration")?;
         config.validate()?;
         Ok(config)
     }
 
+    /// Checks media paths, source fields, and the reserved serial UI mode.
     fn validate(&self) -> Result<(), Error> {
         ensure!(
             self.serial_mode == SerialMode::Logs,
@@ -172,6 +180,7 @@ impl Config {
         Ok(())
     }
 
+    /// Rejects interactive mode until interactive source selection is implemented.
     pub(super) fn require_autorun(&self) -> Result<(), Error> {
         ensure!(
             self.mode == Mode::Autorun,
@@ -180,6 +189,7 @@ impl Config {
         Ok(())
     }
 
+    /// Applies an optional media-local config without allowing bootstrap media or serial changes.
     pub(super) fn overlay(&self, root: impl AsRef<Path>) -> Result<Self, Error> {
         let path = root.as_ref().join(MEDIA_CONFIG);
         let text = match fs::read_to_string(&path) {
@@ -211,6 +221,7 @@ impl Config {
     }
 }
 
+/// Recursively overlays TOML tables; non-table values replace their base values.
 fn merge(base: &mut TomlValue, overlay: TomlValue) {
     match (base, overlay) {
         (TomlValue::Table(base), TomlValue::Table(overlay)) => {
@@ -227,6 +238,9 @@ fn merge(base: &mut TomlValue, overlay: TomlValue) {
     }
 }
 
+/// Lists regular `.cosi` files directly beneath the media directory in name order.
+///
+/// Rejects directories that resolve outside the media root; an absent directory yields no images.
 pub(super) fn discover_images(
     root: impl AsRef<Path>,
     directory: impl AsRef<Path>,
@@ -263,6 +277,7 @@ pub(super) fn discover_images(
     Ok(images)
 }
 
+/// Selects the sole media device, or fails rather than guessing between duplicate labels.
 pub(super) fn choose_media(devices: &[PathBuf]) -> Result<Option<&Path>, Error> {
     match devices {
         [] => Ok(None),
@@ -281,6 +296,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
+    /// Ensures mode is required and omitted settings keep their safe defaults.
     fn explicit_mode_and_strict_fields() {
         Config::parse("").unwrap_err();
         Config::parse("mode = 'autorun'\nunknown = true").unwrap_err();
@@ -298,6 +314,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures force is false by default and accepts only a boolean override.
     fn autorun_force_is_opt_in() {
         let config = Config::parse("mode = 'autorun'\n[autorun]\nforce = true").unwrap();
         assert!(config.autorun.force);
@@ -307,6 +324,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures the reserved serial UI mode fails validation instead of being enabled.
     fn serial_ui_mode_is_reserved_not_silently_enabled() {
         Config::parse("mode = 'autorun'\nserialMode = 'logs'").unwrap();
         let error = Config::parse("mode = 'autorun'\nserialMode = 'ui'").unwrap_err();
@@ -314,6 +332,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures serial verbosity defaults to debug and invalid levels are rejected.
     fn serial_verbosity_defaults_to_debug_and_rejects_invalid_levels() {
         let config = Config::parse("mode = 'autorun'\nserialVerbosity = 'trace'").unwrap();
         assert_eq!(config.serial_verbosity.filter(), LevelFilter::Trace);
@@ -323,6 +342,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures the shipped TOML stays compatible with the runtime schema.
     fn packaged_configuration_matches_the_runtime_schema() {
         let config = Config::parse(include_str!("../../../packaging/installer.toml")).unwrap();
         config.require_autorun().unwrap();
@@ -334,6 +354,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures media selectors are exclusive and the image directory stays relative.
     fn media_selector_and_path_validation() {
         Config::parse(indoc! {"
             mode = 'autorun'
@@ -353,6 +374,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures image discovery is sorted, nonrecursive, and excludes symlinks.
     fn catalog_is_sorted_nonrecursive_and_ignores_symlinks() {
         let root = TempDir::new().unwrap();
         let directory = root.path().join("cosi");
@@ -370,6 +392,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures media overlays cannot change bootstrap settings or discard defaults.
     fn media_overlay_preserves_defaults_and_bootstrap() {
         let root = TempDir::new().unwrap();
         fs::create_dir(root.path().join("installer")).unwrap();
@@ -391,6 +414,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensures the former CD-ROM key maps to the filesystem-label setting.
     fn legacy_cdrom_label_alias_still_mounts_the_same_filesystem() {
         let legacy = Config::parse("mode = 'autorun'\n[media]\ncdromLabel = 'CDROM'").unwrap();
         let generic =
