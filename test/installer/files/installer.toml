@@ -3,7 +3,7 @@ serialMode = "logs"
 serialVerbosity = "debug"
 
 [media]
-cdromLabel = "CDROM"
+filesystemLabel = "CDROM"
 cosiDirectory = "cosi/"
 
 [autorun]
