@@ -34,9 +34,9 @@ serialMode = "logs"
 serialVerbosity = "debug"
 
 [media]
-filesystemLabel = "TRD_INSTALL"
 cosiDirectory = "cosi/"
-# Instead of filesystemLabel, supply mountPath for already-mounted media.
+# Optional: filesystemLabel = "CUSTOM_LABEL"
+# Or use mountPath for already-mounted media.
 
 [autorun]
 # If omitted, use /etc/trident/config.yaml when that file exists.
@@ -53,10 +53,11 @@ an error rather than showing an unfinished serial TUI.
 `serialVerbosity` defaults to `debug` and accepts `off`, `error`, `warn`,
 `info`, `debug`, and `trace`.
 
-`media.filesystemLabel` is a filesystem label, not a CD-ROM device name. The
-FAT-compatible default (`TRD_INSTALL`, 11 characters) can identify an ISO9660
-filesystem or a FAT filesystem on a GPT USB partition. Set it to the actual
-label on the installation medium (Image Customizer ISO output uses `CDROM`).
+`media.filesystemLabel` is a filesystem label, not a CD-ROM device name. When
+omitted, the installer looks for either `TRD_INSTALL` (FAT-compatible, 11
+characters) or `CDROM` (Image Customizer's ISO label), and rejects ambiguity
+if both are present. Set it explicitly for other labels or when booting from
+an optical ISO alongside a separate installer USB.
 The older `cdromLabel` key is accepted as an alias; setting both is an error.
 Media is mounted read-only with filesystem auto-detection at
 `/run/trident/installer-media`. Media discovery waits up to 60 seconds for
@@ -102,13 +103,11 @@ and gRPC logs, never a TUI, even when no graphical console exists. Autorun
 continues without an interactive console; missing inputs, repeat-install
 protection and other cases needing operator input emit an error and stop.
 Failures to open or write a serial console are logged and mirroring to that
-console stops; they do not stop installation. Disable serial getty on a
-logs-only installer ISO so its login prompt cannot mix with application logs.
+console stops; they do not stop installation. On boots with
+`trident.installer=1`, the RPM's getty drop-ins prevent serial login prompts
+from mixing with the log stream and prevent tty1 getty from taking input.
 Firmware, kernel and systemd output during boot is separate from the
 installer's stream and may precede it; scrapers should match tagged log lines.
-The ISO must also disable `getty@tty1.service` and suppress logind's automatic
-virtual gettys (`NAutoVTs=0`, `ReserveVT=0`): stopping a getty before
-`getty.target` starts does not prevent it from claiming tty1 later.
 
 No ordinary source picker or confirmation precedes autorun. Missing sources
 and failures keep recent logs visible in a red result frame; `D` opens the
@@ -168,17 +167,23 @@ automatically reboot.
 
 ## ISO integration
 
-Install `trident-installer`, then explicitly enable `trident-installer.service`
-and `tridentd.socket` in the ISO recipe. Installing the RPM alone does not enable
-the installer. Do not also enable `trident-install.service`. The daemon must be
-built with `grpc-preview` for regular Install; repository RPM builds enable it.
-Replace older installer startup units and autologin entrypoints rather than
-running both installers on the same ISO.
+On a full-OS installer ISO, install `trident-installer`, add
+`trident.installer=1` to its **ISO kernel command line**, and provide a COSI
+under `cosi/` or a Host Configuration. The RPM pulls in Trident and common
+installer tools, enables its service, starts the gRPC socket through the
+service dependency, and suppresses tty1 and serial gettys on marked boots.
+Without that flag the service skips startup and normal gettys are unchanged,
+including on an installed OS that happens to have the RPM.
 
-The ISO volume label must match configuration. Image Customizer's existing
-`CDROM` label requires an override or relabelling. With full-OS initramfs, keep
-SELinux disabled and include USB storage/UAS, CD-ROM/SCSI, and USB host-controller
-drivers. QEMU's IDE CD-ROM does not validate BMC virtual-media support.
+Do not also enable `trident-install.service` or older autologin entrypoints.
+The daemon must be built with `grpc-preview` for regular Install; repository
+RPM builds enable it. For Image Customizer ISOs, `CDROM` is automatically
+recognized; for GPT USB media, `TRD_INSTALL` is automatically recognized.
+Specify `media.filesystemLabel` in the bootstrap TOML only to override those
+labels or disambiguate multiple matching devices. With full-OS initramfs,
+keep SELinux disabled and include USB storage/UAS, CD-ROM/SCSI, and USB
+host-controller drivers. QEMU's IDE CD-ROM does not validate BMC virtual
+media support.
 
 ## Validation
 

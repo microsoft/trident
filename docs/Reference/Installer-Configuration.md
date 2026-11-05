@@ -19,7 +19,6 @@ serialMode = "logs"
 serialVerbosity = "debug"
 
 [media]
-filesystemLabel = "TRD_INSTALL"
 cosiDirectory = "cosi/"
 
 [autorun]
@@ -82,7 +81,7 @@ necessarily the value written in the packaged file.
 | `mode` | **None; required** | Set `"autorun"` (as the packaged file does). This is a startup mode, not the Install/StreamDisk selector. `"interactive"` is reserved and rejected. |
 | `serialMode` | `"logs"` | Sends plain installer and Trident log records to active serial consoles, without a serial TUI. `"ui"` is reserved and rejected. |
 | `serialVerbosity` | `"debug"` | Serial log filter: `"off"`, `"error"`, `"warn"`, `"info"`, `"debug"`, or `"trace"`. Independent of the on-screen log filter, which starts at Debug. |
-| `media.filesystemLabel` | `"TRD_INSTALL"` | Exact filesystem label to find on optical media or a USB partition. `TRD_INSTALL` fits FAT's 11-character label limit; Image Customizer ISOs use `CDROM` instead. |
+| `media.filesystemLabel` | Unset (auto) | Exact filesystem label when set. Otherwise find either `TRD_INSTALL` (FAT-compatible USB) or `CDROM` (Image Customizer ISO). If both labels are present, choose neither; specify a label to disambiguate. |
 | `media.cdromLabel` | — | Legacy alias for `filesystemLabel`. Do not specify both names. |
 | `media.mountPath` | Unset | Absolute path to an **already mounted** filesystem instead of label discovery. Cannot be combined with `filesystemLabel`; this path is not mounted or made read-only by the installer. |
 | `media.cosiDirectory` | `"cosi"` | Nonempty directory relative to the media root. Absolute paths and `..` are rejected. Only regular `.cosi` files directly inside it are considered, in filename order. |
@@ -90,9 +89,10 @@ necessarily the value written in the packaged file.
 | `autorun.reboot` | `true` | Reboot after successful servicing **only if** Trident reports that work was performed and a reboot is required. |
 | `autorun.force` | `false` | On automatic COSI streaming, bypass the matching-filesystem-UUID repeat-install guard. Does not affect Host Configuration installs, manual recovery sources, or the mounted/read-only disk safety check. |
 
-`filesystemLabel` discovery waits up to 60 seconds during autorun for late
-USB/BMC device enumeration. It fails if multiple devices have the label. The
-selected filesystem is mounted read-only at `/run/trident/installer-media`;
+Media discovery waits up to 60 seconds during autorun for late USB/BMC device
+enumeration. It fails if more than one device matches the selected/default
+labels. The selected filesystem is mounted read-only at
+`/run/trident/installer-media`;
 the live OS must support its filesystem. A manually selected remote recovery
 source does not wait for media.
 
@@ -134,9 +134,8 @@ hostConfiguration = "installer/host.yaml"
 reboot = false
 ```
 
-The bootstrap `media.filesystemLabel` must already match the media for this
-overlay to be found. Place the referenced `installer/host.yaml` on the same
-media.
+The bootstrap media selection must already match the media for this overlay
+to be found. Place the referenced `installer/host.yaml` on the same media.
 
 The media file can change `serialVerbosity`, `media.cosiDirectory`, `mode`,
 and `autorun` options. It cannot change `serialMode`,
@@ -144,3 +143,35 @@ and `autorun` options. It cannot change `serialMode`,
 those settings are needed to find the media in the first place. Other
 fields still undergo the same validation; setting `mode = "interactive"`
 remains unsupported.
+
+## Building an installer ISO
+
+On a full-OS Azure Linux ISO, install the `trident-installer` RPM and add
+`trident.installer=1` to the **ISO boot kernel command line**. Include a
+COSI in `cosi/`, or provide a Host Configuration as described above. For
+example, the essential Image Customizer settings are:
+
+```yaml
+os:
+  packages:
+    install:
+      - trident-installer
+iso:
+  initramfsType: full-os
+  additionalFiles:
+    - source: cosi/payload.cosi
+      destination: /cosi/payload.cosi
+  kernelCommandLine:
+    extraCommandLine:
+      - trident.installer=1
+```
+
+The RPM includes the installer TOML, Trident and common runtime tools. It
+starts its service and gRPC socket on a marked installer boot and prevents
+gettys from reclaiming tty1 or mixing login prompts with serial logs.
+No separate service enablement, getty override, or label override is
+necessary for a single `CDROM` ISO or `TRD_INSTALL` USB. On an unmarked
+normal OS, the service does not run and gettys are unaffected. A Host
+Configuration may require additional tools for optional features such as
+RAID or encryption. See the [TUI installer ISO recipe](../../tests/images/tui-installer/image.yaml)
+for a working full image definition.

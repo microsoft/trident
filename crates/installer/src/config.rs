@@ -14,6 +14,7 @@ pub(super) const DEFAULT_HOST_CONFIGURATION: &str = "/etc/trident/config.yaml";
 pub(super) const MEDIA_CONFIG: &str = "installer/installer.toml";
 pub(super) const MEDIA_MOUNT: &str = "/run/trident/installer-media";
 pub(super) const DEFAULT_MEDIA_LABEL: &str = "TRD_INSTALL";
+pub(super) const DEFAULT_MEDIA_LABELS: &[&str] = &[DEFAULT_MEDIA_LABEL, "CDROM"];
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -346,10 +347,8 @@ mod tests {
     fn packaged_configuration_matches_the_runtime_schema() {
         let config = Config::parse(include_str!("../../../packaging/etc/installer.toml")).unwrap();
         config.require_autorun().unwrap();
-        assert_eq!(
-            config.media.filesystem_label.as_deref(),
-            Some(DEFAULT_MEDIA_LABEL)
-        );
+        assert!(config.media.filesystem_label.is_none());
+        assert_eq!(DEFAULT_MEDIA_LABELS, ["TRD_INSTALL", "CDROM"]);
         assert!(config.autorun.reboot);
     }
 

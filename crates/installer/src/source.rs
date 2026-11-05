@@ -169,23 +169,26 @@ fn media_root(
         );
         return Ok(Some(path.canonicalize()?));
     }
-    let label = settings
-        .media
-        .filesystem_label
-        .as_deref()
-        .unwrap_or(config::DEFAULT_MEDIA_LABEL);
+    let label = settings.media.filesystem_label.as_deref();
     progress("Looking for installer media by filesystem label")?;
     let deadline = Instant::now() + MEDIA_DISCOVERY_TIMEOUT;
     let mut attempts = 0;
     let devices = loop {
-        let devices = lsblk::devices_by_label(label)?;
+        let mut devices =
+            lsblk::find(|device| media_label_matches(device.label.as_deref(), label))?
+                .into_iter()
+                .map(|device| device.device_path())
+                .collect::<Vec<_>>();
+        devices.sort();
+        devices.dedup();
         if !devices.is_empty() || !wait_for_media || Instant::now() >= deadline {
             break devices;
         }
         if attempts % 5 == 0 {
-            progress(&format!(
-                "Waiting for installation media labelled '{label}'"
-            ))?;
+            let labels = label
+                .map(str::to_owned)
+                .unwrap_or_else(|| config::DEFAULT_MEDIA_LABELS.join(" or "));
+            progress(&format!("Waiting for installation media labelled {labels}"))?;
         }
         attempts += 1;
         thread::sleep(MEDIA_POLL_INTERVAL);
@@ -224,6 +227,14 @@ fn media_root(
         )?;
     }
     Ok(Some(target.into()))
+}
+
+/// Matches an explicit filesystem label or the supported optical and USB defaults.
+fn media_label_matches(actual: Option<&str>, configured: Option<&str>) -> bool {
+    actual.is_some_and(|label| match configured {
+        Some(configured) => label == configured,
+        None => config::DEFAULT_MEDIA_LABELS.contains(&label),
+    })
 }
 
 /// Accepts only credential-free HTTP(S) URLs for manually entered recovery sources.
@@ -469,6 +480,18 @@ mod tests {
     use indoc::indoc;
     use tar::Builder as TarBuilder;
     use tempfile::TempDir;
+
+    #[test]
+    /// Ensures automatic media selection supports optical and FAT labels without guessing.
+    fn default_media_labels_are_unambiguous_and_explicit_labels_stay_exact() {
+        assert!(media_label_matches(Some("TRD_INSTALL"), None));
+        assert!(media_label_matches(Some("CDROM"), None));
+        assert!(!media_label_matches(Some("OTHER"), None));
+        assert!(!media_label_matches(None, None));
+        assert!(media_label_matches(Some("CUSTOM"), Some("CUSTOM")));
+        assert!(!media_label_matches(Some("CDROM"), Some("TRD_INSTALL")));
+        config::choose_media(&[PathBuf::from("/dev/sr0"), PathBuf::from("/dev/sdb1")]).unwrap_err();
+    }
 
     #[test]
     /// Ensures recovery sources cannot silently fall back to local files or other schemes.
