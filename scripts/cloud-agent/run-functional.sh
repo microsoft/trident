@@ -45,6 +45,7 @@ main() {
     local mode="${1:-smoke}"
     local marker_expression
     local build_output
+    local cleanup_command
     local -a test_paths
 
     case "$mode" in
@@ -89,7 +90,8 @@ main() {
     run python3 scripts/cloud-agent/download_functional_artifact.py
 
     build_output="$(mktemp)"
-    trap 'rm -f "$build_output"' EXIT
+    printf -v cleanup_command 'rm -f -- %q' "$build_output"
+    trap "$cleanup_command" EXIT
 
     run make \
         "BUILD_OUTPUT=$build_output" \
