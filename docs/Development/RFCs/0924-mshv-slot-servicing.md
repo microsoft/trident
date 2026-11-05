@@ -11,10 +11,10 @@ Enable Trident to install, update and roll back MSHV-enabled Azure Container
 Linux (ACL) images by keeping a complete hypervisor boot payload beside each
 slot's EFI chain. Preserve existing firmware and UKI selection. Add mandatory
 boot-identity validation before commit so a mixed hypervisor/OS boot cannot
-be promoted. Two alternative efitreeloader changes are proposed: select
-complete signed argument profiles by directory, or expand a signed argument
-template using the current firmware boot entry. The resolver choice and its
-signing-policy approval remain open.
+be promoted. The preferred efitreeloader approach expands a signed argument
+template using the current firmware boot entry. Complete signed argument
+profiles selected by directory remain an alternative. Signing-policy
+approval of the preferred approach remains open.
 
 ## Motivation and Goals
 
@@ -170,52 +170,15 @@ installation's EFI directory and corresponds to UKI suffix `azlb1`, not
 
 ### Efitreeloader resolver alternatives
 
-Choose **one** of these mechanisms. Both keep relative child executable
-resolution and pass concrete ESP-absolute DLL/root arguments to HvLoader.
-Neither writes `LoaderEntry*` or selects a UKI. Neither requires HvLoader or
-the DLL to implement relative-path support.
+Prefer **Alternative A**, subject to signing-policy approval, because it
+avoids enumerating every installation directory in signed profiles.
+Alternative B retains complete signed argument strings if template
+expansion is not accepted. Choose **one** mechanism. Both keep relative
+child executable resolution and pass concrete ESP-absolute DLL/root
+arguments to HvLoader. Neither writes `LoaderEntry*` or selects a UKI.
+Neither requires HvLoader or the DLL to implement relative-path support.
 
-#### Alternative A: signed directory profiles
-
-Compile a generic list of `{root, load_entries}` profiles into the signed
-loader. Each profile contains complete child argument strings.
-
-The following illustrates B's profile only. A deployable image must also
-cover A and configured BOOT fallback.
-
-```json
-{
-  "profiles": [
-    {
-      "root": "\\EFI\\AZLB",
-      "load_entries": [
-        {
-          "path": "HvLoader.efi",
-          "args": "\\EFI\\AZLB\\lxhvloader.dll MSHV_ROOT=\\\\EFI\\AZLB\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
-        },
-        { "path": "second.efi" }
-      ]
-    }
-  ]
-}
-```
-
-Discover the executing parent with existing `LoadedImageDevicePath`
-handling. Match exactly one canonical root, case-insensitively for the
-initial ASCII directory names, and execute its entries in order. Pass
-arguments unchanged. The mechanism must not understand ACL or A/B names.
-
-Reject duplicate/malformed roots, empty profiles and documents mixing the
-legacy and profile forms at build time. Reject zero or multiple runtime
-matches before starting any child. Retain the existing top-level
-`load_entries` schema as a separate legacy configuration.
-
-This bounds runtime selection to complete signed strings. Additional roots
-such as `AZL2A`/`AZL2B` require explicit profiles and release coverage.
-Reject unsupported install indices before deployment; an unsigned manifest
-must not expand the signed root list.
-
-#### Alternative B: runtime boot-entry prefix
+#### Alternative A (preferred): runtime boot-entry prefix
 
 Compile one argument template into the signed efitreeloader. Efitreeloader,
 not HvLoader or the DLL, expands the designated `${{PREFIX}}` token before
@@ -259,6 +222,46 @@ does not sign the prefix read from mutable firmware state**. Explicit
 owner/security-policy approval of the substitution and validation contract
 is required. It is not an approved relaxation of the signed-argument
 requirement.
+
+#### Alternative B: signed directory profiles
+
+Compile a generic list of `{root, load_entries}` profiles into the signed
+loader. Each profile contains complete child argument strings.
+
+The following illustrates B's profile only. A deployable image must also
+cover A and configured BOOT fallback.
+
+```json
+{
+  "profiles": [
+    {
+      "root": "\\EFI\\AZLB",
+      "load_entries": [
+        {
+          "path": "HvLoader.efi",
+          "args": "\\EFI\\AZLB\\lxhvloader.dll MSHV_ROOT=\\\\EFI\\AZLB\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
+        },
+        { "path": "second.efi" }
+      ]
+    }
+  ]
+}
+```
+
+Discover the executing parent with existing `LoadedImageDevicePath`
+handling. Match exactly one canonical root, case-insensitively for the
+initial ASCII directory names, and execute its entries in order. Pass
+arguments unchanged. The mechanism must not understand ACL or A/B names.
+
+Reject duplicate/malformed roots, empty profiles and documents mixing the
+legacy and profile forms at build time. Reject zero or multiple runtime
+matches before starting any child. Retain the existing top-level
+`load_entries` schema as a separate legacy configuration.
+
+This bounds runtime selection to complete signed strings. Additional roots
+such as `AZL2A`/`AZL2B` require explicit profiles and release coverage.
+Reject unsupported install indices before deployment; an unsigned manifest
+must not expand the signed root list.
 
 For both alternatives, preserve the current extra-leading-backslash
 `MSHV_ROOT` convention and validate it with the packaged DLL. Keep argument
@@ -388,9 +391,9 @@ the payload files. Its final name and supported combinations are
 implementation review items, not an existing API.
 
 Efitreeloader configuration changes are described above. Alternative A adds
-a strict `profiles` form while retaining legacy `load_entries`. Alternative
-B adds explicitly gated template interpretation; legacy literals and
-non-MSHV behavior must remain unchanged.
+explicitly gated template interpretation; legacy literals and non-MSHV
+behavior must remain unchanged. Alternative B adds a strict `profiles`
+form while retaining legacy `load_entries`.
 
 The preparation record forms a versioned loader/Trident contract.
 Resolve final protocol ownership and versioning before enabling production
@@ -402,8 +405,8 @@ images.
 
 | Area | Coverage |
 | --- | --- |
-| Profiles (A) | Legacy compatibility, strict schema, duplicate/malformed roots, zero/multiple matches, case handling, ordering and unchanged argument bytes; unlisted roots fail before child execution. |
-| Prefix (B) | Binary load-option/device-path parsing, UTF-16 paths, device identity, exact substitution, argument lifetime/encoding, malformed/missing variables, multiple ESPs, and executing-path mismatch. |
+| Prefix (A, preferred) | Binary load-option/device-path parsing, UTF-16 paths, device identity, exact substitution, argument lifetime/encoding, malformed/missing variables, multiple ESPs, and executing-path mismatch. |
+| Profiles (B) | Legacy compatibility, strict schema, duplicate/malformed roots, zero/multiple matches, case handling, ordering and unchanged argument bytes; unlisted roots fail before child execution. |
 | Payload deployment | Complete allowlist, links/special-file rejection, inactive-only writes, slot reuse, firstboot/addon preservation, insufficient space, failed-copy retries and non-MSHV compatibility. |
 | Identity guard | A+B and B+A mismatch, higher install-index naming, malformed/incomplete/stale records and rejection of ambiguous BOOT promotion; verify errors reach existing health-failure state/reboot handling. |
 | Fallback | Nested files; failures during copy/rename/cleanup; stale exact `.new`/`.old` entries; same servicing errors as ordinary fallback failures and no active-slot mutation. |
