@@ -24,7 +24,9 @@ exits when complete.
 Read `/etc/trident/installer.toml` or the path supplied with `--config`.
 See the [Installer Configuration reference](../../docs/Reference/Installer-Configuration.md)
 for all fields, defaults, and media-overlay rules.
-`mode` is mandatory. All other fields are optional:
+`mode = "autorun"` is required and controls startup, not the servicing
+operation: a Host Configuration selects Install; without one, the first media
+COSI selects StreamDisk. All other fields are optional:
 
 ```toml
 mode = "autorun"
