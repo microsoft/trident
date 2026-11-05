@@ -125,11 +125,11 @@ pub(crate) fn set_foreground_group(terminal: &File, group: Pid) -> io::Result<()
     Ok(())
 }
 
-/// Runs an interactive Bash on the supplied terminal and returns when it exits.
+/// Runs an interactive login Bash on the supplied terminal, loading the root profile.
 pub fn shell(terminal: &File) -> Result<(), Error> {
     Dependency::Bash
         .cmd()
-        .args(["--noprofile", "--norc", "-i"])
+        .args(["--login", "-i"])
         .run_interactive(terminal)?;
     Ok(())
 }
