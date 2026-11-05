@@ -3,6 +3,7 @@
 set -euxo pipefail
 
 readonly DATA_DISK_MOUNT="/mnt/storage"
+readonly FUNCTIONAL_CACHE_ROOT="$DATA_DISK_MOUNT/trident-cloud-agent/functional"
 
 if ! mountpoint --quiet "$DATA_DISK_MOUNT"; then
     echo "Expected runner data disk is not mounted at $DATA_DISK_MOUNT" >&2
@@ -35,21 +36,18 @@ python3 -m pip install \
     "virt-firmware==26.2"
 
 sudo usermod -a -G libvirt "$USER"
+sudo install -d \
+    -m 0755 \
+    -o "$(id -u)" \
+    -g "$(id -g)" \
+    "$FUNCTIONAL_CACHE_ROOT"
 
 mkdir -p "$HOME/.config/libvirt"
 cat >"$HOME/.config/libvirt/libvirt.conf" <<'EOF'
 uri_default = "qemu:///system"
 EOF
 
-sudo mkdir -p /etc/systemd/system/libvirtd.socket.d
-cat <<'EOF' | sudo tee /etc/systemd/system/libvirtd.socket.d/mode.conf >/dev/null
-[Socket]
-SocketMode=0666
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl restart libvirtd.socket
-sudo systemctl restart libvirtd.service
+sudo systemctl start libvirtd.service
 
 if [[ ! -f "$HOME/.ssh/id_rsa" ]]; then
     mkdir -p "$HOME/.ssh"
@@ -58,5 +56,5 @@ if [[ ! -f "$HOME/.ssh/id_rsa" ]]; then
 fi
 
 test -e /dev/kvm
-virsh -c qemu:///system list --all
+sg libvirt -c "virsh -c qemu:///system list --all"
 python3 -c "import assertpy, paramiko, pytest"

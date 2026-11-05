@@ -20,6 +20,27 @@ run() {
     "$@"
 }
 
+enter_libvirt_group() {
+    local libvirt_gid
+    local command
+    local argument
+
+    libvirt_gid="$(getent group libvirt 2>/dev/null | cut -d: -f3 || true)"
+    if [[ -z "$libvirt_gid" ]]; then
+        echo "Missing libvirt group. Run scripts/cloud-agent/setup-functional.sh first." >&2
+        return 1
+    fi
+    if [[ " $(id -G) " == *" $libvirt_gid "* ]]; then
+        return
+    fi
+
+    command="exec bash"
+    for argument in "$REPO_ROOT/scripts/cloud-agent/run-functional.sh" "$@"; do
+        printf -v command '%s %q' "$command" "$argument"
+    done
+    exec sg libvirt -c "$command"
+}
+
 main() {
     local mode="${1:-smoke}"
     local marker_expression
@@ -50,6 +71,8 @@ main() {
             return 2
             ;;
     esac
+
+    enter_libvirt_group "$@"
 
     cd "$REPO_ROOT"
     export PATH="$HOME/.local/bin:$PATH"
