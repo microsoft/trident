@@ -90,32 +90,16 @@ mixed launch.
 
 ### Requirements
 
-- Initially support opt-in x86-64 ACL UKI images deployed through the normal
-  file-based ESP path.
-- Package a complete relocatable source bundle; reject incomplete or
-  unsupported bundles before clearing the target.
-- Stage only the target slot and keep the committed slot bootable.
-- Preserve Trident's UKI naming, addon handling, firmware registration,
-  servicing states and failure propagation.
-- Copy the complete payload for configured UEFI fallback, including nested
-  files and payload-origin metadata.
-- Require fresh preparation evidence and identity validation before commit,
-  manual-rollback success and rollback-recovery success.
-- Preserve executable verification and obtain approval for the selected
-  child-argument policy.
-- Preflight actual peak ESP use without deleting the committed slot.
+- Build 1ES COSI files with the required MSHV content and an A/B-update-compatible
+  structure.
+- Support stage, finalize and commit for installation and update of 1ES MSHV
+  image COSI files.
+- Support automatic rollback for failed updates.
 
 ### Out of Scope
 
-- A new active-slot EFI variable, loader-driven UKI pinning, or a second
-  servicing state machine.
-- Arbitrary shared-ESP file updates or non-UKI MSHV deployment.
-- Raw-image/disk-streaming adoption and conversion of already installed
-  shared-path MSHV layouts in the initial release.
-- Guaranteed recovery from every pre-Linux hang or arbitrary power loss.
-- Authenticated release pairing, runtime attestation and new anti-rollback
-  policy. Diagnostic evidence is not a security authority.
-- A new UKI-prerun facility or relative-path changes inside HvLoader/DLL.
+- General MSHV support; this feature is gated by the internal parameter
+  `mshvSlotEspPayload`.
 
 ### Exit Criteria
 
