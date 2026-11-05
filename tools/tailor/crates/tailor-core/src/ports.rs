@@ -218,6 +218,8 @@ pub struct ContainerConfig {
     pub args: Vec<String>,
     pub binds: Vec<String>,
     pub privileged: bool,
+    /// Disable SELinux container labeling for this request only (janitor cleanup on labeled hosts).
+    pub disable_selinux_label: bool,
     /// The cell slug, tagged onto every re-emitted IC log event (`cell = <slug>`); empty for
     /// non-cell containers such as the ownership janitor (`meta/docs/2026-06-29-logging.md` §5.3).
     pub cell_slug: String,
