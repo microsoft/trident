@@ -335,7 +335,7 @@ install -D -m 755 target/release/%{name}-acl-agent %{buildroot}/%{_bindir}/%{nam
 install -D -m 755 target/release/%{name}-installer %{buildroot}/%{_bindir}/%{name}-installer
 install -D -m 644 packaging/systemd/%{name}-acl-agent.service %{buildroot}%{_unitdir}/%{name}-acl-agent.service
 install -D -m 644 packaging/systemd/%{name}-installer.service %{buildroot}%{_unitdir}/%{name}-installer.service
-install -D -m 644 packaging/installer.toml %{buildroot}/etc/%{name}/installer.toml
+install -D -m 644 packaging/etc/installer.toml %{buildroot}/etc/%{name}/installer.toml
 
 # Copy Trident SELinux policy module to /usr/share/selinux/packages
 install -D -m 0644 %{name}.pp.bz2 %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{name}.pp.bz2

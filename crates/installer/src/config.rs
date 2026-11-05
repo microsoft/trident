@@ -344,7 +344,7 @@ mod tests {
     #[test]
     /// Ensures the shipped TOML stays compatible with the runtime schema.
     fn packaged_configuration_matches_the_runtime_schema() {
-        let config = Config::parse(include_str!("../../../packaging/installer.toml")).unwrap();
+        let config = Config::parse(include_str!("../../../packaging/etc/installer.toml")).unwrap();
         config.require_autorun().unwrap();
         assert_eq!(
             config.media.filesystem_label.as_deref(),
