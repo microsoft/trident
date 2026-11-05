@@ -121,7 +121,7 @@ rejected until its additional measurement and unlock coverage passes.
   and root paths work in each slot and fallback directory, without silently
   substituting fixed shared payloads. Complete DLL source behavior has not
   been established.
-- **Image producer:** build and sign the loader, assemble the marked
+- **Image producer:** build and sign the loader, assemble the complete
   relocatable ESP bundle, and deliver it through the image's existing ESP
   content. No COSI schema revision is proposed.
 - **Trident:** extend ESP copying and mandatory health validation.
@@ -133,7 +133,7 @@ rejected until its additional measurement and unlock coverage passes.
 ### Slot-owned ESP layout
 
 The source image supplies one canonical bundle under `EFI/BOOT`. Trident
-copies it into the target slot directory and writes managed origin metadata.
+copies it into the target slot directory.
 
 ```text
 ESP/
@@ -148,12 +148,10 @@ ESP/
         hvix64.exe
         hvax64.exe
         kdstub.dll
-      mshv-layout
-      mshv-origin
     AZLB/
       ...independently versioned bundle...
     BOOT/
-      ...configured fallback copy, including its payload origin...
+      ...configured fallback copy...
     Linux/
       vmlinuz-100-azla0.efi
       vmlinuz-100-azla0.efi.extra.d/
@@ -161,10 +159,9 @@ ESP/
       vmlinuz-101-azlb0.efi.extra.d/
 ```
 
-The marker contains the exact ASCII bytes `slot-v1\n`. Validate this version
-and the complete allowlisted tree as regular files/directories, rejecting
-links, special files and unexpected content. The only payload directory
-tree is `Windows/System32`.
+Validate the complete allowlisted tree as regular files/directories,
+rejecting links, special files and unexpected content. The only payload
+directory tree is `Windows/System32`.
 
 UKIs remain in shared `EFI/Linux`; their existing `.extra.d` staging and
 ACL slot/firstboot policies remain unchanged. `AZL2B` is an additional
@@ -267,42 +264,18 @@ For both alternatives, preserve the current extra-leading-backslash
 `MSHV_ROOT` convention and validate it with the packaged DLL. Keep argument
 storage alive through child execution and preserve its encoding.
 
-### Deployment and payload identity
+### Deployment
 
 Introduce a separately gated slot layout, provisionally
-`internalParams.mshvSlotEspPayload`. Require both this opt-in and the exact
-source marker. Reject non-UKI images, incomplete bundles, conflicting legacy
-flags and unsupported resolver coverage before modifying the target.
+`internalParams.mshvSlotEspPayload`. Require this opt-in and validate the
+required payload files. Reject non-UKI images, incomplete bundles,
+conflicting legacy flags and unsupported resolver coverage before modifying
+the target.
 
 Use the existing target-directory calculation, inactive-slot clearing,
 deployment, flush/unmount and finalization paths. Replace only the
 boot-file copy operation with complete-bundle copying. Do not copy updated
 files into the committed slot or the legacy fixed `\efi` paths.
-
-`mshv-origin` records `kind`, managed `install-index`, `slot` and
-`payload-id`. It contains no UKI filename or boot preference. The copied
-origin remains with a fallback snapshot so BOOT's payload can be attributed
-without a mutable global active-slot setting.
-
-For `slot-v1`, define the diagnostic payload ID as SHA-256 over these
-ordered files' final signed bytes:
-
-```text
-bootx64.efi
-grubx64.efi
-second.efi
-HvLoader.efi
-lxhvloader.dll
-Windows/System32/hvix64.exe
-Windows/System32/hvax64.exe
-Windows/System32/kdstub.dll
-```
-
-For each UTF-8 relative name, hash its byte length as little-endian `u64`,
-the name bytes, the file length as little-endian `u64`, and file bytes.
-Exclude marker/origin metadata to avoid a self-referential digest. Builder
-and consumer must agree. This identifies the deployed bundle; it is not
-authorization or independent evidence of what the external DLL loaded.
 
 Complete validation, copying and persistence before ordinary firmware/UKI
 finalization advertises the trial. A failed copy uses existing deployment
@@ -311,7 +284,7 @@ second boot-variable finalizer is introduced.
 
 ### Mandatory boot-identity validation
 
-For the new MSHV sequence only, efitreeloader preflights the bundle/origin
+For the new MSHV sequence only, efitreeloader preflights the bundle
 and publishes a bounded, versioned preparation record. Write
 `prepared=false` before possible HvLoader preparation, then overwrite with
 `prepared=true` only after successful return. An error or partial
@@ -324,7 +297,7 @@ Proposed private protocol:
 | Variable | `MshvBootPreparation` |
 | Vendor GUID | `d3f18c74-6ab2-4e13-9d6a-79828a5239e1` (proposed, not allocated by this RFC) |
 | Attributes | Boot-service and runtime access; **not** nonvolatile |
-| Encoding | Bounded UTF-8 fields: `version`, `image-dir`, `prepared`, plus origin fields |
+| Encoding | Bounded UTF-8 fields: `version`, `image-dir`, `prepared` |
 | Parsing | Reject missing/duplicate fields, unknown versions, malformed values and control-character injection. |
 
 Gate record handling to the new MSHV sequence; do not change unrelated
@@ -335,8 +308,11 @@ Record-write failures before or after preparation must not allow promotion.
 Trident compares the preparation record, `LoaderEntrySelected`, existing
 root/verity validation and the expected servicing target. Use `BootCurrent`
 as corroboration, not an arbitrary label as proof of the executed chain.
-An AZLA preparation with a B UKI/root is a mismatch. A BOOT payload copied
-from A is also a mismatch with B even though its executing directory is BOOT.
+An AZLA preparation with a B UKI/root is a mismatch. The executing directory
+`EFI/BOOT` alone does not establish which slot's payload was copied there.
+Until a metadata-free attribution mechanism is defined and tested, reject
+promotion from a BOOT preparation whose payload identity cannot be
+established.
 
 Run this mandatory check before user health hooks and before `BootOrder`,
 `LoaderEntryDefault` or fallback promotion. Reuse existing health-error
@@ -351,9 +327,9 @@ entry. Until that is defined and tested, reject ambiguous promotion rather
 than accidentally promoting BOOT.
 
 The record attests only operationally to the sequence whose preparation
-returned success. Privileged writers can spoof origin metadata and EFI
-variables. Use a trustworthy runtime hypervisor identity query if available;
-do not equate this diagnostic protocol with cryptographic attestation.
+returned success. Privileged writers can spoof EFI variables. Use a
+trustworthy runtime hypervisor identity query if available; do not equate
+this diagnostic protocol with cryptographic attestation.
 
 ### Lifecycle
 
@@ -376,8 +352,8 @@ testing demonstrates a new MSHV-specific failure.
 
 ### UEFI fallback
 
-Copy the chosen slot's complete bundle, including `Windows/System32` and
-origin metadata, to `EFI/BOOT`. Resolve runtime paths to BOOT's own files.
+Copy the chosen slot's complete bundle, including `Windows/System32`,
+to `EFI/BOOT`. Resolve runtime paths to BOOT's own files.
 This is a payload snapshot, **not** a self-contained fallback OS: UKIs stay
 shared, and no copied exact-UKI selector is added.
 
@@ -390,7 +366,7 @@ Preserve existing fallback modes:
 | Disabled | Do not create/update fallback. | Unchanged. |
 
 The existing flat `replace_boot_files` copy cannot copy nested directories.
-Extend its copy/removal operations only for validated marked bundles,
+Extend its copy/removal operations only for validated opt-in bundles,
 retaining its existing `.new`/`.old` phases, callers, return type and
 servicing-error propagation. Stage the complete replacement tree before
 renaming; handle only exact, validated Trident-owned stale entries on retry.
@@ -407,18 +383,18 @@ BOOT-to-managed promotion remains unsupported.
 ## Public API Design
 
 No new public Host Configuration API or COSI metadata revision is proposed.
-The provisional internal flag is off by default and requires the versioned
-source marker. Its final name and supported combinations are implementation
-review items, not an existing API.
+The provisional internal flag is off by default and requires validation of
+the payload files. Its final name and supported combinations are
+implementation review items, not an existing API.
 
 Efitreeloader configuration changes are described above. Alternative A adds
 a strict `profiles` form while retaining legacy `load_entries`. Alternative
 B adds explicitly gated template interpretation; legacy literals and
 non-MSHV behavior must remain unchanged.
 
-The marker, origin metadata and preparation record form a versioned
-producer/loader/Trident contract. Resolve final protocol ownership and
-versioning before enabling production images.
+The preparation record forms a versioned loader/Trident contract.
+Resolve final protocol ownership and versioning before enabling production
+images.
 
 ## Testing and Metrics
 
@@ -428,21 +404,21 @@ versioning before enabling production images.
 | --- | --- |
 | Profiles (A) | Legacy compatibility, strict schema, duplicate/malformed roots, zero/multiple matches, case handling, ordering and unchanged argument bytes; unlisted roots fail before child execution. |
 | Prefix (B) | Binary load-option/device-path parsing, UTF-16 paths, device identity, exact substitution, argument lifetime/encoding, malformed/missing variables, multiple ESPs, and executing-path mismatch. |
-| Payload deployment | Complete allowlist, links/special-file rejection, digest agreement, inactive-only writes, slot reuse, firstboot/addon preservation, insufficient space, failed-copy retries and non-MSHV compatibility. |
-| Identity guard | A+B and B+A mismatch, higher install-index naming, malformed/incomplete/stale records, BOOT origin and ambiguous promotion; verify errors reach existing health-failure state/reboot handling. |
-| Fallback | Nested files and metadata; failures during copy/rename/cleanup; stale exact `.new`/`.old` entries; same servicing errors as ordinary fallback failures and no active-slot mutation. |
+| Payload deployment | Complete allowlist, links/special-file rejection, inactive-only writes, slot reuse, firstboot/addon preservation, insufficient space, failed-copy retries and non-MSHV compatibility. |
+| Identity guard | A+B and B+A mismatch, higher install-index naming, malformed/incomplete/stale records and rejection of ambiguous BOOT promotion; verify errors reach existing health-failure state/reboot handling. |
+| Fallback | Nested files; failures during copy/rename/cleanup; stale exact `.new`/`.old` entries; same servicing errors as ordinary fallback failures and no active-slot mutation. |
 
 ### VM and firmware acceptance
 
 | Scenario | Required evidence |
 | --- | --- |
-| Install A, update B, commit B | Distinct A/B payload hashes, matching UKI/root and preparation record; A unchanged during B trial. |
+| Install A, update B, commit B | Distinct A/B payloads, matching UKI/root and preparation record; A unchanged during B trial. |
 | B EFI failure before oneshot consumption | Inject A+B launch; if Linux starts, fail before promotion and verify A+A after consumed-oneshot recovery with intact defaults. |
 | Failure after oneshot consumption; health failure | Verify retained payload, existing selector recovery and no stale successful record. |
 | Pre-Linux hang/failure | Exercise firmware/watchdog/external reset; document unconsumed-oneshot behavior without claiming OS health checks ran. |
 | B commit followed by manual rollback A | Retained A files and validated A preparation/UKI/root before success. |
 | Conflicting defaults, menu selection, chainloading | Reject mixed identity or unsupported resolver attribution. |
-| Entry loss or explicit BOOT entry | Correct payload-origin attribution and fail-closed ambiguous promotion. |
+| Entry loss or explicit BOOT entry | Reject promotion when fallback payload identity cannot be established. |
 | Fallback modes and repeated slot reuse | Conservative/optimistic/disabled behavior; failed-B fallback followed by restaging does not bypass validation. |
 | Copy/publication/finalization interruption | Compare existing failure/retry behavior, preserve committed payload and do not advance servicing state incorrectly. |
 | Secure Boot | Approved signed loader, signer/SBAT policy and retained downstream verification; exact packaged DLL loads the intended Intel/AMD payload. |
@@ -456,8 +432,9 @@ existing validation before boot testing.
 
 Use existing structured errors and health results to report preparation
 failure, identity mismatch, unsupported layout/resolver and capacity
-failure. Capture selected UKI, origin and firmware entry in diagnostic
-logs. No new telemetry service or attestation metric is proposed.
+failure. Capture selected UKI, executing image directory and firmware entry
+in diagnostic logs. No new telemetry service or attestation metric is
+proposed.
 
 ### Measured boot and ESP capacity
 
@@ -481,7 +458,7 @@ Inputs were Azure Linux 3.0
 `mshv-26100.9444.2609032029.1-1.azl3.x86_64` and
 `mshv-bootloader-lx-26100.9444.2609032029.1-1.azl3.x86_64`.
 The figures exclude shim, efitreeloader, systemd-boot, UKIs/addons,
-metadata and temporary replacement copies.
+filesystem metadata and temporary replacement copies.
 
 Measure actual old/new bundles and FAT allocation. Preflight retained and
 simultaneous staged/previous bundles, retained/staged UKIs/addons,
@@ -498,13 +475,13 @@ installations or mix a legacy A rollback baseline with slot-owned B.
 Keep microsoft/trident#915's legacy preservation behavior separate.
 
 Reject raw-image/disk-streaming transitions initially. Supporting them
-later requires full-tree bootstrap, source-to-managed origin conversion
+later requires full-tree bootstrap, explicit boot-identity validation
 and independently tested rollback/fallback behavior.
 
 An image must not be offered for this layout to an older consumer that
-does not understand its marker, preparation record or mandatory guard.
+does not understand its layout, preparation record or mandatory guard.
 Establish minimum producer/loader/Trident versions in the release pipeline;
-do not claim the marker alone makes older binaries reject the image.
+do not assume older binaries reject unsupported images automatically.
 Removing the opt-in must not bypass validation of an already managed MSHV
 boot; define persisted layout detection and reject unsafe disablement.
 
@@ -517,7 +494,7 @@ boot; define persisted layout detection and reject unsafe disablement.
 3. Implement mandatory pre-promotion validation and existing health-failure
    routing, including mixed trial, manual rollback and recovery.
 4. Extend inactive-slot and fallback copying with existing state/error
-   semantics; test interruption, retry, slot reuse and origin retention.
+   semantics; test interruption, retry and slot reuse.
 5. Complete Secure Boot, measurements, capacity and supported firmware
    validation, then enable the opt-in in production image pipelines.
 
@@ -540,7 +517,7 @@ attribution and an explicitly approved runtime-argument policy.
 - **Keep one shared payload:** simpler, but an update overwrites the
   committed release's rollback payload.
 - **Have efitreeloader pin a UKI:** adds another selector and changes
-  existing ownership. Exact UKI references in copied fallback metadata can
+  existing ownership. Exact UKI references in loader configuration can
   also outlive Trident's UKI cleanup. Not proposed.
 - **Add a global active-slot variable:** can diverge from the executing
   firmware chain and adds state synchronization rather than attribution.
@@ -561,6 +538,8 @@ attribution and an explicitly approved runtime-argument policy.
   versioning? How is freshness established across supported reset paths?
 - How should an explicit BOOT entry be mapped to a managed firmware entry
   for promotion? Until resolved, ambiguous promotion remains blocked.
+- How can a fallback payload's slot identity be established without adding
+  payload metadata files? A BOOT directory path alone is insufficient.
 - What persisted layout/identity state prevents unsafe opt-out and supports
   expected-payload diagnostics through commit and rollback?
 - Which minimum component versions, install roots and firmware platforms
