@@ -58,6 +58,30 @@ Do not rebuild over an ISO still attached to a running VM. Use
 `--iso test/.work/next-iso/installer_amd64_iso.iso` to `run.py` to test a
 replacement without changing the running guest's CD-ROM.
 
+## GPT USB installation media
+
+The installer finds a filesystem by label, so it can read COSI files from an
+optical ISO9660 filesystem or a GPT USB partition (FAT32 in this fixture).
+`filesystemLabel = "TRD_INSTALL"` fits FAT32's 11-character label limit.
+Image Customizer ISO output is labelled `CDROM`, so use the test ISO with
+`filesystemLabel` changed to `TRD_INSTALL` when exercising the separate USB
+medium; keep the two media labels distinct to avoid ambiguous discovery.
+
+```console
+python3 test/make_usb.py --cosi test/installer/cosi/payload.cosi
+python3 test/run.py --iso test/.work/gpt-usb-iso/installer_amd64_iso.iso \
+  --usb-media test/.work/installer-usb.raw --vnc --keep
+```
+
+`make_usb.py` creates only a local, sparse 768 MiB GPT/FAT32 image under
+`test/.work`. It uses Docker's cached builder for `sfdisk` and mtools to
+populate `cosi/payload.cosi`; it does not repartition a host device.
+`run.py` attaches it as a read-only USB mass-storage device. The USB is smaller
+than the COSI's 4 GiB original disk, so Trident cannot select it as an install
+target. A larger USB that could be the smallest eligible disk is rejected by
+the installer preflight rather than being overwritten; the StreamDisk RPC
+does not yet accept a target disk override.
+
 ## Over SSH, including from a Wayland desktop
 
 On the VM host:
@@ -85,7 +109,8 @@ Use `--vnc 2` and tunnel TCP 5902 if display 1 is already occupied.
 Build prerequisites: Python 3.11+, Docker, Tailor and the cached
 `azl3/trident-builder:latest` image. Trident binaries are built inside Azure
 Linux rather than using workstation binaries with potentially incompatible
-glibc. The normal repository RPM spec packages them. Tailor runs Image
+glibc. The USB image fixture also needs mtools (`mformat`, `mmd`, `mcopy`).
+The normal repository RPM spec packages them. Tailor runs Image
 Customizer 1.6 on an Azure Linux 3 minimal base.
 
 Runtime prerequisites: QEMU, `qemu-img`, and matching OVMF code/variables.

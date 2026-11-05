@@ -3,7 +3,8 @@ use std::{
     fs::{self, File},
     io::{ErrorKind, Read},
     path::{Path, PathBuf},
-    time::Duration,
+    thread,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, bail, ensure, Context, Error};
@@ -24,6 +25,8 @@ use crate::config::{self, Config};
 
 pub(super) const IMAGE_MARKER: &str = "installer://image";
 const SOURCE_TIMEOUT: Duration = Duration::from_secs(30);
+const MEDIA_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(60);
+const MEDIA_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const MAX_HOST_CONFIGURATION_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_METADATA_BYTES: u64 = 16 * 1024 * 1024;
 const METADATA_PATH: &str = "metadata.json";
@@ -161,7 +164,21 @@ fn media_root(
         .as_deref()
         .unwrap_or(config::DEFAULT_MEDIA_LABEL);
     progress("Looking for installer media by filesystem label")?;
-    let devices = lsblk::devices_by_label(label)?;
+    let deadline = Instant::now() + MEDIA_DISCOVERY_TIMEOUT;
+    let mut attempts = 0;
+    let devices = loop {
+        let devices = lsblk::devices_by_label(label)?;
+        if !devices.is_empty() || Instant::now() >= deadline {
+            break devices;
+        }
+        if attempts % 5 == 0 {
+            progress(&format!(
+                "Waiting for installation media labelled '{label}'"
+            ))?;
+        }
+        attempts += 1;
+        thread::sleep(MEDIA_POLL_INTERVAL);
+    };
     let Some(device) = config::choose_media(&devices)? else {
         return Ok(None);
     };

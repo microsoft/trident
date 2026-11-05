@@ -15,6 +15,25 @@ SPEC.loader.exec_module(VM)
 
 
 class VmCommandTests(unittest.TestCase):
+    def test_usb_media_is_a_read_only_gpt_image_with_lower_boot_priority(self):
+        image = Path("/tmp/disposable-installer-usb.raw")
+        launch = VM.command(
+            Path("/tmp/installer-test.iso"),
+            Path("/tmp/installer-test-owned"),
+            Path("/usr/share/OVMF/OVMF_CODE_4M.fd"),
+            6144,
+            2,
+            "gtk",
+            usb_media=image,
+        )
+        drives = [
+            launch[index + 1] for index, value in enumerate(launch) if value == "-drive"
+        ]
+        self.assertIn(f"file={image},format=raw,readonly=on", drives[-1])
+        self.assertIn("qemu-xhci,id=usb", launch)
+        self.assertIn("usb-storage,bus=usb.0,drive=installer-usb,bootindex=3", launch)
+        self.assertNotIn("-virtfs", launch)
+
     def test_follows_new_serial_records_without_replaying_firmware_escape_codes(self):
         class RunningProcess:
             def __init__(self):
