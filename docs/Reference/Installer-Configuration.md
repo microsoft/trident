@@ -11,7 +11,7 @@ the [Host Configuration](./Host-Configuration/Host-Configuration.md) is a
 separate YAML document describing what Trident installs. A live installation
 requires a readable TOML file. `--demo` does not read it.
 
-The packaged default is:
+The packaged `/etc/trident/installer.toml` explicitly sets:
 
 ```toml
 mode = "autorun"
@@ -27,8 +27,9 @@ reboot = true
 force = false
 ```
 
-Only `mode` is required. Other fields may be omitted; unknown fields and
-invalid values are errors.
+There is **no implicit default for `mode`** in a TOML file: omitting it is an
+error, even though the packaged file sets it to `"autorun"`. All other fields
+may be omitted; unknown fields and invalid values are errors.
 
 ## Selecting Install or StreamDisk
 
@@ -73,9 +74,12 @@ invalid Host Configuration fails rather than falling back to streaming.
 
 ## Fields
 
+The Default column gives the effective value when a key is omitted, not
+necessarily the value written in the packaged file.
+
 | Key | Default | Description |
 | --- | --- | --- |
-| `mode` | **Required** | Only `"autorun"` works; this is a startup mode, not the Install/StreamDisk selector. `"interactive"` is reserved and rejected. |
+| `mode` | **None; required** | Set `"autorun"` (as the packaged file does). This is a startup mode, not the Install/StreamDisk selector. `"interactive"` is reserved and rejected. |
 | `serialMode` | `"logs"` | Sends plain installer and Trident log records to active serial consoles, without a serial TUI. `"ui"` is reserved and rejected. |
 | `serialVerbosity` | `"debug"` | Serial log filter: `"off"`, `"error"`, `"warn"`, `"info"`, `"debug"`, or `"trace"`. Independent of the on-screen log filter, which starts at Debug. |
 | `media.filesystemLabel` | `"TRD_INSTALL"` | Exact filesystem label to find on optical media or a USB partition. `TRD_INSTALL` fits FAT's 11-character label limit; Image Customizer ISOs use `CDROM` instead. |
