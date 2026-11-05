@@ -55,7 +55,10 @@ validate_go() {
 validate_tailor() (
     local cargo_target_base
     local scratch_dir
-    cargo_target_base="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
+    cargo_target_base="${CARGO_TARGET_DIR:-target}"
+    if [[ "$cargo_target_base" != /* ]]; then
+        cargo_target_base="$REPO_ROOT/$cargo_target_base"
+    fi
     export CARGO_TARGET_DIR="$cargo_target_base/tailor"
     scratch_dir="$(mktemp -d)"
     trap 'rm -rf "$scratch_dir"' EXIT
