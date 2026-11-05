@@ -22,7 +22,10 @@ One image, `appliance`, built into two cells, touching a broad slice of tailor i
 - **`$include`** to splice a shared storage layout into every cell;
 - the built-in **defaults** for `runtime.imageCacheDir` and `runtime.janitorImage` (the workspace
   sets neither), and the **sudo-free janitor** (the workflow asserts the outputs are runner-owned,
-  not root-owned).
+  not root-owned);
+- a custom **`--build-dir-base`** outside the workspace — the workflow builds with it, then asserts
+  tailor **reaped** each cell's `<build-dir-base>/<slug>` scratch and left nothing root-owned, and
+  that **`tailor clean --build-dir-base`** removes the artifacts sudo-free.
 
 The workflow also runs the pure verbs (`list`, `matrix`, `validate`, `explain`, `render`),
 which exercise the config/render layer without an engine.
