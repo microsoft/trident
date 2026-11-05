@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Error};
 use tempfile::TempDir;
@@ -64,6 +67,101 @@ impl EphemeralOverlay {
             .close()
             .context("Failed to clean up overlay temporary working directory")?;
         Ok(())
+    }
+}
+
+/// An overlay mounted from explicitly chosen layers.
+///
+/// Unlike [`EphemeralOverlay`], whose upper layer is a temporary directory
+/// discarded on unmount, this mounts a caller-provided upper layer, so writes
+/// made through the overlay persist in it. That makes the merged view -- and
+/// crucially overlayfs copy-up, which duplicates a lower-layer file into the
+/// upper layer on first write -- available to code that would otherwise see
+/// only the upper layer's contents.
+pub struct LayeredOverlay {
+    target_path: PathBuf,
+    work_dir: PathBuf,
+}
+
+impl LayeredOverlay {
+    /// Mounts an overlay over `target_path` with the given layers.
+    ///
+    /// `work_dir` must be on the same filesystem as `upper_dir`, as overlayfs
+    /// requires. It is created if missing, as are the other directories.
+    /// `options` are appended to the layer options, for callers that need to
+    /// match the mount options another party uses for the same overlay.
+    pub fn mount(
+        target_path: impl AsRef<Path>,
+        lower_dir: impl AsRef<Path>,
+        upper_dir: impl AsRef<Path>,
+        work_dir: impl AsRef<Path>,
+        options: Option<&str>,
+    ) -> Result<Self, Error> {
+        let target_path = target_path.as_ref();
+        let (lower_dir, upper_dir, work_dir) =
+            (lower_dir.as_ref(), upper_dir.as_ref(), work_dir.as_ref());
+
+        for dir in [upper_dir, work_dir] {
+            files::create_dirs(dir)
+                .with_context(|| format!("Failed to create overlay dir '{}'", dir.display()))?;
+        }
+
+        let path_str = |p: &Path| -> Result<String, Error> {
+            Ok(p.to_str()
+                .with_context(|| format!("Failed to decode '{}'", p.display()))?
+                .to_owned())
+        };
+
+        let mut opts = format!(
+            "lowerdir={},upperdir={},workdir={}",
+            path_str(lower_dir)?,
+            path_str(upper_dir)?,
+            path_str(work_dir)?,
+        );
+        if let Some(options) = options {
+            opts.push(',');
+            opts.push_str(options);
+        }
+
+        Dependency::Mount
+            .cmd()
+            .arg("-t")
+            .arg("overlay")
+            .arg("overlay")
+            .arg("-o")
+            .arg(opts)
+            .arg(target_path)
+            .run_and_check()
+            .with_context(|| format!("Failed to mount overlay on '{}'", target_path.display()))?;
+
+        Ok(Self {
+            target_path: target_path.to_owned(),
+            work_dir: work_dir.to_owned(),
+        })
+    }
+
+    /// Unmounts the overlay, leaving both layers in place.
+    ///
+    /// The work directory is removed, since it is overlayfs bookkeeping rather
+    /// than content and is meaningless once the overlay is gone.
+    pub fn unmount(self) -> Result<(), Error> {
+        Dependency::Umount
+            .cmd()
+            .arg(&self.target_path)
+            .run_and_check()
+            .with_context(|| {
+                format!(
+                    "Failed to unmount overlay on '{}'",
+                    self.target_path.display()
+                )
+            })?;
+
+        fs::remove_dir_all(&self.work_dir).with_context(|| {
+            format!(
+                "Failed to remove overlay work directory '{}'",
+                self.work_dir.display()
+            )
+        })
     }
 }
 
