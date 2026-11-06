@@ -14,8 +14,7 @@ boot-identity validation before commit so a mixed hypervisor/OS boot cannot
 be promoted. The preferred efitreeloader approach expands a signed argument
 template using the executing efitreeloader binary's directory. Deriving
 the prefix from the firmware boot entry and selecting complete signed
-directory profiles remain alternatives. Signing-policy approval of the
-preferred approach remains open.
+directory profiles remain alternatives.
 
 ## Motivation and Goals
 
@@ -54,10 +53,10 @@ payload servicing or retain separate hypervisor versions for rollback.
 
 ### Problem
 
-An A/B update must not overwrite the committed slot's hypervisor files.
+An A/B update must not overwrite the active slot's hypervisor files.
 Otherwise, reverting the OS can leave it using the updated release's
 hypervisor. The ESP is shared storage, so this requires explicit ownership
-and copying, not a new A/B partition.
+and copying.
 
 There are also two independent boot selectors:
 
@@ -67,13 +66,13 @@ There are also two independent boot selectors:
 | Systemd-boot | `LoaderEntryOneShot`/`LoaderEntryDefault` select a UKI in shared `EFI/Linux`. `LoaderEntrySelected` reports the selected entry. |
 
 These selectors can diverge. For example, an A-to-B trial selects B's EFI
-chain and B's UKI. If B fails before systemd-boot consumes the UKI oneshot,
+chain and B's UKI. If B fails **before** systemd-boot consumes the UKI oneshot,
 firmware may try A's chain, prepare A's hypervisor, then start B's UKI.
 Slot-owned payloads introduce a compatibility consequence to this existing
 selector divergence.
 
 The proposal preserves those selectors. Its guarantee is **no successful
-promotion of an observed mixed boot**, not prevention of every transient
+commit of an observed mixed boot**, not prevention of every transient
 mixed launch.
 
 ### Goals
@@ -106,7 +105,7 @@ mixed launch.
 
 Clean install, A/B update, commit, failed-trial recovery and manual rollback
 are demonstrated with distinguishable A/B payloads and matching UKIs/root
-devices. A mixed boot reaching Linux fails before any promotion. Unsupported
+devices. A mixed boot reaching trident commit fails. Unsupported
 transitions, invalid evidence and insufficient space fail explicitly.
 Secure Boot, actual DLL relocation, configured fallback and supported
 physical-firmware behavior are validated. TPM/PCR-bound encryption remains
@@ -115,19 +114,16 @@ rejected until its additional measurement and unlock coverage passes.
 ## Dependencies
 
 - **Efitreeloader:** implement one resolver alternative below and the scoped
-  preparation-record protocol. Its owner requires signed child arguments;
-  neither selection-policy approval nor template-expansion approval is
-  assumed.
+  preparation-record protocol.
 - **HvLoader and external loader DLL:** demonstrate that ESP-absolute DLL
   and root paths work in each slot and fallback directory, without silently
-  substituting fixed shared payloads. Complete DLL source behavior has not
-  been established.
+  substituting fixed shared payloads.
 - **Image producer:** build and sign the loader, assemble the complete
   relocatable ESP bundle, and deliver it through the image's existing ESP
   content. No COSI schema revision is proposed.
 - **Trident:** extend ESP copying and mandatory health validation.
   Coordinate with microsoft/trident#915's pending legacy clean-install
-  behavior; do not assume that PR already enables this layout.
+  behavior.
 
 ## Implementation
 
@@ -173,14 +169,11 @@ installation's EFI directory and corresponds to UKI suffix `azlb1`, not
 
 ### Efitreeloader resolver alternatives
 
-Prefer **Alternative A**, subject to signing-policy approval: use the
-executing efitreeloader binary's directory as the template prefix.
-Alternative B derives the prefix from the firmware boot entry.
-Alternative C retains complete signed argument strings if template
-expansion is not accepted. Choose **one** mechanism. All three keep relative
-child executable resolution and pass concrete ESP-absolute DLL/root
-arguments to HvLoader. None writes `LoaderEntry*` or selects a UKI.
-None requires HvLoader or the DLL to implement relative-path support.
+Prefer **Alternative A**, subject to signing-policy approval: 
+* Alternative A uses the executing efitreeloader binary's directory as the
+template prefix.
+* Alternative B derives the prefix from the firmware boot entry.
+* Alternative C retains complete signed argument strings.
 
 #### Alternative A (preferred): executing-loader directory prefix
 
@@ -220,31 +213,14 @@ backslash and no trailing backslash; validate the supported path before
 starting any child. Missing, malformed or ambiguous loaded-image paths
 must fail closed.
 
-No `BootCurrent` or `Boot####` lookup is needed to derive this prefix.
-If firmware fallback executes `\EFI\BOOT\grubx64.efi`, the prefix is
-`\EFI\BOOT`; if another loader chainloads AZLB's efitreeloader, the prefix
-is AZLB regardless of the original firmware entry. This avoids inferring
-the executing location from an earlier stage's path. It does not establish
-which slot's payload was copied into BOOT or replace the mandatory
-boot-identity guard.
-
 The exact `${{PREFIX}}` token in a child's compiled `args` is the opt-in;
-there is no separate JSON flag. The build script detects it and generates
-an internal expansion flag. Resolve and validate the prefix only if at
+there is no separate JSON flag. Resolve and validate the prefix only if at
 least one child needs expansion.
 
 Without that token, pass the compiled arguments unchanged, including full
 absolute paths, relative arguments and empty strings. Do not apply new
 prefix validation to literal-only configurations. Only the exact token is
-reserved; other text remains literal. Existing configurations containing
-that exact string would acquire its new meaning. Expansion is not shell
-expansion or runtime JSON input.
-
-This avoids profile enumeration and firmware-option parsing, but **signing
-a template does not sign the executing directory substituted at runtime**.
-Explicit owner/security-policy approval of the substitution and validation
-contract is required; the loaded-image path is not cryptographic payload
-identity.
+reserved; other text remains literal.
 
 #### Alternative B: runtime boot-entry prefix
 
@@ -271,12 +247,6 @@ executable. Missing/malformed variables, unsupported paths or disagreement
 must fail closed; test firmware fallback and chainloading explicitly.
 This is exact token substitution, not shell expansion or runtime JSON input.
 
-This avoids enumerating each install directory, but **signing a template
-does not sign the prefix read from mutable firmware state**. Explicit
-owner/security-policy approval of the substitution and validation contract
-is required. It is not an approved relaxation of the signed-argument
-requirement.
-
 #### Alternative C: signed directory profiles
 
 Compile a generic list of `{root, load_entries}` profiles into the signed
@@ -301,11 +271,6 @@ cover A and configured BOOT fallback.
   ]
 }
 ```
-
-Discover the executing parent with existing `LoadedImageDevicePath`
-handling. Match exactly one canonical root, case-insensitively for the
-initial ASCII directory names, and execute its entries in order. Pass
-arguments unchanged. The mechanism must not understand ACL or A/B names.
 
 Reject duplicate/malformed roots, empty profiles and documents mixing the
 legacy and profile forms at build time. Reject zero or multiple runtime
