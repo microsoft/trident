@@ -173,5 +173,5 @@ No separate service enablement, getty override, or label override is
 necessary for a single `CDROM` ISO or `TRD_INSTALL` USB. On an unmarked
 normal OS, the service does not run and gettys are unaffected. A Host
 Configuration may require additional tools for optional features such as
-RAID or encryption. See the [TUI installer ISO recipe](../../tests/images/tui-installer/image.yaml)
-for a working full image definition.
+RAID or encryption. See `tests/images/tui-installer/image.yaml` in the
+repository for a working full image definition.
