@@ -348,31 +348,18 @@ slot or required hypervisor identity cannot be established. Include
 expected and observed identity context where available; exact fields and
 the identification mechanism remain TBD.
 
-For an A/B update with an unexpected hypervisor or missing/contradictory
-required MSHV identity evidence, persist this structured servicing error
-and a new failure state, provisionally
-`AbUpdateHypervisorCheckFailed`, before initiating rollback. Reserve
-`AbUpdateHealthCheckFailed` for failures of the existing health checks.
-The error variant and persisted servicing state are separate: returning
-`ValidateAbActiveHypervisor` alone does not change state or initiate rollback.
-Reuse rollback actions where appropriate, but explicitly extend commit,
-reboot and recovery dispatch to recognize the new state; it must not be
-treated as an idle/completed update or a health-hook result.
-
-Recovery from the new state expects the retained pre-update OS slot and
-its matching hypervisor. Return to `Provisioned` only after the expanded
-slot check validates both, preserving/reporting the original
-unexpected-hypervisor error. If recovery is still mixed or cannot establish
-the required identity, retain the failure state and report recovery failure
-rather than promoting either payload or repeatedly oscillating slots.
+The validation error rejects a mixed boot before commit. The
+[auto-rollback scaffolding](#scaffolding-for-invalid-hypervisor-auto-rollback)
+below describes the additional state and dispatch needed to initiate and
+track automatic recovery; returning the validation error alone does not
+provide that behavior.
 
 Clean install reports provisioning failure without declaring success.
 Apply the expanded slot check to manual rollback and automatic
 rollback-recovery success, including paths that do not run user health
 hooks. These paths must not declare the machine provisioned when MSHV
-identity evidence is missing or contradictory. Hypervisor identification,
-error fields and the final failure-state name remain implementation review
-items.
+identity evidence is missing or contradictory. Hypervisor identification
+and error fields remain implementation review items.
 
 Existing firmware promotion uses the label of `BootCurrent`. An explicit
 BOOT entry therefore needs deliberate mapping to the validated managed
@@ -382,6 +369,30 @@ than accidentally promoting BOOT.
 Use a trustworthy runtime hypervisor identity query if available. Neither
 successful HvLoader return nor firmware labels are cryptographic
 attestation of the running hypervisor.
+
+### Scaffolding for invalid hypervisor auto-rollback
+
+The following is proposed scaffolding for automatically rolling back an
+update with an invalid hypervisor, not existing active-volume mismatch
+handling. The state, transition and recovery implementation remains TBD;
+the slot-validation error alone neither changes state nor initiates rollback.
+
+For an A/B update with an unexpected hypervisor or missing/contradictory
+required MSHV identity evidence, persist
+`ServicingError::ValidateAbActiveHypervisor` and a new failure state,
+provisionally `AbUpdateHypervisorCheckFailed`, before initiating rollback.
+Reserve `AbUpdateHealthCheckFailed` for failures of the existing health
+checks. Reuse rollback actions where appropriate, but explicitly extend
+commit, reboot and recovery dispatch to recognize the new state; it must
+not be treated as an idle/completed update or a health-hook result.
+
+Recovery from the new state expects the retained pre-update OS slot and
+its matching hypervisor. Return to `Provisioned` only after the expanded
+slot check validates both, preserving/reporting the original
+unexpected-hypervisor error. If recovery is still mixed or cannot establish
+the required identity, retain the failure state and report recovery failure
+rather than promoting either payload or repeatedly oscillating slots.
+The final failure-state name remains an implementation review item.
 
 ### Lifecycle
 
@@ -453,8 +464,9 @@ form while retaining legacy `load_entries`.
 
 No new UEFI variable or loader/Trident preparation-record API is proposed.
 
-The proposed `AbUpdateHypervisorCheckFailed` servicing state is a new
-persisted Host Status value, distinct from `AbUpdateHealthCheckFailed`.
+The [auto-rollback scaffolding](#scaffolding-for-invalid-hypervisor-auto-rollback)
+proposes `AbUpdateHypervisorCheckFailed` as a new persisted Host Status
+value, distinct from `AbUpdateHealthCheckFailed`.
 Finalize its name, serialization and status API mappings during
 implementation review. Consumers must recognize it as a failed update
 requiring recovery, not an idle or successfully provisioned host.
@@ -1150,8 +1162,9 @@ contracts. Before enabling the internal parameter in a release:
   Do not implement it as a new check in `run_health_checks` or
   `health::execute_health_checks`. Return
   `ServicingError::ValidateAbActiveHypervisor` following the existing
-  `ValidateAbActiveVolume` validation-error pattern. Update failure handling
-  must explicitly persist that error and the
+  `ValidateAbActiveVolume` validation-error pattern. To implement the
+  [auto-rollback scaffolding](#scaffolding-for-invalid-hypervisor-auto-rollback),
+  update failure handling to explicitly persist that error and the
   proposed `AbUpdateHypervisorCheckFailed` state for update hypervisor
   failures, then initiate rollback through explicitly extended result/error
   handling. Preserve existing root-slot mismatch behavior and reserve
