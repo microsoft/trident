@@ -537,6 +537,32 @@ async fn endpoint_schemes_support_only_unix_and_http() {
 }
 
 #[tokio::test]
+async fn endpoint_diagnostics_redact_sensitive_data() {
+    const ENDPOINT: &str = "ftp://client:password@example.test/socket?token=secret#fragment-secret";
+    let builder = Client::builder().endpoint(ENDPOINT);
+    let builder_debug = format!("{builder:?}");
+    for secret in ["client", "password", "token=secret", "fragment-secret"] {
+        assert!(!builder_debug.contains(secret));
+    }
+
+    let error = builder.connect().await.unwrap_err();
+    for diagnostic in [error.to_string(), format!("{error:?}")] {
+        for secret in ["client", "password", "token=secret", "fragment-secret"] {
+            assert!(!diagnostic.contains(secret));
+        }
+    }
+
+    let malformed = Client::builder()
+        .endpoint("not a url?token=secret")
+        .connect()
+        .await
+        .unwrap_err();
+    for diagnostic in [malformed.to_string(), format!("{malformed:?}")] {
+        assert!(!diagnostic.contains("token=secret"));
+    }
+}
+
+#[tokio::test]
 async fn unix_endpoint_decodes_escaped_socket_path() {
     let root = tempfile::tempdir().unwrap();
     let socket_path = root.path().join("trident client.sock");
