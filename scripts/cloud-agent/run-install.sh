@@ -180,7 +180,7 @@ PY
 
     local netlaunch_config="$runtime_dir/netlaunch.yaml"
     local virtdeploy_status="$log_dir/virtdeploy.json"
-    bin/virtdeploy create \
+    bin/virtdeploy create-one \
         --namespace "$namespace" \
         --mem 12 \
         --disk 32 \
