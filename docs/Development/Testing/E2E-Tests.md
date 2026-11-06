@@ -106,6 +106,53 @@ protobuf compiler requirements.
 Unless otherwise noted, commands are run from the repository root. Pytest
 commands are run from `tests/e2e_tests`.
 
+## GitHub cloud agent fresh-install smoke test
+
+The GitHub cloud agent has a bounded Phase C1 smoke test for code changes that
+affect installer boot, clean installation, or initial provisioning. It uses
+pinned installer ISO and COSI artifacts from an existing successful ADO build
+instead of rebuilding images during the task. The complete pin, including the
+ADO build and payload SHA-256 values, is recorded in
+`scripts/cloud-agent/install-artifacts.json`.
+
+On the configured 1ES runner, install the nested-virtualization dependencies:
+
+```bash
+bash scripts/cloud-agent/setup-install.sh
+```
+
+Run the smoke test:
+
+```bash
+scripts/cloud-agent/validate.sh install
+```
+
+The test:
+
+1. Verifies and downloads the exact pinned installer ISO and regular COSI.
+2. Builds the candidate branch's `trident`, `trident-acl-agent`, `netlaunch`,
+   and `virtdeploy` binaries.
+3. Creates a fresh two-disk libvirt VM and a temporary copy of the `base` Host
+   Configuration with an ephemeral SSH key and the development-only
+   `selfUpgradeTrident` flag.
+4. Uses netlaunch's RCP CLI mode to inject the candidate Trident and launcher
+   binaries into the pinned installer environment.
+5. Waits for the installed host to reach `servicingState: provisioned`.
+6. Connects to the target over SSH, verifies `abActiveVolume: volume-a`, and
+   checks that `/usr/bin/trident` has the same SHA-256 as the candidate binary.
+7. Cleans the VM and libvirt network even when the test fails.
+
+The large fixtures are cached under `/mnt/storage/trident-cloud-agent/install`.
+Run logs and the verified `provenance.json` are retained under
+`/mnt/storage/trident-cloud-agent/install-runs`. Record the ADO build ID,
+pinned source commit, installer and COSI SHA-256 values, candidate binary
+SHA-256, installed binary SHA-256, and exact result in the pull request.
+
+This lane intentionally does not build the installer or COSI from source, run
+an A/B update or rollback, or cover the full configuration matrix. Those are
+separate later phases. The `install` group is also excluded from the default
+source-only `scripts/cloud-agent/validate.sh all` run.
+
 ## Building Dependencies
 
 ### 1. Build Trident

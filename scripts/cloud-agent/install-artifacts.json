@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "organization": "mariner-org",
+  "project": "ECF",
+  "definitionId": 5067,
+  "buildId": 1244644,
+  "sourceBranch": "refs/heads/main",
+  "sourceVersion": "dc5a201b8abcdd849252fed0814596a75c8c2749",
+  "buildResult": "succeeded",
+  "artifacts": [
+    {
+      "artifactId": 5487405,
+      "artifactName": "trident-installer",
+      "artifactType": "PipelineArtifact",
+      "artifactSize": 268930372,
+      "archivePath": "trident-installer/trident-installer.iso",
+      "payloadSize": 263161856,
+      "payloadSha256": "753143695a474deccab36f7a32508bf8423ff160d6cd7c8025f1727df33a3e9f",
+      "cacheFilename": "trident-installer.iso",
+      "destinationPath": "artifacts/iso/trident-installer.iso"
+    },
+    {
+      "artifactId": 5487395,
+      "artifactName": "trident-testimage",
+      "artifactType": "PipelineArtifact",
+      "artifactSize": 360856917,
+      "archivePath": "trident-testimage/trident-testimage_0.cosi",
+      "payloadSize": 178073088,
+      "payloadSha256": "d032580f6a8a54da2246fcf8cc736cd731848c7490890b6cf8471c5535f737aa",
+      "cacheFilename": "trident-testimage_0.cosi",
+      "destinationPath": "artifacts/test-image/regular.cosi"
+    }
+  ]
+}

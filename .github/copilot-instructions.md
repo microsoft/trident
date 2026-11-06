@@ -470,6 +470,16 @@ These rules apply to agents writing code:
 - Functional validation is explicit and is not included in the default `all`
   group because it requires the 1ES runner's nested virtualization and the
   pinned VM artifact.
+- For changes that affect clean installation, installer boot, candidate-binary
+  injection, or initial provisioning, also run
+  `bash scripts/cloud-agent/setup-install.sh` followed by
+  `scripts/cloud-agent/validate.sh install`. This verifies the pinned ADO
+  installer ISO and COSI, builds the candidate Trident and launcher binaries,
+  injects them into the installer environment, provisions a fresh two-disk VM,
+  and proves the installed `/usr/bin/trident` matches the candidate binary.
+- Install validation is explicit and is not included in the default `all`
+  group. It requires the 1ES runner's nested virtualization, internal ADO
+  access, and up to 30 minutes for a fresh installation.
 - Documentation-only changes may skip the suite when it is not applicable,
   but the pull request **Validation** section must record that it was not run
   and explain why.
@@ -477,3 +487,6 @@ These rules apply to agents writing code:
   description. Do not treat this agent-run command as independent CI.
 - When functional validation runs, also record the ADO build ID, source commit,
   image SHA-256 from the generated provenance file, selected mode, and result.
+- When install validation runs, also record the ADO build ID, pinned source
+  commit, installer ISO and COSI SHA-256 values, candidate Trident SHA-256,
+  installed Trident SHA-256, servicing state, active volume, and result.
