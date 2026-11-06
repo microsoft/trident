@@ -309,20 +309,19 @@ second boot-variable finalizer is introduced.
 
 ### Extend existing slot validation for MSHV
 
-Extend the existing Rust slot check in
+Extend the existing slot check in
 `crates/trident/src/engine/rollback.rs::validate_boot`, which currently
 compares the booted root device with the expected target. When the
 slot-owned MSHV feature applies, also compare the running hypervisor's
-slot with the booted OS slot and expected servicing target. Keep existing
-slot-check behavior unchanged for other images.
+slot with the booted OS slot and expected servicing target.
 
-This is an expansion of boot-slot validation, **not a new implicit health
-check, a user-configured health hook or a separate health-check framework**.
-The [implementation boundaries](#a4-remaining-integration-work) identify
+Keep existing slot-check behavior unchanged for other images.
+
+This is an expansion of boot-slot validation, but implementation is
+TBD. The [implementation boundaries](#a4-remaining-integration-work) identify
 the commit and rollback paths that need this expanded slot check.
 
-No new temporary UEFI variable or loader preparation-record protocol is
-introduced. Existing `LoaderEntrySelected`, root/verity validation and the
+Existing `LoaderEntrySelected`, root/verity validation and the
 expected servicing target identify the booted OS. Use `BootCurrent` as
 corroboration, not an arbitrary label as proof of the executed hypervisor
 chain.
@@ -338,9 +337,8 @@ mechanism is defined and tested, reject ambiguous BOOT promotion.
 
 Perform the expanded slot validation before user health hooks and before
 `BootOrder`, `LoaderEntryDefault` or fallback promotion. Treat a mixed MSHV
-boot as a boot-slot validation failure, not a user health-hook failure.
-Reuse existing servicing/rollback failure handling: a failed update enters
-`AbUpdateHealthCheckFailed`; clean install reports provisioning failure.
+boot as a boot-slot validation failure. Reuse existing servicing/rollback
+failure handling: a failed update enters `AbUpdateHealthCheckFailed`; clean install reports provisioning failure.
 The existing state's name does not imply adding a health check.
 Apply the expanded slot check to manual rollback and automatic
 rollback-recovery success, including paths that do not run user health
