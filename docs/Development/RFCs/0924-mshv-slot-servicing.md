@@ -9,8 +9,9 @@
 
 Enable Trident to install, update and roll back MSHV-enabled Azure Container
 Linux (ACL) images by keeping a complete hypervisor boot payload beside each
-slot's EFI chain. Preserve existing firmware and UKI selection. Add mandatory
-boot-identity validation before commit so a mixed hypervisor/OS boot cannot
+slot's EFI chain. Preserve existing firmware and UKI selection. Extend the
+existing Rust slot validation for applicable MSHV boots so a mixed
+hypervisor/OS boot cannot
 be promoted. The preferred efitreeloader approach expands a signed argument
 template using the executing efitreeloader binary's directory. Deriving
 the prefix from the firmware boot entry and selecting complete signed
@@ -120,7 +121,8 @@ rejected until its additional measurement and unlock coverage passes.
 - **Image producer:** build and sign the loader, assemble the complete
   relocatable ESP bundle, and deliver it through the image's existing ESP
   content. No COSI schema revision is proposed.
-- **Trident:** extend ESP copying and mandatory health validation.
+- **Trident:** extend ESP copying and the existing Rust boot-slot validation
+  for applicable MSHV boots.
   Coordinate with microsoft/trident#915's pending legacy clean-install
   behavior.
 
@@ -305,11 +307,19 @@ finalization advertises the trial. A failed copy uses existing deployment
 errors and retry semantics. No new payload-generation state machine or
 second boot-variable finalizer is introduced.
 
-### Mandatory boot-identity validation
+### Extend existing slot validation for MSHV
 
+Extend the existing Rust slot check in
+`crates/trident/src/engine/rollback.rs::validate_boot`, which currently
+compares the booted root device with the expected target. When the
+slot-owned MSHV feature applies, also compare the running hypervisor's
+slot with the booted OS slot and expected servicing target. Keep existing
+slot-check behavior unchanged for other images.
+
+This is an expansion of boot-slot validation, **not a new implicit health
+check, a user-configured health hook or a separate health-check framework**.
 The [implementation boundaries](#a4-remaining-integration-work) identify
-the commit and rollback paths that still need reliable identity validation
-integrated.
+the commit and rollback paths that need this expanded slot check.
 
 No new temporary UEFI variable or loader preparation-record protocol is
 introduced. Existing `LoaderEntrySelected`, root/verity validation and the
@@ -319,18 +329,23 @@ chain.
 
 Preparing A's hypervisor with a B UKI/root is a mismatch, but the existing
 OS/firmware observations alone do not prove which hypervisor is running.
-A reliable hypervisor identity check remains an unresolved implementation
-requirement; this RFC does not specify a replacement reporting protocol.
+The mechanism for identifying the running hypervisor's slot remains TBD;
+the location of the comparison in existing slot validation is not TBD.
+This RFC does not specify a replacement reporting protocol.
 The executing directory `EFI/BOOT` alone also does not establish which
 slot's payload was copied there. Until a metadata-free attribution
 mechanism is defined and tested, reject ambiguous BOOT promotion.
 
-Run this mandatory check before user health hooks and before `BootOrder`,
-`LoaderEntryDefault` or fallback promotion. Reuse existing health-error
-handling: an update enters `AbUpdateHealthCheckFailed`; clean install
-reports provisioning failure. Cover manual rollback and automatic
-rollback-recovery success even where existing user health hooks do not run.
-Missing or contradictory evidence must not declare the machine provisioned.
+Perform the expanded slot validation before user health hooks and before
+`BootOrder`, `LoaderEntryDefault` or fallback promotion. Treat a mixed MSHV
+boot as a boot-slot validation failure, not a user health-hook failure.
+Reuse existing servicing/rollback failure handling: a failed update enters
+`AbUpdateHealthCheckFailed`; clean install reports provisioning failure.
+The existing state's name does not imply adding a health check.
+Apply the expanded slot check to manual rollback and automatic
+rollback-recovery success, including paths that do not run user health
+hooks. Missing or contradictory MSHV identity evidence must not declare
+the machine provisioned.
 
 Existing firmware promotion uses the label of `BootCurrent`. An explicit
 BOOT entry therefore needs deliberate mapping to the validated managed
@@ -348,7 +363,7 @@ attestation of the running hypervisor.
 | Clean install | Stage A's complete bundle and UKI with existing ACL verity/firstboot handling. Register/finalize using existing selectors; do not invent a usable B chain. Validate identity before success. |
 | A-to-B update stage | Stage only B's OS, UKI/addons and complete payload. Preserve A and strip the image firstboot addon as today. |
 | Update finalize | Complete payload publication before setting existing B firmware/UKI trial selectors. Keep committed A defaults and existing fallback-mode decisions. |
-| Trial and commit | Require matching hypervisor/UKI/root identity and health before promoting firmware default, UKI default or fallback. |
+| Trial and commit | Extend existing slot validation with the applicable MSHV comparison; require matching hypervisor/UKI/root identity and existing health checks before promoting firmware default, UKI default or fallback. |
 | Failed trial | Reuse existing health rollback. With B's oneshot consumed and committed A defaults intact, the next reset should restore A+A; verify those conditions. |
 | Manual rollback | Select retained A using existing firmware/UKI logic. Validate A independently of whether a new UKI is staged, and require matching identity before success. |
 | Later slot reuse | Replace the old inactive bundle only after the other slot is committed. Never refresh the rollback payload from the newer image. |
@@ -420,7 +435,7 @@ No new UEFI variable or loader/Trident preparation-record API is proposed.
 | Boot-entry prefix (B) | Binary load-option/device-path parsing, UTF-16 paths, device identity, malformed/missing variables and executing-path mismatch; preserve shared template guarantees. |
 | Profiles (C) | Legacy compatibility, strict schema, duplicate/malformed roots, zero/multiple matches, case handling, ordering and unchanged argument bytes; unlisted roots fail before child execution. |
 | Payload deployment | Complete allowlist, links/special-file rejection, inactive-only writes, slot reuse, firstboot/addon preservation, insufficient space, failed-copy retries and non-MSHV compatibility. |
-| Identity guard | A+B and B+A mismatch, higher install-index naming, missing or contradictory identity evidence and rejection of ambiguous BOOT promotion; verify errors reach existing health-failure state/reboot handling once a reliable identity mechanism is defined. |
+| Expanded slot check | MSHV-only A+B and B+A mismatch, higher install-index naming, missing or contradictory identity evidence and rejection of ambiguous BOOT promotion; preserve non-MSHV slot checks and verify mismatches reach existing rollback state/reboot handling without invoking user health hooks. Hypervisor identification remains TBD. |
 | Fallback | Nested files; failures during copy/rename/cleanup; stale exact `.new`/`.old` entries; same servicing errors as ordinary fallback failures and no active-slot mutation. |
 
 ### VM and firmware acceptance
@@ -445,10 +460,10 @@ host. OVMF results alone do not establish supported physical-firmware
 behavior. Inspect the built image/COSI and run the image workspace's
 existing validation before boot testing.
 
-Use existing structured errors and health results to report preparation
-failure, identity mismatch, unsupported layout/resolver and capacity
-failure. Capture selected UKI, executing image directory and firmware entry
-in diagnostic logs. No new telemetry service or attestation metric is
+Use existing structured servicing errors and rollback handling to report
+preparation failure, boot-slot identity mismatch, unsupported layout/resolver
+and capacity failure. Capture selected UKI, executing image directory and
+firmware entry in diagnostic logs. No new telemetry service or attestation metric is
 proposed.
 
 ### Measured boot and ESP capacity
@@ -490,11 +505,11 @@ installations or mix a legacy A rollback baseline with slot-owned B.
 Keep microsoft/trident#915's legacy preservation behavior separate.
 
 Reject raw-image/disk-streaming transitions initially. Supporting them
-later requires full-tree bootstrap, explicit boot-identity validation
+later requires full-tree bootstrap, the expanded MSHV slot validation
 and independently tested rollback/fallback behavior.
 
 An image must not be offered for this layout to an older consumer that
-does not understand its layout or mandatory guard.
+does not understand its layout or MSHV slot-validation extension.
 Establish minimum producer/loader/Trident versions in the release pipeline;
 do not assume older binaries reject unsupported images automatically.
 Removing the opt-in must not bypass validation of an already managed MSHV
@@ -507,9 +522,10 @@ boot; define persisted layout detection and reject unsafe disablement.
 2. Implement the chosen generic loader resolver and image bundle.
    Verify exact arguments and actual hypervisor preparation.
 3. Define reliable hypervisor identity evidence without a new temporary
-   UEFI variable, then implement mandatory pre-promotion validation and
-   existing health-failure routing, including mixed trial, manual rollback
-   and recovery.
+   UEFI variable, then extend the existing Rust slot check with the
+   applicable MSHV comparison and existing rollback-failure routing,
+   including mixed trial, manual rollback and recovery. Do not add an
+   implicit health check.
 4. Extend inactive-slot and fallback copying with existing state/error
    semantics; test interruption, retry and slot reuse.
 5. Complete Secure Boot, measurements, capacity and supported firmware
@@ -593,7 +609,7 @@ These are concrete source-based diffs for the preferred template approach,
 not changes to source files in this RFC PR. They cover argument resolution,
 image assembly and gated payload copying. They are **not a complete
 release implementation**: a reliable hypervisor identity mechanism,
-mandatory identity guard, capacity checks and release validation remain
+expanded MSHV slot validation, capacity checks and release validation remain
 prerequisites, listed in [A.4](#a4-remaining-integration-work). Applying these
 diffs alone must not be treated as production enablement.
 
@@ -1081,22 +1097,25 @@ index 93c089b4..9f635f41 100644
 These diffs deliberately do not invent implementations for unresolved
 contracts. Before enabling the internal parameter in a release:
 
-- Define and validate reliable running-hypervisor identity evidence without
-  creating a temporary UEFI variable. The resolver diffs alone do not
-  provide this evidence.
-- In `crates/trident/src/engine/rollback.rs`, run the mandatory guard before
-  user health hooks and any boot-default/fallback promotion.
-  `run_health_checks` must route update failures through the existing
-  `AbUpdateHealthCheckFailed` path, rather than returning an unclassified
-  error that skips rollback. Guard manual rollback and the recovery branches
-  that mark the old OS provisioned without running user health hooks.
+- Define and validate reliable running-hypervisor identity evidence
+  (mechanism TBD) without creating a temporary UEFI variable. The resolver
+  diffs alone do not provide this evidence.
+- In `crates/trident/src/engine/rollback.rs`, extend `validate_boot`'s
+  existing root/slot check with the applicable MSHV hypervisor/OS comparison,
+  before user health hooks and any boot-default/fallback promotion.
+  Do not implement it as a new check in `run_health_checks` or
+  `health::execute_health_checks`. Route update mismatches through the
+  existing `AbUpdateHealthCheckFailed` rollback path, rather than returning
+  an unclassified error that skips rollback. Apply the expanded slot check
+  to manual rollback and recovery branches that mark the old OS provisioned
+  without running user health hooks.
 - In `crates/trident/src/engine/boot/uki.rs`, reuse the existing slot/install
   naming rules for expected UKI identity. Do not equate an ESP directory
   name with a UKI filename suffix for higher installation indices.
 - In `crates/trident/src/subsystems/esp.rs`, add peak-allocation preflight,
   reject conflicting legacy/unsupported transitions before target clearing,
   and finalize persisted opt-in/opt-out handling. A payload's presence alone
-  is not permission to bypass the mandatory identity guard.
+  is not permission to bypass the expanded MSHV slot validation.
 - In the 1ES build/release pipeline, enable the internal parameter only
   after signing, COSI inspection, DLL relocation, nested fallback, automatic
   rollback and firmware/VM acceptance pass. Do not enable TPM/PCR-bound
