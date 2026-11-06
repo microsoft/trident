@@ -34,7 +34,7 @@ use tokio::{
 use url::Url;
 
 use osutils::{systemd, terminal as os_terminal};
-use trident_proto::v1::{servicing_response::Response as ResponseBody, LogLevel};
+use trident_client::{LogLevel, ServicingEvent};
 
 use crate::{
     client::{self, Completion, Event},
@@ -193,7 +193,12 @@ impl LogEntry {
 
     /// Prefixes each line of a diagnostic for plain output and serial mirrors.
     fn plain(&self) -> String {
-        let prefix = format!("{}{}:{}] ", self.prefix(), self.source.label(), self.level);
+        let prefix = format!(
+            "{}{}:{}] ",
+            self.prefix(),
+            self.source.label(),
+            level_label(self.level)
+        );
         display_text(&self.message)
             .split('\n')
             .map(|line| format!("{prefix}{line}"))
@@ -218,7 +223,7 @@ impl LogEntry {
                 Style::default().fg(self.source.color(linux_vt)),
             ),
             Span::styled(":", surrounding),
-            Span::styled(self.level.to_string(), level.add_modifier(Modifier::BOLD)),
+            Span::styled(level_label(self.level), level.add_modifier(Modifier::BOLD)),
             Span::styled("] ", surrounding),
             Span::styled(self.message.as_str(), level),
         ])
@@ -369,19 +374,19 @@ impl Model {
                 )
             }
             Event::Error { details, uncertain } => self.fail(details, uncertain),
-            Event::Response(response) => match response.response {
-                Some(ResponseBody::Started(_)) => {
+            Event::Response(response) => match response {
+                ServicingEvent::Started { .. } => {
                     self.activity = "Servicing started".into();
                     self.log(LogSource::Inst, LogLevel::Info, self.activity.clone())
                 }
-                Some(ResponseBody::Log(log)) => {
-                    let level = log.level();
+                ServicingEvent::Log(log) => {
+                    let level = log.level;
                     if level == LogLevel::Info {
                         self.activity = display_text(&log.message);
                     }
                     self.log(LogSource::Trident, level, log.message)
                 }
-                Some(ResponseBody::Completed(completed)) => match client::completion(completed) {
+                ServicingEvent::Completed(completed) => match client::completion(completed) {
                     Ok(Completion::Success {
                         reboot_required,
                         performed,
@@ -412,10 +417,6 @@ impl Model {
                         self.fail(details, true)
                     }
                 },
-                None => {
-                    let details = "Response has no body; installation outcome is unknown";
-                    self.fail(details.into(), true)
-                }
             },
         }
     }
@@ -1121,11 +1122,11 @@ fn display_text(text: &str) -> String {
         .replace('\t', "    ")
 }
 
-/// Compares an RPC severity against the chosen filter, treating unspecified as a warning.
+/// Compares a Trident severity against the chosen display filter.
 fn log_visible(level: LogLevel, verbosity: LevelFilter) -> bool {
     let level = match level {
         LogLevel::Error => Level::Error,
-        LogLevel::Warn | LogLevel::Unspecified => Level::Warn,
+        LogLevel::Warn => Level::Warn,
         LogLevel::Info => Level::Info,
         LogLevel::Debug => Level::Debug,
         LogLevel::Trace => Level::Trace,
@@ -1133,11 +1134,22 @@ fn log_visible(level: LogLevel, verbosity: LevelFilter) -> bool {
     level.to_level_filter() <= verbosity
 }
 
-/// Selects the severity color, treating unspecified severity as a warning.
+/// Preserves the uppercase severity names used by TUI and serial records.
+fn level_label(level: LogLevel) -> &'static str {
+    match level {
+        LogLevel::Error => "ERROR",
+        LogLevel::Warn => "WARN",
+        LogLevel::Info => "INFO",
+        LogLevel::Debug => "DEBUG",
+        LogLevel::Trace => "TRACE",
+    }
+}
+
+/// Selects the severity color for Trident and installer records.
 fn log_color(level: LogLevel) -> Color {
     match level {
         LogLevel::Error => COLOR_ERROR,
-        LogLevel::Warn | LogLevel::Unspecified => COLOR_WARN,
+        LogLevel::Warn => COLOR_WARN,
         LogLevel::Info => COLOR_INFO,
         LogLevel::Debug => COLOR_DEBUG,
         LogLevel::Trace => COLOR_TRACE,
@@ -1479,7 +1491,10 @@ mod tests {
 
     use ratatui::backend::TestBackend;
     use tempfile::TempDir;
-    use trident_proto::v1::{Completed, RebootStatus, ServicingResponse, StatusCode};
+
+    use trident_client::{
+        Completion as ClientCompletion, LogRecord, OperationOutcome, RebootDisposition,
+    };
 
     /// A failed serial destination is removed without blocking healthy mirrors.
     #[test]
@@ -1804,20 +1819,36 @@ mod tests {
         assert_eq!(model.logs.len(), 1);
     }
 
+    /// Domain logs retain Trident's source tag and update the displayed activity.
+    #[test]
+    fn trident_domain_log_event_updates_activity_and_serial_record() {
+        let mut model = Model::new();
+        let entry = model.event(Event::Response(ServicingEvent::Log(LogRecord {
+            timestamp: None,
+            level: LogLevel::Info,
+            message: "Preparing storage".into(),
+            module: String::new(),
+            target: String::new(),
+            location: None,
+        })));
+        assert_eq!(entry.source, LogSource::Trident);
+        assert_eq!(model.activity, "Preparing storage");
+        assert_eq!(entry.plain(), "00:00 [TRIDENT:INFO] Preparing storage");
+    }
+
     /// The autorun default schedules a reboot when servicing requires one.
     #[test]
     fn headless_autorun_keeps_automatic_reboot_enabled_by_default() {
         let config = Config::parse("mode = 'autorun'\nserialMode = 'logs'").unwrap();
         let mut model = Model::new();
         model.reboot = config.autorun.reboot;
-        model.event(Event::Response(ServicingResponse {
-            response: Some(ResponseBody::Completed(Completed {
-                status: StatusCode::Success.into(),
-                reboot_status: RebootStatus::RebootRequired.into(),
-                ..Default::default()
-            })),
-            ..Default::default()
-        }));
+        model.event(Event::Response(ServicingEvent::Completed(
+            OperationOutcome::Succeeded(ClientCompletion {
+                reboot: RebootDisposition::Required,
+                servicing_type: None,
+                image_hash: None,
+            }),
+        )));
         assert!(model.reboot_at.is_some());
     }
 
@@ -1845,14 +1876,13 @@ mod tests {
             LogLevel::Debug,
             "Earlier disk action".into(),
         );
-        let result = model.event(Event::Response(ServicingResponse {
-            response: Some(ResponseBody::Completed(Completed {
-                status: StatusCode::Success.into(),
-                reboot_status: RebootStatus::RebootNotRequired.into(),
-                ..Default::default()
-            })),
-            ..Default::default()
-        }));
+        let result = model.event(Event::Response(ServicingEvent::Completed(
+            OperationOutcome::Succeeded(ClientCompletion {
+                reboot: RebootDisposition::NotRequired,
+                servicing_type: None,
+                image_hash: None,
+            }),
+        )));
         assert_eq!(result.result_color, Some(Color::Rgb(93, 200, 148)));
         assert_eq!(
             result.plain(),

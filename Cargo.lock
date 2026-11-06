@@ -1737,10 +1737,8 @@ dependencies = [
  "tar",
  "tempfile",
  "tokio",
- "tokio-stream",
  "toml",
- "tonic",
- "trident-proto",
+ "trident-client",
  "trident_api",
  "url",
 ]
