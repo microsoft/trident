@@ -146,7 +146,7 @@ fn run_trident(
                 }
 
                 let agent_config = AgentConfig::load()?;
-                // For non-install and non-update (update will check and has special handling for CIH
+                // For non-install and non-update (update will check and has special handling for ACL
                 // scenario) commands, we expect the datastore to exist
                 if !matches!(
                     args.command,

@@ -2,6 +2,7 @@ use anyhow::{Context, Error};
 use clap::Parser;
 use osutils::logging::filter::LogFilter;
 use systemd_journal_logger::{connected_to_journal, JournalLog};
+use tokio_util::sync::CancellationToken;
 
 use trident_acl_agent::{
     annotations::orchestrator::Orchestrator,
@@ -74,6 +75,14 @@ async fn main() -> Result<(), Error> {
     }
 
     let config = AgentConfig::from_env()?;
+    log::info!("Effective AgentConfig: {:?}", config.redacted_for_logging());
+    match osutils::machine_id::boot_id() {
+        Ok(boot_id) => log::info!(
+            "agent process started: pid={}, boot_id={boot_id}",
+            std::process::id()
+        ),
+        Err(err) => log::warn!("failed to read startup boot ID: {err:#}"),
+    }
 
     if let Some(target) = args.validate_connection {
         return validate_connection(target, &config).await;
@@ -89,6 +98,58 @@ async fn main() -> Result<(), Error> {
         // commit against tridentd, writes <prefix>/update-status; prefix
         // defaults to acl.microsoft.com, overridable via
         // TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX).
-        Mode::Annotations => Orchestrator::from_config(config).await?.run().await,
+        Mode::Annotations => {
+            let shutdown = CancellationToken::new();
+            {
+                let shutdown = shutdown.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = tokio::signal::ctrl_c().await {
+                        log::error!(
+                            "failed to register Ctrl-C (SIGINT) handler: {err:#}; agent will not respond to Ctrl-C"
+                        );
+                        return;
+                    }
+                    log::info!("received SIGINT; requesting agent shutdown");
+                    shutdown.cancel();
+                });
+            }
+            #[cfg(unix)]
+            {
+                let shutdown = shutdown.clone();
+                tokio::spawn(async move {
+                    use tokio::signal::unix::{signal, SignalKind};
+                    match signal(SignalKind::terminate()) {
+                        Ok(mut term) => {
+                            if term.recv().await.is_some() {
+                                log::info!("received SIGTERM; requesting agent shutdown");
+                            } else {
+                                log::warn!(
+                                    "SIGTERM signal stream ended; requesting agent shutdown"
+                                );
+                            }
+                            shutdown.cancel();
+                        }
+                        Err(err) => {
+                            log::error!(
+                                "failed to register SIGTERM handler: {err:#}; agent will not respond to SIGTERM"
+                            );
+                        }
+                    }
+                });
+            }
+            let result = match Orchestrator::from_config(config, &shutdown).await? {
+                Some(orchestrator) => orchestrator.run(shutdown).await,
+                // shutdown fired while retrying node_name resolution (e.g.
+                // waiting on kubelet's cert to be written) - exit cleanly,
+                // mirroring Orchestrator::run's own early-exit behavior for
+                // the same signal.
+                None => Ok(()),
+            };
+            match &result {
+                Ok(()) => log::info!("annotation orchestrator stopped successfully"),
+                Err(err) => log::error!("annotation orchestrator stopped with an error: {err:#}"),
+            }
+            result
+        }
     }
 }

@@ -12,8 +12,9 @@ use reqwest::Url;
 use tempfile::{NamedTempFile, TempDir};
 
 use osutils::{
+    blkid,
     bootloaders::{BOOT_EFI, GRUB_EFI, GRUB_NOPREFIX_EFI},
-    files,
+    fatlabel, files,
     filesystems::MountFileSystemType,
     mount::{self, MountGuard},
     path,
@@ -170,8 +171,9 @@ fn deploy_esp(ctx: &EngineContext, mount_point: &Path) -> Result<(), TridentErro
 
         ControlFlow::Break(
             copy_file_artifacts(temp_file.path(), ctx, mount_point)
+                .and_then(|()| preserve_esp_filesystem_label(temp_file.path(), ctx))
                 .structured(ServicingError::DeployESPImages)
-                .message("Failed to load raw image"),
+                .message("Failed to deploy the ESP image"),
         )
     })?;
 
@@ -216,6 +218,64 @@ fn ensure_esp_extraction_dir(mount_point: &Path) -> Result<PathBuf, TridentError
     }
 
     Ok(esp_extraction_dir)
+}
+
+/// Copies the ESP image's filesystem label onto the ESP Trident created.
+///
+/// Every other filesystem from the OS image is written to its partition
+/// verbatim, so its label arrives with the rest of the bits. The ESP is the
+/// exception: it is deployed file by file onto a filesystem Trident makes
+/// itself, and `mkfs` gives that filesystem no label. Copying the label across
+/// leaves the ESP in the state it would have been in had it been written
+/// wholesale, which matters because ACL's initrd looks the ESP up as
+/// `/dev/disk/by-label/EFI-SYSTEM` and otherwise waits for a device node that
+/// never appears.
+///
+/// Scoped to ACL rather than applied generally: images that do not refer to
+/// their ESP by label have installed correctly without this, and relabelling
+/// their ESP would be a behavioural change they have not asked for.
+///
+/// An image whose ESP has no label leaves the new filesystem unlabelled too,
+/// which is still faithful to the image.
+fn preserve_esp_filesystem_label(esp_image_path: &Path, ctx: &EngineContext) -> Result<(), Error> {
+    if !ctx.image_distro().is_acl() {
+        return Ok(());
+    }
+
+    // blkid exits successfully with no output when the filesystem simply has no
+    // label, and fails only when it cannot read the image at all. Propagate the
+    // latter: silently treating an unreadable image as "no label" would skip
+    // the labelling and reintroduce the boot failure this exists to prevent.
+    let label = blkid::get_filesystem_label(esp_image_path)
+        .context("Failed to read the filesystem label of the ESP image")?;
+
+    if label.is_empty() {
+        debug!("ESP image has no filesystem label to preserve");
+        return Ok(());
+    }
+
+    let (esp_device_id, _) = ctx
+        .spec
+        .storage
+        .esp_filesystem()
+        .context("Failed to find the ESP filesystem in the Host Configuration")?;
+
+    let esp_device_path = ctx
+        .get_block_device_path(esp_device_id)
+        .with_context(|| format!("Failed to find the path of ESP device '{esp_device_id}'"))?;
+
+    debug!(
+        "Applying ESP image's filesystem label '{label}' to '{}'",
+        esp_device_path.display()
+    );
+    fatlabel::set_label(&esp_device_path, &label).with_context(|| {
+        format!(
+            "Failed to apply filesystem label '{label}', read from ESP image '{}', to ESP device \
+            '{}'",
+            esp_image_path.display(),
+            esp_device_path.display()
+        )
+    })
 }
 
 /// Takes in a reader to the raw zstd-compressed ESP image and decompresses it
@@ -623,6 +683,49 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
             Ok::<(), Error>(())
         })
         .context("Failed to remove pre-existing files")?;
+    Ok(())
+}
+
+/// Ensures `EFI/AZLA` exists on the ESP, seeding it from the `EFI/BOOT`
+/// fallback loader if it's missing. Used by both offline-initialize and ACL
+/// lazy-adoption bootstrap, so a freshly-derived HostStatus is always backed
+/// by a matching on-disk ESP layout before the first A/B update or manual
+/// rollback ever runs and assumes AZLA already exists.
+pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
+    let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
+    trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
+    if !azla_esp_path.exists() {
+        trace!(
+            "AZLA volume ESP path {:?} does not exist, attempting to copy from fallback location",
+            azla_esp_path
+        );
+        let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+
+        // Stage the copy in a temporary sibling directory and publish it via
+        // an atomic rename only once the copy has fully succeeded. Creating
+        // azla_esp_path directly (via replace_boot_files' create_dir_all)
+        // before the copy completes would leave a partially-populated
+        // directory behind on failure, and since this function only checks
+        // for *existence*, every subsequent retry would then skip
+        // bootstrapping entirely.
+        let azla_tmp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA.bootstrap-tmp");
+        if azla_tmp_path.exists() {
+            fs::remove_dir_all(&azla_tmp_path).context(format!(
+                "Failed to remove stale temporary AZLA bootstrap directory '{}'",
+                azla_tmp_path.display()
+            ))?;
+        }
+        replace_boot_files(&boot_esp_path, &azla_tmp_path).context(format!(
+            "Failed to copy boot files from '{}' to temporary AZLA bootstrap path '{}'",
+            boot_esp_path.display(),
+            azla_tmp_path.display()
+        ))?;
+        fs::rename(&azla_tmp_path, &azla_esp_path).context(format!(
+            "Failed to atomically publish AZLA bootstrap directory '{}' to '{}'",
+            azla_tmp_path.display(),
+            azla_esp_path.display()
+        ))?;
+    }
     Ok(())
 }
 
@@ -1334,6 +1437,122 @@ mod tests {
             if !file_infos.iter().any(|(f, _)| f == file_name) {
                 assert!(!to_dir.path().join(file_name).exists());
             }
+        }
+    }
+
+    #[test]
+    fn test_bootstrap_azla_from_fallback() {
+        let esp_dir = TempDir::new().unwrap();
+        let boot_dir = esp_dir.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let azla_dir = esp_dir.path().join(ESP_EFI_DIRECTORY).join("AZLA");
+
+        let file_infos = vec![
+            (BOOT_EFI, "Fallback bootloader"),
+            (GRUB_EFI, "Fallback grub"),
+        ];
+
+        fs::create_dir_all(&boot_dir).unwrap();
+        for (file_name, content) in &file_infos {
+            let file_path = boot_dir.join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{content}").unwrap();
+        }
+
+        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
+
+        for (file_name, _content) in &file_infos {
+            assert!(
+                files_are_identical(&boot_dir.join(file_name), &azla_dir.join(file_name)),
+                "Files are not identical: {} and {}",
+                boot_dir.join(file_name).display(),
+                azla_dir.join(file_name).display()
+            );
+        }
+    }
+
+    #[test]
+    fn test_bootstrap_azla_from_fallback_is_idempotent_when_azla_already_exists() {
+        let esp_dir = TempDir::new().unwrap();
+        let boot_dir = esp_dir.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let azla_dir = esp_dir.path().join(ESP_EFI_DIRECTORY).join("AZLA");
+
+        let fallback_file_infos = vec![
+            (BOOT_EFI, "Fallback bootloader"),
+            (GRUB_EFI, "Fallback grub"),
+        ];
+        fs::create_dir_all(&boot_dir).unwrap();
+        for (file_name, content) in &fallback_file_infos {
+            let file_path = boot_dir.join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{content}").unwrap();
+        }
+
+        // Pre-populate AZLA with content that does not match the fallback
+        // location, so any attempt to re-copy would be detectable.
+        fs::create_dir_all(&azla_dir).unwrap();
+        let sentinel_path = azla_dir.join(BOOT_EFI);
+        let mut sentinel_file = File::create(&sentinel_path).unwrap();
+        writeln!(sentinel_file, "Pre-existing AZLA content").unwrap();
+
+        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
+
+        // AZLA must be left untouched: bootstrap only runs when AZLA is
+        // absent, so a second call must be a no-op.
+        let contents = fs::read_to_string(&sentinel_path).unwrap();
+        assert_eq!(
+            contents.trim(),
+            "Pre-existing AZLA content",
+            "bootstrap_azla_from_fallback must not modify an already-existing AZLA directory"
+        );
+        assert!(
+            !azla_dir.join(GRUB_EFI).exists(),
+            "bootstrap_azla_from_fallback must not add files to an already-existing AZLA directory"
+        );
+    }
+
+    #[test]
+    fn test_bootstrap_azla_from_fallback_cleans_up_stale_tmp_dir() {
+        let esp_dir = TempDir::new().unwrap();
+        let boot_dir = esp_dir.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let azla_dir = esp_dir.path().join(ESP_EFI_DIRECTORY).join("AZLA");
+        let azla_tmp_dir = esp_dir
+            .path()
+            .join(ESP_EFI_DIRECTORY)
+            .join("AZLA.bootstrap-tmp");
+
+        let file_infos = vec![
+            (BOOT_EFI, "Fallback bootloader"),
+            (GRUB_EFI, "Fallback grub"),
+        ];
+        fs::create_dir_all(&boot_dir).unwrap();
+        for (file_name, content) in &file_infos {
+            let file_path = boot_dir.join(file_name);
+            let mut file = File::create(&file_path).unwrap();
+            writeln!(file, "{content}").unwrap();
+        }
+
+        // Simulate a prior crashed bootstrap attempt: staging succeeded but
+        // the rename into place never happened, leaving a stale temp dir
+        // with unrelated/incomplete content.
+        fs::create_dir_all(&azla_tmp_dir).unwrap();
+        let mut stale_file = File::create(azla_tmp_dir.join("stale-leftover")).unwrap();
+        writeln!(stale_file, "Leftover from a crashed bootstrap").unwrap();
+
+        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
+
+        // The stale temp dir must be cleaned up, and bootstrapping must
+        // still succeed despite it being present beforehand.
+        assert!(
+            !azla_tmp_dir.exists(),
+            "stale temporary bootstrap directory must be removed"
+        );
+        for (file_name, _content) in &file_infos {
+            assert!(
+                files_are_identical(&boot_dir.join(file_name), &azla_dir.join(file_name)),
+                "Files are not identical: {} and {}",
+                boot_dir.join(file_name).display(),
+                azla_dir.join(file_name).display()
+            );
         }
     }
 

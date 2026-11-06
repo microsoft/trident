@@ -18,7 +18,9 @@ Currently, the only format supported by Trident is Composable OS Image (COSI). C
 
 ### `sha384` **<span>(required)</span>**
 
-The Sha384 of the metadata in the COSI file.
+The SHA384 checksum of `metadata.json` in the COSI file, as a 96-character hexadecimal string.
+
+Always provide the checksum to verify the image's integrity.
 
 | Characteristic | Value                           |
 | -------------- | ------------------------------- |

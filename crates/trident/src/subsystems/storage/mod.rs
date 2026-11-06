@@ -183,11 +183,15 @@ impl Subsystem for StorageSubsystem {
             return Ok(());
         }
 
-        fstab::generate_fstab(ctx, Path::new(fstab::DEFAULT_FSTAB_PATH)).structured(
-            ServicingError::GenerateFstab {
-                fstab_path: fstab::DEFAULT_FSTAB_PATH.to_string(),
-            },
-        )?;
+        if should_generate_fstab(ctx) {
+            fstab::generate_fstab(ctx, Path::new(fstab::DEFAULT_FSTAB_PATH)).structured(
+                ServicingError::GenerateFstab {
+                    fstab_path: fstab::DEFAULT_FSTAB_PATH.to_string(),
+                },
+            )?;
+        } else {
+            debug!("Skipping fstab generation: the image assembles /etc at boot and takes its mounts from the kernel command line");
+        }
 
         // TODO: Update /etc/repart.d directly for the matching disk, derive it from where the root
         // is located
@@ -203,6 +207,23 @@ impl Subsystem for StorageSubsystem {
     }
 }
 
+/// Returns whether an fstab should be written for this image.
+///
+/// Azure Container Linux assembles `/etc` at boot as an overlay over the
+/// factory `/usr/share/distro/etc`, whose `fstab` is deliberately empty: ACL
+/// mounts `/usr` and `/` from the signed UKI command line, and `/boot` and
+/// `/oem` from units it ships. An fstab written here lands in the overlay's
+/// upper layer, and `systemd-fstab-generator` turns it into units under
+/// `/run/systemd/generator` that shadow the image's own.
+///
+/// Keyed on the distro rather than a proxy such as "UKI with verity on
+/// `/usr`", since the cause is the shared `/etc`. Only ACL is handled, and
+/// storage the Host Configuration adds beyond the image's own gets no entry,
+/// so it does not persist across reboot.
+fn should_generate_fstab(ctx: &EngineContext) -> bool {
+    !ctx.image_distro().is_acl()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,7 +237,10 @@ mod tests {
     use tempfile::NamedTempFile;
     use url::Url;
 
-    use osutils::encryption;
+    use osutils::{
+        encryption,
+        osrelease::{Distro, OsRelease},
+    };
     use trident_api::{
         config::{
             AbUpdate, Disk as DiskConfig, Encryption, FileSystem, HostConfiguration, MountPoint,
@@ -228,12 +252,56 @@ mod tests {
 
     use sysdefs::tpm2::Pcr;
 
+    use crate::osimage::{mock::MockOsImage, OsImage};
+
     fn get_ctx() -> EngineContext {
         EngineContext {
             servicing_type: ServicingType::CleanInstall,
             is_uki: Some(false),
             ..Default::default()
         }
+    }
+
+    /// Builds a context whose OS image reports the given distro identity.
+    fn ctx_for_distro(id: &str, variant_id: Option<&str>) -> EngineContext {
+        let os_release = OsRelease {
+            id: Some(id.to_string()),
+            variant_id: variant_id.map(str::to_string),
+            ..OsRelease::EMPTY
+        };
+
+        EngineContext {
+            image: Some(OsImage::mock(MockOsImage {
+                os_release,
+                ..MockOsImage::new()
+            })),
+            ..Default::default()
+        }
+    }
+
+    /// ACL assembles `/etc` at boot and takes its mounts from the signed UKI
+    /// command line, so an fstab written to the root filesystem would shadow
+    /// the units the image ships.
+    #[test]
+    fn test_should_not_generate_fstab_for_acl() {
+        let ctx = ctx_for_distro("azurelinux", Some("azurecontainerlinux"));
+        assert_eq!(ctx.image_distro(), Distro::AzureContainerLinux);
+        assert!(!should_generate_fstab(&ctx));
+    }
+
+    /// Azure Linux shares ACL's UKI machinery but not its `/etc` layout, so it
+    /// still gets an fstab.
+    #[test]
+    fn test_should_generate_fstab_for_non_acl() {
+        let ctx = ctx_for_distro("azurelinux", None);
+        assert_ne!(ctx.image_distro(), Distro::AzureContainerLinux);
+        assert!(should_generate_fstab(&ctx));
+    }
+
+    /// An image with no distro information gets an fstab.
+    #[test]
+    fn test_should_generate_fstab_without_distro() {
+        assert!(should_generate_fstab(&get_ctx()));
     }
 
     // Create a temporary recovery key file. The file will be deleted once

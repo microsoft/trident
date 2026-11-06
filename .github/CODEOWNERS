@@ -1,2 +1,7 @@
 # For any changes, ensure owners approvals
 * @microsoft/azurelinux-trident
+
+# Workflow files control CI permissions and secrets -- always require
+# explicit review, independent of whatever the catch-all rule above
+# happens to be scoped to in the future.
+.github/workflows/** @microsoft/azurelinux-trident

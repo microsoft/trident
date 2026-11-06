@@ -528,6 +528,7 @@ impl PartitionType {
             Self::Tmp => AllowBlockList::new_allow(["/var/tmp"]),
             Self::Usr => AllowBlockList::new_allow(["/usr"]),
             Self::UsrVerity => AllowBlockList::None,
+            Self::UsrVeritySig => AllowBlockList::None,
             Self::Var => AllowBlockList::new_allow(["/var"]),
             Self::Xbootldr => AllowBlockList::new_allow(["/boot"]),
             Self::Unknown(_) => AllowBlockList::Any,

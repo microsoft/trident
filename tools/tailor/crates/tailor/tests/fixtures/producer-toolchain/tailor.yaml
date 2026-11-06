@@ -1,0 +1,27 @@
+# Synthetic test workspace (NOT a real config) — a consumer image on the default
+# toolchain depends on a producer image that pins a different, `pull: never`
+# toolchain. Guards that build-time toolchain resolution covers the dependency
+# closure, not just the explicitly-named images (regression for a producer whose
+# toolchain was "not resolved before planning"). Images are auto-discovered.
+schemaVersion: 1
+
+toolchains:
+  default: ic
+  entries:
+    - name: ic
+      container: registry.example/imagecustomizer
+      version: "2.0.0"
+    - name: special-ic
+      container: special-imagecustomizer
+      tag: local
+      pull: never
+
+toolsDirSources:
+  - name: producer-tools
+    container: special-tools
+    tag: local
+    pull: never
+
+defaults:
+  outputs:
+    - format: cosi

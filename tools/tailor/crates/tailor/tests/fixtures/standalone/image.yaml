@@ -1,0 +1,17 @@
+# Synthetic standalone image (NOT a real config) — there is no tailor.yaml above it, so this single
+# file is the whole thing. No `toolchain:` ⇒ tailor's built-in default Image Customizer (`latest`).
+name: solo
+
+base:
+  path: ./bases/solo.img
+
+outputs:
+  - format: cosi
+
+config:
+  os:
+    hostname: solo
+    packages:
+      install: [solo-core, openssh-server]
+    services:
+      enable: [sshd]

@@ -1,13 +1,13 @@
 //! The high-level [`Client`] for talking to a Nebraska server.
 
-use std::{thread, time::Duration};
+use std::{collections::BTreeMap, thread, time::Duration};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use log::{debug, trace, warn};
 use semver::Version;
 use url::Url;
 
 use super::{
+    cookie_store::{CookieLifetime, CookieStore},
     error::NebraskaError,
     event::{ProgressEvent, TerminalEvent},
     id::MachineId,
@@ -79,12 +79,14 @@ pub struct PackageFile {
     /// host than the Nebraska server itself, which serves only metadata.
     pub url: Url,
 
-    /// The hash of the file as reported by Nebraska, if any.
+    /// The hash(es) of the file as reported by Nebraska, if any. `None` when
+    /// the manifest carries no hash for this file, which the protocol
+    /// permits.
     ///
-    /// **This is a hash of the file, not of any content inside it.** Nebraska
-    /// reports a base64-encoded SHA-1 (with an optional SHA-256), for integrity
-    /// checking the downloaded artifact. `None` when the manifest carries no
-    /// hash for this file, which the protocol permits.
+    /// Our Nebraska deployment repurposes [`PackageHash::sha1`] to carry a
+    /// COSI metadata SHA-384 instead of a real SHA-1 (see
+    /// `core::cosi_sha384::resolve_cosi_sha384`); this module forwards it
+    /// as-is and has no opinion on that convention.
     pub hash: Option<PackageHash>,
 
     /// The file size in bytes, when reported by Nebraska.
@@ -92,77 +94,38 @@ pub struct PackageFile {
 
     /// Whether the manifest marks this file as required.
     pub required: bool,
+
+    /// Arbitrary key/value labels from this package's `<labels>` child
+    /// element (see `wire::Package::labels`). Generic: this protocol layer
+    /// has no opinion on which labels matter to callers.
+    pub(crate) labels: BTreeMap<String, String>,
+}
+
+impl PackageFile {
+    /// Looks up a single label by key.
+    pub fn label(&self, key: &str) -> Option<&str> {
+        self.labels.get(key).map(String::as_str)
+    }
 }
 
 /// The hash(es) of a file, as reported by Nebraska.
 ///
 /// Both values are base64-encoded content hashes of the file: upstream
 /// Nebraska reports a SHA-1, and `sha256` is present only when the file was
-/// registered with one.
-///
-/// **Our Nebraska deployment does not follow that naming.** By internal
-/// convention, our server puts a base64-encoded **SHA-384** of the COSI
-/// image's metadata section into the `sha1` field instead of a real SHA-1 -
-/// the same value Trident itself computes and validates as `image.sha384`
-/// (see `crates/trident/src/osimage/cosi/mod.rs`). So despite the field's
-/// Omaha-inherited name, treat [`sha1`](PackageHash::sha1) as "the value our
-/// Nebraska calls `hash`", not as an actual SHA-1 digest - use
-/// [`to_cosi_sha384`](PackageHash::to_cosi_sha384) to get the value in the
-/// form Trident's gRPC API expects, rather than forwarding this field as-is.
+/// registered with one. This is a plain protocol-faithful data holder - see
+/// `core::cosi_sha384` for how our deployment's repurposing of `sha1` is
+/// interpreted and converted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageHash {
     /// Base64-encoded SHA-1 of the file, per the Omaha wire format - but see
-    /// this struct's docs: our Nebraska deployment actually puts a
+    /// [`PackageFile::hash`]'s docs: our Nebraska deployment actually puts a
     /// base64-encoded SHA-384 here, not a SHA-1.
     pub sha1: String,
 
-    /// Base64-encoded SHA-256 of the file, when Nebraska provides it. Not
-    /// used by [`to_cosi_sha384`](PackageHash::to_cosi_sha384); our
-    /// deployment does not repurpose this field, so it carries a real SHA-256
-    /// (or is absent) same as upstream Omaha/Nebraska.
+    /// Base64-encoded SHA-256 of the file, when Nebraska provides it. Our
+    /// deployment does not repurpose this field, so it carries a real
+    /// SHA-256 (or is absent) same as upstream Omaha/Nebraska.
     pub sha256: Option<String>,
-}
-
-impl PackageHash {
-    /// Converts this hash into the hex-encoded SHA-384 checksum string that
-    /// Trident's gRPC `image.sha384` Host Configuration field expects.
-    ///
-    /// This is a straight re-encode (base64 -> raw bytes -> hex), not a real
-    /// hash-family conversion: per this struct's docs, our Nebraska
-    /// deployment already stores a SHA-384 digest in
-    /// [`sha1`](PackageHash::sha1), just base64-encoded instead of hex, so
-    /// there is no cryptographic conversion between algorithms happening
-    /// here - only a change of text encoding.
-    ///
-    /// Returns an error if the field does not decode to valid base64, or
-    /// decodes to something other than 48 bytes (the fixed size of a SHA-384
-    /// digest) - either means our "this field holds a SHA-384" assumption
-    /// does not hold for this response, and forwarding a wrong-sized/garbage
-    /// value on to Trident as an integrity check would be worse than failing
-    /// loudly here.
-    pub fn to_cosi_sha384(&self) -> Result<String, NebraskaError> {
-        const SHA384_LEN_BYTES: usize = 48;
-
-        // Decode straight into a fixed-size stack buffer instead of
-        // `Engine::decode`'s allocating `Vec<u8>` output: a malicious or
-        // buggy Nebraska response could otherwise send an arbitrarily large
-        // base64 string, forcing a large allocation before we ever get to
-        // checking the decoded length below. `decode_slice` rejects any
-        // input that would decode to more than `SHA384_LEN_BYTES` without
-        // allocating proportionally to the (untrusted) input size.
-        let mut raw = [0u8; SHA384_LEN_BYTES];
-        let decoded_len = STANDARD.decode_slice(&self.sha1, &mut raw).map_err(|err| {
-            NebraskaError::UnexpectedResponse(format!(
-                "Nebraska-reported hash is not valid base64, or does not fit in {SHA384_LEN_BYTES} bytes (SHA-384): {err}"
-            ))
-        })?;
-        if decoded_len != SHA384_LEN_BYTES {
-            return Err(NebraskaError::UnexpectedResponse(format!(
-                "Nebraska-reported hash decodes to {decoded_len} bytes, expected {SHA384_LEN_BYTES} (SHA-384)"
-            )));
-        }
-        Ok(hex::encode(raw))
-    }
 }
 
 /// The bounded exponential-backoff policy used by
@@ -276,14 +239,36 @@ fn summarize(response: &wire::Response) -> String {
                 Some(check) => {
                     let manifest = match &check.manifest {
                         None => String::new(),
-                        Some(manifest) => format!(
-                            ", manifest {} with {} package(s)",
-                            manifest.version,
-                            manifest
-                                .packages
-                                .as_ref()
-                                .map_or(0, |packages| packages.packages.len())
-                        ),
+                        Some(manifest) => {
+                            let packages =
+                                manifest
+                                    .packages
+                                    .as_ref()
+                                    .map_or_else(String::new, |packages| {
+                                        packages
+                                            .packages
+                                            .iter()
+                                            .map(|package| {
+                                                let hash_present = package.hash.is_some();
+                                                let hash_sha256_present = package.hash_sha256.is_some();
+                                                let label_keys =
+                                                    package.labels.keys().collect::<Vec<_>>();
+                                                format!(
+                                                    "hash_present={hash_present} hash_sha256_present={hash_sha256_present} label_keys={label_keys:?}"
+                                                )
+                                            })
+                                            .collect::<Vec<_>>()
+                                            .join("; ")
+                                    });
+                            format!(
+                                ", manifest {} with {} package(s) [{packages}]",
+                                manifest.version,
+                                manifest
+                                    .packages
+                                    .as_ref()
+                                    .map_or(0, |packages| packages.packages.len())
+                            )
+                        }
                     };
                     format!(", updatecheck {}{manifest}", check.status)
                 }
@@ -347,6 +332,8 @@ pub struct Client<T: Transport = ReqwestTransport> {
     track: String,
     machine_id: MachineId,
     client_version: Option<String>,
+    cookie_store: Option<CookieStore>,
+    cookie_lifetime: CookieLifetime,
     transport: T,
 }
 
@@ -380,8 +367,18 @@ impl<T: Transport> Client<T> {
             track: track.into(),
             machine_id,
             client_version: None,
+            cookie_store: None,
+            cookie_lifetime: CookieLifetime::default(),
             transport,
         }
+    }
+
+    /// Enables best-effort file-backed cookies. Without a store, cookies
+    /// are neither sent nor adopted. Each request reads the store anew.
+    pub fn with_cookie_store(mut self, store: CookieStore, lifetime: CookieLifetime) -> Self {
+        self.cookie_store = Some(store);
+        self.cookie_lifetime = lifetime;
+        self
     }
 
     /// Names the **updater** — the program driving the update — in
@@ -410,12 +407,15 @@ impl<T: Transport> Client<T> {
     /// `current_version` **must be the real version** and valid semver: a client
     /// reporting `0.0.0` is offered an update on every poll forever, and a
     /// non-semver version fails instance registration server-side.
+    ///
+    /// This is the initial update communication: per-update cookies reset
+    /// here, not on completion's batched update check or connectivity probes.
     pub fn check_for_update(
         &self,
         current_version: &Version,
     ) -> Result<CheckOutcome, NebraskaError> {
         let app = self.app(current_version).with_update_check();
-        let response = self.send(app)?;
+        let response = self.send(app, true)?;
         self.interpret_check(response)
     }
 
@@ -447,7 +447,7 @@ impl<T: Transport> Client<T> {
     /// the server is reachable and resolved the app/track.
     pub fn probe(&self, current_version: &Version) -> Result<(), NebraskaError> {
         let app = self.app(current_version);
-        let response = self.send(app)?;
+        let response = self.send(app, false)?;
         let app_response = self.app_response(&response)?;
         if app_response.status.is_ok() || app_response.status.is_update_in_progress() {
             Ok(())
@@ -468,7 +468,7 @@ impl<T: Transport> Client<T> {
         event: ProgressEvent,
     ) -> Result<(), NebraskaError> {
         let app = self.app(current_version).with_event(event.wire());
-        let response = self.send(app)?;
+        let response = self.send(app, false)?;
         self.require_events_accepted(&response, 1)?;
         Ok(())
     }
@@ -574,7 +574,7 @@ impl<T: Transport> Client<T> {
             )
             .with_ping()
             .with_update_check();
-        let response = self.send(app)?;
+        let response = self.send(app, false)?;
 
         // Landing the terminal event is what this request exists for, and a
         // dropped event is the only failure here that can wedge the instance —
@@ -611,7 +611,7 @@ impl<T: Transport> Client<T> {
         let app = self
             .app(current_version)
             .with_event_from_version(TerminalEvent::Failed.wire(), previous_version.to_string());
-        let response = self.send(app)?;
+        let response = self.send(app, false)?;
         self.require_events_accepted(&response, 1)?;
         Ok(())
     }
@@ -627,7 +627,7 @@ impl<T: Transport> Client<T> {
     }
 
     /// Serializes, sends, and parses a request/response round-trip.
-    fn send(&self, app: App) -> Result<wire::Response, NebraskaError> {
+    fn send(&self, app: App, initial_update: bool) -> Result<wire::Response, NebraskaError> {
         let request = wire::request_for(app, self.client_version.clone());
         let body = request
             .to_xml()
@@ -637,7 +637,33 @@ impl<T: Transport> Client<T> {
             redacted(&self.endpoint),
             String::from_utf8_lossy(&body)
         );
-        let text = self.transport.post_xml(&self.endpoint, &body)?;
+        // Deliberately never logged: this is a session-affinity credential,
+        // not protocol content.
+        let cookie = self.cookie_store.as_ref().and_then(|store| {
+            if initial_update && self.cookie_lifetime == CookieLifetime::PerUpdate {
+                if let Err(err) = store.save("") {
+                    warn!("failed to clear Nebraska cookie for staging attempt: {err}");
+                }
+                return None;
+            }
+            match store.load() {
+                Ok(cookie) => cookie,
+                Err(err) => {
+                    warn!("failed to load Nebraska cookie, proceeding without one: {err}");
+                    None
+                }
+            }
+        });
+        let (text, set_cookie) =
+            self.transport
+                .post_xml(&self.endpoint, &body, cookie.as_deref())?;
+        if initial_update || self.cookie_lifetime == CookieLifetime::PerMessage {
+            if let (Some(store), Some(set_cookie)) = (&self.cookie_store, set_cookie) {
+                if let Err(err) = store.save(&set_cookie) {
+                    warn!("failed to persist Nebraska cookie: {err}");
+                }
+            }
+        }
         trace!("Nebraska response: {} bytes", text.len());
         let response = wire::parse_response(&text).map_err(NebraskaError::Parse)?;
         trace!("Nebraska response: {}", summarize(&response));
@@ -822,11 +848,6 @@ impl<T: Transport> Client<T> {
             )));
         }
 
-        let hash = package.hash.as_ref().map(|sha1| PackageHash {
-            sha1: sha1.clone(),
-            sha256: package.hash_sha256.clone(),
-        });
-
         // Size is a string on the wire, and the attribute is not optional there:
         // a package registered without a size is serialized as `size="0"`, which
         // means "unknown" rather than an empty file. Treat that — and an
@@ -837,12 +858,18 @@ impl<T: Transport> Client<T> {
             .and_then(|s| s.parse::<u64>().ok())
             .filter(|size| *size != 0);
 
+        let hash = package.hash.as_ref().map(|sha1| PackageHash {
+            sha1: sha1.clone(),
+            sha256: package.hash_sha256.clone(),
+        });
+
         Ok(PackageFile {
             name: package.name.clone(),
             url,
             hash,
             size,
             required: package.required,
+            labels: package.labels.clone(),
         })
     }
 }
@@ -852,15 +879,19 @@ mod tests {
     use std::cell::{Cell, RefCell};
 
     use super::*;
+    use crate::core::cosi_sha384::{resolve_cosi_sha384, CosiSha384Error, CosiSha384Source};
 
     /// Stands in for the updater version a real caller would supply.
     const TEST_CLIENT_VERSION: &str = "test-updater-1.2.3";
 
-    /// A canned transport: records the last request body and returns a fixed
-    /// response, so client logic is exercised without a network.
+    /// A canned transport: records the last request body/cookie and returns
+    /// a fixed response (optionally with a canned `Set-Cookie`), so client
+    /// logic is exercised without a network.
     struct MockTransport {
         response: String,
         last_body: RefCell<Option<String>>,
+        last_cookie_sent: RefCell<Option<String>>,
+        set_cookie: RefCell<Option<String>>,
     }
 
     impl MockTransport {
@@ -868,14 +899,29 @@ mod tests {
             Self {
                 response: response.into(),
                 last_body: RefCell::new(None),
+                last_cookie_sent: RefCell::new(None),
+                set_cookie: RefCell::new(None),
             }
+        }
+
+        /// Makes every subsequent `post_xml` call return `cookie` as the
+        /// captured `Set-Cookie` value, as if the server had just issued one.
+        fn with_set_cookie(self, cookie: impl Into<String>) -> Self {
+            *self.set_cookie.borrow_mut() = Some(cookie.into());
+            self
         }
     }
 
     impl Transport for MockTransport {
-        fn post_xml(&self, _endpoint: &Url, body: &[u8]) -> Result<String, NebraskaError> {
+        fn post_xml(
+            &self,
+            _endpoint: &Url,
+            body: &[u8],
+            cookie: Option<&str>,
+        ) -> Result<(String, Option<String>), NebraskaError> {
             *self.last_body.borrow_mut() = Some(String::from_utf8_lossy(body).into_owned());
-            Ok(self.response.clone())
+            *self.last_cookie_sent.borrow_mut() = cookie.map(str::to_string);
+            Ok((self.response.clone(), self.set_cookie.borrow().clone()))
         }
     }
 
@@ -895,13 +941,23 @@ mod tests {
     struct ScriptedTransport {
         responses: Vec<String>,
         calls: Cell<u32>,
+        set_cookie: Option<String>,
+        cookies_sent: RefCell<Vec<Option<String>>>,
     }
 
     impl Transport for ScriptedTransport {
-        fn post_xml(&self, _endpoint: &Url, _body: &[u8]) -> Result<String, NebraskaError> {
+        fn post_xml(
+            &self,
+            _endpoint: &Url,
+            _body: &[u8],
+            cookie: Option<&str>,
+        ) -> Result<(String, Option<String>), NebraskaError> {
             let index = (self.calls.get() as usize).min(self.responses.len() - 1);
             self.calls.set(self.calls.get() + 1);
-            Ok(self.responses[index].clone())
+            self.cookies_sent
+                .borrow_mut()
+                .push(cookie.map(str::to_string));
+            Ok((self.responses[index].clone(), self.set_cookie.clone()))
         }
     }
 
@@ -914,6 +970,8 @@ mod tests {
             ScriptedTransport {
                 responses: responses.into_iter().map(String::from).collect(),
                 calls: Cell::new(0),
+                set_cookie: None,
+                cookies_sent: RefCell::new(Vec::new()),
             },
         )
     }
@@ -1029,6 +1087,113 @@ mod tests {
         }
     }
 
+    // Regression coverage for the full pipeline a populated/absent/empty
+    // <labels> element goes through: XML -> wire::Package -> PackageFile
+    // (both parsed via a real Client::check_for_update(), not a hand-built
+    // PackageFile) -> core::cosi_sha384::resolve_cosi_sha384(). The unit
+    // tests in core::cosi_sha384 cover the resolver's own logic in
+    // isolation; these confirm nothing is lost on the way there.
+
+    #[test]
+    fn check_offer_labels_resolve_via_default_source() {
+        // Digest generated with:
+        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384
+        const HEX_DIGEST: &str =
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
+        let client = client_with(&format!(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true">
+                <labels>
+                  <label key="cosi.metadata.sha384" value="{HEX_DIGEST}"/>
+                </labels>
+              </package>
+            </packages></manifest></updatecheck></app></response>"#
+        ));
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap(),
+                    HEX_DIGEST
+                );
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_absent_labels_default_source_is_missing() {
+        // No <labels> element at all, but a legacy hash is present - the
+        // default source (Labels) must not fall back to it.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true"/>
+            </packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                let err =
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap_err();
+                assert!(matches!(
+                    err,
+                    CosiSha384Error::Missing(CosiSha384Source::Labels)
+                ));
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_empty_labels_default_source_is_missing() {
+        // A <labels> element is present but has no <label> children - must
+        // behave the same as it being absent entirely, not as an error or
+        // as a fallback to the legacy hash.
+        let client = client_with(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" hash="LEGACY" size="10" required="true"><labels></labels></package>
+            </packages></manifest></updatecheck></app></response>"#,
+        );
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                let err =
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap_err();
+                assert!(matches!(
+                    err,
+                    CosiSha384Error::Missing(CosiSha384Source::Labels)
+                ));
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn check_offer_duplicate_label_key_last_one_wins() {
+        // Two <label> children share the same key: deserialize_labels
+        // documents last-in-document-wins for this case (Nebraska has no
+        // uniqueness guarantee on label keys), so the second value must be
+        // the one the resolver sees, end to end through real XML.
+        const HEX_DIGEST: &str =
+            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471";
+        let client = client_with(&format!(
+            r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
+              <package name="os.cosi" size="10" required="true">
+                <labels>
+                  <label key="cosi.metadata.sha384" value="FIRST-NOT-VALID-HEX!!"/>
+                  <label key="cosi.metadata.sha384" value="{HEX_DIGEST}"/>
+                </labels>
+              </package>
+            </packages></manifest></updatecheck></app></response>"#
+        ));
+        match client.check_for_update(&Version::new(1, 0, 0)).unwrap() {
+            CheckOutcome::UpdateAvailable(offer) => {
+                assert_eq!(
+                    resolve_cosi_sha384(&offer.primary, CosiSha384Source::default()).unwrap(),
+                    HEX_DIGEST
+                );
+            }
+            other => panic!("expected an offer, got {other:?}"),
+        }
+    }
+
     #[test]
     fn check_offer_codebase_without_trailing_slash_keeps_directory() {
         // Relative resolution would replace the last segment and yield
@@ -1047,8 +1212,8 @@ mod tests {
 
     #[test]
     fn check_offer_surfaces_extra_files() {
-        // Nebraska renders extra files as additional <package> entries after the
-        // main one; the offer exposes them as extra_files in order.
+        // Nebraska renders extra files as additional <package> entries after
+        // the main one; the offer exposes them as extra_files in order.
         let client = client_with(
             r#"<response protocol="3.0" server="n"><app appid="app-1" status="ok"><updatecheck status="ok"><urls><url codebase="https://updates.example.com/"/></urls><manifest version="2.0.0"><packages>
               <package name="os-image-2.0.0.cosi" hash="MAIN" size="10" required="true"/>
@@ -1256,6 +1421,62 @@ mod tests {
     }
 
     #[test]
+    fn completion_retries_honor_cookie_enabled() {
+        for lifetime in [CookieLifetime::PerUpdate, CookieLifetime::PerMessage] {
+            for enabled in [true, false] {
+                let (_dir, store) = cookie_store();
+                store.save("ASLBSA=seeded").unwrap();
+                let mut client = client_with_responses(vec![IN_PROGRESS, NO_UPDATE]);
+                if enabled {
+                    client = client.with_cookie_store(store.clone(), lifetime);
+                }
+                client.transport.set_cookie = Some("ASLBSA=fresh".to_string());
+
+                let outcome = client
+                    .complete_after_reboot_with_policy(
+                        fast_policy(),
+                        &Version::new(1, 0, 0),
+                        &Version::new(2, 0, 0),
+                    )
+                    .unwrap();
+
+                assert_eq!(outcome, CheckOutcome::UpToDate);
+                assert_eq!(client.transport.calls.get(), 2);
+                let expected = if enabled {
+                    vec![
+                        Some("ASLBSA=seeded".to_string()),
+                        Some(if lifetime == CookieLifetime::PerMessage {
+                            "ASLBSA=fresh".to_string()
+                        } else {
+                            "ASLBSA=seeded".to_string()
+                        }),
+                    ]
+                } else {
+                    vec![None, None]
+                };
+                assert_eq!(*client.transport.cookies_sent.borrow(), expected);
+                assert_eq!(
+                    store.load().unwrap().as_deref(),
+                    Some(if enabled && lifetime == CookieLifetime::PerMessage {
+                        "ASLBSA=fresh"
+                    } else {
+                        "ASLBSA=seeded"
+                    })
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn cookies_without_a_store_are_not_adopted() {
+        let client = client_with(NO_UPDATE);
+        *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=fresh".to_string());
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+    }
+
+    #[test]
     fn complete_after_reboot_fails_when_completion_never_lands() {
         let client = client_with_responses(vec![IN_PROGRESS]);
         let err = client
@@ -1377,6 +1598,29 @@ mod tests {
     }
 
     #[test]
+    fn summarize_reports_package_fields_without_label_values_or_download_secrets() {
+        let xml = OFFER.replace(
+            r#"codebase="https://updates.example.com/""#,
+            r#"codebase="https://updates.example.com/?sig=download-secret""#,
+        ).replace(
+            r#"hash="AAAAAAAAAAAAAAAAAAAAAAAAAAA=" size="1024" required="true"/>"#,
+            r#"size="1024" required="true"><labels><label key="cosi.metadata.sha384" value="private-label-value"/></labels></package>"#,
+        );
+        let response = wire::parse_response(&xml).unwrap();
+        let summary = summarize(&response);
+        assert!(summary.contains("hash_present=false"), "{summary}");
+        assert!(summary.contains("hash_sha256_present=false"), "{summary}");
+        assert!(summary.contains("cosi.metadata.sha384"), "{summary}");
+        for secret in [
+            "private-label-value",
+            "download-secret",
+            "updates.example.com",
+        ] {
+            assert!(!summary.contains(secret), "{summary}");
+        }
+    }
+
+    #[test]
     fn summarize_reports_statuses_without_urls() {
         // The traced summary must not carry the manifest URLs, which are
         // routinely pre-signed.
@@ -1411,6 +1655,217 @@ mod tests {
             body.contains(&format!(r#"version="{TEST_CLIENT_VERSION}""#)),
             "{body}"
         );
+    }
+
+    fn cookie_store() -> (tempfile::TempDir, CookieStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = CookieStore::new(dir.path().join("cookie"));
+        (dir, store)
+    }
+
+    #[test]
+    fn no_cookie_is_sent_until_one_is_known() {
+        let (_dir, store) = cookie_store();
+        let client =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerMessage);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(store.load().unwrap(), None);
+        assert!(!store.path().exists());
+    }
+
+    #[test]
+    fn stored_cookie_seeds_the_first_per_message_request() {
+        let (_dir, store) = cookie_store();
+        store.save("ASLBSA=seeded").unwrap();
+        let client =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerMessage);
+        let modified = std::fs::metadata(store.path()).unwrap().modified().unwrap();
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=seeded")
+        );
+        assert_eq!(
+            std::fs::metadata(store.path()).unwrap().modified().unwrap(),
+            modified
+        );
+    }
+
+    #[test]
+    fn cookie_from_a_response_is_echoed_on_the_next_request() {
+        let (_dir, store) = cookie_store();
+        let client = Client::with_transport(
+            Url::parse("https://nebraska.example/v1/update/").unwrap(),
+            "app-1",
+            "stable",
+            MachineId::new("mid-1").unwrap(),
+            MockTransport::new(NO_UPDATE).with_set_cookie("ASLBSA=fresh"),
+        )
+        .with_cookie_store(store.clone(), CookieLifetime::PerMessage);
+
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().clone(),
+            None,
+            "first request has no cookie to send yet"
+        );
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=fresh"));
+
+        *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=replacement".to_string());
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=fresh"),
+            "second request must echo back the cookie the first response set"
+        );
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=replacement"));
+        *client.transport.set_cookie.borrow_mut() = None;
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=replacement")
+        );
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=replacement"));
+    }
+
+    #[test]
+    fn per_update_only_initial_response_sets_cookie() {
+        let (_dir, store) = cookie_store();
+        store.save("ASLBSA=previous").unwrap();
+        let client =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerUpdate);
+        *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=initial".to_string());
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=initial"));
+
+        *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=ignored".to_string());
+        client
+            .report_progress(&Version::new(1, 0, 0), ProgressEvent::DownloadStarted)
+            .unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=initial")
+        );
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=initial"));
+
+        let resumed =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerUpdate);
+        *resumed.transport.set_cookie.borrow_mut() = Some("ASLBSA=also-ignored".to_string());
+        resumed
+            .try_complete_after_reboot(&Version::new(1, 0, 0), &Version::new(2, 0, 0))
+            .unwrap();
+        assert_eq!(
+            resumed.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=initial")
+        );
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=initial"));
+
+        *resumed.transport.set_cookie.borrow_mut() = Some("ASLBSA=next-update".to_string());
+        resumed.check_for_update(&Version::new(2, 0, 0)).unwrap();
+        assert_eq!(*resumed.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=next-update"));
+    }
+
+    #[test]
+    fn per_update_missing_initial_cookie_cannot_be_established_later() {
+        let (_dir, store) = cookie_store();
+        store.save("ASLBSA=previous").unwrap();
+        let client =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerUpdate);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(store.load().unwrap(), None);
+        *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=ignored".to_string());
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert_eq!(store.load().unwrap(), None);
+    }
+
+    #[test]
+    fn cookie_store_edits_and_deletion_are_visible_to_existing_client() {
+        let (_dir, store) = cookie_store();
+        let client =
+            client_with(NO_UPDATE).with_cookie_store(store.clone(), CookieLifetime::PerMessage);
+        store.save("ASLBSA=external").unwrap();
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(
+            client.transport.last_cookie_sent.borrow().as_deref(),
+            Some("ASLBSA=external")
+        );
+        std::fs::remove_file(store.path()).unwrap();
+        client.probe(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        assert!(!store.path().exists());
+    }
+
+    #[test]
+    fn response_without_cookie_does_not_overwrite_another_requests_cookie() {
+        struct UpdatingTransport(CookieStore);
+        impl Transport for UpdatingTransport {
+            fn post_xml(
+                &self,
+                _endpoint: &Url,
+                _body: &[u8],
+                cookie: Option<&str>,
+            ) -> Result<(String, Option<String>), NebraskaError> {
+                assert_eq!(cookie, Some("ASLBSA=old"));
+                self.0.save("ASLBSA=concurrent").unwrap();
+                Ok((NO_UPDATE.to_string(), None))
+            }
+        }
+        let (_dir, store) = cookie_store();
+        store.save("ASLBSA=old").unwrap();
+        let client = Client::with_transport(
+            Url::parse("https://nebraska.example/v1/update/").unwrap(),
+            "app-1",
+            "stable",
+            MachineId::new("mid-1").unwrap(),
+            UpdatingTransport(store.clone()),
+        )
+        .with_cookie_store(store.clone(), CookieLifetime::PerMessage);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=concurrent"));
+    }
+
+    #[test]
+    fn invalid_stored_cookie_does_not_prevent_the_request() {
+        let (_dir, store) = cookie_store();
+        std::fs::write(store.path(), "ASLBSA=bad\r\nInjected: value").unwrap();
+        let client = client_with(NO_UPDATE).with_cookie_store(store, CookieLifetime::PerMessage);
+        client.check_for_update(&Version::new(1, 0, 0)).unwrap();
+        assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+    }
+
+    #[test]
+    fn cookie_io_failures_do_not_fail_requests() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("not-a-directory");
+        std::fs::write(&parent, "block parent creation").unwrap();
+        for lifetime in [CookieLifetime::PerUpdate, CookieLifetime::PerMessage] {
+            let client = client_with(NO_UPDATE)
+                .with_cookie_store(CookieStore::new(parent.join("cookie")), lifetime);
+            *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=new".to_string());
+            assert_eq!(
+                client.check_for_update(&Version::new(1, 0, 0)).unwrap(),
+                CheckOutcome::UpToDate
+            );
+            client.probe(&Version::new(1, 0, 0)).unwrap();
+            assert_eq!(*client.transport.last_cookie_sent.borrow(), None);
+        }
+    }
+
+    #[test]
+    fn eligible_cookie_is_saved_before_xml_parse_error() {
+        for lifetime in [CookieLifetime::PerUpdate, CookieLifetime::PerMessage] {
+            let (_dir, store) = cookie_store();
+            let client = client_with("not XML").with_cookie_store(store.clone(), lifetime);
+            *client.transport.set_cookie.borrow_mut() = Some("ASLBSA=new".to_string());
+            let err = client.check_for_update(&Version::new(1, 0, 0)).unwrap_err();
+            assert!(matches!(err, NebraskaError::Parse(_)), "{err:?}");
+            assert_eq!(store.load().unwrap().as_deref(), Some("ASLBSA=new"));
+        }
     }
 
     #[test]
@@ -1509,7 +1964,12 @@ mod tests {
             calls: Cell<u32>,
         }
         impl Transport for AlwaysFails {
-            fn post_xml(&self, _endpoint: &Url, _body: &[u8]) -> Result<String, NebraskaError> {
+            fn post_xml(
+                &self,
+                _endpoint: &Url,
+                _body: &[u8],
+                _cookie: Option<&str>,
+            ) -> Result<(String, Option<String>), NebraskaError> {
                 self.calls.set(self.calls.get() + 1);
                 Err(NebraskaError::Transport("down".into()))
             }
@@ -1528,74 +1988,5 @@ mod tests {
             .unwrap_err();
         assert!(err.is_retryable());
         assert_eq!(client.transport.calls.get(), 1);
-    }
-
-    #[test]
-    fn to_cosi_sha384_converts_base64_to_hex() {
-        // 48 zero bytes, base64-encoded - a well-formed (if not realistic)
-        // SHA-384 digest.
-        let hash = PackageHash {
-            sha1: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_string(),
-            sha256: None,
-        };
-        assert_eq!(hash.to_cosi_sha384().unwrap(), "0".repeat(96));
-    }
-
-    #[test]
-    fn to_cosi_sha384_round_trips_real_digest() {
-        // Generated with:
-        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384 -binary | openssl base64 -A
-        //   echo -n "trident-cosi-metadata-round-trip-test" | openssl dgst -sha384
-        // i.e. a real SHA-384 digest of a known input (not synthetic bytes),
-        // confirming the base64 -> hex re-encode matches an independently
-        // computed value.
-        let hash = PackageHash {
-            sha1: "8e1AenlmEPzn7npBv5uxbUi2OO2frCiT52sDgbw/RM077QgziRyh7wCIy2YcHvRx".to_string(),
-            sha256: None,
-        };
-        assert_eq!(
-            hash.to_cosi_sha384().unwrap(),
-            "f1ed407a796610fce7ee7a41bf9bb16d48b638ed9fac2893e76b0381bc3f44cd3bed0833891ca1ef0088cb661c1ef471"
-        );
-    }
-
-    #[test]
-    fn to_cosi_sha384_rejects_invalid_base64() {
-        let hash = PackageHash {
-            sha1: "not-valid-base64!!".to_string(),
-            sha256: None,
-        };
-        let err = hash.to_cosi_sha384().unwrap_err();
-        assert!(matches!(err, NebraskaError::UnexpectedResponse(_)));
-    }
-
-    #[test]
-    fn to_cosi_sha384_rejects_wrong_length() {
-        // Valid base64, but decodes to far fewer than the 48 bytes a SHA-384
-        // digest requires - e.g. a real SHA-1 (20 bytes), confirming this
-        // check would catch a Nebraska deployment that (unlike ours) puts an
-        // actual SHA-1 in this field.
-        let hash = PackageHash {
-            sha1: "AAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string(),
-            sha256: None,
-        };
-        let err = hash.to_cosi_sha384().unwrap_err();
-        assert!(matches!(err, NebraskaError::UnexpectedResponse(_)));
-    }
-
-    #[test]
-    fn to_cosi_sha384_rejects_oversized_input() {
-        // Valid base64 that decodes to more than the 48 bytes a SHA-384
-        // digest requires. This must be rejected via the fixed-size decode
-        // buffer rather than by first allocating a `Vec` sized to the
-        // (potentially attacker-controlled) input.
-        // 68 base64 chars (no padding needed, 68 % 4 == 0) decode to 51
-        // bytes - more than the 48 a SHA-384 digest requires.
-        let hash = PackageHash {
-            sha1: "A".repeat(68),
-            sha256: None,
-        };
-        let err = hash.to_cosi_sha384().unwrap_err();
-        assert!(matches!(err, NebraskaError::UnexpectedResponse(_)));
     }
 }

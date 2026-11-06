@@ -66,9 +66,10 @@ pub use crate::{
 
 use crate::{
     engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
-    init::cih,
+    init::acl,
     osimage::OsImage,
     stream::DiskSelectionStrategy,
+    subsystems::esp,
 };
 
 /// Trident version as provided by environment variables at build time
@@ -585,12 +586,39 @@ impl Trident {
         self.execute_and_record_error(datastore, |datastore| {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
-                if cih::is_cih().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running CIH")? {
-                    // For CIH, initialize datastore with known intitial state when
+                if acl::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
+                    // For ACL, initialize datastore with known initial state when
                     // the datastore is not already created.
-                    let initial_host_status = cih::initial_host_status()
-                                .structured(InvalidInputError::DeriveHostConfiguration)
-                                .message("Failed to initialize host status for CIH")?;
+                    let initial_host_status = acl::initial_host_status()
+                        .structured(InvalidInputError::DeriveHostConfiguration)
+                        .message("Failed to initialize host status for ACL")?;
+
+                    // Mirror offline-initialize's bootstrap: ACL lazy adoption derives
+                    // HostStatus metadata only, it never touches the ESP. Seed EFI/AZLA from
+                    // EFI/BOOT now so manual rollback's "AZLA must already exist" invariant
+                    // holds for ACL-adopted hosts too.
+                    let esp_path = initial_host_status
+                        .spec
+                        .storage
+                        .filesystems
+                        .iter()
+                        .find(|fs| fs.is_esp)
+                        .and_then(|fs| fs.mount_point_path())
+                        .structured(InternalError::Internal(
+                            "Failed to find ESP filesystem in ACL-derived Host Status",
+                        ))?;
+
+                    // Resolve the ESP path relative to the host filesystem root,
+                    // matching the A/B update and manual-rollback paths. Without
+                    // this, containerized Trident bootstraps AZLA under the
+                    // container's own /boot instead of the host's ESP.
+                    let esp_path = container::get_host_relative_path(esp_path.to_path_buf())
+                        .message("Failed to resolve ESP path relative to host for ACL")?;
+
+                    esp::bootstrap_azla_from_fallback(&esp_path)
+                        .structured(InvalidInputError::InvalidBootConfiguration)
+                        .message("Failed to bootstrap AZLA ESP path for ACL")?;
+
                     datastore
                         .with_host_status(|status| {
                             *status = initial_host_status;
@@ -598,7 +626,7 @@ impl Trident {
                         })
                         .message("Failed to initialize datastore")?;
                 } else {
-                    // For non-CIH images, if the datastore is not persistent, return error
+                    // For non-ACL images, if the datastore is not persistent, return error
                     return Err(TridentError::new(InvalidInputError::HostNotProvisioned))
                         .message("Persistent datastore not found on host");
                 }

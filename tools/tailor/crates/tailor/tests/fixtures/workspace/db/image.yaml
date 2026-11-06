@@ -1,0 +1,17 @@
+# Member image `db` — overrides the toolchain (pins the older ic-old) and declares an `arch` matrix
+# axis (amd64 + arm64) instead of the amd64-only workspace default. `outputs:` still inherits cosi.
+name: db
+toolchain: ic-old
+matrix:
+  arch: [amd64, arm64]
+
+base:
+  azureLinux:
+    version: "3.0"
+    variant: minimal-os
+
+config:
+  os:
+    hostname: db
+    packages:
+      install: [db-server]

@@ -15,10 +15,66 @@ annotation-driven trident ACL agent protocol.
 
 There is intentionally no fake `tridentd`.
 
+The Nebraska proxy runs the upstream backend against ephemeral Postgres.
+Since upstream cannot emit package labels, a test-only XML response adapter
+decodes the offered COSI package's base64 metadata digest from `hash` and
+writes it as 96 lowercase hex characters in
+`<labels><label key="cosi.metadata.sha384" value="..."/></labels>`.
+It removes the legacy `hash` attribute, so the VM exercises the agent's
+default `labels` source without a usable legacy fallback. Other packages
+and Nebraska's grant/event state machine are preserved; no-update and
+event-only responses are returned unchanged.
+
+The proxy logs the generated COSI `<package>` XML at INFO, including the
+hex `cosi.metadata.sha384` label value, without logging download URLs.
+The same log line includes `metadata_sha384=<96 lowercase hex characters>`,
+matching that label, for direct comparison with the SHA-384 in the
+Trident staging Host Configuration (`tridentd.log` in the `aclagent-storm-test`
+artifact). Both VM images run the agent with
+`--verbosity trace --network-verbosity warn`; agent journals are also
+collected in that artifact, not echoed into the task log.
+
+## Pipeline diagnostics
+
+The validation stage runs one job by default. Set `aclAgentTestParallelJobs`
+in `.pipelines/trident-pr-e2e.yml` to run multiple independent jobs, each
+executing the full scenario against the same build's images and binaries.
+Each job publishes its own `aclagent-storm-test-<job position>` artifact
+to keep results separate.
+On failure, the artifact also includes `booted.qcow2.zst`, matching the
+servicing and rollback tests. The pipeline enables `--force-cleanup` to stop
+the VM before compression; failures before disk creation emit a warning.
+The disk retains both A/B roots, including the former root's journal, for
+offline inspection.
+
+The packaged agent service uses `KillMode=mixed` to let the synchronous
+reboot client finish during service shutdown.
+
+Agent journals include the startup process/boot IDs, reboot invocation and
+result with elapsed time and operation/boot IDs, and the full command error
+chain on failure (including captured exit status/stdout/stderr when available).
+Signal and orchestrator-exit logs help distinguish a requested shutdown from
+a reboot-command failure. A successful command return alone does not confirm
+that the machine rebooted.
+
 ## Test cases
 
 - `deploy-vm`
 - `check-deployment`
+- `run-node-resilience` — proves `trident-acl-agent` survives its own Node
+  object disappearing (HTTP 404) instead of exiting, and resumes once it
+  reappears, both via a restart-triggered startup read and via an
+  already-running agent's in-flight status PATCH; runs before
+  `run-ab-update` so it exercises a clean, no-pending-state agent.
+  UUID coverage includes a one-shot GET with validation explicitly enabled:
+  matching UUIDs succeed, a mismatched UUID fails with its own mismatch and
+  NodeGone diagnostics, and the restored UUID succeeds. These assertions do
+  not rely on daemon logs; the separate watch phase retains its own coverage.
+- `run-node-name-source` — proves `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE`
+  (`hostname` vs `kubelet-cert`) actually switches which identity
+  `node_name` resolves from, via one-shot `--validate-connection
+  kubernetes` CLI invocations against a fake kubelet client cert - no
+  service restart/reboot needed, so it stays fast
 - `run-ab-update`
 - `run-rollback`
 - `collect-logs`
@@ -77,7 +133,6 @@ above. `prepareVmForAclAgent` writes only the fake kubeconfig, then enables
 and restarts `trident-acl-agent.service`. Before that runs, the service
 simply isn't started -- no crash-looping, no log noise.
 
-
 ## Local usage
 
 The VM image (`make artifacts/trident-vm-acl-agent-testimage.qcow2`) bakes in
@@ -135,6 +190,40 @@ came back up). The fake apiserver/Nebraska/image-server endpoints are bound
 to `HostEndpointIP` (the libvirt NAT gateway address), which the VM can
 reach directly — this avoids relying on reverse SSH tunnels, which don't
 survive the VM actually going down for a real reboot.
+
+## `run-node-name-source`
+
+Proves `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` (microsoft/trident#839)
+actually switches which identity `node_name` resolves from. Shared setup
+restarts `trident-acl-agent.service` once (to pick up the delivered fake
+kubeconfig), but every assertion below is still a one-shot
+`trident-acl-agent --validate-connection kubernetes` CLI invocation,
+independent of that restarted service — no further restart or reboot is
+needed per phase, so this still runs fast relative to the rest of this
+scenario. The fake apiserver only ever serves a single Node name at a time,
+so this runs as three sequential phases, each with its own apiserver
+instance seeded with exactly the one identity that phase expects, and
+asserts the *exact* resolved Node name reported in
+`--validate-connection`'s own success output (not just pass/fail):
+
+- **kubelet-cert phase**: a self-signed fake kubelet client cert (Subject CN
+  `system:node:<name>`) is uploaded to
+  `/var/lib/kubelet/pki/kubelet-client-current.pem`; `kubelet-cert` source
+  resolves to that cert's CN
+- **hostname phase**: the VM's real hostname is read live via SSH; both
+  `hostname` source (explicit) and the unset/default case resolve to it.
+  With the cert hidden, `kubelet-cert` source makes
+  `--validate-connection kubernetes` fail immediately (fail-fast is correct
+  for this one-shot CLI diagnostic — see the Rust-level
+  `resolve_node_name_with_retry` unit tests in `orchestrator.rs` for
+  coverage of the long-running agent's different behavior: it retries this
+  same condition indefinitely with capped exponential backoff instead of
+  crashing, since an unreadable cert at startup is typically just kubelet's
+  own TLS bootstrapping not having finished yet)
+- **explicit override phase**: `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` set
+  to a third, unrelated literal still wins outright regardless of
+  `NODE_NAME_SOURCE`
+
 
 ## `run-rollback`
 

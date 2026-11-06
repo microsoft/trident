@@ -1,0 +1,20 @@
+# layouts/storage/lite.yaml — spliced in by by-edition/lite.yaml via $include. The included file is a
+# bare subtree: its content becomes the value of the `storage:` key (no re-stated key).
+bootType: efi
+disks:
+  - partitionTableType: gpt
+    partitions:
+      - id: esp
+        type: esp
+        size: 64M
+      - id: root
+        size: grow
+filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+  - deviceId: root
+    type: ext4
+    mountPoint:
+      path: /

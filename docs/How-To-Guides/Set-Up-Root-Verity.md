@@ -220,10 +220,19 @@ The remainder of the Trident Host Configuration file describes things like where
 to find the COSI file (can be a local path, an HTTP url, or an OCI url) and what
 the disk device path is (in this case, `/dev/sda`):
 
+Calculate the SHA384 checksum of the COSI metadata:
+
+```bash
+tar -xOf "$HOME/staging/out/image.cosi" metadata.json | sha384sum
+```
+
+Replace `<Calculated SHA384 hash>` below with the 96-character hexadecimal
+checksum. Hash `metadata.json`, not the entire COSI file.
+
 ```yaml
 image:
   url: image.cosi
-  sha384: ignored
+  sha384: <Calculated SHA384 hash>
 storage:
   disks:
     - id: os

@@ -1,0 +1,12 @@
+# Member image `host` — references the `baremetal` catalogue slot by name. The slot path lives once in
+# the workspace `baseImages:`; the cell exposes `baseImage: baremetal` in the matrix output.
+name: host
+
+base:
+  ref: baremetal
+
+config:
+  os:
+    hostname: host
+    packages:
+      install: [host-tools]

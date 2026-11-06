@@ -88,6 +88,15 @@ x64: `77ff5f63-e7b6-4633-acf4-1565b864c0e6`
 | Type           | `string`     |
 | Value          | `usr-verity` |
 
+### Usr-verity hash signature partition
+
+x64: `e7bb33fb-06cf-4e81-8273-e543b413e2e2`
+
+| Characteristic | Value            |
+| -------------- | ---------------- |
+| Type           | `string`         |
+| Value          | `usr-verity-sig` |
+
 ### Tmp partition
 
 `7ec6f557-3bc5-4aca-b293-16ef5df639d1`

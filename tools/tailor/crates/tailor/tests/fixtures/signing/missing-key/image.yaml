@@ -1,0 +1,9 @@
+name: missing-key
+signing: broken
+base:
+  path: ./base.img
+outputs:
+  - format: cosi
+config:
+  os:
+    hostname: missing-key

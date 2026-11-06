@@ -1,0 +1,9 @@
+# The `net` flavor: a different hostname, and a kernel command-line argument appended via list merge
+# (no package installs, so the build stays fast and offline-friendly).
+params:
+  hostname: appliance-net
+config:
+  os:
+    kernelCommandLine:
+      extraCommandLine:
+        - quiet
