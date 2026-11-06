@@ -4065,6 +4065,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "trident-client"
+version = "0.1.0"
+dependencies = [
+ "hyper-util",
+ "prost-types",
+ "serde_yaml",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower",
+ "trident-proto",
+ "trident_api",
+ "url",
+]
+
+[[package]]
 name = "trident-proto"
 version = "1.2.0"
 dependencies = [
