@@ -14,8 +14,9 @@ use trident_proto::v1preview::{
 use crate::{
     client::{proto_config, reboot_management, rollback_kind, serialize_config},
     operation::{decode_remote_error, invalid_protocol},
-    ActiveVolume, Client, ClientError, ExecutionState, Operation, RebootPolicy,
-    RollbackAvailability, RollbackKind, ServicingOperation, ServicingState, ValidationResult,
+    types::Operation,
+    ActiveVolume, Client, ClientError, ExecutionState, RebootPolicy, RollbackAvailability,
+    RollbackKind, ServicingOperation, ServicingState, ValidationResult,
 };
 
 impl Client {

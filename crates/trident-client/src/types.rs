@@ -1,9 +1,9 @@
+use std::{error::Error, fmt};
+
 use trident_api::primitives::hash::Sha384Hash;
 
-/// Identifies a client operation independently of its transport method.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum Operation {
+pub(crate) enum Operation {
     Version,
     StreamDisk,
     Update,
@@ -127,6 +127,14 @@ impl RemoteError {
     }
 }
 
+impl fmt::Display for RemoteError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl Error for RemoteError {}
+
 /// Successful servicing completion.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Completion {
@@ -157,21 +165,13 @@ pub enum ImageHash {
     Unknown(String),
 }
 
-/// Terminal servicing outcome.
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[non_exhaustive]
-pub enum OperationOutcome {
-    Succeeded(Completion),
-    Failed(RemoteError),
-}
-
 /// Domain event emitted by a servicing operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ServicingEvent {
     Started { timestamp: Option<EventTimestamp> },
     Log(LogRecord),
-    Completed(OperationOutcome),
+    Completed(Result<Completion, RemoteError>),
 }
 
 #[cfg(feature = "preview")]

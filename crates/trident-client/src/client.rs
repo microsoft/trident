@@ -28,7 +28,7 @@ use trident_proto::{
 };
 use url::Url;
 
-use crate::{error, ClientError, Operation, RebootPolicy, RollbackKind, ServicingOperation};
+use crate::{types::Operation, ClientError, RebootPolicy, RollbackKind, ServicingOperation};
 
 /// Default `tridentd` Unix socket URI.
 pub const DEFAULT_ENDPOINT: &str = TRIDENT_DEFAULT_SOCKET_URI;
@@ -326,11 +326,13 @@ impl Client {
     {
         let response = time::timeout(self.request_acknowledgement_timeout, request.into_future())
             .await
-            .map_err(|_| ClientError::RequestAcknowledgementTimeout {
-                operation,
-                timeout: self.request_acknowledgement_timeout,
+            .map_err(|_| {
+                ClientError::request_acknowledgement_timeout(
+                    operation,
+                    self.request_acknowledgement_timeout,
+                )
             })?
-            .map_err(|status| error::rejected(operation, status))?;
+            .map_err(|status| ClientError::request_rejected(operation, status))?;
         Ok(ServicingOperation::new(operation, response.into_inner()))
     }
 
@@ -344,11 +346,8 @@ impl Client {
     {
         time::timeout(self.unary_timeout, request.into_future())
             .await
-            .map_err(|_| ClientError::UnaryTimeout {
-                operation,
-                timeout: self.unary_timeout,
-            })?
-            .map_err(|status| error::rejected(operation, status))
+            .map_err(|_| ClientError::unary_timeout(operation, self.unary_timeout))?
+            .map_err(|status| ClientError::request_rejected(operation, status))
     }
 }
 
@@ -453,17 +452,17 @@ fn unix_socket_path(endpoint: &str, url: &Url) -> Result<PathBuf, ClientError> {
 }
 
 fn invalid_endpoint(endpoint: &str, details: impl Into<String>) -> ClientError {
-    ClientError::InvalidEndpoint {
-        endpoint: endpoint_for_diagnostics(endpoint),
-        details: endpoint_details_for_diagnostics(endpoint, details),
-    }
+    ClientError::invalid_endpoint(
+        endpoint_for_diagnostics(endpoint),
+        endpoint_details_for_diagnostics(endpoint, details),
+    )
 }
 
 fn connection_error(endpoint: &str, details: impl Into<String>) -> ClientError {
-    ClientError::Connection {
-        endpoint: endpoint_for_diagnostics(endpoint),
-        details: endpoint_details_for_diagnostics(endpoint, details),
-    }
+    ClientError::connection(
+        endpoint_for_diagnostics(endpoint),
+        endpoint_details_for_diagnostics(endpoint, details),
+    )
 }
 
 fn endpoint_for_diagnostics(endpoint: &str) -> String {
@@ -505,10 +504,8 @@ pub(crate) fn serialize_config(
     operation: Operation,
     config: &HostConfiguration,
 ) -> Result<String, ClientError> {
-    serde_yaml::to_string(config).map_err(|error| ClientError::Serialization {
-        operation,
-        details: error.to_string(),
-    })
+    serde_yaml::to_string(config)
+        .map_err(|error| ClientError::serialization(operation, error.to_string()))
 }
 
 pub(crate) fn proto_config(config: impl Into<String>) -> ProtoHostConfiguration {
@@ -539,19 +536,19 @@ pub(crate) fn rollback_kind(kind: RollbackKind) -> i32 {
 fn validate_sha384_hash(hash: &Sha384Hash) -> Result<(), ClientError> {
     let value = hash.as_str();
     if value.len() != SHA384_HEX_LENGTH {
-        return Err(ClientError::InvalidInput {
-            operation: Operation::StreamDisk,
-            details: format!(
+        return Err(ClientError::invalid_input(
+            Operation::StreamDisk,
+            format!(
                 "SHA-384 hash has length {}; expected {SHA384_HEX_LENGTH} hexadecimal characters",
                 value.len()
             ),
-        });
+        ));
     }
     if !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(ClientError::InvalidInput {
-            operation: Operation::StreamDisk,
-            details: "SHA-384 hash contains non-hexadecimal characters".to_string(),
-        });
+        return Err(ClientError::invalid_input(
+            Operation::StreamDisk,
+            "SHA-384 hash contains non-hexadecimal characters",
+        ));
     }
     Ok(())
 }

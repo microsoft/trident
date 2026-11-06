@@ -38,10 +38,9 @@
 //! Installer-style event handling:
 //! ```no_run
 //! # use trident_client::{
-//! #     Client, ClientError, HostConfiguration, OperationOutcome, RebootPolicy,
-//! #     ServicingEvent,
+//! #     Client, HostConfiguration, RebootPolicy, ServicingEvent,
 //! # };
-//! # async fn example() -> Result<(), trident_client::ClientError> {
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let client = Client::connect_default().await?;
 //! let mut operation = client
 //!     .update(&HostConfiguration::default(), RebootPolicy::Caller)
@@ -49,13 +48,8 @@
 //! while let Some(event) = operation.next_event().await? {
 //!     match event {
 //!         ServicingEvent::Log(record) => println!("{}", record.message),
-//!         ServicingEvent::Completed(OperationOutcome::Succeeded(_)) => return Ok(()),
-//!         ServicingEvent::Completed(OperationOutcome::Failed(remote)) => {
-//!             return Err(ClientError::RemoteFailure {
-//!                 operation: operation.operation(),
-//!                 remote,
-//!             });
-//!         }
+//!         ServicingEvent::Completed(Ok(_)) => return Ok(()),
+//!         ServicingEvent::Completed(Err(remote)) => return Err(Box::new(remote)),
 //!         ServicingEvent::Started { .. } => {}
 //!         _ => {}
 //!     }
@@ -80,9 +74,8 @@ pub use client::{Client, ClientBuilder, DEFAULT_ENDPOINT};
 pub use error::{ClientError, ExecutionState, RpcCode};
 pub use operation::ServicingOperation;
 pub use types::{
-    Completion, EventTimestamp, ImageHash, LogLevel, LogRecord, Operation, OperationOutcome,
-    RebootDisposition, RebootPolicy, RemoteError, RemoteErrorCategory, RollbackKind,
-    ServicingEvent, ServicingKind, SourceLocation,
+    Completion, EventTimestamp, ImageHash, LogLevel, LogRecord, RebootDisposition, RebootPolicy,
+    RemoteError, RemoteErrorCategory, RollbackKind, ServicingEvent, ServicingKind, SourceLocation,
 };
 
 #[cfg(feature = "preview")]

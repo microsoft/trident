@@ -657,7 +657,8 @@ async fn endpoint_schemes_support_only_unix_and_http() {
             .connect()
             .await
             .expect_err("unsupported endpoint scheme should fail");
-        assert!(matches!(error, ClientError::InvalidEndpoint { .. }));
+        assert_eq!(error.execution_state(), ExecutionState::NotStarted);
+        assert!(error.to_string().starts_with("invalid Trident endpoint"));
     }
 
     for endpoint in [
@@ -670,7 +671,8 @@ async fn endpoint_schemes_support_only_unix_and_http() {
             .connect()
             .await
             .expect_err("supported endpoint without a server should fail to connect");
-        assert!(matches!(error, ClientError::Connection { .. }));
+        assert_eq!(error.execution_state(), ExecutionState::NotStarted);
+        assert!(error.to_string().starts_with("failed to connect"));
     }
 }
 
@@ -684,6 +686,8 @@ async fn endpoint_diagnostics_redact_sensitive_data() {
     }
 
     let error = builder.connect().await.unwrap_err();
+    assert_eq!(format!("{error:?}"), error.to_string());
+    assert!(!format!("{error:?}").contains("InvalidEndpoint"));
     for diagnostic in [error.to_string(), format!("{error:?}")] {
         for secret in ["client", "password", "token=secret", "fragment-secret"] {
             assert!(!diagnostic.contains(secret));
@@ -695,6 +699,7 @@ async fn endpoint_diagnostics_redact_sensitive_data() {
         .connect()
         .await
         .unwrap_err();
+    assert_eq!(format!("{malformed:?}"), malformed.to_string());
     for diagnostic in [malformed.to_string(), format!("{malformed:?}")] {
         assert!(!diagnostic.contains("token=secret"));
     }
@@ -731,14 +736,12 @@ async fn delayed_unary_response_uses_unary_timeout() {
     let client = connect_mock_with_timeouts(state, REQUEST_TIMEOUT, SHORT_TIMEOUT).await;
 
     let error = client.version().await.unwrap_err();
-    assert!(matches!(
-        &error,
-        ClientError::UnaryTimeout {
-            operation: Operation::Version,
-            ..
-        }
-    ));
     assert_eq!(error.execution_state(), ExecutionState::OutcomeUnknown);
+    assert_eq!(error.rpc_code(), None);
+    assert!(error.to_string().contains("did not complete"));
+    assert_eq!(format!("{error:?}"), error.to_string());
+    assert!(!format!("{error:?}").contains("UnaryTimeout"));
+    assert!(!format!("{error:?}").contains("operation:"));
 }
 
 #[tokio::test]
@@ -830,14 +833,9 @@ async fn stream_disk_rejects_malformed_hashes_before_rpc() {
             .await
             .err()
             .expect("malformed hash should be rejected");
-        assert!(matches!(
-            error,
-            ClientError::InvalidInput {
-                operation: Operation::StreamDisk,
-                ..
-            }
-        ));
         assert_eq!(error.execution_state(), ExecutionState::NotStarted);
+        assert_eq!(error.rpc_code(), None);
+        assert!(error.to_string().starts_with("invalid input"));
         assert!(state.captured.lock().unwrap().stream_disk.is_empty());
         assert!(state.actions.lock().unwrap().is_empty());
     }
@@ -940,6 +938,39 @@ async fn structured_remote_failure_is_preserved() {
     assert_eq!(remote.subkind, "bad-config");
     assert_eq!(remote.cause(), "bad field");
     assert_eq!(remote.location.as_ref().unwrap().line, 42);
+    assert_eq!(remote.to_string(), remote.message);
+    let remote_error: &(dyn std::error::Error + 'static) = remote;
+    assert_eq!(remote_error.to_string(), remote.message);
+    assert_eq!(format!("{error:?}"), error.to_string());
+    assert!(!format!("{error:?}").contains("RemoteFailure"));
+}
+
+#[tokio::test]
+async fn manual_event_consumers_receive_remote_errors_directly() {
+    let state = Arc::new(MockState::default());
+    let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
+    set_action(
+        &state,
+        stream(vec![completed(Completed {
+            status: StatusCode::Failure.into(),
+            error: Some(valid_remote_error()),
+            reboot_status: RebootStatus::Unspecified.into(),
+            image_hash: None,
+            servicing_kind: None,
+        })]),
+    );
+
+    let mut operation = client.update_stage_yaml("{}\n").await.unwrap();
+    let event = operation.next_event().await.unwrap().unwrap();
+    let ServicingEvent::Completed(Err(remote)) = event else {
+        panic!("expected failed completion event");
+    };
+    assert_eq!(remote.category, RemoteErrorCategory::InvalidInput);
+    assert_eq!(
+        remote.to_string(),
+        "configuration is invalid: caused by bad field"
+    );
+    assert!(operation.next_event().await.unwrap().is_none());
 }
 
 #[tokio::test]
@@ -997,7 +1028,11 @@ async fn protocol_invariants_are_rejected_centrally() {
             .wait()
             .await
             .unwrap_err();
-        assert!(matches!(error, ClientError::InvalidProtocol { .. }));
+        assert!(error
+            .to_string()
+            .starts_with("invalid Trident protocol response"));
+        assert_eq!(error.remote_error(), None);
+        assert_eq!(error.rpc_code(), None);
     }
 }
 
@@ -1159,13 +1194,7 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         .err()
         .expect("request should be rejected");
     assert_eq!(rejected.execution_state(), ExecutionState::NotStarted);
-    assert!(matches!(
-        rejected,
-        ClientError::RequestRejected {
-            code: RpcCode::InvalidArgument,
-            ..
-        }
-    ));
+    assert_eq!(rejected.rpc_code(), Some(RpcCode::InvalidArgument));
 
     set_action(&state, Action::Reject(Status::unavailable("unavailable")));
     let unavailable = client
@@ -1177,13 +1206,7 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         unavailable.execution_state(),
         ExecutionState::OutcomeUnknown
     );
-    assert!(matches!(
-        unavailable,
-        ClientError::RequestRejected {
-            code: RpcCode::Unavailable,
-            ..
-        }
-    ));
+    assert_eq!(unavailable.rpc_code(), Some(RpcCode::Unavailable));
 
     set_action(
         &state,
@@ -1198,10 +1221,7 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         acknowledgement_timeout.execution_state(),
         ExecutionState::OutcomeUnknown
     );
-    assert!(matches!(
-        acknowledgement_timeout,
-        ClientError::RequestAcknowledgementTimeout { .. }
-    ));
+    assert_eq!(acknowledgement_timeout.rpc_code(), None);
 
     set_action(
         &state,
@@ -1224,7 +1244,7 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         stream_error.execution_state(),
         ExecutionState::OutcomeUnknown
     );
-    assert!(matches!(stream_error, ClientError::StreamFailure { .. }));
+    assert_eq!(stream_error.rpc_code(), Some(RpcCode::Unavailable));
 
     set_action(&state, Action::Stream(Vec::new()));
     let missing = client
@@ -1235,7 +1255,8 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         .await
         .unwrap_err();
     assert_eq!(missing.execution_state(), ExecutionState::OutcomeUnknown);
-    assert!(matches!(missing, ClientError::MissingCompletion { .. }));
+    assert_eq!(missing.rpc_code(), None);
+    assert!(missing.to_string().contains("ended without completion"));
 
     set_action(
         &state,
@@ -1260,10 +1281,7 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         completion_timeout.execution_state(),
         ExecutionState::OutcomeUnknown
     );
-    assert!(matches!(
-        completion_timeout,
-        ClientError::CompletionTimeout { .. }
-    ));
+    assert_eq!(completion_timeout.rpc_code(), None);
 }
 
 #[tokio::test]

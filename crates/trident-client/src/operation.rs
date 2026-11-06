@@ -13,9 +13,9 @@ use trident_proto::v1::{
 };
 
 use crate::{
-    ClientError, Completion, EventTimestamp, ExecutionState, ImageHash, LogLevel, LogRecord,
-    Operation, OperationOutcome, RebootDisposition, RemoteError, RemoteErrorCategory,
-    ServicingEvent, ServicingKind, SourceLocation,
+    types::Operation, ClientError, Completion, EventTimestamp, ExecutionState, ImageHash, LogLevel,
+    LogRecord, RebootDisposition, RemoteError, RemoteErrorCategory, ServicingEvent, ServicingKind,
+    SourceLocation,
 };
 
 /// Accepted servicing request with a domain-event response stream.
@@ -45,11 +45,6 @@ impl ServicingOperation {
         self
     }
 
-    /// Identifies the RPC that created this operation.
-    pub fn operation(&self) -> Operation {
-        self.operation
-    }
-
     /// Returns the next domain event.
     pub async fn next_event(&mut self) -> Result<Option<ServicingEvent>, ClientError> {
         if self.completed {
@@ -60,23 +55,19 @@ impl ServicingOperation {
             .stream
             .message()
             .await
-            .map_err(|status| ClientError::StreamFailure {
-                operation: self.operation,
-                code: status.code().into(),
-                message: status.message().to_string(),
-            })?
-            .ok_or(ClientError::MissingCompletion {
-                operation: self.operation,
-            })?;
+            .map_err(|status| ClientError::stream_failure(self.operation, status))?
+            .ok_or_else(|| ClientError::missing_completion(self.operation))?;
 
         let timestamp = response.timestamp.map(|timestamp| EventTimestamp {
             seconds: timestamp.seconds,
             nanos: timestamp.nanos,
         });
-        let body = response.response.ok_or(ClientError::InvalidProtocol {
-            operation: self.operation,
-            details: "servicing response is missing its body".to_string(),
-            state: ExecutionState::OutcomeUnknown,
+        let body = response.response.ok_or_else(|| {
+            ClientError::invalid_protocol(
+                self.operation,
+                "servicing response is missing its body",
+                ExecutionState::OutcomeUnknown,
+            )
         })?;
 
         let event = match body {
@@ -106,15 +97,13 @@ impl ServicingOperation {
             loop {
                 let event = self.next_event().await?;
                 let Some(event) = event else {
-                    return Err(ClientError::MissingCompletion { operation });
+                    return Err(ClientError::missing_completion(operation));
                 };
                 on_event(&event);
                 match event {
-                    ServicingEvent::Completed(OperationOutcome::Succeeded(completion)) => {
-                        return Ok(completion);
-                    }
-                    ServicingEvent::Completed(OperationOutcome::Failed(remote)) => {
-                        return Err(ClientError::RemoteFailure { operation, remote });
+                    ServicingEvent::Completed(Ok(completion)) => return Ok(completion),
+                    ServicingEvent::Completed(Err(remote)) => {
+                        return Err(ClientError::remote_failure(operation, remote));
                     }
                     ServicingEvent::Started { .. } | ServicingEvent::Log(_) => {}
                 }
@@ -124,7 +113,7 @@ impl ServicingOperation {
         match timeout {
             Some(timeout) => time::timeout(timeout, wait)
                 .await
-                .map_err(|_| ClientError::CompletionTimeout { operation, timeout })?,
+                .map_err(|_| ClientError::completion_timeout(operation, timeout))?,
             None => wait.await,
         }
     }
@@ -154,7 +143,7 @@ fn decode_log(timestamp: Option<EventTimestamp>, record: ProtoLog) -> LogRecord 
 fn decode_completion(
     operation: Operation,
     completed: ProtoCompleted,
-) -> Result<OperationOutcome, ClientError> {
+) -> Result<Result<Completion, RemoteError>, ClientError> {
     let status = ProtoStatusCode::try_from(completed.status).map_err(|_| {
         invalid_protocol(
             operation,
@@ -204,7 +193,7 @@ fn decode_completion(
             let servicing_kind = completed.servicing_kind.map(decode_servicing_kind);
             let image_hash = completed.image_hash.map(decode_image_hash);
 
-            Ok(OperationOutcome::Succeeded(Completion {
+            Ok(Ok(Completion {
                 reboot,
                 servicing_kind,
                 image_hash,
@@ -218,7 +207,7 @@ fn decode_completion(
                     ExecutionState::Completed,
                 )
             })?;
-            Ok(OperationOutcome::Failed(decode_remote_error(error)))
+            Ok(Err(decode_remote_error(error)))
         }
     }
 }
@@ -283,9 +272,5 @@ pub(crate) fn invalid_protocol(
     details: impl Into<String>,
     state: ExecutionState,
 ) -> ClientError {
-    ClientError::InvalidProtocol {
-        operation,
-        details: details.into(),
-        state,
-    }
+    ClientError::invalid_protocol(operation, details, state)
 }
