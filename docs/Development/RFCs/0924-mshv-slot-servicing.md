@@ -341,11 +341,20 @@ boot as a boot-slot validation failure, not a health-check failure.
 Existing root-slot mismatch handling does not enter
 `AbUpdateHealthCheckFailed`; leave that behavior unchanged.
 
+Propose `ServicingError::ValidateAbActiveHypervisor`, following the existing
+`ServicingError::ValidateAbActiveVolume` pattern. Return it from the expanded
+slot validation when the active hypervisor does not match the expected
+slot or required hypervisor identity cannot be established. Include
+expected and observed identity context where available; exact fields and
+the identification mechanism remain TBD.
+
 For an A/B update with an unexpected hypervisor or missing/contradictory
-required MSHV identity evidence, persist a distinct structured servicing
-error and a new failure state, provisionally
+required MSHV identity evidence, persist this structured servicing error
+and a new failure state, provisionally
 `AbUpdateHypervisorCheckFailed`, before initiating rollback. Reserve
 `AbUpdateHealthCheckFailed` for failures of the existing health checks.
+The error variant and persisted servicing state are separate: returning
+`ValidateAbActiveHypervisor` alone does not change state or initiate rollback.
 Reuse rollback actions where appropriate, but explicitly extend commit,
 reboot and recovery dispatch to recognize the new state; it must not be
 treated as an idle/completed update or a health-hook result.
@@ -361,8 +370,9 @@ Clean install reports provisioning failure without declaring success.
 Apply the expanded slot check to manual rollback and automatic
 rollback-recovery success, including paths that do not run user health
 hooks. These paths must not declare the machine provisioned when MSHV
-identity evidence is missing or contradictory. Hypervisor identification
-and the final failure-state/error names remain implementation review items.
+identity evidence is missing or contradictory. Hypervisor identification,
+error fields and the final failure-state name remain implementation review
+items.
 
 Existing firmware promotion uses the label of `BootCurrent`. An explicit
 BOOT entry therefore needs deliberate mapping to the validated managed
@@ -381,7 +391,7 @@ attestation of the running hypervisor.
 | A-to-B update stage | Stage only B's OS, UKI/addons and complete payload. Preserve A and strip the image firstboot addon as today. |
 | Update finalize | Complete payload publication before setting existing B firmware/UKI trial selectors. Keep committed A defaults and existing fallback-mode decisions. |
 | Trial and commit | Extend existing slot validation with the applicable MSHV comparison; require matching hypervisor/UKI/root identity and existing health checks before promoting firmware default, UKI default or fallback. |
-| Unexpected hypervisor during trial | Persist the distinct unexpected-hypervisor servicing error and proposed `AbUpdateHypervisorCheckFailed` state, then initiate rollback without promoting B. With B's oneshot consumed and committed A defaults intact, the next reset should restore A+A; verify those conditions. |
+| Unexpected hypervisor during trial | Persist `ServicingError::ValidateAbActiveHypervisor` and the proposed `AbUpdateHypervisorCheckFailed` state, then initiate rollback without promoting B. With B's oneshot consumed and committed A defaults intact, the next reset should restore A+A; verify those conditions. |
 | Health-check failure during trial | Retain existing `AbUpdateHealthCheckFailed` handling; do not conflate it with MSHV slot-validation failure. |
 | Recovery after hypervisor-validation failure | Recognize the new state, validate retained A's OS and hypervisor before returning to `Provisioned`, and preserve/report the original error. A failed recovery retains the failure state. |
 | Manual rollback | Select retained A using existing firmware/UKI logic. Validate A independently of whether a new UKI is staged, and require matching identity before success. |
@@ -461,7 +471,7 @@ requiring recovery, not an idle or successfully provisioned host.
 | Profiles (C) | Legacy compatibility, strict schema, duplicate/malformed roots, zero/multiple matches, case handling, ordering and unchanged argument bytes; unlisted roots fail before child execution. |
 | Payload deployment | Complete allowlist, links/special-file rejection, inactive-only writes, slot reuse, firstboot/addon preservation, insufficient space, failed-copy retries and non-MSHV compatibility. |
 | Expanded slot check | MSHV-only A+B and B+A mismatch, higher install-index naming, missing or contradictory identity evidence and rejection of ambiguous BOOT promotion; preserve existing root-slot mismatch behavior and verify MSHV failures enter the new hypervisor-failure state without invoking user health hooks. Hypervisor identification remains TBD. |
-| Failure-state integration | Distinguish hypervisor failures from `AbUpdateHealthCheckFailed`; persist/deserialize the new state and structured error, exercise command/daemon commit and reboot dispatch, validate recovery against the retained slot and preserve the original error. Failed recovery must not mark the host provisioned. |
+| Failure-state integration | Verify `ServicingError::ValidateAbActiveHypervisor` propagates like `ValidateAbActiveVolume` while update handling explicitly persists the distinct hypervisor-failure state; distinguish it from `AbUpdateHealthCheckFailed`, exercise command/daemon commit and reboot dispatch, validate recovery against the retained slot and preserve the original error. Failed recovery must not mark the host provisioned. |
 | Fallback | Nested files; failures during copy/rename/cleanup; stale exact `.new`/`.old` entries; same servicing errors as ordinary fallback failures and no active-slot mutation. |
 
 ### VM and firmware acceptance
@@ -489,7 +499,7 @@ existing validation before boot testing.
 
 Use existing structured servicing errors and rollback handling to report
 preparation failure, boot-slot identity mismatch, unsupported layout/resolver
-and capacity failure, with a distinct unexpected-hypervisor error and
+and capacity failure, with `ServicingError::ValidateAbActiveHypervisor` and a
 failure state for applicable A/B updates. Capture selected UKI, executing
 image directory and
 firmware entry in diagnostic logs. No new telemetry service or attestation metric is
@@ -602,8 +612,9 @@ firmware-option attribution.
 - How can Trident establish the running hypervisor's slot identity without
   a new temporary UEFI variable?
 - What are the final name and status API/serialization mappings for the
-  proposed `AbUpdateHypervisorCheckFailed` state and its distinct servicing
-  error? All commit/recovery consumers must recognize the new failure state.
+  proposed `AbUpdateHypervisorCheckFailed` state, and the fields of
+  `ServicingError::ValidateAbActiveHypervisor`? All commit/recovery consumers
+  must recognize the new failure state.
 - How should an explicit BOOT entry be mapped to a managed firmware entry
   for promotion? Until resolved, ambiguous promotion remains blocked.
 - How can a fallback payload's slot identity be established without adding
@@ -1137,7 +1148,10 @@ contracts. Before enabling the internal parameter in a release:
   existing root/slot check with the applicable MSHV hypervisor/OS comparison,
   before user health hooks and any boot-default/fallback promotion.
   Do not implement it as a new check in `run_health_checks` or
-  `health::execute_health_checks`. Persist a distinct servicing error and
+  `health::execute_health_checks`. Return
+  `ServicingError::ValidateAbActiveHypervisor` following the existing
+  `ValidateAbActiveVolume` validation-error pattern. Update failure handling
+  must explicitly persist that error and the
   proposed `AbUpdateHypervisorCheckFailed` state for update hypervisor
   failures, then initiate rollback through explicitly extended result/error
   handling. Preserve existing root-slot mismatch behavior and reserve
@@ -1146,9 +1160,10 @@ contracts. Before enabling the internal parameter in a release:
   state. Apply the expanded slot check to manual rollback and recovery
   branches that mark the old OS provisioned without running user health
   hooks.
-- In `crates/trident_api/src/status.rs` and servicing error definitions,
-  add the new persisted failure state and distinct unexpected-hypervisor
-  error. Update serialization/status API mappings and state consumers in
+- In `crates/trident_api/src/status.rs` and `crates/trident_api/src/error.rs`,
+  add the new persisted failure state and
+  `ServicingError::ValidateAbActiveHypervisor`. Update serialization/status
+  API mappings and state consumers in
   `crates/trident/src/lib.rs`, daemon datastore handling and manual rollback
   dispatch. Commit must recognize the new state, request the appropriate
   rollback/reboot, select the retained slot for recovery and preserve the
