@@ -336,10 +336,7 @@ slot's payload was copied there. Until a metadata-free attribution
 mechanism is defined and tested, reject ambiguous BOOT promotion.
 
 Perform the expanded slot validation before user health hooks and before
-`BootOrder`, `LoaderEntryDefault` or fallback promotion. Treat a mixed MSHV
-boot as a boot-slot validation failure, not a health-check failure.
-Existing root-slot mismatch handling does not enter
-`AbUpdateHealthCheckFailed`; leave that behavior unchanged.
+`BootOrder`, `LoaderEntryDefault` or fallback promotion.
 
 Propose `ServicingError::ValidateAbActiveHypervisor`, following the existing
 `ServicingError::ValidateAbActiveVolume` pattern. Return it from the expanded
@@ -356,8 +353,7 @@ provide that behavior.
 
 Clean install reports provisioning failure without declaring success.
 Apply the expanded slot check to manual rollback and automatic
-rollback-recovery success, including paths that do not run user health
-hooks. These paths must not declare the machine provisioned when MSHV
+rollback-recovery success. Do not declare the machine provisioned when MSHV
 identity evidence is missing or contradictory. Hypervisor identification
 and error fields remain implementation review items.
 
