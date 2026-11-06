@@ -12,9 +12,10 @@ Linux (ACL) images by keeping a complete hypervisor boot payload beside each
 slot's EFI chain. Preserve existing firmware and UKI selection. Add mandatory
 boot-identity validation before commit so a mixed hypervisor/OS boot cannot
 be promoted. The preferred efitreeloader approach expands a signed argument
-template using the current firmware boot entry. Complete signed argument
-profiles selected by directory remain an alternative. Signing-policy
-approval of the preferred approach remains open.
+template using the executing efitreeloader binary's directory. Deriving
+the prefix from the firmware boot entry and selecting complete signed
+directory profiles remain alternatives. Signing-policy approval of the
+preferred approach remains open.
 
 ## Motivation and Goals
 
@@ -172,21 +173,27 @@ installation's EFI directory and corresponds to UKI suffix `azlb1`, not
 
 ### Efitreeloader resolver alternatives
 
-Prefer **Alternative A**, subject to signing-policy approval, because it
-avoids enumerating every installation directory in signed profiles.
-Alternative B retains complete signed argument strings if template
-expansion is not accepted. Choose **one** mechanism. Both keep relative
+Prefer **Alternative A**, subject to signing-policy approval: use the
+executing efitreeloader binary's directory as the template prefix.
+Alternative B derives the prefix from the firmware boot entry.
+Alternative C retains complete signed argument strings if template
+expansion is not accepted. Choose **one** mechanism. All three keep relative
 child executable resolution and pass concrete ESP-absolute DLL/root
-arguments to HvLoader. Neither writes `LoaderEntry*` or selects a UKI.
-Neither requires HvLoader or the DLL to implement relative-path support.
+arguments to HvLoader. None writes `LoaderEntry*` or selects a UKI.
+None requires HvLoader or the DLL to implement relative-path support.
 
-#### Alternative A (preferred): runtime boot-entry prefix
+#### Alternative A (preferred): executing-loader directory prefix
 
 See the [proposed loader diff](#a1-efitreeloader-template-expansion).
 
 Compile one argument template into the signed efitreeloader. Efitreeloader,
 not HvLoader or the DLL, expands the designated `${{PREFIX}}` token before
 invoking the child.
+
+Use `LoadedImageDevicePath` on efitreeloader's own image handle, as the
+loader already does for relative child executable paths. Set `${{PREFIX}}`
+to the parent directory of the executing binary, not its filename, the
+firmware boot entry's path or the Linux ESP mount point.
 
 ```json
 {
@@ -202,11 +209,47 @@ invoking the child.
 ```
 
 ```text
-BootCurrent = 0008
-  -> Boot0008 = ESP device path + \EFI\AZLB\bootx64.efi
+Executing efitreeloader = ESP device path + \EFI\AZLB\grubx64.efi
   -> ${{PREFIX}} = \EFI\AZLB
   -> DLL argument = \EFI\AZLB\lxhvloader.dll
      MSHV_ROOT=\\EFI\AZLB\Windows
+```
+
+Reuse the same loaded device/ESP and directory for child executable
+resolution and argument expansion. Normalize the directory to one leading
+backslash and no trailing backslash; validate the supported path before
+starting any child. Missing, malformed or ambiguous loaded-image paths
+must fail closed.
+
+No `BootCurrent` or `Boot####` lookup is needed to derive this prefix.
+If firmware fallback executes `\EFI\BOOT\grubx64.efi`, the prefix is
+`\EFI\BOOT`; if another loader chainloads AZLB's efitreeloader, the prefix
+is AZLB regardless of the original firmware entry. This avoids inferring
+the executing location from an earlier stage's path. It does not establish
+which slot's payload was copied into BOOT or replace the mandatory
+boot-identity guard.
+
+`expand_boot_prefix` is a proposed per-entry build-time opt-in. It defaults
+to false, so legacy literal arguments do not acquire template semantics.
+Expansion is exact token substitution, not shell expansion or runtime JSON
+input.
+
+This avoids profile enumeration and firmware-option parsing, but **signing
+a template does not sign the executing directory substituted at runtime**.
+Explicit owner/security-policy approval of the substitution and validation
+contract is required; the loaded-image path is not cryptographic payload
+identity.
+
+#### Alternative B: runtime boot-entry prefix
+
+Use the same compiled argument template and per-entry opt-in as Alternative
+A, but derive `${{PREFIX}}` from the firmware-selected executable instead
+of efitreeloader's own location:
+
+```text
+BootCurrent = 0008
+  -> Boot0008 = ESP device path + \EFI\AZLB\bootx64.efi
+  -> ${{PREFIX}} = \EFI\AZLB
 ```
 
 Read `BootCurrent` as a binary 16-bit value and parse the corresponding
@@ -222,16 +265,13 @@ executable. Missing/malformed variables, unsupported paths or disagreement
 must fail closed; test firmware fallback and chainloading explicitly.
 This is exact token substitution, not shell expansion or runtime JSON input.
 
-`expand_boot_prefix` is a proposed per-entry build-time opt-in. It defaults
-to false, so legacy literal arguments do not acquire template semantics.
-
 This avoids enumerating each install directory, but **signing a template
 does not sign the prefix read from mutable firmware state**. Explicit
 owner/security-policy approval of the substitution and validation contract
 is required. It is not an approved relaxation of the signed-argument
 requirement.
 
-#### Alternative B: signed directory profiles
+#### Alternative C: signed directory profiles
 
 Compile a generic list of `{root, load_entries}` profiles into the signed
 loader. Each profile contains complete child argument strings.
@@ -271,7 +311,7 @@ such as `AZL2A`/`AZL2B` require explicit profiles and release coverage.
 Reject unsupported install indices before deployment; an unsigned manifest
 must not expand the signed root list.
 
-For both alternatives, preserve the current extra-leading-backslash
+For all three alternatives, preserve the current extra-leading-backslash
 `MSHV_ROOT` convention and validate it with the packaged DLL. Keep argument
 storage alive through child execution and preserve its encoding.
 
@@ -406,9 +446,10 @@ The provisional internal flag is off by default and requires validation of
 the payload files. Its final name and supported combinations are
 implementation review items, not an existing API.
 
-Efitreeloader configuration changes are described above. Alternative A adds
-explicitly gated template interpretation; legacy literals and non-MSHV
-behavior must remain unchanged. Alternative B adds a strict `profiles`
+Efitreeloader configuration changes are described above. Alternatives A
+and B add explicitly gated template interpretation with different prefix
+sources; legacy literals and non-MSHV behavior must remain unchanged.
+Alternative C adds a strict `profiles`
 form while retaining legacy `load_entries`.
 
 The preparation record forms a versioned loader/Trident contract.
@@ -421,8 +462,9 @@ images.
 
 | Area | Coverage |
 | --- | --- |
-| Prefix (A, preferred) | Binary load-option/device-path parsing, UTF-16 paths, device identity, exact substitution, argument lifetime/encoding, malformed/missing variables, multiple ESPs, and executing-path mismatch. |
-| Profiles (B) | Legacy compatibility, strict schema, duplicate/malformed roots, zero/multiple matches, case handling, ordering and unchanged argument bytes; unlisted roots fail before child execution. |
+| Executing-directory prefix (A, preferred) | Own image handle/device path, parent-directory normalization, exact substitution, argument lifetime/encoding, malformed/missing paths, multiple ESPs, renamed binaries, fallback and chainloading without depending on `BootCurrent`. |
+| Boot-entry prefix (B) | Binary load-option/device-path parsing, UTF-16 paths, device identity, malformed/missing variables and executing-path mismatch; preserve shared template guarantees. |
+| Profiles (C) | Legacy compatibility, strict schema, duplicate/malformed roots, zero/multiple matches, case handling, ordering and unchanged argument bytes; unlisted roots fail before child execution. |
 | Payload deployment | Complete allowlist, links/special-file rejection, inactive-only writes, slot reuse, firstboot/addon preservation, insufficient space, failed-copy retries and non-MSHV compatibility. |
 | Identity guard | A+B and B+A mismatch, higher install-index naming, malformed/incomplete/stale records and rejection of ambiguous BOOT promotion; verify errors reach existing health-failure state/reboot handling. |
 | Fallback | Nested files; failures during copy/rename/cleanup; stale exact `.new`/`.old` entries; same servicing errors as ordinary fallback failures and no active-slot mutation. |
@@ -528,8 +570,10 @@ recovery. Diagnostic evidence cannot prove authenticity against privileged
 writers.
 
 Profiles require signed-build coverage for every allowed root. Prefix
-expansion reduces that enumeration but depends on correct firmware-option
-attribution and an explicitly approved runtime-argument policy.
+expansion reduces that enumeration but depends on validated runtime path
+evidence and an explicitly approved runtime-argument policy. Alternative A
+uses the executing image directly; B additionally requires correct
+firmware-option attribution.
 
 ### Alternatives
 
@@ -607,91 +651,34 @@ Baselines:
 
 ### A.1 Efitreeloader template expansion
 
-Related design: [runtime boot-entry prefix](#alternative-a-preferred-runtime-boot-entry-prefix).
+Related design: [executing-loader directory prefix](#alternative-a-preferred-executing-loader-directory-prefix).
 The signed configuration explicitly enables expansion for a child. Resolve
-the prefix before starting any child, reject malformed or ambiguous options,
-and compare both the device path and parent directory with the executing
-loader. Short-form firmware device paths that do not match the full loaded
-device path are rejected by this initial implementation, not guessed.
+the prefix from the existing loaded-image parent before starting any child.
+The initial implementation accepts ASCII directories under `EFI` and
+rejects malformed or ambiguous paths. This diff implements Alternative A,
+not the firmware-variable resolver in B.
 
 ```diff
 diff --git a/efitreeloader-lib/src/devicepath.rs b/efitreeloader-lib/src/devicepath.rs
-index 9d7745c..5477c4a 100644
+index 9d7745c..684c66b 100644
 --- a/efitreeloader-lib/src/devicepath.rs
 +++ b/efitreeloader-lib/src/devicepath.rs
-@@ -6,12 +6,15 @@ mod tests;
+@@ -6,6 +6,8 @@ mod tests;
 
  use alloc::borrow::ToOwned;
  use alloc::boxed::Box;
++use alloc::format;
 +use alloc::string::ToString;
  use alloc::vec::Vec;
-+use alloc::{format, vec};
  use uefi::fs::PathBuf;
  use uefi::proto::device_path::build::{self, DevicePathBuilder};
- use uefi::proto::device_path::media::FilePath;
- use uefi::proto::device_path::{DevicePath, DevicePathNode, DeviceSubType, DeviceType, PoolDevicePath};
- use uefi::{CStr16, CString16, Error, Status, cstr16, println};
-+use uefi::{runtime, runtime::VariableVendor};
-
- // A partially constructed UEFI DevicePath with a media file path at the end.
- pub(crate) struct DeviceFilePath {
-@@ -19,6 +22,133 @@ pub(crate) struct DeviceFilePath {
+@@ -19,6 +21,29 @@ pub(crate) struct DeviceFilePath {
      file_path: CString16,
  }
 
-+pub(crate) fn read_boot_prefix(executing: &DeviceFilePath) -> uefi::Result<CString16> {
-+    let mut current = [0; 2];
-+    let (current, _) = runtime::get_variable(cstr16!("BootCurrent"), &VariableVendor::GLOBAL_VARIABLE, &mut current)
-+        .map_err(|err| Error::new(err.status(), ()))?;
-+    if current.len() != 2 {
-+        return Err(Error::new(Status::INVALID_PARAMETER, ()));
-+    }
-+    let name = format!("Boot{:04X}", u16::from_le_bytes([current[0], current[1]]));
-+    let name = CString16::try_from(name.as_str()).map_err(|_| Error::new(Status::INVALID_PARAMETER, ()))?;
-+    let mut buffer = vec![0; 65536];
-+    let (option, _) = runtime::get_variable(&name, &VariableVendor::GLOBAL_VARIABLE, &mut buffer)
-+        .map_err(|err| Error::new(err.status(), ()))?;
-+    boot_entry_prefix(option, executing)
-+}
-+
-+fn boot_option_path(option: &[u8]) -> uefi::Result<&DevicePath> {
++pub(crate) fn executing_prefix(executing: &DeviceFilePath) -> uefi::Result<CString16> {
 +    let invalid = || Error::new(Status::INVALID_PARAMETER, ());
-+    if option.len() < 8 {
-+        return Err(invalid());
-+    }
-+    let length = usize::from(u16::from_le_bytes([option[4], option[5]]));
-+    let terminator = (6..option.len() - 1)
-+        .step_by(2)
-+        .find(|&offset| option[offset..offset + 2] == [0, 0])
-+        .ok_or_else(invalid)?;
-+    let start = terminator + 2;
-+    let end = start.checked_add(length).ok_or_else(invalid)?;
-+    let bytes = option.get(start..end).ok_or_else(invalid)?;
-+    let path: &DevicePath = bytes.try_into().map_err(|_| invalid())?;
-+    if path.as_bytes().len() != length {
-+        return Err(invalid());
-+    }
-+    Ok(path)
-+}
-+
-+fn boot_entry_prefix(option: &[u8], executing: &DeviceFilePath) -> uefi::Result<CString16> {
-+    let invalid = || Error::new(Status::INVALID_PARAMETER, ());
-+    let path = boot_option_path(option)?;
-+    let last_file = path
-+        .node_iter()
-+        .filter_map(|node| <&FilePath>::try_from(node).ok())
-+        .last()
-+        .ok_or_else(invalid)?;
-+    let name = last_file.path_name().to_cstring16().map_err(|_| invalid())?.to_string();
-+    if !name
-+        .rsplit('\\')
-+        .next()
-+        .is_some_and(|name| name.eq_ignore_ascii_case("bootx64.efi"))
-+    {
-+        return Err(invalid());
-+    }
-+    let parent = get_device_path_parent_dir(path)?;
-+    let parent_path = parent.file_path.to_string();
++    let parent_path = executing.file_path.to_string();
 +    let prefix = format!("\\{}", parent_path.trim_start_matches('\\'));
 +    let segments: Vec<_> = prefix.split('\\').collect();
 +    if segments.len() < 3
@@ -705,72 +692,18 @@ index 9d7745c..5477c4a 100644
 +                    .bytes()
 +                    .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
 +        })
-+        || parent.hardware_path.node_iter().next().is_none()
-+        || parent.hardware_path != executing.hardware_path
-+        || !parent_path.eq_ignore_ascii_case(&executing.file_path.to_string())
++        || executing.hardware_path.node_iter().next().is_none()
 +    {
 +        return Err(invalid());
 +    }
 +    CString16::try_from(prefix.as_str()).map_err(|_| invalid())
 +}
 +
-+#[cfg(test)]
-+mod boot_prefix_tests {
-+    use super::*;
-+
-+    fn option(device: u8, filename: &str) -> Vec<u8> {
-+        let units: Vec<u16> = filename.encode_utf16().chain([0]).collect();
-+        let length = u16::try_from(4 + units.len() * 2).unwrap();
-+        let mut path = vec![1, 1, 6, 0, 0, device, 4, 4];
-+        path.extend_from_slice(&length.to_le_bytes());
-+        path.extend(units.iter().flat_map(|unit| unit.to_le_bytes()));
-+        path.extend_from_slice(&[0x7f, 0xff, 4, 0]);
-+        let mut option = vec![1, 0, 0, 0];
-+        option.extend_from_slice(&u16::try_from(path.len()).unwrap().to_le_bytes());
-+        option.extend_from_slice(&[0, 0]);
-+        option.extend(path);
-+        option
-+    }
-+
-+    #[test]
-+    fn resolves_matching_device_and_directory() {
-+        let option = option(1, "\\EFI\\AZLB\\bootx64.efi");
-+        let executing = get_device_path_parent_dir(boot_option_path(&option).unwrap()).unwrap();
-+        assert_eq!(boot_entry_prefix(&option, &executing).unwrap().to_string(), "\\EFI\\AZLB");
-+    }
-+
-+    #[test]
-+    fn rejects_device_directory_and_filename_mismatch() {
-+        let current = option(1, "\\EFI\\AZLB\\bootx64.efi");
-+        let executing = get_device_path_parent_dir(boot_option_path(&current).unwrap()).unwrap();
-+        for candidate in [
-+            option(2, "\\EFI\\AZLB\\bootx64.efi"),
-+            option(1, "\\EFI\\AZLA\\bootx64.efi"),
-+            option(1, "\\EFI\\AZLB\\other.efi"),
-+            option(1, "\\EFI\\..\\bootx64.efi"),
-+        ] {
-+            assert!(boot_entry_prefix(&candidate, &executing).is_err());
-+        }
-+    }
-+
-+    #[test]
-+    fn rejects_truncated_options() {
-+        assert!(boot_option_path(&[]).is_err());
-+        assert!(boot_option_path(&[0; 7]).is_err());
-+        assert!(boot_option_path(&[1, 0, 0, 0, 255, 255, 0, 0]).is_err());
-+    }
-+
-+    #[test]
-+    fn rejects_missing_description_terminator() {
-+        assert!(boot_option_path(&[1, 0, 0, 0, 4, 0, 65, 0, 66, 0]).is_err());
-+    }
-+}
-+
  // Verifies a UEFI DevicePath matches the expected format (i.e. at least one media file path at the end), then gets the
  // parent directory.
  pub(crate) fn get_device_path_parent_dir(device_path: &DevicePath) -> uefi::Result<DeviceFilePath> {
 diff --git a/efitreeloader-lib/src/entrypoint.rs b/efitreeloader-lib/src/entrypoint.rs
-index a80a59e..f8f9027 100644
+index a80a59e..eff31aa 100644
 --- a/efitreeloader-lib/src/entrypoint.rs
 +++ b/efitreeloader-lib/src/entrypoint.rs
 @@ -1,6 +1,8 @@
@@ -787,7 +720,7 @@ index a80a59e..f8f9027 100644
 
  use crate::LoadEntry;
 -use crate::devicepath::{get_device_path_parent_dir, join_device_file_path};
-+use crate::devicepath::{get_device_path_parent_dir, join_device_file_path, read_boot_prefix};
++use crate::devicepath::{executing_prefix, get_device_path_parent_dir, join_device_file_path};
 
  // The efitreeloader application logic.
  pub fn entrypoint(load_entries: &[LoadEntry]) -> uefi::Result {
@@ -796,7 +729,7 @@ index a80a59e..f8f9027 100644
      }
 
 +    let prefix = if load_entries.iter().any(|entry| entry.expand_boot_prefix) {
-+        Some(read_boot_prefix(&parent_path)?)
++        Some(executing_prefix(&parent_path)?)
 +    } else {
 +        None
 +    };
@@ -869,7 +802,7 @@ index 7f0bfa7..6c89a46 100644
 
 The owned expanded argument buffer remains in scope through `start_image`.
 The existing static strings are used unchanged for entries without the
-opt-in. Firmware-variable-derived arguments still require owner approval.
+opt-in. Runtime-directory-derived arguments still require owner approval.
 
 ### A.2 1ES image build
 
@@ -905,7 +838,7 @@ index ed2befd..5be2fdb 100644
 +          install -m 0644 "/boot/efi/Windows/System32/$name" "$bundle/Windows/System32/$name"
 +        done
 diff --git a/tools/build-efitreeloader.sh b/tools/build-efitreeloader.sh
-index 51ee8af..b1c28df 100755
+index 51ee8af..aef3cb0 100755
 --- a/tools/build-efitreeloader.sh
 +++ b/tools/build-efitreeloader.sh
 @@ -10,16 +10,16 @@ echo "Writing load_entries.json"
@@ -914,7 +847,7 @@ index 51ee8af..b1c28df 100755
  #
 -# Note: Currently ACL-T places the ESP at /boot instead of /boot/efi. So, all the paths get messed up. Also, neither
 -# HvLoader.efi nor lxhvloader.dll support relative paths (which is fun). Hence why the extra \efi prefix exists.
-+# Resolve DLL and hypervisor-root arguments against the current firmware boot entry.
++# Resolve DLL and hypervisor-root arguments against the executing loader's directory.
  #
  # Note: second.efi is the path that systemd-boot (grubx64.efi) gets moved to in the IC config (mshv.yaml).
 -cat > "$EFITREELOADER_DIR/efitreeloader/load_entries.json" <<EOF
@@ -1071,10 +1004,10 @@ index a47c2cbb..eee52607 100644
          uefi_fallback_path.display()
 diff --git a/crates/trident/src/subsystems/esp/mshv.rs b/crates/trident/src/subsystems/esp/mshv.rs
 new file mode 100644
-index 00000000..291fe027
+index 00000000..cf4494b5
 --- /dev/null
 +++ b/crates/trident/src/subsystems/esp/mshv.rs
-@@ -0,0 +1,192 @@
+@@ -0,0 +1,111 @@
 +use std::{fs, path::Path};
 +
 +use anyhow::{ensure, Context, Result};
@@ -1186,87 +1119,6 @@ index 00000000..291fe027
 +    }
 +    Ok(())
 +}
-+
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+    use tempfile::TempDir;
-+
-+    fn bundle(root: &Path, bytes: &[u8]) {
-+        for name in FILES {
-+            let path = root.join(name);
-+            fs::create_dir_all(path.parent().unwrap()).unwrap();
-+            fs::write(path, bytes).unwrap();
-+        }
-+    }
-+
-+    #[test]
-+    fn copies_nested_payload() {
-+        let source = TempDir::new().unwrap();
-+        let target = TempDir::new().unwrap();
-+        bundle(source.path(), b"candidate");
-+        copy_bundle(source.path(), target.path()).unwrap();
-+        validate_bundle(target.path()).unwrap();
-+        assert_eq!(
-+            fs::read(target.path().join(FILES[7])).unwrap(),
-+            b"candidate"
-+        );
-+    }
-+
-+    #[test]
-+    fn rejects_incomplete_bundle_before_replacement() {
-+        let source = TempDir::new().unwrap();
-+        let target = TempDir::new().unwrap();
-+        bundle(source.path(), b"candidate");
-+        bundle(target.path(), b"committed");
-+        fs::remove_file(source.path().join(FILES[7])).unwrap();
-+        assert!(replace_bundle(source.path(), target.path()).is_err());
-+        assert_eq!(
-+            fs::read(target.path().join(FILES[0])).unwrap(),
-+            b"committed"
-+        );
-+    }
-+
-+    #[test]
-+    fn replaces_nested_payload_after_interrupted_copy() {
-+        let source = TempDir::new().unwrap();
-+        let target = TempDir::new().unwrap();
-+        bundle(source.path(), b"candidate");
-+        bundle(target.path(), b"previous");
-+        fs::rename(
-+            target.path().join(FILES[7]),
-+            target.path().join(format!("{}.old", FILES[7])),
-+        )
-+        .unwrap();
-+        fs::write(target.path().join(format!("{}.new", FILES[7])), b"partial").unwrap();
-+        replace_bundle(source.path(), target.path()).unwrap();
-+        validate_bundle(target.path()).unwrap();
-+        for name in FILES {
-+            assert_eq!(fs::read(target.path().join(name)).unwrap(), b"candidate");
-+        }
-+    }
-+
-+    #[test]
-+    fn rejects_unexpected_fallback_files_before_copy() {
-+        let source = TempDir::new().unwrap();
-+        let target = TempDir::new().unwrap();
-+        bundle(source.path(), b"candidate");
-+        bundle(target.path(), b"previous");
-+        fs::write(target.path().join("unmanaged"), b"keep").unwrap();
-+        assert!(replace_bundle(source.path(), target.path()).is_err());
-+        assert_eq!(fs::read(target.path().join(FILES[0])).unwrap(), b"previous");
-+    }
-+
-+    #[test]
-+    fn rejects_payload_symlinks() {
-+        let source = TempDir::new().unwrap();
-+        bundle(source.path(), b"candidate");
-+        fs::remove_file(source.path().join(FILES[7])).unwrap();
-+        std::os::unix::fs::symlink(source.path().join(FILES[0]), source.path().join(FILES[7]))
-+            .unwrap();
-+        assert!(validate_bundle(source.path()).is_err());
-+    }
-+}
 diff --git a/crates/trident_api/src/constants.rs b/crates/trident_api/src/constants.rs
 index 93c089b4..9f635f41 100644
 --- a/crates/trident_api/src/constants.rs
@@ -1315,10 +1167,11 @@ by the proposed diffs.
 ### A.5 Validation of the proposed diffs
 
 The appendix patches were checked against the pinned source baselines in
-isolated Linux worktrees. Validation covers:
+isolated Linux worktrees. Test implementations used for validation are
+omitted from the examples. Validation covers:
 
-- Efitreeloader: 40 host unit tests, including matching-prefix resolution
-  and rejection of mismatched devices, directories and malformed options;
+- Efitreeloader: 38 host unit tests, including executing-directory prefix
+  normalization and rejection of unsupported or malformed directories;
   release-mode `cargo check` for `x86_64-unknown-uefi`; Rust formatting.
 - Trident payload helper: five filesystem unit tests in an isolated
   harness, including incomplete payloads, interrupted replacement and
