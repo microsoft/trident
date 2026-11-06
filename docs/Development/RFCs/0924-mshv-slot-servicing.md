@@ -82,7 +82,7 @@ mixed launch.
 - Retain the committed payload unchanged while staging an update, and reuse
   it for automatic and manual rollback.
 - Keep efitreeloader out of UKI selection.
-- Detect inconsistent preparation/UKI/root identity before default or
+- Detect inconsistent hypervisor/UKI/root identity before default or
   fallback promotion.
 - Preserve existing behavior for non-MSHV and legacy images.
 
@@ -113,8 +113,7 @@ rejected until its additional measurement and unlock coverage passes.
 
 ## Dependencies
 
-- **Efitreeloader:** implement one resolver alternative below and the scoped
-  preparation-record protocol.
+- **Efitreeloader:** implement one resolver alternative below.
 - **HvLoader and external loader DLL:** demonstrate that ESP-absolute DLL
   and root paths work in each slot and fallback directory, without silently
   substituting fixed shared payloads.
@@ -309,37 +308,22 @@ second boot-variable finalizer is introduced.
 ### Mandatory boot-identity validation
 
 The [implementation boundaries](#a4-remaining-integration-work) identify
-the commit and rollback paths that still need this protocol integrated.
+the commit and rollback paths that still need reliable identity validation
+integrated.
 
-For the new MSHV sequence only, efitreeloader preflights the bundle
-and publishes a bounded, versioned preparation record. Write
-`prepared=false` before possible HvLoader preparation, then overwrite with
-`prepared=true` only after successful return. An error or partial
-preparation must never leave a successful current-attempt record.
+No new temporary UEFI variable or loader preparation-record protocol is
+introduced. Existing `LoaderEntrySelected`, root/verity validation and the
+expected servicing target identify the booted OS. Use `BootCurrent` as
+corroboration, not an arbitrary label as proof of the executed hypervisor
+chain.
 
-Proposed private protocol:
-
-| Field | Contract |
-| --- | --- |
-| Variable | `MshvBootPreparation` |
-| Vendor GUID | `d3f18c74-6ab2-4e13-9d6a-79828a5239e1` (proposed, not allocated by this RFC) |
-| Attributes | Boot-service and runtime access; **not** nonvolatile |
-| Encoding | Bounded UTF-8 fields: `version`, `image-dir`, `prepared` |
-| Parsing | Reject missing/duplicate fields, unknown versions, malformed values and control-character injection. |
-
-Gate record handling to the new MSHV sequence; do not change unrelated
-efitreeloader entries. Verify reset/freshness behavior on supported firmware,
-including warm reset. A saved disk record is never current-boot evidence.
-Record-write failures before or after preparation must not allow promotion.
-
-Trident compares the preparation record, `LoaderEntrySelected`, existing
-root/verity validation and the expected servicing target. Use `BootCurrent`
-as corroboration, not an arbitrary label as proof of the executed chain.
-An AZLA preparation with a B UKI/root is a mismatch. The executing directory
-`EFI/BOOT` alone does not establish which slot's payload was copied there.
-Until a metadata-free attribution mechanism is defined and tested, reject
-promotion from a BOOT preparation whose payload identity cannot be
-established.
+Preparing A's hypervisor with a B UKI/root is a mismatch, but the existing
+OS/firmware observations alone do not prove which hypervisor is running.
+A reliable hypervisor identity check remains an unresolved implementation
+requirement; this RFC does not specify a replacement reporting protocol.
+The executing directory `EFI/BOOT` alone also does not establish which
+slot's payload was copied there. Until a metadata-free attribution
+mechanism is defined and tested, reject ambiguous BOOT promotion.
 
 Run this mandatory check before user health hooks and before `BootOrder`,
 `LoaderEntryDefault` or fallback promotion. Reuse existing health-error
@@ -353,10 +337,9 @@ BOOT entry therefore needs deliberate mapping to the validated managed
 entry. Until that is defined and tested, reject ambiguous promotion rather
 than accidentally promoting BOOT.
 
-The record attests only operationally to the sequence whose preparation
-returned success. Privileged writers can spoof EFI variables. Use a
-trustworthy runtime hypervisor identity query if available; do not equate
-this diagnostic protocol with cryptographic attestation.
+Use a trustworthy runtime hypervisor identity query if available. Neither
+successful HvLoader return nor firmware labels are cryptographic
+attestation of the running hypervisor.
 
 ### Lifecycle
 
@@ -365,7 +348,7 @@ this diagnostic protocol with cryptographic attestation.
 | Clean install | Stage A's complete bundle and UKI with existing ACL verity/firstboot handling. Register/finalize using existing selectors; do not invent a usable B chain. Validate identity before success. |
 | A-to-B update stage | Stage only B's OS, UKI/addons and complete payload. Preserve A and strip the image firstboot addon as today. |
 | Update finalize | Complete payload publication before setting existing B firmware/UKI trial selectors. Keep committed A defaults and existing fallback-mode decisions. |
-| Trial and commit | Require matching preparation/UKI/root identity and health before promoting firmware default, UKI default or fallback. |
+| Trial and commit | Require matching hypervisor/UKI/root identity and health before promoting firmware default, UKI default or fallback. |
 | Failed trial | Reuse existing health rollback. With B's oneshot consumed and committed A defaults intact, the next reset should restore A+A; verify those conditions. |
 | Manual rollback | Select retained A using existing firmware/UKI logic. Validate A independently of whether a new UKI is staged, and require matching identity before success. |
 | Later slot reuse | Replace the old inactive bundle only after the other slot is committed. Never refresh the rollback payload from the newer image. |
@@ -424,9 +407,7 @@ and non-MSHV behavior remain unchanged; the token itself becomes reserved.
 Alternative C adds a strict `profiles`
 form while retaining legacy `load_entries`.
 
-The preparation record forms a versioned loader/Trident contract.
-Resolve final protocol ownership and versioning before enabling production
-images.
+No new UEFI variable or loader/Trident preparation-record API is proposed.
 
 ## Testing and Metrics
 
@@ -439,18 +420,18 @@ images.
 | Boot-entry prefix (B) | Binary load-option/device-path parsing, UTF-16 paths, device identity, malformed/missing variables and executing-path mismatch; preserve shared template guarantees. |
 | Profiles (C) | Legacy compatibility, strict schema, duplicate/malformed roots, zero/multiple matches, case handling, ordering and unchanged argument bytes; unlisted roots fail before child execution. |
 | Payload deployment | Complete allowlist, links/special-file rejection, inactive-only writes, slot reuse, firstboot/addon preservation, insufficient space, failed-copy retries and non-MSHV compatibility. |
-| Identity guard | A+B and B+A mismatch, higher install-index naming, malformed/incomplete/stale records and rejection of ambiguous BOOT promotion; verify errors reach existing health-failure state/reboot handling. |
+| Identity guard | A+B and B+A mismatch, higher install-index naming, missing or contradictory identity evidence and rejection of ambiguous BOOT promotion; verify errors reach existing health-failure state/reboot handling once a reliable identity mechanism is defined. |
 | Fallback | Nested files; failures during copy/rename/cleanup; stale exact `.new`/`.old` entries; same servicing errors as ordinary fallback failures and no active-slot mutation. |
 
 ### VM and firmware acceptance
 
 | Scenario | Required evidence |
 | --- | --- |
-| Install A, update B, commit B | Distinct A/B payloads, matching UKI/root and preparation record; A unchanged during B trial. |
+| Install A, update B, commit B | Distinct A/B payloads, matching hypervisor/UKI/root identity; A unchanged during B trial. |
 | B EFI failure before oneshot consumption | Inject A+B launch; if Linux starts, fail before promotion and verify A+A after consumed-oneshot recovery with intact defaults. |
-| Failure after oneshot consumption; health failure | Verify retained payload, existing selector recovery and no stale successful record. |
+| Failure after oneshot consumption; health failure | Verify retained payload, existing selector recovery and no promotion after failed health validation. |
 | Pre-Linux hang/failure | Exercise firmware/watchdog/external reset; document unconsumed-oneshot behavior without claiming OS health checks ran. |
-| B commit followed by manual rollback A | Retained A files and validated A preparation/UKI/root before success. |
+| B commit followed by manual rollback A | Retained A files and validated A hypervisor/UKI/root identity before success. |
 | Conflicting defaults, menu selection, chainloading | Reject mixed identity or unsupported resolver attribution. |
 | Entry loss or explicit BOOT entry | Reject promotion when fallback payload identity cannot be established. |
 | Fallback modes and repeated slot reuse | Conservative/optimistic/disabled behavior; failed-B fallback followed by restaging does not bypass validation. |
@@ -513,7 +494,7 @@ later requires full-tree bootstrap, explicit boot-identity validation
 and independently tested rollback/fallback behavior.
 
 An image must not be offered for this layout to an older consumer that
-does not understand its layout, preparation record or mandatory guard.
+does not understand its layout or mandatory guard.
 Establish minimum producer/loader/Trident versions in the release pipeline;
 do not assume older binaries reject unsupported images automatically.
 Removing the opt-in must not bypass validation of an already managed MSHV
@@ -523,10 +504,12 @@ boot; define persisted layout detection and reject unsafe disablement.
 
 1. Resolve the signing-policy/resolver choice and demonstrate packaged DLL
    relocation for A, B and BOOT. Stop if either prerequisite fails.
-2. Implement the chosen generic loader resolver, image bundle and scoped
-   preparation protocol. Verify exact arguments and actual preparation.
-3. Implement mandatory pre-promotion validation and existing health-failure
-   routing, including mixed trial, manual rollback and recovery.
+2. Implement the chosen generic loader resolver and image bundle.
+   Verify exact arguments and actual hypervisor preparation.
+3. Define reliable hypervisor identity evidence without a new temporary
+   UEFI variable, then implement mandatory pre-promotion validation and
+   existing health-failure routing, including mixed trial, manual rollback
+   and recovery.
 4. Extend inactive-slot and fallback copying with existing state/error
    semantics; test interruption, retry and slot reuse.
 5. Complete Secure Boot, measurements, capacity and supported firmware
@@ -570,8 +553,8 @@ firmware-option attribution.
   signed-argument policy permit prefix expansion, and with what validation?
 - Does the packaged external DLL support each absolute root without
   substitution, and is a trustworthy runtime payload identity available?
-- Who owns the private preparation protocol, final GUID, bounds and
-  versioning? How is freshness established across supported reset paths?
+- How can Trident establish the running hypervisor's slot identity without
+  a new temporary UEFI variable?
 - How should an explicit BOOT entry be mapped to a managed firmware entry
   for promotion? Until resolved, ambiguous promotion remains blocked.
 - How can a fallback payload's slot identity be established without adding
@@ -609,10 +592,10 @@ Source observations are pinned baselines, not claims about deployment:
 These are concrete source-based diffs for the preferred template approach,
 not changes to source files in this RFC PR. They cover argument resolution,
 image assembly and gated payload copying. They are **not a complete
-release implementation**: the preparation protocol, mandatory identity
-guard, capacity checks and release validation remain prerequisites, listed
-in [A.4](#a4-remaining-integration-work). Applying these diffs alone must not
-be treated as production enablement.
+release implementation**: a reliable hypervisor identity mechanism,
+mandatory identity guard, capacity checks and release validation remain
+prerequisites, listed in [A.4](#a4-remaining-integration-work). Applying these
+diffs alone must not be treated as production enablement.
 
 Baselines:
 
@@ -1098,9 +1081,9 @@ index 93c089b4..9f635f41 100644
 These diffs deliberately do not invent implementations for unresolved
 contracts. Before enabling the internal parameter in a release:
 
-- In `efitreeloader-lib/src/entrypoint.rs`, integrate the agreed preparation
-  record: publish failure before possible preparation and success only
-  after HvLoader returns successfully. Validate record freshness on firmware.
+- Define and validate reliable running-hypervisor identity evidence without
+  creating a temporary UEFI variable. The resolver diffs alone do not
+  provide this evidence.
 - In `crates/trident/src/engine/rollback.rs`, run the mandatory guard before
   user health hooks and any boot-default/fallback promotion.
   `run_health_checks` must route update failures through the existing
@@ -1119,8 +1102,8 @@ contracts. Before enabling the internal parameter in a release:
   rollback and firmware/VM acceptance pass. Do not enable TPM/PCR-bound
   encryption until its separate event-prediction/unlock tests pass.
 
-No metadata marker, provenance file or payload-hash contract is introduced
-by the proposed diffs.
+No temporary UEFI variable, metadata marker, provenance file or payload-hash
+contract is introduced by the proposed diffs.
 
 ### A.5 Validation of the proposed diffs
 
