@@ -7,8 +7,7 @@
 //!
 //! Typed Host Configuration:
 //! ```no_run
-//! # use trident_api::config::HostConfiguration;
-//! # use trident_client::{Client, RebootPolicy};
+//! # use trident_client::{Client, HostConfiguration, RebootPolicy};
 //! # async fn example() -> Result<(), trident_client::ClientError> {
 //! let client = Client::connect_default().await?;
 //! let config = HostConfiguration::default();
@@ -28,7 +27,7 @@
 //! # async fn example() -> Result<(), trident_client::ClientError> {
 //! let client = Client::connect_default().await?;
 //! client
-//!     .update_yaml("image: {}\n", RebootPolicy::Caller)
+//!     .update_yaml("{}\n", RebootPolicy::Caller)
 //!     .await?
 //!     .wait()
 //!     .await?;
@@ -38,9 +37,9 @@
 //!
 //! Installer-style event handling:
 //! ```no_run
-//! # use trident_api::config::HostConfiguration;
 //! # use trident_client::{
-//! #     Client, ClientError, OperationOutcome, RebootPolicy, ServicingEvent,
+//! #     Client, ClientError, HostConfiguration, OperationOutcome, RebootPolicy,
+//! #     ServicingEvent,
 //! # };
 //! # async fn example() -> Result<(), trident_client::ClientError> {
 //! let client = Client::connect_default().await?;
@@ -58,6 +57,7 @@
 //!             });
 //!         }
 //!         ServicingEvent::Started { .. } => {}
+//!         _ => {}
 //!     }
 //! }
 //! unreachable!("the client rejects streams without a completion event")
@@ -74,17 +74,19 @@ mod preview;
 
 pub use url::Url;
 
+pub use trident_api::{config::HostConfiguration, primitives::hash::Sha384Hash};
+
 pub use client::{Client, ClientBuilder, DEFAULT_ENDPOINT};
 pub use error::{ClientError, ExecutionState, RpcCode};
 pub use operation::ServicingOperation;
 pub use types::{
-    Completion, EventTimestamp, LogLevel, LogRecord, Operation, OperationOutcome,
+    Completion, EventTimestamp, ImageHash, LogLevel, LogRecord, Operation, OperationOutcome,
     RebootDisposition, RebootPolicy, RemoteError, RemoteErrorCategory, RollbackKind,
-    ServicingEvent, SourceLocation,
+    ServicingEvent, ServicingKind, SourceLocation,
 };
 
 #[cfg(feature = "preview")]
-pub use types::{RollbackAvailability, ValidationResult};
+pub use types::{ActiveVolume, RollbackAvailability, ServicingState, ValidationResult};
 
 #[cfg(test)]
 mod tests;

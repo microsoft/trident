@@ -37,6 +37,7 @@ const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_REQUEST_ACKNOWLEDGEMENT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_UNARY_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECTOR_ENDPOINT: &str = "http://[::]:50051";
+const SHA384_HEX_LENGTH: usize = 96;
 
 /// Builder for a multiplexed [`Client`].
 #[derive(Clone)]
@@ -168,6 +169,9 @@ impl Client {
         image_hash: Option<&Sha384Hash>,
         reboot: RebootPolicy,
     ) -> Result<ServicingOperation, ClientError> {
+        if let Some(image_hash) = image_hash {
+            validate_sha384_hash(image_hash)?;
+        }
         let request = StreamDiskRequest {
             image_url: image_url.to_string(),
             image_hash: image_hash.map(|hash| format!("sha384:{hash}")),
@@ -530,4 +534,24 @@ pub(crate) fn rollback_kind(kind: RollbackKind) -> i32 {
         RollbackKind::Runtime => ManualRollbackKind::RuntimeRollbackRequested,
     }
     .into()
+}
+
+fn validate_sha384_hash(hash: &Sha384Hash) -> Result<(), ClientError> {
+    let value = hash.as_str();
+    if value.len() != SHA384_HEX_LENGTH {
+        return Err(ClientError::InvalidInput {
+            operation: Operation::StreamDisk,
+            details: format!(
+                "SHA-384 hash has length {}; expected {SHA384_HEX_LENGTH} hexadecimal characters",
+                value.len()
+            ),
+        });
+    }
+    if !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(ClientError::InvalidInput {
+            operation: Operation::StreamDisk,
+            details: "SHA-384 hash contains non-hexadecimal characters".to_string(),
+        });
+    }
+    Ok(())
 }

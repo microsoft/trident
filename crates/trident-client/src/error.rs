@@ -7,6 +7,7 @@ use crate::{Operation, RemoteError};
 
 /// Whether a servicing request ran.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ExecutionState {
     /// The request was not accepted by `tridentd`.
     NotStarted,
@@ -18,6 +19,7 @@ pub enum ExecutionState {
 
 /// Transport-independent gRPC status code.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RpcCode {
     Ok,
     Cancelled,
@@ -64,12 +66,19 @@ impl From<Code> for RpcCode {
 
 /// Failure returned by the client.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum ClientError {
     #[error("invalid Trident endpoint '{endpoint}': {details}")]
     InvalidEndpoint { endpoint: String, details: String },
 
     #[error("failed to connect to Trident endpoint '{endpoint}': {details}")]
     Connection { endpoint: String, details: String },
+
+    #[error("invalid input for {operation:?}: {details}")]
+    InvalidInput {
+        operation: Operation,
+        details: String,
+    },
 
     #[error("Trident rejected {operation:?}: {code:?}: {message}")]
     RequestRejected {
@@ -138,9 +147,10 @@ impl ClientError {
     /// Classifies how certain the client is about remote execution.
     pub fn execution_state(&self) -> ExecutionState {
         match self {
-            Self::InvalidEndpoint { .. } | Self::Connection { .. } | Self::Serialization { .. } => {
-                ExecutionState::NotStarted
-            }
+            Self::InvalidEndpoint { .. }
+            | Self::Connection { .. }
+            | Self::InvalidInput { .. }
+            | Self::Serialization { .. } => ExecutionState::NotStarted,
             Self::RequestRejected {
                 code:
                     RpcCode::InvalidArgument | RpcCode::FailedPrecondition | RpcCode::Unimplemented,

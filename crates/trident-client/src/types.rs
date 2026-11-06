@@ -1,7 +1,8 @@
-use trident_api::{primitives::hash::Sha384Hash, status::ServicingType};
+use trident_api::primitives::hash::Sha384Hash;
 
 /// Identifies a client operation independently of its transport method.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum Operation {
     Version,
     StreamDisk,
@@ -21,31 +22,18 @@ pub enum Operation {
     #[cfg(feature = "preview")]
     RebuildRaid,
     #[cfg(feature = "preview")]
-    ProvisionedConfig,
-    #[cfg(feature = "preview")]
-    ServicingConfig,
-    #[cfg(feature = "preview")]
-    LastError,
-    #[cfg(feature = "preview")]
     ServicingState,
     #[cfg(feature = "preview")]
     ActiveVolume,
     #[cfg(feature = "preview")]
     ValidateHostConfiguration,
     #[cfg(feature = "preview")]
-    RequiredServicingType,
-    #[cfg(feature = "preview")]
     CheckRollback,
-    #[cfg(feature = "preview")]
-    RollbackChain,
-    #[cfg(feature = "preview")]
-    RollbackTarget,
-    #[cfg(feature = "preview")]
-    CheckRoot,
 }
 
 /// Selects who performs a reboot required by servicing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RebootPolicy {
     Trident,
     Caller,
@@ -53,6 +41,7 @@ pub enum RebootPolicy {
 
 /// Final reboot disposition reported by `tridentd`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RebootDisposition {
     NotRequired,
     Required,
@@ -61,6 +50,7 @@ pub enum RebootDisposition {
 
 /// Manual rollback selection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RollbackKind {
     Any,
     Ab,
@@ -83,12 +73,15 @@ pub struct SourceLocation {
 
 /// Log severity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum LogLevel {
+    Unspecified,
     Error,
     Warn,
     Info,
     Debug,
     Trace,
+    Unknown(i32),
 }
 
 /// Log record emitted during servicing.
@@ -104,7 +97,9 @@ pub struct LogRecord {
 
 /// Major structured remote-error category.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RemoteErrorCategory {
+    Unspecified,
     ExecutionEnvironmentMisconfiguration,
     HealthChecks,
     Initialization,
@@ -112,6 +107,7 @@ pub enum RemoteErrorCategory {
     InvalidInput,
     Servicing,
     UnsupportedConfiguration,
+    Unknown(i32),
 }
 
 /// Structured error returned by `tridentd`.
@@ -135,12 +131,35 @@ impl RemoteError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Completion {
     pub reboot: RebootDisposition,
-    pub servicing_type: Option<ServicingType>,
-    pub image_hash: Option<Sha384Hash>,
+    pub servicing_kind: Option<ServicingKind>,
+    pub image_hash: Option<ImageHash>,
+}
+
+/// Kind of servicing reported by a successful completion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ServicingKind {
+    Unspecified,
+    NoneRequired,
+    RuntimeUpdate,
+    AbUpdate,
+    CleanInstall,
+    ManualRollbackAb,
+    ManualRollbackRuntime,
+    Unknown(i32),
+}
+
+/// Image hash reported by a successful completion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ImageHash {
+    Sha384(Sha384Hash),
+    Unknown(String),
 }
 
 /// Terminal servicing outcome.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum OperationOutcome {
     Succeeded(Completion),
     Failed(RemoteError),
@@ -148,6 +167,7 @@ pub enum OperationOutcome {
 
 /// Domain event emitted by a servicing operation.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ServicingEvent {
     Started { timestamp: Option<EventTimestamp> },
     Log(LogRecord),
@@ -165,8 +185,43 @@ pub struct ValidationResult {
 #[cfg(feature = "preview")]
 /// Rollback availability reported by preview rollback inspection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum RollbackAvailability {
+    Unspecified,
     None,
     Ab,
     Runtime,
+    Unknown(i32),
+}
+
+#[cfg(feature = "preview")]
+/// Current servicing state reported by `tridentd`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ServicingState {
+    Unspecified,
+    NotProvisioned,
+    CleanInstallStaged,
+    AbUpdateStaged,
+    ManualRollbackAbStaged,
+    ManualRollbackRuntimeStaged,
+    RuntimeUpdateStaged,
+    CleanInstallFinalized,
+    AbUpdateFinalized,
+    ManualRollbackAbFinalized,
+    Provisioned,
+    AbUpdateHealthCheckFailed,
+    Unknown(i32),
+}
+
+#[cfg(feature = "preview")]
+/// Active A/B volume reported by `tridentd`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ActiveVolume {
+    Unspecified,
+    None,
+    VolumeA,
+    VolumeB,
+    Unknown(i32),
 }

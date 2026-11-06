@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio::time;
 use tonic::Streaming;
 
-use trident_api::{primitives::hash::Sha384Hash, status::ServicingType};
+use trident_api::primitives::hash::Sha384Hash;
 use trident_proto::v1::{
     servicing_response::Response as ResponseBody, Completed as ProtoCompleted,
     FileLocation as ProtoFileLocation, Log as ProtoLog, LogLevel as ProtoLogLevel,
@@ -13,12 +13,13 @@ use trident_proto::v1::{
 };
 
 use crate::{
-    ClientError, Completion, EventTimestamp, ExecutionState, LogLevel, LogRecord, Operation,
-    OperationOutcome, RebootDisposition, RemoteError, RemoteErrorCategory, ServicingEvent,
-    SourceLocation,
+    ClientError, Completion, EventTimestamp, ExecutionState, ImageHash, LogLevel, LogRecord,
+    Operation, OperationOutcome, RebootDisposition, RemoteError, RemoteErrorCategory,
+    ServicingEvent, ServicingKind, SourceLocation,
 };
 
 /// Accepted servicing request with a domain-event response stream.
+#[must_use = "receiving a ServicingOperation only acknowledges the RPC; call wait, wait_with, or next_event to observe its outcome"]
 pub struct ServicingOperation {
     operation: Operation,
     stream: Streaming<ProtoServicingResponse>,
@@ -80,9 +81,7 @@ impl ServicingOperation {
 
         let event = match body {
             ResponseBody::Started(_) => ServicingEvent::Started { timestamp },
-            ResponseBody::Log(record) => {
-                ServicingEvent::Log(decode_log(self.operation, timestamp, record)?)
-            }
+            ResponseBody::Log(record) => ServicingEvent::Log(decode_log(timestamp, record)),
             ResponseBody::Completed(completed) => {
                 self.completed = true;
                 ServicingEvent::Completed(decode_completion(self.operation, completed)?)
@@ -131,41 +130,25 @@ impl ServicingOperation {
     }
 }
 
-fn decode_log(
-    operation: Operation,
-    timestamp: Option<EventTimestamp>,
-    record: ProtoLog,
-) -> Result<LogRecord, ClientError> {
+fn decode_log(timestamp: Option<EventTimestamp>, record: ProtoLog) -> LogRecord {
     let level = match ProtoLogLevel::try_from(record.level) {
         Ok(ProtoLogLevel::Error) => LogLevel::Error,
         Ok(ProtoLogLevel::Warn) => LogLevel::Warn,
         Ok(ProtoLogLevel::Info) => LogLevel::Info,
         Ok(ProtoLogLevel::Debug) => LogLevel::Debug,
         Ok(ProtoLogLevel::Trace) => LogLevel::Trace,
-        Ok(ProtoLogLevel::Unspecified) => {
-            return Err(invalid_protocol(
-                operation,
-                "log level is unspecified",
-                ExecutionState::OutcomeUnknown,
-            ));
-        }
-        Err(_) => {
-            return Err(invalid_protocol(
-                operation,
-                format!("log level {} is invalid", record.level),
-                ExecutionState::OutcomeUnknown,
-            ));
-        }
+        Ok(ProtoLogLevel::Unspecified) => LogLevel::Unspecified,
+        Err(_) => LogLevel::Unknown(record.level),
     };
 
-    Ok(LogRecord {
+    LogRecord {
         timestamp,
         level,
         message: record.message,
         module: record.module,
         target: record.target,
         location: record.location.map(decode_location),
-    })
+    }
 }
 
 fn decode_completion(
@@ -218,18 +201,12 @@ fn decode_completion(
                 }
             };
 
-            let servicing_type = completed
-                .servicing_kind
-                .map(|kind| decode_servicing_type(operation, kind))
-                .transpose()?;
-            let image_hash = completed
-                .image_hash
-                .map(|hash| decode_image_hash(operation, &hash))
-                .transpose()?;
+            let servicing_kind = completed.servicing_kind.map(decode_servicing_kind);
+            let image_hash = completed.image_hash.map(decode_image_hash);
 
             Ok(OperationOutcome::Succeeded(Completion {
                 reboot,
-                servicing_type,
+                servicing_kind,
                 image_hash,
             }))
         }
@@ -241,17 +218,12 @@ fn decode_completion(
                     ExecutionState::Completed,
                 )
             })?;
-            Ok(OperationOutcome::Failed(decode_remote_error(
-                operation, error,
-            )?))
+            Ok(OperationOutcome::Failed(decode_remote_error(error)))
         }
     }
 }
 
-pub(crate) fn decode_remote_error(
-    operation: Operation,
-    error: ProtoTridentError,
-) -> Result<RemoteError, ClientError> {
+pub(crate) fn decode_remote_error(error: ProtoTridentError) -> RemoteError {
     let category = match ProtoTridentErrorKind::try_from(error.kind) {
         Ok(ProtoTridentErrorKind::ExecutionEnvironmentMisconfigurationError) => {
             RemoteErrorCategory::ExecutionEnvironmentMisconfiguration
@@ -264,67 +236,39 @@ pub(crate) fn decode_remote_error(
         Ok(ProtoTridentErrorKind::UnsupportedConfigurationError) => {
             RemoteErrorCategory::UnsupportedConfiguration
         }
-        Ok(ProtoTridentErrorKind::Unspecified) => {
-            return Err(invalid_protocol(
-                operation,
-                "remote error category is unspecified",
-                ExecutionState::Completed,
-            ));
-        }
-        Err(_) => {
-            return Err(invalid_protocol(
-                operation,
-                format!("remote error category {} is invalid", error.kind),
-                ExecutionState::Completed,
-            ));
-        }
+        Ok(ProtoTridentErrorKind::Unspecified) => RemoteErrorCategory::Unspecified,
+        Err(_) => RemoteErrorCategory::Unknown(error.kind),
     };
 
-    Ok(RemoteError {
+    RemoteError {
         category,
         subkind: error.subkind,
         message: error.message,
         error_message: error.error_message,
         location: error.location.map(decode_location),
-    })
-}
-
-fn decode_servicing_type(operation: Operation, kind: i32) -> Result<ServicingType, ClientError> {
-    match ProtoServicingKind::try_from(kind) {
-        Ok(ProtoServicingKind::NoneRequired) => Ok(ServicingType::NoActiveServicing),
-        Ok(ProtoServicingKind::RuntimeUpdate) => Ok(ServicingType::RuntimeUpdate),
-        Ok(ProtoServicingKind::AbUpdate) => Ok(ServicingType::AbUpdate),
-        Ok(ProtoServicingKind::CleanInstall) => Ok(ServicingType::CleanInstall),
-        Ok(ProtoServicingKind::ManualRollbackAb) => Ok(ServicingType::ManualRollbackAb),
-        Ok(ProtoServicingKind::ManualRollbackRuntime) => Ok(ServicingType::ManualRollbackRuntime),
-        Ok(ProtoServicingKind::Unspecified) => Err(invalid_protocol(
-            operation,
-            "servicing kind is unspecified",
-            ExecutionState::Completed,
-        )),
-        Err(_) => Err(invalid_protocol(
-            operation,
-            format!("servicing kind {kind} is invalid"),
-            ExecutionState::Completed,
-        )),
     }
 }
 
-fn decode_image_hash(operation: Operation, hash: &str) -> Result<Sha384Hash, ClientError> {
-    let value = hash.strip_prefix("sha384:").ok_or_else(|| {
-        invalid_protocol(
-            operation,
-            format!("image hash '{hash}' does not use the sha384 scheme"),
-            ExecutionState::Completed,
-        )
-    })?;
-    serde_yaml::from_value(serde_yaml::Value::String(value.to_string())).map_err(|error| {
-        invalid_protocol(
-            operation,
-            format!("image hash '{hash}' is malformed: {error}"),
-            ExecutionState::Completed,
-        )
-    })
+fn decode_servicing_kind(kind: i32) -> ServicingKind {
+    match ProtoServicingKind::try_from(kind) {
+        Ok(ProtoServicingKind::Unspecified) => ServicingKind::Unspecified,
+        Ok(ProtoServicingKind::NoneRequired) => ServicingKind::NoneRequired,
+        Ok(ProtoServicingKind::RuntimeUpdate) => ServicingKind::RuntimeUpdate,
+        Ok(ProtoServicingKind::AbUpdate) => ServicingKind::AbUpdate,
+        Ok(ProtoServicingKind::CleanInstall) => ServicingKind::CleanInstall,
+        Ok(ProtoServicingKind::ManualRollbackAb) => ServicingKind::ManualRollbackAb,
+        Ok(ProtoServicingKind::ManualRollbackRuntime) => ServicingKind::ManualRollbackRuntime,
+        Err(_) => ServicingKind::Unknown(kind),
+    }
+}
+
+fn decode_image_hash(hash: String) -> ImageHash {
+    match hash.strip_prefix("sha384:") {
+        Some(value) if value.len() == 96 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) => {
+            ImageHash::Sha384(Sha384Hash::from(value))
+        }
+        _ => ImageHash::Unknown(hash),
+    }
 }
 
 fn decode_location(location: ProtoFileLocation) -> SourceLocation {
