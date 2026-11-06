@@ -200,7 +200,6 @@ firmware boot entry's path or the Linux ESP mount point.
   "load_entries": [
     {
       "path": "HvLoader.efi",
-      "expand_boot_prefix": true,
       "args": "${{PREFIX}}\\lxhvloader.dll MSHV_ROOT=\\${{PREFIX}}\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
     },
     { "path": "second.efi" }
@@ -229,10 +228,17 @@ the executing location from an earlier stage's path. It does not establish
 which slot's payload was copied into BOOT or replace the mandatory
 boot-identity guard.
 
-`expand_boot_prefix` is a proposed per-entry build-time opt-in. It defaults
-to false, so legacy literal arguments do not acquire template semantics.
-Expansion is exact token substitution, not shell expansion or runtime JSON
-input.
+The exact `${{PREFIX}}` token in a child's compiled `args` is the opt-in;
+there is no separate JSON flag. The build script detects it and generates
+an internal expansion flag. Resolve and validate the prefix only if at
+least one child needs expansion.
+
+Without that token, pass the compiled arguments unchanged, including full
+absolute paths, relative arguments and empty strings. Do not apply new
+prefix validation to literal-only configurations. Only the exact token is
+reserved; other text remains literal. Existing configurations containing
+that exact string would acquire its new meaning. Expansion is not shell
+expansion or runtime JSON input.
 
 This avoids profile enumeration and firmware-option parsing, but **signing
 a template does not sign the executing directory substituted at runtime**.
@@ -242,7 +248,7 @@ identity.
 
 #### Alternative B: runtime boot-entry prefix
 
-Use the same compiled argument template and per-entry opt-in as Alternative
+Use the same compiled argument template and token-based opt-in as Alternative
 A, but derive `${{PREFIX}}` from the firmware-selected executable instead
 of efitreeloader's own location:
 
@@ -447,8 +453,9 @@ the payload files. Its final name and supported combinations are
 implementation review items, not an existing API.
 
 Efitreeloader configuration changes are described above. Alternatives A
-and B add explicitly gated template interpretation with different prefix
-sources; legacy literals and non-MSHV behavior must remain unchanged.
+and B interpret the exact `${{PREFIX}}` token in compiled `args`, with
+different prefix sources and no additional JSON field. Other arguments
+and non-MSHV behavior remain unchanged; the token itself becomes reserved.
 Alternative C adds a strict `profiles`
 form while retaining legacy `load_entries`.
 
@@ -463,6 +470,7 @@ images.
 | Area | Coverage |
 | --- | --- |
 | Executing-directory prefix (A, preferred) | Own image handle/device path, parent-directory normalization, exact substitution, argument lifetime/encoding, malformed/missing paths, multiple ESPs, renamed binaries, fallback and chainloading without depending on `BootCurrent`. |
+| Literal compatibility (A/B) | Build-time detection of the exact token; absolute, relative, empty and nonmatching-token arguments remain unchanged. Literal-only configurations do not trigger prefix resolution or its additional validation. |
 | Boot-entry prefix (B) | Binary load-option/device-path parsing, UTF-16 paths, device identity, malformed/missing variables and executing-path mismatch; preserve shared template guarantees. |
 | Profiles (C) | Legacy compatibility, strict schema, duplicate/malformed roots, zero/multiple matches, case handling, ordering and unchanged argument bytes; unlisted roots fail before child execution. |
 | Payload deployment | Complete allowlist, links/special-file rejection, inactive-only writes, slot reuse, firstboot/addon preservation, insufficient space, failed-copy retries and non-MSHV compatibility. |
@@ -652,8 +660,10 @@ Baselines:
 ### A.1 Efitreeloader template expansion
 
 Related design: [executing-loader directory prefix](#alternative-a-preferred-executing-loader-directory-prefix).
-The signed configuration explicitly enables expansion for a child. Resolve
-the prefix from the existing loaded-image parent before starting any child.
+The build script derives an internal flag from the exact `${{PREFIX}}`
+token in each child's arguments; JSON does not expose that flag. Resolve
+the prefix from the existing loaded-image parent before starting any child
+only when at least one entry needs expansion.
 The initial implementation accepts ASCII directories under `EFI` and
 rejects malformed or ambiguous paths. This diff implements Alternative A,
 not the firmware-variable resolver in B.
@@ -769,32 +779,14 @@ index 25c1181..23f88d9 100644
 +    pub expand_boot_prefix: bool,
  }
 diff --git a/efitreeloader/build.rs b/efitreeloader/build.rs
-index 7f0bfa7..6c89a46 100644
+index 7f0bfa7..9dacad9 100644
 --- a/efitreeloader/build.rs
 +++ b/efitreeloader/build.rs
-@@ -19,6 +19,9 @@ struct LoadEntry {
-
-     #[serde(default)]
-     args: String,
-+
-+    #[serde(default)]
-+    expand_boot_prefix: bool,
- }
-
- fn main() {
-@@ -41,10 +44,15 @@ fn handle_load_entries() {
-         if entry.path.is_empty() {
-             panic!("Invalid entry at index {}, path must not be empty.", i)
-         }
-+        if entry.expand_boot_prefix {
-+            assert!(entry.args.contains("${{PREFIX}}"), "Template must contain PREFIX");
-+            assert!(!entry.args.replace("${{PREFIX}}", "").contains("${{"), "Unknown template token");
-+        }
-
+@@ -45,6 +45,7 @@ fn handle_load_entries() {
          write!(dest_file, "    ::efitreeloader_lib::LoadEntry{{\n").unwrap();
          write!(dest_file, "        path: ::uefi::cstr16!(\"{}\"),\n", entry.path.escape_debug()).unwrap();
          write!(dest_file, "        args: ::uefi::cstr16!(\"{}\"),\n", entry.args.escape_debug()).unwrap();
-+        writeln!(dest_file, "        expand_boot_prefix: {},", entry.expand_boot_prefix).unwrap();
++        writeln!(dest_file, "        expand_boot_prefix: {},", entry.args.contains("${{PREFIX}}")).unwrap();
          write!(dest_file, "    }},\n").unwrap();
      }
      write!(dest_file, "]\n").unwrap();
@@ -802,7 +794,9 @@ index 7f0bfa7..6c89a46 100644
 
 The owned expanded argument buffer remains in scope through `start_image`.
 The existing static strings are used unchanged for entries without the
-opt-in. Runtime-directory-derived arguments still require owner approval.
+token. The generated `expand_boot_prefix` field is an implementation detail,
+not a JSON option. Runtime-directory-derived arguments still require owner
+approval.
 
 ### A.2 1ES image build
 
@@ -838,10 +832,10 @@ index ed2befd..5be2fdb 100644
 +          install -m 0644 "/boot/efi/Windows/System32/$name" "$bundle/Windows/System32/$name"
 +        done
 diff --git a/tools/build-efitreeloader.sh b/tools/build-efitreeloader.sh
-index 51ee8af..aef3cb0 100755
+index 51ee8af..3404e42 100755
 --- a/tools/build-efitreeloader.sh
 +++ b/tools/build-efitreeloader.sh
-@@ -10,16 +10,16 @@ echo "Writing load_entries.json"
+@@ -10,16 +10,15 @@ echo "Writing load_entries.json"
 
  # Write EFI load entries config file for efitreeloader build.
  #
@@ -858,7 +852,6 @@ index 51ee8af..aef3cb0 100755
 -            "path": "\\\\efi\\\\HvLoader.efi",
 -            "args": "\\\\efi\\\\lxhvloader.dll MSHV_ROOT=\\\\\\\\efi\\\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
 +            "path": "HvLoader.efi",
-+            "expand_boot_prefix": true,
 +            "args": "${{PREFIX}}\\lxhvloader.dll MSHV_ROOT=\\${{PREFIX}}\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
          },
          {
@@ -1172,7 +1165,9 @@ omitted from the examples. Validation covers:
 
 - Efitreeloader: 38 host unit tests, including executing-directory prefix
   normalization and rejection of unsupported or malformed directories;
-  release-mode `cargo check` for `x86_64-unknown-uefi`; Rust formatting.
+  generated-configuration checks for exact-token detection and literal
+  compatibility; release-mode `cargo check` for `x86_64-unknown-uefi`;
+  Rust formatting.
 - Trident payload helper: five filesystem unit tests in an isolated
   harness, including incomplete payloads, interrupted replacement and
   symlink rejection. This is not a full Trident workspace build.
