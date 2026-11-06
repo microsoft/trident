@@ -639,6 +639,7 @@ impl Model {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum Action {
     Start(Request, bool),
     Shell,
@@ -2044,15 +2045,15 @@ mod tests {
         model.fail("Complete diagnostic information".into(), false);
         assert!(model.key(enter(), false).is_none());
         assert_eq!(model.screen, Screen::Recovery);
-        assert!(matches!(model.key(enter(), false), Some(Action::Shell)));
+        assert_eq!(model.key(enter(), false), Some(Action::Shell));
         assert_eq!(model.screen, Screen::Recovery);
         assert_eq!(model.details, "Complete diagnostic information");
         model.screen = Screen::Success;
         model.selected = 1;
-        assert!(matches!(model.key(enter(), false), Some(Action::Shell)));
+        assert_eq!(model.key(enter(), false), Some(Action::Shell));
         assert_eq!(model.screen, Screen::Success);
         model.selected = 0;
-        assert!(matches!(model.key(enter(), false), Some(Action::Reboot)));
+        assert_eq!(model.key(enter(), false), Some(Action::Reboot));
     }
 
     /// Force reinstall opens with Cancel selected and needs a second confirmation.

@@ -17,7 +17,7 @@ use crate::{
 
 const DEMO_STEP: Duration = Duration::from_millis(500);
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(super) enum Scenario {
     Success,
     Failure,
@@ -71,13 +71,13 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
         .await?;
     }
     time::sleep(DEMO_STEP).await;
-    if matches!(scenario, Scenario::Disconnect) {
+    if scenario == Scenario::Disconnect {
         return client::send(&tx, Event::Error {
             details: "DEMO: Connection lost before Completed. Outcome unknown; another write must wait until Trident is confirmed idle.".into(),
             uncertain: true,
         }).await;
     }
-    let failed = matches!(scenario, Scenario::Failure);
+    let failed = scenario == Scenario::Failure;
     response(
         &tx,
         ServicingEvent::Completed(if failed {

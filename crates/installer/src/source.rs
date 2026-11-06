@@ -32,7 +32,7 @@ const MAX_METADATA_BYTES: u64 = 16 * 1024 * 1024;
 const METADATA_PATH: &str = "metadata.json";
 const STREAM_DISK_PREFIXES: &[&str] = &["sd", "nvme", "vd", "hd", "mmcblk"];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Request {
     Autorun,
     HostConfiguration(String),
@@ -68,7 +68,7 @@ pub(super) fn prepare_with_progress(
     request: &Request,
     mut progress: impl FnMut(&str) -> Result<(), Error>,
 ) -> Result<(Config, Plan), Error> {
-    let root = media_root(settings, matches!(request, Request::Autorun), &mut progress)?;
+    let root = media_root(settings, request == &Request::Autorun, &mut progress)?;
     prepare_from_media_with_progress(settings, request, root.as_deref(), &mut progress)
 }
 
