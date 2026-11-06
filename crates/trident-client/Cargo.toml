@@ -21,6 +21,7 @@ trident-proto = { path = "../trident-proto" }
 
 [dev-dependencies]
 prost-types = { workspace = true }
+tempfile = { workspace = true }
 tokio-stream = { workspace = true }
 trident-proto = { path = "../trident-proto", features = ["grpc-preview", "server"] }
 

@@ -39,18 +39,28 @@
 //! Installer-style event handling:
 //! ```no_run
 //! # use trident_api::config::HostConfiguration;
-//! # use trident_client::{Client, RebootPolicy, ServicingEvent};
+//! # use trident_client::{
+//! #     Client, ClientError, OperationOutcome, RebootPolicy, ServicingEvent,
+//! # };
 //! # async fn example() -> Result<(), trident_client::ClientError> {
 //! let client = Client::connect_default().await?;
 //! let mut operation = client
 //!     .update(&HostConfiguration::default(), RebootPolicy::Caller)
 //!     .await?;
 //! while let Some(event) = operation.next_event().await? {
-//!     if let ServicingEvent::Log(record) = event {
-//!         println!("{}", record.message);
+//!     match event {
+//!         ServicingEvent::Log(record) => println!("{}", record.message),
+//!         ServicingEvent::Completed(OperationOutcome::Succeeded(_)) => return Ok(()),
+//!         ServicingEvent::Completed(OperationOutcome::Failed(remote)) => {
+//!             return Err(ClientError::RemoteFailure {
+//!                 operation: operation.operation(),
+//!                 remote,
+//!             });
+//!         }
+//!         ServicingEvent::Started { .. } => {}
 //!     }
 //! }
-//! # Ok(())
+//! unreachable!("the client rejects streams without a completion event")
 //! # }
 //! ```
 

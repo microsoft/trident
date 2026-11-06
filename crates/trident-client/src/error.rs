@@ -78,8 +78,10 @@ pub enum ClientError {
         message: String,
     },
 
-    #[error("Trident request {operation:?} did not start within {timeout:?}")]
-    RequestStartTimeout {
+    #[error(
+        "Trident request {operation:?} was not acknowledged within {timeout:?}; execution outcome is unknown"
+    )]
+    RequestAcknowledgementTimeout {
         operation: Operation,
         timeout: Duration,
     },
@@ -145,7 +147,7 @@ impl ClientError {
                 ..
             } => ExecutionState::NotStarted,
             Self::RequestRejected { .. }
-            | Self::RequestStartTimeout { .. }
+            | Self::RequestAcknowledgementTimeout { .. }
             | Self::UnaryTimeout { .. }
             | Self::StreamFailure { .. }
             | Self::MissingCompletion { .. }

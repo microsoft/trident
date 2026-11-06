@@ -8,8 +8,8 @@ use std::{
 
 use hyper_util::rt::TokioIo;
 use prost_types::Timestamp;
-use tokio::{io, sync::mpsc, time};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio::{io, net::UnixListener, sync::mpsc, time};
+use tokio_stream::wrappers::{ReceiverStream, UnixListenerStream};
 use tonic::{
     transport::{Endpoint, Server, Uri},
     Request, Response, Status,
@@ -428,7 +428,7 @@ async fn connect_mock(state: Arc<MockState>, request_timeout: Duration) -> Clien
 
 async fn connect_mock_with_timeouts(
     state: Arc<MockState>,
-    request_timeout: Duration,
+    request_acknowledgement_timeout: Duration,
     unary_timeout: Duration,
 ) -> Client {
     let (client_io, server_io) = io::duplex(DUPLEX_BUFFER_BYTES);
@@ -464,7 +464,7 @@ async fn connect_mock_with_timeouts(
         }))
         .await
         .expect("mock channel should connect");
-    Client::from_channel(channel, request_timeout, unary_timeout)
+    Client::from_channel(channel, request_acknowledgement_timeout, unary_timeout)
 }
 
 fn set_action(state: &Arc<MockState>, action: Action) {
@@ -534,6 +534,30 @@ async fn endpoint_schemes_support_only_unix_and_http() {
             .expect_err("supported endpoint without a server should fail to connect");
         assert!(matches!(error, ClientError::Connection { .. }));
     }
+}
+
+#[tokio::test]
+async fn unix_endpoint_decodes_escaped_socket_path() {
+    let root = tempfile::tempdir().unwrap();
+    let socket_path = root.path().join("trident client.sock");
+    let listener = UnixListener::bind(&socket_path).unwrap();
+    let mock = MockServer {
+        state: Arc::new(MockState::default()),
+    };
+    tokio::spawn(async move {
+        Server::builder()
+            .add_service(VersionServiceServer::new(mock))
+            .serve_with_incoming(UnixListenerStream::new(listener))
+            .await
+            .expect("mock Unix server should run");
+    });
+
+    let file_url = Url::from_file_path(&socket_path).unwrap();
+    let endpoint = format!("unix://{}", file_url.path());
+    assert!(endpoint.contains("%20"));
+
+    let client = Client::connect(endpoint).await.unwrap();
+    assert_eq!(client.version().await.unwrap(), "test-version");
 }
 
 #[tokio::test]
@@ -830,18 +854,18 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         &state,
         Action::DelayStart(LONG_DELAY, vec![StreamStep::Item(Ok(success()))]),
     );
-    let start_timeout = client
+    let acknowledgement_timeout = client
         .update_stage_yaml("{}\n")
         .await
         .err()
-        .expect("request should time out before starting");
+        .expect("request acknowledgement should time out");
     assert_eq!(
-        start_timeout.execution_state(),
+        acknowledgement_timeout.execution_state(),
         ExecutionState::OutcomeUnknown
     );
     assert!(matches!(
-        start_timeout,
-        ClientError::RequestStartTimeout { .. }
+        acknowledgement_timeout,
+        ClientError::RequestAcknowledgementTimeout { .. }
     ));
 
     set_action(

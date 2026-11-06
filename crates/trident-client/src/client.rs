@@ -1,4 +1,8 @@
-use std::{future::Future, path::PathBuf, time::Duration};
+use std::{
+    future::Future,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use hyper_util::rt::TokioIo;
 use tokio::{net::UnixStream, time};
@@ -29,7 +33,7 @@ use crate::{error, ClientError, Operation, RebootPolicy, RollbackKind, Servicing
 pub const DEFAULT_ENDPOINT: &str = TRIDENT_DEFAULT_SOCKET_URI;
 
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
-const DEFAULT_REQUEST_START_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_REQUEST_ACKNOWLEDGEMENT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_UNARY_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECTOR_ENDPOINT: &str = "http://[::]:50051";
 
@@ -38,7 +42,7 @@ const CONNECTOR_ENDPOINT: &str = "http://[::]:50051";
 pub struct ClientBuilder {
     endpoint: String,
     connect_timeout: Duration,
-    request_start_timeout: Duration,
+    request_acknowledgement_timeout: Duration,
     unary_timeout: Duration,
 }
 
@@ -47,7 +51,7 @@ impl Default for ClientBuilder {
         Self {
             endpoint: DEFAULT_ENDPOINT.to_string(),
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
-            request_start_timeout: DEFAULT_REQUEST_START_TIMEOUT,
+            request_acknowledgement_timeout: DEFAULT_REQUEST_ACKNOWLEDGEMENT_TIMEOUT,
             unary_timeout: DEFAULT_UNARY_TIMEOUT,
         }
     }
@@ -66,9 +70,9 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the maximum time to wait for an RPC to be accepted.
-    pub fn request_start_timeout(mut self, timeout: Duration) -> Self {
-        self.request_start_timeout = timeout;
+    /// Sets the maximum time to wait for an initial RPC acknowledgement.
+    pub fn request_acknowledgement_timeout(mut self, timeout: Duration) -> Self {
+        self.request_acknowledgement_timeout = timeout;
         self
     }
 
@@ -83,7 +87,7 @@ impl ClientBuilder {
         let channel = connect_channel(&self.endpoint, self.connect_timeout).await?;
         Ok(Client {
             channel,
-            request_start_timeout: self.request_start_timeout,
+            request_acknowledgement_timeout: self.request_acknowledgement_timeout,
             unary_timeout: self.unary_timeout,
         })
     }
@@ -93,7 +97,7 @@ impl ClientBuilder {
 #[derive(Clone, Debug)]
 pub struct Client {
     pub(crate) channel: Channel,
-    request_start_timeout: Duration,
+    request_acknowledgement_timeout: Duration,
     unary_timeout: Duration,
 }
 
@@ -116,12 +120,12 @@ impl Client {
     #[cfg(test)]
     pub(crate) fn from_channel(
         channel: Channel,
-        request_start_timeout: Duration,
+        request_acknowledgement_timeout: Duration,
         unary_timeout: Duration,
     ) -> Self {
         Self {
             channel,
-            request_start_timeout,
+            request_acknowledgement_timeout,
             unary_timeout,
         }
     }
@@ -297,11 +301,11 @@ impl Client {
     where
         F: FutureServicingResponse,
     {
-        let response = time::timeout(self.request_start_timeout, request.into_future())
+        let response = time::timeout(self.request_acknowledgement_timeout, request.into_future())
             .await
-            .map_err(|_| ClientError::RequestStartTimeout {
+            .map_err(|_| ClientError::RequestAcknowledgementTimeout {
                 operation,
-                timeout: self.request_start_timeout,
+                timeout: self.request_acknowledgement_timeout,
             })?
             .map_err(|status| error::rejected(operation, status))?;
         Ok(ServicingOperation::new(operation, response.into_inner()))
@@ -405,8 +409,8 @@ async fn connect_unix(
             details: "Unix endpoints must contain only an absolute socket path".to_string(),
         });
     }
-    let path = PathBuf::from(url.path());
-    if !path.is_absolute() || url.path() == "/" {
+    let path = unix_socket_path(endpoint, url)?;
+    if !path.is_absolute() || path == Path::new("/") {
         return Err(ClientError::InvalidEndpoint {
             endpoint: endpoint.to_string(),
             details: "Unix endpoint path must be absolute and non-empty".to_string(),
@@ -432,6 +436,21 @@ async fn connect_unix(
         .map_err(|error| ClientError::Connection {
             endpoint: endpoint.to_string(),
             details: error.to_string(),
+        })
+}
+
+fn unix_socket_path(endpoint: &str, url: &Url) -> Result<PathBuf, ClientError> {
+    let file_url = Url::parse(&format!("file://{}", url.path())).map_err(|error| {
+        ClientError::InvalidEndpoint {
+            endpoint: endpoint.to_string(),
+            details: format!("Unix endpoint path could not be decoded: {error}"),
+        }
+    })?;
+    file_url
+        .to_file_path()
+        .map_err(|()| ClientError::InvalidEndpoint {
+            endpoint: endpoint.to_string(),
+            details: "Unix endpoint path could not be decoded".to_string(),
         })
 }
 
