@@ -1,4 +1,5 @@
 use anyhow::{anyhow, ensure, Error};
+use log::Level;
 use tokio::{sync::mpsc::Sender, task};
 use url::Url;
 
@@ -22,7 +23,7 @@ fn stream_force_requested(automatic: bool, configured: bool, confirmed: bool) ->
 #[derive(Debug)]
 pub(super) enum Event {
     InstallerLog {
-        level: log::Level,
+        level: Level,
         message: String,
     },
     Preparing(String),
@@ -112,7 +113,7 @@ pub(super) async fn execute(
     require_idle: bool,
     tx: Sender<Event>,
 ) -> Result<(), Error> {
-    let automatic = matches!(request, Request::Autorun);
+    let automatic = request == Request::Autorun;
     let description = match &request {
         Request::Autorun => format!(
             "Autorun: HC '{}' or first media COSI in '{}'",
