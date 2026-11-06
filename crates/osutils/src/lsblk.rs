@@ -414,13 +414,16 @@ mod tests {
     }
 
     #[test]
-    /// Ensures a GPT USB partition's label is found beneath its parent disk.
+    /// Ensures optical and GPT USB labels are both found without choosing between them.
     fn parses_gpt_usb_partition_label_from_lsblk_json() {
-        let output = r#"{"blockdevices":[{"name":"sdb","size":1073741824,"type":"disk","pttype":"gpt","children":[{"name":"sdb1","size":1069547520,"type":"part","fstype":"vfat","label":"TRD_INSTALL"}]}]}"#;
+        let output = r#"{"blockdevices":[{"name":"sdb","size":1073741824,"type":"disk","pttype":"gpt","children":[{"name":"sdb1","size":1069547520,"type":"part","fstype":"vfat","label":"TRD_INSTALL"}]},{"name":"sr0","size":355497984,"type":"rom","label":"CDROM"}]}"#;
         let devices = parse_labelled_devices(output).unwrap();
         let mut matches = Vec::new();
         collect_devices_by_labels(&devices, &["TRD_INSTALL", "CDROM"], &mut matches);
-        assert_eq!(matches, [PathBuf::from("/dev/sdb1")]);
+        assert_eq!(
+            matches,
+            [PathBuf::from("/dev/sdb1"), PathBuf::from("/dev/sr0")]
+        );
         let devices = parse_lsblk_output(output).unwrap();
         assert_eq!(
             devices[0].partition_table_type,
