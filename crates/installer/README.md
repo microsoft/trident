@@ -1,7 +1,8 @@
 # Trident Linux Installer
 
 `installer` builds the `trident-installer` binary and optional RPM. It is an
-autorun wrapper around Trident's gRPC API, not a partitioning engine.
+autorun wrapper around Trident's gRPC API through the shared `trident-client`
+crate, not a partitioning engine.
 
 ## Local demo
 

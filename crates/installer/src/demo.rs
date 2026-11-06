@@ -4,9 +4,10 @@ use anyhow::Error;
 use clap::ValueEnum;
 use tokio::{sync::mpsc::Sender, time};
 
-use trident_proto::v1::{
-    servicing_response::Response as ResponseBody, Completed, Log, LogLevel, RebootStatus,
-    ServicingKind, ServicingResponse, Started, StatusCode, TridentError, TridentErrorKind,
+use trident_api::status::ServicingType;
+use trident_client::{
+    Completion, LogLevel, LogRecord, OperationOutcome, RebootDisposition, RemoteError,
+    RemoteErrorCategory, ServicingEvent,
 };
 
 use crate::{
@@ -47,7 +48,7 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
         )).await,
         _ => {}
     }
-    response(&tx, ResponseBody::Started(Started {})).await?;
+    response(&tx, ServicingEvent::Started { timestamp: None }).await?;
     for (level, message) in [
         (LogLevel::Info, "Loading image metadata"),
         (LogLevel::Debug, "Inspecting available block devices"),
@@ -58,10 +59,13 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
         time::sleep(DEMO_STEP).await;
         response(
             &tx,
-            ResponseBody::Log(Log {
-                level: level.into(),
+            ServicingEvent::Log(LogRecord {
+                timestamp: None,
+                level,
                 message: message.into(),
-                ..Default::default()
+                module: String::new(),
+                target: String::new(),
+                location: None,
             }),
         )
         .await?;
@@ -76,38 +80,28 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
     let failed = matches!(scenario, Scenario::Failure);
     response(
         &tx,
-        ResponseBody::Completed(Completed {
-            status: if failed {
-                StatusCode::Failure
-            } else {
-                StatusCode::Success
-            }
-            .into(),
-            error: failed.then(|| TridentError {
-                kind: TridentErrorKind::ServicingError.into(),
+        ServicingEvent::Completed(if failed {
+            OperationOutcome::Failed(RemoteError {
+                category: RemoteErrorCategory::Servicing,
                 message:
                     "DEMO: Installation failed\nFailed to stream the OS image\nConnection timed out"
                         .into(),
                 subkind: "demo-network-failure".into(),
                 error_message: "Connection timed out".into(),
-                ..Default::default()
-            }),
-            reboot_status: RebootStatus::RebootRequired.into(),
-            servicing_kind: Some(ServicingKind::CleanInstall.into()),
-            ..Default::default()
+                location: None,
+            })
+        } else {
+            OperationOutcome::Succeeded(Completion {
+                reboot: RebootDisposition::Required,
+                servicing_type: Some(ServicingType::CleanInstall),
+                image_hash: None,
+            })
         }),
     )
     .await
 }
 
-/// Wraps a demo gRPC response in the same event shape used by a real install.
-async fn response(tx: &Sender<Event>, response: ResponseBody) -> Result<(), Error> {
-    client::send(
-        tx,
-        Event::Response(ServicingResponse {
-            response: Some(response),
-            ..Default::default()
-        }),
-    )
-    .await
+/// Wraps a demo servicing event in the same shape used by a real install.
+async fn response(tx: &Sender<Event>, response: ServicingEvent) -> Result<(), Error> {
+    client::send(tx, Event::Response(response)).await
 }

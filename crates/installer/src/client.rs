@@ -1,35 +1,18 @@
-use std::time::Duration;
-
-use anyhow::{anyhow, bail, ensure, Context, Error};
+use anyhow::{anyhow, ensure, Error};
 use tokio::{sync::mpsc::Sender, task};
-use tonic::{
-    transport::{Channel, Endpoint},
-    Code, Status, Streaming,
-};
 use url::Url;
 
-use trident_proto::{
-    v1::{
-        servicing_response::Response as ResponseBody,
-        streaming_service_client::StreamingServiceClient, Completed, HostConfiguration,
-        RebootHandling, RebootManagement, RebootStatus, ServicingKind, ServicingResponse,
-        StatusCode, StreamDiskRequest, TridentError as RemoteError,
-        TridentErrorKind as ErrorCategory,
-    },
-    v1preview::{
-        install_service_client::InstallServiceClient, status_service_client::StatusServiceClient,
-        FinalizeInstallRequest, GetServicingStateRequest, InstallRequest, StageInstallRequest,
-    },
-    TRIDENT_DEFAULT_SOCKET_URI,
+use trident_api::status::ServicingType;
+use trident_client::{
+    Client, ClientError, Completion as ClientCompletion, ExecutionState, OperationOutcome,
+    RebootDisposition, RebootPolicy, RemoteError, RemoteErrorCategory, ServicingEvent,
+    ServicingOperation,
 };
 
 use crate::{
     config::{Config, SerialVerbosity, DEFAULT_HOST_CONFIGURATION},
     source::{self, Plan, Request},
 };
-
-const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Applies configured force only to autorun streams, while respecting explicit confirmation.
 fn stream_force_requested(automatic: bool, configured: bool, confirmed: bool) -> bool {
@@ -49,7 +32,7 @@ pub(super) enum Event {
         serial_verbosity: SerialVerbosity,
         stream_image: Option<Url>,
     },
-    Response(ServicingResponse),
+    Response(ServicingEvent),
     Error {
         details: String,
         uncertain: bool,
@@ -66,60 +49,41 @@ pub(super) enum Completion {
     Failure(String),
 }
 
-/// Interprets Trident's final response, rejecting invalid or daemon-managed reboot states.
-pub(super) fn completion(completed: Completed) -> Result<Completion, Error> {
-    match StatusCode::try_from(completed.status).context("Invalid final status code")? {
-        StatusCode::Success => {
+/// Interprets a domain completion, enforcing the installer's caller-managed reboot contract.
+pub(super) fn completion(outcome: OperationOutcome) -> Result<Completion, Error> {
+    match outcome {
+        OperationOutcome::Succeeded(ClientCompletion {
+            reboot,
+            servicing_type,
+            ..
+        }) => {
             ensure!(
-                completed.error.is_none(),
-                "Success response unexpectedly includes an error"
-            );
-            let reboot =
-                RebootStatus::try_from(completed.reboot_status).context("Invalid reboot status")?;
-            ensure!(
-                matches!(
-                    reboot,
-                    RebootStatus::RebootRequired | RebootStatus::RebootNotRequired
-                ),
+                reboot != RebootDisposition::Started,
                 "Daemon did not honour caller-managed reboot: {reboot:?}"
             );
-            let performed = match completed.servicing_kind {
-                Some(kind) => {
-                    ServicingKind::try_from(kind).context("Invalid servicing kind")?
-                        != ServicingKind::NoneRequired
-                }
-                None => true,
-            };
             Ok(Completion::Success {
-                reboot_required: reboot == RebootStatus::RebootRequired,
-                performed,
+                reboot_required: reboot == RebootDisposition::Required,
+                performed: servicing_type != Some(ServicingType::NoActiveServicing),
             })
         }
-        StatusCode::Failure => Ok(Completion::Failure(match completed.error {
-            Some(error) => format_error(&error),
-            None => "Trident reported failure without error details".into(),
-        })),
-        StatusCode::Unspecified => bail!("Daemon returned an unspecified final status"),
+        OperationOutcome::Failed(error) => Ok(Completion::Failure(format_error(&error))),
     }
 }
 
 /// Renders a structured Trident error as readable multi-line diagnostics.
 fn format_error(error: &RemoteError) -> String {
-    let category = match ErrorCategory::try_from(error.kind) {
-        Ok(ErrorCategory::Unspecified) => "Unspecified",
-        Ok(ErrorCategory::ExecutionEnvironmentMisconfigurationError) => "Execution environment",
-        Ok(ErrorCategory::HealthChecksError) => "Health checks",
-        Ok(ErrorCategory::InitializationError) => "Initialization",
-        Ok(ErrorCategory::InternalError) => "Internal error",
-        Ok(ErrorCategory::InvalidInputError) => "Invalid input",
-        Ok(ErrorCategory::ServicingError) => "Servicing",
-        Ok(ErrorCategory::UnsupportedConfigurationError) => "Unsupported configuration",
-        Err(_) => "Unknown",
+    let category = match error.category {
+        RemoteErrorCategory::ExecutionEnvironmentMisconfiguration => "Execution environment",
+        RemoteErrorCategory::HealthChecks => "Health checks",
+        RemoteErrorCategory::Initialization => "Initialization",
+        RemoteErrorCategory::Internal => "Internal error",
+        RemoteErrorCategory::InvalidInput => "Invalid input",
+        RemoteErrorCategory::Servicing => "Servicing",
+        RemoteErrorCategory::UnsupportedConfiguration => "Unsupported configuration",
     };
     let mut details = format!(
-        "{}\n\nCategory: {category} ({})\nCode: {}",
+        "{}\n\nCategory: {category}\nCode: {}",
         error.message.trim(),
-        error.kind,
         error.subkind
     );
     if !error.error_message.is_empty() && !error.message.contains(&error.error_message) {
@@ -131,10 +95,16 @@ fn format_error(error: &RemoteError) -> String {
     details
 }
 
-/// Prepares a source, checks stream safety, and forwards Trident's gRPC responses to the UI.
+/// Keeps invalid completions and unacknowledged writes uncertain, but not known remote failures.
+fn operation_uncertain(error: &ClientError) -> bool {
+    !matches!(error, ClientError::RemoteFailure { .. })
+        && error.execution_state() != ExecutionState::NotStarted
+}
+
+/// Prepares a source, checks stream safety, and forwards Trident's domain events to the UI.
 ///
 /// After an uncertain previous operation, `require_idle` prevents a new write until the daemon
-/// confirms it is idle. Ambiguous RPC failures are reported as uncertain instead of retrying.
+/// answers a status request. Ambiguous RPC failures are reported as uncertain instead of retrying.
 pub(super) async fn execute(
     settings: Config,
     request: Request,
@@ -145,7 +115,7 @@ pub(super) async fn execute(
     let automatic = matches!(request, Request::Autorun);
     let description = match &request {
         Request::Autorun => format!(
-            "Autorun: HC '{}' or first ISO COSI in '{}'",
+            "Autorun: HC '{}' or first media COSI in '{}'",
             settings
                 .autorun
                 .host_configuration
@@ -218,8 +188,8 @@ pub(super) async fn execute(
         }
     }
     send(&tx, Event::Preparing("Connecting to Trident daemon".into())).await?;
-    let channel = match connect(TRIDENT_DEFAULT_SOCKET_URI).await {
-        Ok(channel) => channel,
+    let client = match Client::connect_default().await {
+        Ok(client) => client,
         Err(error) => {
             return send(
                 &tx,
@@ -232,35 +202,21 @@ pub(super) async fn execute(
         }
     };
     if require_idle {
-        if let Err(error) = StatusServiceClient::new(channel.clone())
-            .get_servicing_state(GetServicingStateRequest {})
-            .await
-        {
+        if let Err(error) = client.servicing_state().await {
             return send(&tx, Event::Error {
                 details: format!("The previous operation's outcome is unknown. Cannot establish that Trident is idle; refusing another write.\n{error}"),
                 uncertain: true,
             }).await;
         }
     }
-    let started = tokio::time::timeout(REQUEST_TIMEOUT, start(channel, plan))
-        .await
-        .unwrap_or_else(|_| {
-            Err(Status::deadline_exceeded(
-                "Timed out waiting for Trident to accept the request; outcome is unknown",
-            ))
-        });
-    let response = match started {
+    let response = match start(&client, plan).await {
         Ok(response) => response,
         Err(error) => {
-            let uncertain = !matches!(
-                error.code(),
-                Code::InvalidArgument | Code::Unimplemented | Code::FailedPrecondition
-            );
             return send(
                 &tx,
                 Event::Error {
                     details: format!("gRPC request failed: {error}"),
-                    uncertain,
+                    uncertain: operation_uncertain(&error),
                 },
             )
             .await;
@@ -269,75 +225,44 @@ pub(super) async fn execute(
     receive(response, &tx).await
 }
 
-/// Connects to the Trident daemon with a bounded connection timeout.
-async fn connect(address: &str) -> Result<Channel, Error> {
-    Endpoint::new(address.to_owned())?
-        .connect_timeout(CONNECTION_TIMEOUT)
-        .connect()
-        .await
-        .with_context(|| format!("Failed to connect to Trident at '{address}'"))
-}
-
-/// Starts the selected gRPC operation, leaving reboot control to the installer.
-async fn start(channel: Channel, plan: Plan) -> Result<Streaming<ServicingResponse>, Status> {
-    let reboot = Some(RebootManagement {
-        handling: RebootHandling::CallerHandlesReboot.into(),
-    });
+/// Selects the shared client's typed RPC while leaving reboot control to the installer.
+async fn start(client: &Client, plan: Plan) -> Result<ServicingOperation, ClientError> {
     match plan {
-        Plan::Stream { image } => Ok(StreamingServiceClient::new(channel)
-            .stream_disk(StreamDiskRequest {
-                image_url: image.to_string(),
-                image_hash: None,
-                reboot,
-            })
-            .await?
-            .into_inner()),
-        Plan::Install { config, .. } => {
-            let config = serde_yaml::to_string(&config).map_err(|error| {
-                Status::internal(format!("Failed to serialize Host Configuration: {error}"))
-            })?;
-            Ok(InstallServiceClient::new(channel)
-                .install(InstallRequest {
-                    stage: Some(StageInstallRequest {
-                        config: Some(HostConfiguration { config }),
-                    }),
-                    finalize: Some(FinalizeInstallRequest { reboot }),
-                })
-                .await?
-                .into_inner())
-        }
+        Plan::Stream { image } => client.stream_disk(&image, None, RebootPolicy::Caller).await,
+        Plan::Install { config, .. } => client.install(&config, RebootPolicy::Caller).await,
     }
 }
 
-/// Forwards a servicing stream until completion; missing final responses leave the result unknown.
-async fn receive(
-    mut stream: Streaming<ServicingResponse>,
-    tx: &Sender<Event>,
-) -> Result<(), Error> {
+/// Forwards domain events until a completed result; a broken stream leaves the outcome unknown.
+async fn receive(mut operation: ServicingOperation, tx: &Sender<Event>) -> Result<(), Error> {
     loop {
-        let response = match stream.message().await {
-            Ok(Some(response)) => response,
-            Ok(None) => return send(tx, Event::Error {
-                details: "The gRPC stream ended without a final Completed response. Installation outcome is unknown; it may still be running.".into(),
-                uncertain: true,
-            }).await,
-            Err(error) => return send(tx, Event::Error {
-                details: format!("The gRPC stream failed; installation outcome is unknown.\n{error}"),
-                uncertain: true,
-            }).await,
+        let event = match operation.next_event().await {
+            Ok(Some(event)) => event,
+            Ok(None) => {
+                return send(
+                    tx,
+                    Event::Error {
+                        details: "The gRPC stream ended without a final Completed response. Installation outcome is unknown; it may still be running.".into(),
+                        uncertain: true,
+                    },
+                )
+                .await;
+            }
+            Err(error) => {
+                return send(
+                    tx,
+                    Event::Error {
+                        details: format!(
+                            "The gRPC stream failed; installation outcome is unknown.\n{error}"
+                        ),
+                        uncertain: operation_uncertain(&error),
+                    },
+                )
+                .await;
+            }
         };
-        let completed = matches!(response.response, Some(ResponseBody::Completed(_)));
-        if response.response.is_none() {
-            return send(
-                tx,
-                Event::Error {
-                    details: "gRPC response has no body; installation outcome is unknown".into(),
-                    uncertain: true,
-                },
-            )
-            .await;
-        }
-        send(tx, Event::Response(response)).await?;
+        let completed = matches!(event, ServicingEvent::Completed(_));
+        send(tx, Event::Response(event)).await?;
         if completed {
             return Ok(());
         }
@@ -355,27 +280,7 @@ pub(super) async fn send(tx: &Sender<Event>, event: Event) -> Result<(), Error> 
 mod tests {
     use super::*;
 
-    use std::{
-        sync::{Arc, Mutex},
-        vec::IntoIter,
-    };
-
-    use tempfile::TempDir;
-    use tokio::{net::UnixListener, sync::mpsc};
-    use tokio_stream::{wrappers::UnixListenerStream, Iter};
-    use tonic::{async_trait, transport::Server, Request as TonicRequest, Response};
-    use url::Url;
-
-    use trident_api::config::{HostConfiguration as ApiHostConfiguration, ImageSha384, OsImage};
-    use trident_proto::{
-        v1::{
-            streaming_service_server::{StreamingService, StreamingServiceServer},
-            FileLocation, Log, LogLevel, Started,
-        },
-        v1preview::install_service_server::{InstallService, InstallServiceServer},
-    };
-
-    type ResponseStream = Iter<IntoIter<Result<ServicingResponse, Status>>>;
+    use trident_client::{Operation, RpcCode, SourceLocation};
 
     #[test]
     /// Ensures a configured force flag does not affect manually chosen streams.
@@ -386,64 +291,61 @@ mod tests {
         assert!(stream_force_requested(false, false, true));
     }
 
-    /// Builds a valid completed response for gRPC client tests.
-    fn successful() -> Completed {
-        Completed {
-            status: StatusCode::Success.into(),
-            reboot_status: RebootStatus::RebootRequired.into(),
-            servicing_kind: Some(ServicingKind::CleanInstall.into()),
-            ..Default::default()
+    /// Builds a valid domain completion for installer-specific result checks.
+    fn successful() -> ClientCompletion {
+        ClientCompletion {
+            reboot: RebootDisposition::Required,
+            servicing_type: Some(ServicingType::CleanInstall),
+            image_hash: None,
         }
     }
 
     #[test]
-    /// Ensures final responses reject invalid statuses and unexpected reboot behavior.
+    /// Ensures caller-managed reboot and no-op completions retain their installer semantics.
     fn final_response_is_strict() {
         assert_eq!(
-            completion(successful()).unwrap(),
+            completion(OperationOutcome::Succeeded(successful())).unwrap(),
             Completion::Success {
                 reboot_required: true,
-                performed: true
+                performed: true,
             }
         );
-        completion(Completed::default()).unwrap_err();
-        completion(Completed {
-            status: 999,
+        completion(OperationOutcome::Succeeded(ClientCompletion {
+            reboot: RebootDisposition::Started,
             ..successful()
-        })
-        .unwrap_err();
-        completion(Completed {
-            reboot_status: RebootStatus::RebootStarted.into(),
-            ..successful()
-        })
+        }))
         .unwrap_err();
         assert_eq!(
-            completion(Completed {
-                servicing_kind: Some(ServicingKind::NoneRequired.into()),
+            completion(OperationOutcome::Succeeded(ClientCompletion {
+                servicing_type: Some(ServicingType::NoActiveServicing),
                 ..successful()
-            })
+            }))
             .unwrap(),
             Completion::Success {
                 reboot_required: true,
-                performed: false
+                performed: false,
             }
         );
     }
 
-    #[test]
-    /// Ensures structured errors retain useful diagnostics without debug formatting.
-    fn errors_are_readable_without_debug_dumps() {
-        let error = RemoteError {
-            kind: ErrorCategory::ServicingError.into(),
+    /// Builds a structured remote failure for formatting and execution-state tests.
+    fn remote_failure() -> RemoteError {
+        RemoteError {
+            category: RemoteErrorCategory::Servicing,
             subkind: "download-image".into(),
             message: "Installation failed\n  Failed to download the image".into(),
             error_message: "Connection timed out".into(),
-            location: Some(FileLocation {
+            location: Some(SourceLocation {
                 path: "source.rs".into(),
                 line: 42,
             }),
-        };
-        let formatted = format_error(&error);
+        }
+    }
+
+    #[test]
+    /// Ensures domain errors remain readable without protobuf debug output.
+    fn errors_are_readable_without_debug_dumps() {
+        let formatted = format_error(&remote_failure());
         assert!(formatted.contains("Installation failed\n  Failed to download the image"));
         assert!(formatted.contains("Category: Servicing"));
         assert!(formatted.contains("Code: download-image"));
@@ -451,189 +353,31 @@ mod tests {
         assert!(formatted.contains("Location: source.rs:42"));
         assert!(!formatted.contains("TridentError {"));
         assert!(!formatted.contains("\\n"));
-    }
-
-    #[derive(Clone)]
-    struct Fake {
-        complete: bool,
-    }
-
-    #[async_trait]
-    impl StreamingService for Fake {
-        type StreamDiskStream = ResponseStream;
-
-        /// Returns a sample stream, optionally omitting completion to simulate a disconnect.
-        async fn stream_disk(
-            &self,
-            request: TonicRequest<StreamDiskRequest>,
-        ) -> Result<Response<Self::StreamDiskStream>, Status> {
-            assert_eq!(
-                request.into_inner().reboot.unwrap().handling,
-                i32::from(RebootHandling::CallerHandlesReboot)
-            );
-            let mut responses = vec![
-                ServicingResponse {
-                    response: Some(ResponseBody::Started(Started {})),
-                    ..Default::default()
-                },
-                ServicingResponse {
-                    response: Some(ResponseBody::Log(Log {
-                        level: LogLevel::Trace.into(),
-                        message: "full detail".into(),
-                        ..Default::default()
-                    })),
-                    ..Default::default()
-                },
-            ];
-            if self.complete {
-                responses.push(ServicingResponse {
-                    response: Some(ResponseBody::Completed(successful())),
-                    ..Default::default()
-                });
-            }
-
-            Ok(Response::new(tokio_stream::iter(
-                responses.into_iter().map(Ok).collect::<Vec<_>>(),
-            )))
-        }
-    }
-
-    #[derive(Clone)]
-    struct FakeInstall {
-        request: Arc<Mutex<Option<InstallRequest>>>,
-    }
-
-    #[async_trait]
-    impl InstallService for FakeInstall {
-        type InstallStream = ResponseStream;
-        type InstallStageStream = ResponseStream;
-        type InstallFinalizeStream = ResponseStream;
-
-        /// Captures an install request and returns a completed response.
-        async fn install(
-            &self,
-            request: TonicRequest<InstallRequest>,
-        ) -> Result<Response<Self::InstallStream>, Status> {
-            *self.request.lock().unwrap() = Some(request.into_inner());
-            Ok(Response::new(tokio_stream::iter(vec![Ok(
-                ServicingResponse {
-                    response: Some(ResponseBody::Completed(successful())),
-                    ..Default::default()
-                },
-            )])))
-        }
-
-        /// Rejects stage-only requests, which the fake does not support.
-        async fn install_stage(
-            &self,
-            _: TonicRequest<StageInstallRequest>,
-        ) -> Result<Response<Self::InstallStageStream>, Status> {
-            Err(Status::unimplemented("test only supports full install"))
-        }
-
-        /// Rejects finalize-only requests, which the fake does not support.
-        async fn install_finalize(
-            &self,
-            _: TonicRequest<FinalizeInstallRequest>,
-        ) -> Result<Response<Self::InstallFinalizeStream>, Status> {
-            Err(Status::unimplemented("test only supports full install"))
-        }
-    }
-
-    #[tokio::test]
-    /// Ensures the full Host Configuration reaches gRPC with caller-managed reboot.
-    async fn install_sends_full_configuration_and_caller_managed_reboot() {
-        let root = TempDir::new().unwrap();
-        let path = root.path().join("trident.sock");
-        let listener = UnixListener::bind(&path).unwrap();
-        let captured = Arc::new(Mutex::new(None));
-        let server = tokio::spawn(
-            Server::builder()
-                .add_service(InstallServiceServer::new(FakeInstall {
-                    request: captured.clone(),
-                }))
-                .serve_with_incoming(UnixListenerStream::new(listener)),
-        );
-        let image = OsImage {
-            url: Url::parse("file:///media/cosi/selected.cosi").unwrap(),
-            sha384: ImageSha384::new(&format!("sha384:{}", "ab".repeat(48))).unwrap(),
-        };
-        let config = ApiHostConfiguration {
-            image: Some(image.clone()),
-            ..Default::default()
-        };
-        let channel = connect(&format!("unix://{}", path.display()))
-            .await
-            .unwrap();
-        let stream = start(
-            channel,
-            Plan::Install {
-                config: Box::new(config),
-                source: "test".into(),
-            },
-        )
-        .await
-        .unwrap();
-        let (tx, mut rx) = mpsc::channel(4);
-        receive(stream, &tx).await.unwrap();
-        assert!(matches!(rx.recv().await.unwrap(), Event::Response(_)));
-        let request = captured.lock().unwrap().take().unwrap();
         assert_eq!(
-            request.finalize.unwrap().reboot.unwrap().handling,
-            i32::from(RebootHandling::CallerHandlesReboot)
+            completion(OperationOutcome::Failed(remote_failure())).unwrap(),
+            Completion::Failure(formatted)
         );
-        let received: ApiHostConfiguration =
-            serde_yaml::from_str(&request.stage.unwrap().config.unwrap().config).unwrap();
-        assert_eq!(received.image, Some(image));
-        server.abort();
     }
 
-    #[tokio::test]
-    /// Ensures a Unix gRPC stream retains trace logs and detects missing completion.
-    async fn real_unix_transport_preserves_trace_and_detects_missing_completion() {
-        for complete in [true, false] {
-            let root = TempDir::new().unwrap();
-            let path = root.path().join("trident.sock");
-            let listener = UnixListener::bind(&path).unwrap();
-            let server = tokio::spawn(
-                Server::builder()
-                    .add_service(StreamingServiceServer::new(Fake { complete }))
-                    .serve_with_incoming(UnixListenerStream::new(listener)),
-            );
-            let channel = connect(&format!("unix://{}", path.display()))
-                .await
-                .unwrap();
-            let stream = start(
-                channel,
-                Plan::Stream {
-                    image: Url::parse("https://example.com/image.cosi").unwrap(),
-                },
-            )
-            .await
-            .unwrap();
-            let (tx, mut rx) = mpsc::channel(8);
-            receive(stream, &tx).await.unwrap();
-            drop(tx);
-            let mut trace = false;
-            let mut completed = false;
-            let mut uncertain = false;
-            while let Some(event) = rx.recv().await {
-                match event {
-                    Event::Response(response) => match response.response.unwrap() {
-                        ResponseBody::Log(log) => trace = log.level() == LogLevel::Trace,
-                        ResponseBody::Completed(_) => completed = true,
-                        _ => {}
-                    },
-                    Event::Error {
-                        uncertain: value, ..
-                    } => uncertain = value,
-                    _ => {}
-                }
-            }
-            assert!(trace);
-            assert_eq!(completed, complete);
-            assert_eq!(uncertain, !complete);
-            server.abort();
-        }
+    #[test]
+    /// Distinguishes rejected writes and known failures from ambiguous servicing outcomes.
+    fn execution_uncertainty_is_preserved() {
+        assert!(!operation_uncertain(&ClientError::RequestRejected {
+            operation: Operation::StreamDisk,
+            code: RpcCode::FailedPrecondition,
+            message: "not started".into(),
+        }));
+        assert!(operation_uncertain(&ClientError::MissingCompletion {
+            operation: Operation::StreamDisk,
+        }));
+        assert!(operation_uncertain(&ClientError::InvalidProtocol {
+            operation: Operation::StreamDisk,
+            details: "invalid final status".into(),
+            state: ExecutionState::Completed,
+        }));
+        assert!(!operation_uncertain(&ClientError::RemoteFailure {
+            operation: Operation::StreamDisk,
+            remote: remote_failure(),
+        }));
     }
 }
