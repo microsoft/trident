@@ -162,7 +162,7 @@ async fn finish(
         .context(context)?;
 
     info!("Servicing completed successfully");
-    Ok(exit_kind(completion))
+    exit_kind(completion)
 }
 
 fn log_servicing_event(event: &ServicingEvent) {
@@ -173,6 +173,7 @@ fn log_servicing_event(event: &ServicingEvent) {
             log!(target: &target, log_level(record.level), "{}", record.message);
         }
         ServicingEvent::Completed(_) => {}
+        _ => {}
     }
 }
 
@@ -183,25 +184,27 @@ fn log_level(level: LogLevel) -> Level {
         LogLevel::Info => Level::Info,
         LogLevel::Debug => Level::Debug,
         LogLevel::Trace => Level::Trace,
+        _ => Level::Warn,
     }
 }
 
-fn exit_kind(completion: Completion) -> ExitKind {
+fn exit_kind(completion: Completion) -> Result<ExitKind, Error> {
     match completion.reboot {
         RebootDisposition::Started => {
             info!("A reboot has been started by Trident");
             // E2E A/B update tests depend on this exact message.
             debug!("Requesting reboot");
-            ExitKind::Done
+            Ok(ExitKind::Done)
         }
         RebootDisposition::Required => {
             info!("A reboot is required to complete the operation");
-            ExitKind::NeedsReboot
+            Ok(ExitKind::NeedsReboot)
         }
         RebootDisposition::NotRequired => {
             info!("No reboot is required to complete the operation");
-            ExitKind::Done
+            Ok(ExitKind::Done)
         }
+        disposition => bail!("Unsupported reboot disposition: {disposition:?}"),
     }
 }
 
@@ -227,20 +230,20 @@ mod tests {
     fn completion_maps_reboot_disposition() {
         let completion = |reboot| Completion {
             reboot,
-            servicing_type: None,
+            servicing_kind: None,
             image_hash: None,
         };
 
         assert_eq!(
-            exit_kind(completion(RebootDisposition::NotRequired)),
+            exit_kind(completion(RebootDisposition::NotRequired)).unwrap(),
             ExitKind::Done
         );
         assert_eq!(
-            exit_kind(completion(RebootDisposition::Started)),
+            exit_kind(completion(RebootDisposition::Started)).unwrap(),
             ExitKind::Done
         );
         assert_eq!(
-            exit_kind(completion(RebootDisposition::Required)),
+            exit_kind(completion(RebootDisposition::Required)).unwrap(),
             ExitKind::NeedsReboot
         );
     }
