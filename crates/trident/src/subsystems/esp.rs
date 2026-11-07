@@ -42,15 +42,7 @@ use crate::{
     },
 };
 
-const MSHV_SECOND_STAGE_EFI_FILENAME: &str = "second.efi";
-const MSHV_ESP_PAYLOAD_PATHS: [&str; 6] = [
-    "efi/HvLoader.efi",
-    "efi/lxhvloader.dll",
-    "efi/Windows/System32/hvix64.exe",
-    "efi/Windows/System32/hvax64.exe",
-    "efi/Windows/System32/kdstub.dll",
-    "efi/BOOT/second.efi",
-];
+mod mshv;
 
 #[derive(Default, Debug)]
 pub struct EspSubsystem;
@@ -109,35 +101,6 @@ pub fn set_uefi_fallback_contents(
         );
     }
     Ok(())
-}
-
-/// Configures clean-install UEFI fallback while retaining MSHV's second-stage
-/// loader when the provisional MSHV internal parameter is enabled.
-pub fn set_clean_install_uefi_fallback_contents(
-    ctx: &EngineContext,
-    mount_point: &Path,
-) -> Result<(), Error> {
-    if !ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD) {
-        return set_uefi_fallback_contents(ctx, ServicingState::CleanInstallStaged, mount_point);
-    }
-
-    let second_stage_path = path::join_relative(mount_point, ctx.esp_mount_path.as_path())
-        .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
-        .join(MSHV_SECOND_STAGE_EFI_FILENAME);
-    let second_stage = fs::read(&second_stage_path).context(format!(
-        "Failed to preserve MSHV second-stage loader '{}'",
-        second_stage_path.display()
-    ))?;
-
-    let fallback_result =
-        set_uefi_fallback_contents(ctx, ServicingState::CleanInstallStaged, mount_point);
-    let restore_result = fs::write(&second_stage_path, second_stage).context(format!(
-        "Failed to restore MSHV second-stage loader '{}'",
-        second_stage_path.display()
-    ));
-
-    fallback_result?;
-    restore_result
 }
 
 /// Performs file-based deployment of ESP images from the OS image.
@@ -414,7 +377,7 @@ fn copy_file_artifacts(
     }
 
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
-    let grub_noprefix =
+    let grub_noprefix: bool =
         copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
             "Failed to copy boot files from directory {} to directory {}",
             temp_mount_dir.display(),
@@ -478,55 +441,11 @@ fn copy_file_artifacts(
         );
     }
 
-    copy_mshv_esp_payload_for_clean_install(
-        temp_mount_dir,
-        &path::join_relative(mount_point, &ctx.esp_mount_path),
-        ctx,
-    )?;
-
-    Ok(())
-}
-
-fn copy_mshv_esp_payload_for_clean_install(
-    source_esp: &Path,
-    destination_esp: &Path,
-    ctx: &EngineContext,
-) -> Result<(), Error> {
-    if ctx.servicing_type != ServicingType::CleanInstall
-        || !ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD)
-    {
-        return Ok(());
-    }
-
-    for relative_path in MSHV_ESP_PAYLOAD_PATHS {
-        let source_path = source_esp.join(relative_path);
-        ensure!(
-            source_path.is_file(),
-            "Required MSHV ESP payload file '{relative_path}' is missing from the source ESP"
-        );
-    }
-
-    for relative_path in MSHV_ESP_PAYLOAD_PATHS {
-        let source_path = source_esp.join(relative_path);
-        let destination_path = destination_esp.join(relative_path);
-        let parent = destination_path.parent().context(format!(
-            "Failed to get parent directory for '{}'",
-            destination_path.display()
-        ))?;
-        fs::create_dir_all(parent).context(format!(
-            "Failed to create MSHV ESP payload directory '{}'",
-            parent.display()
-        ))?;
-        debug!(
-            "Copying MSHV ESP payload file '{}' to '{}'",
-            source_path.display(),
-            destination_path.display()
-        );
-        fs::copy(&source_path, &destination_path).context(format!(
-            "Failed to copy MSHV ESP payload file '{}' to '{}'",
-            source_path.display(),
-            destination_path.display()
-        ))?;
+    if ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD) {
+        mshv::copy_mshv_esp_payload(
+            temp_mount_dir,
+            &path::join_relative(mount_point, &ctx.esp_mount_path),
+        )?;
     }
 
     Ok(())
@@ -951,6 +870,25 @@ fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<Pa
         boot_efi_path.display()
     );
     paths.push(boot_efi_path);
+
+    // efitreeloader second efi
+    let efitreeloader_second = Path::new(temp_mount_dir)
+        .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+        .join(mshv::ETL_SECOND_STAGE_EFI_FILENAME);
+    if efitreeloader_second.exists() {
+        if efitreeloader_second.is_file() {
+            debug!(
+                "Using efitreeloader second-stage EFI executable from '{}'",
+                efitreeloader_second.display()
+            );
+            paths.push(efitreeloader_second);
+        } else {
+            bail!(
+                "Found efitreeloader second-stage EFI path '{}' but it is not a file",
+                efitreeloader_second.display()
+            );
+        }
+    }
 
     Ok(paths)
 }
@@ -1528,177 +1466,6 @@ mod tests {
                 assert!(!to_dir.path().join(file_name).exists());
             }
         }
-    }
-
-    #[test]
-    fn test_mshv_esp_payload_flag_disabled_leaves_esp_unchanged() {
-        let source_esp = TempDir::new().unwrap();
-        let destination_esp = TempDir::new().unwrap();
-        let managed_file = destination_esp.path().join("EFI/AZLA/bootx64.efi");
-        fs::create_dir_all(managed_file.parent().unwrap()).unwrap();
-        fs::write(&managed_file, "managed").unwrap();
-
-        copy_mshv_esp_payload_for_clean_install(
-            source_esp.path(),
-            destination_esp.path(),
-            &EngineContext::default(),
-        )
-        .unwrap();
-
-        assert_eq!(fs::read_to_string(managed_file).unwrap(), "managed");
-        for relative_path in MSHV_ESP_PAYLOAD_PATHS {
-            assert!(!destination_esp.path().join(relative_path).exists());
-        }
-    }
-
-    #[test]
-    fn test_mshv_esp_payload_flag_enabled_copies_exact_paths() {
-        let source_esp = TempDir::new().unwrap();
-        let destination_esp = TempDir::new().unwrap();
-        let managed_files = [
-            destination_esp.path().join("EFI/AZLA/bootx64.efi"),
-            destination_esp.path().join("EFI/Linux/trident.efi"),
-            destination_esp.path().join("EFI/BOOT/bootx64.efi"),
-        ];
-        for managed_file in &managed_files {
-            fs::create_dir_all(managed_file.parent().unwrap()).unwrap();
-            fs::write(managed_file, "managed").unwrap();
-        }
-        for relative_path in MSHV_ESP_PAYLOAD_PATHS {
-            let source_path = source_esp.path().join(relative_path);
-            fs::create_dir_all(source_path.parent().unwrap()).unwrap();
-            fs::write(&source_path, relative_path).unwrap();
-        }
-        let mut ctx = EngineContext {
-            servicing_type: ServicingType::CleanInstall,
-            ..Default::default()
-        };
-        ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
-
-        copy_mshv_esp_payload_for_clean_install(source_esp.path(), destination_esp.path(), &ctx)
-            .unwrap();
-
-        for relative_path in MSHV_ESP_PAYLOAD_PATHS {
-            assert_eq!(
-                fs::read_to_string(destination_esp.path().join(relative_path)).unwrap(),
-                relative_path
-            );
-        }
-        for managed_file in &managed_files {
-            assert_eq!(fs::read_to_string(managed_file).unwrap(), "managed");
-        }
-    }
-
-    #[test]
-    fn test_mshv_esp_payload_flag_enabled_fails_before_copy_when_required_file_missing() {
-        let source_esp = TempDir::new().unwrap();
-        let destination_esp = TempDir::new().unwrap();
-        let missing_path = "efi/Windows/System32/hvax64.exe";
-        for relative_path in MSHV_ESP_PAYLOAD_PATHS {
-            if relative_path == missing_path {
-                continue;
-            }
-            let source_path = source_esp.path().join(relative_path);
-            fs::create_dir_all(source_path.parent().unwrap()).unwrap();
-            fs::write(source_path, relative_path).unwrap();
-        }
-        let managed_file = destination_esp.path().join("EFI/AZLA/bootx64.efi");
-        fs::create_dir_all(managed_file.parent().unwrap()).unwrap();
-        fs::write(&managed_file, "managed").unwrap();
-        let mut ctx = EngineContext {
-            servicing_type: ServicingType::CleanInstall,
-            ..Default::default()
-        };
-        ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
-
-        let error = copy_mshv_esp_payload_for_clean_install(
-            source_esp.path(),
-            destination_esp.path(),
-            &ctx,
-        )
-        .unwrap_err();
-
-        assert!(
-            format!("{error:#}").contains(missing_path),
-            "unexpected error: {error:#}"
-        );
-        assert_eq!(fs::read_to_string(managed_file).unwrap(), "managed");
-        for relative_path in MSHV_ESP_PAYLOAD_PATHS {
-            assert!(!destination_esp.path().join(relative_path).exists());
-        }
-    }
-
-    #[test]
-    fn test_mshv_esp_payload_flag_enabled_is_ignored_outside_clean_install() {
-        let source_esp = TempDir::new().unwrap();
-        let destination_esp = TempDir::new().unwrap();
-        for relative_path in MSHV_ESP_PAYLOAD_PATHS {
-            let source_path = source_esp.path().join(relative_path);
-            fs::create_dir_all(source_path.parent().unwrap()).unwrap();
-            fs::write(source_path, relative_path).unwrap();
-        }
-        let mut ctx = EngineContext {
-            servicing_type: ServicingType::AbUpdate,
-            ..Default::default()
-        };
-        ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
-
-        copy_mshv_esp_payload_for_clean_install(source_esp.path(), destination_esp.path(), &ctx)
-            .unwrap();
-
-        for relative_path in MSHV_ESP_PAYLOAD_PATHS {
-            assert!(!destination_esp.path().join(relative_path).exists());
-        }
-    }
-
-    #[test]
-    fn test_uefi_fallback_copy_preserves_mshv_second_stage() {
-        let mount_point = TempDir::new().unwrap();
-        let esp_root = mount_point
-            .path()
-            .join(DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH);
-        let source_dir = esp_root.join(ESP_EFI_DIRECTORY).join("AZLA");
-        let fallback_dir = esp_root.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-        fs::create_dir_all(&source_dir).unwrap();
-        fs::create_dir_all(&fallback_dir).unwrap();
-        fs::write(source_dir.join(BOOT_EFI), "new boot").unwrap();
-        fs::write(source_dir.join(GRUB_EFI), "new grub").unwrap();
-        fs::write(fallback_dir.join(BOOT_EFI), "old boot").unwrap();
-        fs::write(fallback_dir.join(GRUB_EFI), "old grub").unwrap();
-        fs::write(
-            fallback_dir.join(MSHV_SECOND_STAGE_EFI_FILENAME),
-            "mshv second stage",
-        )
-        .unwrap();
-        fs::write(fallback_dir.join("stale.efi"), "stale").unwrap();
-        let mut ctx = EngineContext {
-            servicing_type: ServicingType::CleanInstall,
-            spec: HostConfiguration {
-                os: Os {
-                    uefi_fallback: UefiFallbackMode::Conservative,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        ctx.spec.internal_params.set_flag(PRESERVE_MSHV_ESP_PAYLOAD);
-
-        set_clean_install_uefi_fallback_contents(&ctx, mount_point.path()).unwrap();
-
-        assert_eq!(
-            fs::read_to_string(fallback_dir.join(BOOT_EFI)).unwrap(),
-            "new boot"
-        );
-        assert_eq!(
-            fs::read_to_string(fallback_dir.join(GRUB_EFI)).unwrap(),
-            "new grub"
-        );
-        assert_eq!(
-            fs::read_to_string(fallback_dir.join(MSHV_SECOND_STAGE_EFI_FILENAME)).unwrap(),
-            "mshv second stage"
-        );
-        assert!(!fallback_dir.join("stale.efi").exists());
     }
 
     #[test]
