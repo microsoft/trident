@@ -118,8 +118,10 @@ log entry. Continue opens recovery: Shell,
 Stream COSI URL, remote HC URL, or Shutdown. Shell `exit` returns to the
 originating screen. The recovery shell is a root login Bash, so it reads
 `/etc/profile` and the root profile (if present); on the installer ISO,
-`/etc/profile` gives root a red prompt. Installation continues while a shell
-is open; automatic reboot waits. The success screen offers Reboot and Shell.
+`/etc/profile` gives root a red prompt. The ISO service sets `TERM=linux`
+for tty1 so terminal tools such as `clear` work in the shell. Installation
+continues while a shell is open; automatic reboot waits. The success screen
+offers Reboot and Shell.
 Before each recovery attempt the baked configuration is reloaded, so shell
 edits take effect. Invalid or missing configuration never supplies implicit
 defaults for an installation.
