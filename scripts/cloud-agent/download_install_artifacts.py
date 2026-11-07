@@ -21,6 +21,7 @@ from download_functional_artifact import (  # noqa: E402
     CHUNK_SIZE,
     ArtifactError,
     build_api_url,
+    create_temporary_path,
     download_file,
     ensure_link,
     get_ado_token,
@@ -109,8 +110,11 @@ def find_payload_entry(
 def extract_payload(
     config: Dict[str, Any], archive_path: Path, payload_path: Path
 ) -> None:
-    temporary_path = payload_path.with_suffix(f"{payload_path.suffix}.tmp")
-    temporary_path.unlink(missing_ok=True)
+    temporary_path = create_temporary_path(
+        payload_path.parent,
+        prefix=f".{payload_path.name}.",
+        suffix=".tmp",
+    )
     try:
         with zipfile.ZipFile(archive_path) as archive:
             entry = find_payload_entry(archive, config["archivePath"])
@@ -165,11 +169,18 @@ def write_provenance(
         },
         "artifacts": prepared_artifacts,
     }
-    temporary_path = provenance_path.with_suffix(".tmp")
-    with temporary_path.open("w", encoding="utf-8") as provenance_file:
-        json.dump(provenance, provenance_file, indent=2)
-        provenance_file.write("\n")
-    os.replace(temporary_path, provenance_path)
+    temporary_path = create_temporary_path(
+        provenance_path.parent,
+        prefix=f".{provenance_path.name}.",
+        suffix=".tmp",
+    )
+    try:
+        with temporary_path.open("w", encoding="utf-8") as provenance_file:
+            json.dump(provenance, provenance_file, indent=2)
+            provenance_file.write("\n")
+        os.replace(temporary_path, provenance_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def prepare_artifacts(
