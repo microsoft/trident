@@ -871,7 +871,7 @@ fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<Pa
     );
     paths.push(boot_efi_path);
 
-    // efitreeloader second efi
+    // Add efitreeloader second.efi to the list when present.
     let efitreeloader_second = Path::new(temp_mount_dir)
         .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
         .join(mshv::ETL_SECOND_STAGE_EFI_FILENAME);
