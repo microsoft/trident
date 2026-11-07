@@ -183,8 +183,7 @@ PY
     bin/virtdeploy create-one \
         --namespace "$namespace" \
         --mem 12 \
-        --disk 32 \
-        --disk 32 \
+        --disks 32,32 \
         --netlaunch "$netlaunch_config" \
         --json >"$virtdeploy_status"
 
