@@ -6,7 +6,8 @@ from pathlib import Path
 
 import yaml
 
-POLICY_FILES = ("trident.te", "trident.if", "trident.fc")
+# The installed interface is already in the SELinux development include path.
+POLICY_FILES = ("trident.te", "trident.fc")
 POLICY_SCRIPT_NAME = "load-candidate-trident-selinux-policy"
 
 

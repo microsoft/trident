@@ -17,7 +17,6 @@ class PrepareInstallHostConfigTests(unittest.TestCase):
     def write_policy(self, root: Path) -> dict[str, bytes]:
         contents = {
             "trident.te": b"policy_module(trident, 1.0)\n",
-            "trident.if": b"## <summary>Trident</summary>\n",
             "trident.fc": b"/usr/bin/trident -- gen_context(system_u:object_r:trident_exec_t,s0)\n",
         }
         for name, content in contents.items():
