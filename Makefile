@@ -550,9 +550,12 @@ go.sum: go.mod
 .PHONY: go-tools
 go-tools: bin/netlaunch bin/netlisten bin/miniproxy bin/virtdeploy bin/isopatch bin/mkcosi bin/storm-trident bin/rcp-agent
 
-bin/netlaunch: tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/pkg/netlaunch/*
-	@mkdir -p bin
+.PHONY: generate-tridentgrpc
+generate-tridentgrpc:
 	cd tools && go generate pkg/tridentgrpc/grpc.go
+
+bin/netlaunch: generate-tridentgrpc tools/cmd/netlaunch/* tools/go.sum tools/pkg/* tools/pkg/netlaunch/*
+	@mkdir -p bin
 	cd tools && go build -o ../bin/netlaunch ./cmd/netlaunch
 
 bin/netlisten: tools/cmd/netlisten/* tools/go.sum tools/pkg/*
@@ -579,7 +582,7 @@ bin/storm-trident: tools/cmd/storm-trident/main.go tools/storm/**/*
 	cd tools && go generate storm/e2e/discover.go
 	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
 
-bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtdeploy/*
+bin/virtdeploy: generate-tridentgrpc tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtdeploy/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/virtdeploy ./cmd/virtdeploy
 
