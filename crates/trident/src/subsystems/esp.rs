@@ -22,9 +22,9 @@ use osutils::{
 use trident_api::{
     config::UefiFallbackMode,
     constants::{
-        internal_params::DISABLE_GRUB_NOPREFIX_CHECK, EFI_DEFAULT_BIN_DIRECTORY,
-        EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY, GRUB2_CONFIG_FILENAME,
-        GRUB2_CONFIG_RELATIVE_PATH,
+        internal_params::{DISABLE_GRUB_NOPREFIX_CHECK, PRESERVE_MSHV_ESP_PAYLOAD},
+        EFI_DEFAULT_BIN_DIRECTORY, EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY,
+        GRUB2_CONFIG_FILENAME, GRUB2_CONFIG_RELATIVE_PATH,
     },
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{AbVolumeSelection, ServicingState, ServicingType},
@@ -41,6 +41,8 @@ use crate::{
         read_monitor::ReadMonitor,
     },
 };
+
+mod mshv;
 
 #[derive(Default, Debug)]
 pub struct EspSubsystem;
@@ -437,6 +439,13 @@ fn copy_file_artifacts(
             "Cannot locate {GRUB_NOPREFIX_EFI} in the boot image. \
                 Verify if the grub2-efi-binary-noprefix package was installed on the booted image.",
         );
+    }
+
+    if ctx.spec.internal_params.get_flag(PRESERVE_MSHV_ESP_PAYLOAD) {
+        mshv::copy_mshv_esp_payload(
+            temp_mount_dir,
+            &path::join_relative(mount_point, &ctx.esp_mount_path),
+        )?;
     }
 
     Ok(())
@@ -861,6 +870,25 @@ fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<Pa
         boot_efi_path.display()
     );
     paths.push(boot_efi_path);
+
+    // Add efitreeloader second.efi to the list when present.
+    let efitreeloader_second = Path::new(temp_mount_dir)
+        .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+        .join(mshv::ETL_SECOND_STAGE_EFI_FILENAME);
+    if efitreeloader_second.exists() {
+        if efitreeloader_second.is_file() {
+            debug!(
+                "Using efitreeloader second-stage EFI executable from '{}'",
+                efitreeloader_second.display()
+            );
+            paths.push(efitreeloader_second);
+        } else {
+            bail!(
+                "Found efitreeloader second-stage EFI path '{}' but it is not a file",
+                efitreeloader_second.display()
+            );
+        }
+    }
 
     Ok(paths)
 }
@@ -1567,6 +1595,7 @@ mod tests {
             PathBuf::from(GRUB2_CONFIG_FILENAME),
             PathBuf::from(GRUB_EFI),
             PathBuf::from(BOOT_EFI),
+            PathBuf::from(mshv::ETL_SECOND_STAGE_EFI_FILENAME),
         ];
 
         // Call helper func to create mock boot files in temp_mount_dir
@@ -1606,6 +1635,7 @@ mod tests {
             PathBuf::from(GRUB2_CONFIG_FILENAME),
             PathBuf::from(GRUB_NOPREFIX_EFI),
             PathBuf::from(BOOT_EFI),
+            PathBuf::from(mshv::ETL_SECOND_STAGE_EFI_FILENAME),
         ];
 
         // Call helper func to create mock boot files in temp_mount_dir
@@ -1761,6 +1791,75 @@ mod tests {
                 boot_efi_path.display()
             )
         );
+    }
+
+    /// Verifies optional ETL second-stage discovery and copying for UKI and
+    /// non-UKI images, with either standard or noprefix GRUB.
+    #[test]
+    fn test_generate_boot_filepaths_second_stage() {
+        for is_uki in [false, true] {
+            for grub_filename in [GRUB_EFI, GRUB_NOPREFIX_EFI] {
+                let source = TempDir::new().unwrap();
+                let boot_dir = Path::new(EFI_DEFAULT_BIN_RELATIVE_PATH);
+                let mut relative_paths = Vec::new();
+                if !is_uki {
+                    relative_paths.push(boot_dir.join(GRUB2_CONFIG_FILENAME));
+                }
+                relative_paths.push(boot_dir.join(grub_filename));
+                relative_paths.push(boot_dir.join(BOOT_EFI));
+                create_boot_files(source.path(), &relative_paths, "test-content");
+                let mut expected_paths: Vec<PathBuf> = relative_paths
+                    .iter()
+                    .map(|path| source.path().join(path))
+                    .collect();
+                let second_stage = source
+                    .path()
+                    .join(boot_dir)
+                    .join(mshv::ETL_SECOND_STAGE_EFI_FILENAME);
+
+                // Images without ETL must keep their existing boot-file list.
+                assert_eq!(
+                    generate_boot_filepaths(source.path(), is_uki).unwrap(),
+                    expected_paths,
+                    "missing optional second stage: is_uki={is_uki}, grub={grub_filename}"
+                );
+
+                // ETL's second stage must be appended once, regardless of boot mode.
+                fs::write(&second_stage, [0, 0xff, 1, 0x80]).unwrap();
+                expected_paths.push(second_stage.clone());
+                let generated_paths = generate_boot_filepaths(source.path(), is_uki).unwrap();
+                assert_eq!(
+                    generated_paths, expected_paths,
+                    "second stage must be appended exactly once: is_uki={is_uki}, grub={grub_filename}"
+                );
+
+                // GRUB's noprefix rename must not affect the second-stage filename
+                // or binary contents, and copying must leave the source intact.
+                let destination = TempDir::new().unwrap();
+                let noprefix =
+                    copy_boot_files(source.path(), destination.path(), generated_paths).unwrap();
+                assert_eq!(noprefix, grub_filename == GRUB_NOPREFIX_EFI);
+                assert_eq!(
+                    fs::read(destination.path().join(mshv::ETL_SECOND_STAGE_EFI_FILENAME)).unwrap(),
+                    [0, 0xff, 1, 0x80]
+                );
+                assert_eq!(fs::read(&second_stage).unwrap(), [0, 0xff, 1, 0x80]);
+
+                // An invalid second-stage path must fail rather than be silently
+                // omitted from the generated list.
+                fs::remove_file(&second_stage).unwrap();
+                fs::create_dir(&second_stage).unwrap();
+                let error = generate_boot_filepaths(source.path(), is_uki).unwrap_err();
+                assert_eq!(
+                    error.to_string(),
+                    format!(
+                        "Found efitreeloader second-stage EFI path '{}' but it is not a file",
+                        second_stage.display()
+                    ),
+                    "second-stage directory must be rejected: is_uki={is_uki}, grub={grub_filename}"
+                );
+            }
+        }
     }
 
     /// Tests that [`ensure_esp_extraction_dir`] creates the staging directory
