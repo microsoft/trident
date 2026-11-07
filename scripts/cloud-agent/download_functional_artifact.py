@@ -203,8 +203,11 @@ def find_image_entry(
 
 
 def extract_image(config: Dict[str, Any], archive_path: Path, image_path: Path) -> None:
-    temporary_path = image_path.with_suffix(f"{image_path.suffix}.tmp")
-    temporary_path.unlink(missing_ok=True)
+    temporary_path = create_temporary_path(
+        image_path.parent,
+        prefix=f".{image_path.name}.",
+        suffix=".tmp",
+    )
     try:
         with zipfile.ZipFile(archive_path) as archive:
             entry = find_image_entry(archive, config["imageFilename"])
@@ -231,6 +234,16 @@ def extract_image(config: Dict[str, Any], archive_path: Path, image_path: Path) 
         temporary_path.unlink(missing_ok=True)
 
 
+def create_temporary_path(directory: Path, prefix: str, suffix: str) -> Path:
+    descriptor, temporary_path = tempfile.mkstemp(
+        dir=directory,
+        prefix=prefix,
+        suffix=suffix,
+    )
+    os.close(descriptor)
+    return Path(temporary_path)
+
+
 def ensure_link(image_path: Path, link_path: Path) -> None:
     link_path.parent.mkdir(parents=True, exist_ok=True)
     if link_path.is_symlink():
@@ -239,7 +252,12 @@ def ensure_link(image_path: Path, link_path: Path) -> None:
         raise ArtifactError(f"Refusing to replace existing symlink: {link_path}")
     if link_path.exists():
         raise ArtifactError(f"Refusing to replace existing path: {link_path}")
-    link_path.symlink_to(image_path)
+    try:
+        link_path.symlink_to(image_path)
+    except FileExistsError:
+        if link_path.is_symlink() and link_path.resolve() == image_path.resolve():
+            return
+        raise ArtifactError(f"Refusing to replace existing path: {link_path}")
 
 
 def write_provenance(
@@ -275,11 +293,18 @@ def write_provenance(
             "sha256": config["imageSha256"],
         },
     }
-    temporary_path = provenance_path.with_suffix(".tmp")
-    with temporary_path.open("w", encoding="utf-8") as provenance_file:
-        json.dump(provenance, provenance_file, indent=2)
-        provenance_file.write("\n")
-    os.replace(temporary_path, provenance_path)
+    temporary_path = create_temporary_path(
+        provenance_path.parent,
+        prefix=f".{provenance_path.name}.",
+        suffix=".tmp",
+    )
+    try:
+        with temporary_path.open("w", encoding="utf-8") as provenance_file:
+            json.dump(provenance, provenance_file, indent=2)
+            provenance_file.write("\n")
+        os.replace(temporary_path, provenance_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def prepare_artifact(

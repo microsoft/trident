@@ -86,6 +86,16 @@ class FunctionalArtifactTests(unittest.TestCase):
             self.assertEqual(image_path.read_bytes(), image)
             self.assertTrue(MODULE.image_matches(self.config, image_path))
 
+    def test_temporary_paths_are_unique(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            first = MODULE.create_temporary_path(temp_path, ".image.", ".tmp")
+            second = MODULE.create_temporary_path(temp_path, ".image.", ".tmp")
+            self.addCleanup(first.unlink, missing_ok=True)
+            self.addCleanup(second.unlink, missing_ok=True)
+
+            self.assertNotEqual(first, second)
+
     def test_load_config_rejects_unknown_schema(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.json"
@@ -102,6 +112,7 @@ class FunctionalArtifactTests(unittest.TestCase):
             image_path.parent.mkdir()
             image_path.write_bytes(b"image")
 
+            MODULE.ensure_link(image_path.resolve(), link_path)
             MODULE.ensure_link(image_path.resolve(), link_path)
 
             self.assertTrue(link_path.is_symlink())

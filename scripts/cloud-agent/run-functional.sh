@@ -5,6 +5,7 @@ set -euo pipefail
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly TEST_DIR="/tmp/trident-test"
 readonly JUNIT_XML="target/trident_functional_tests.xml"
+build_output=""
 
 usage() {
     cat <<'EOF'
@@ -18,6 +19,20 @@ EOF
 run() {
     printf '\n==> %s\n' "$*"
     "$@"
+}
+
+cleanup() {
+    local exit_code=$?
+
+    trap - EXIT
+    set +e
+    if [[ -n "$build_output" ]]; then
+        rm -f -- "$build_output"
+    fi
+    if [[ -x "$REPO_ROOT/bin/virtdeploy" ]]; then
+        "$REPO_ROOT/bin/virtdeploy" clean
+    fi
+    exit "$exit_code"
 }
 
 enter_libvirt_group() {
@@ -44,8 +59,6 @@ enter_libvirt_group() {
 main() {
     local mode="${1:-smoke}"
     local marker_expression
-    local build_output
-    local cleanup_command
     local -a test_paths
 
     case "$mode" in
@@ -90,8 +103,7 @@ main() {
     run python3 scripts/cloud-agent/download_functional_artifact.py
 
     build_output="$(mktemp)"
-    printf -v cleanup_command 'rm -f -- %q' "$build_output"
-    trap "$cleanup_command" EXIT
+    trap cleanup EXIT
 
     run make \
         "BUILD_OUTPUT=$build_output" \
