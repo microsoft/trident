@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use serde::{Deserialize, Serialize};
 
 use sysdefs::osuuid::OsUuid;
@@ -160,17 +160,80 @@ pub enum PartitionTableType {
 /// structs.
 ///
 pub fn list() -> Result<Vec<BlockDevice>, Error> {
-    let result = Dependency::Lsblk
+    parse_lsblk_output(&lsblk_output()?)
+}
+
+/// Reads the full device tree once for either block-device or label inspection.
+fn lsblk_output() -> Result<String, Error> {
+    Dependency::Lsblk
         .cmd()
         .arg("--json")
         .arg("--output-all")
         .arg("--bytes")
         .output_and_check()
-        .context("Failed to execute lsblk")?;
+        .context("Failed to execute lsblk")
+}
 
-    let parsed: Vec<BlockDevice> = parse_lsblk_output(result.as_str())?;
+#[derive(Deserialize, Default)]
+struct LabelledDevice {
+    name: String,
+    label: Option<String>,
+    #[serde(default)]
+    children: Vec<LabelledDevice>,
+}
 
-    Ok(parsed)
+#[derive(Deserialize)]
+struct LabelledDevices {
+    blockdevices: Vec<LabelledDevice>,
+}
+
+/// Finds all devices with a filesystem label, including devices nested below disks.
+pub fn devices_by_label(label: impl AsRef<str>) -> Result<Vec<PathBuf>, Error> {
+    let label = label.as_ref();
+    ensure!(!label.is_empty(), "Filesystem label must not be empty");
+    devices_by_labels(&[label])
+}
+
+/// Finds devices matching any of the given filesystem labels in one `lsblk` scan.
+pub fn devices_by_labels(labels: &[&str]) -> Result<Vec<PathBuf>, Error> {
+    ensure!(
+        !labels.is_empty() && labels.iter().all(|label| !label.is_empty()),
+        "Filesystem labels must not be empty"
+    );
+    let mut devices = Vec::new();
+    collect_devices_by_labels(
+        &parse_labelled_devices(&lsblk_output()?)?,
+        labels,
+        &mut devices,
+    );
+    devices.sort();
+    devices.dedup();
+    Ok(devices)
+}
+
+/// Parses only the fields needed for label discovery without changing `BlockDevice`.
+fn parse_labelled_devices(output: &str) -> Result<Vec<LabelledDevice>, Error> {
+    let parsed: LabelledDevices =
+        serde_json::from_str(output).context("Failed to parse lsblk label output")?;
+    Ok(parsed.blockdevices)
+}
+
+/// Adds paths of matching devices and their descendants.
+fn collect_devices_by_labels(
+    devices: &[LabelledDevice],
+    labels: &[&str],
+    matches: &mut Vec<PathBuf>,
+) {
+    for device in devices {
+        if device
+            .label
+            .as_deref()
+            .is_some_and(|label| labels.contains(&label))
+        {
+            matches.push(Path::new("/dev").join(&device.name));
+        }
+        collect_devices_by_labels(&device.children, labels, matches);
+    }
 }
 
 /// Finds and returns all block devices (and their children) that match a
@@ -306,6 +369,67 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    /// Ensures optical and partition labels both match, and rejects empty label filters.
+    fn label_scan_includes_cdrom_and_detects_duplicate_filesystem_labels() {
+        let devices = vec![
+            LabelledDevice {
+                name: "sr0".into(),
+                label: Some("CDROM".into()),
+                ..Default::default()
+            },
+            LabelledDevice {
+                name: "sda".into(),
+                children: vec![LabelledDevice {
+                    name: "sda1".into(),
+                    label: Some("CDROM".into()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        ];
+        let mut matches = Vec::new();
+        collect_devices_by_labels(&devices, &["CDROM"], &mut matches);
+        matches.sort();
+        assert_eq!(
+            matches,
+            [PathBuf::from("/dev/sda1"), PathBuf::from("/dev/sr0")]
+        );
+        assert!(devices_by_label("").is_err());
+        assert!(devices_by_labels(&[]).is_err());
+        assert!(devices_by_labels(&["CDROM", ""]).is_err());
+    }
+
+    #[test]
+    /// Ensures optical-drive labels survive parsing the `lsblk` JSON tree.
+    fn parses_optical_drive_label_from_lsblk_json() {
+        let devices = parse_labelled_devices(
+            r#"{"blockdevices":[{"name":"sr0","size":355497984,"type":"rom","label":"CDROM"}]}"#,
+        )
+        .unwrap();
+        let mut matches = Vec::new();
+        collect_devices_by_labels(&devices, &["CDROM"], &mut matches);
+        assert_eq!(matches, [PathBuf::from("/dev/sr0")]);
+    }
+
+    #[test]
+    /// Ensures optical and GPT USB labels are both found without choosing between them.
+    fn parses_gpt_usb_partition_label_from_lsblk_json() {
+        let output = r#"{"blockdevices":[{"name":"sdb","size":1073741824,"type":"disk","pttype":"gpt","children":[{"name":"sdb1","size":1069547520,"type":"part","fstype":"vfat","label":"TRD_INSTALL"}]},{"name":"sr0","size":355497984,"type":"rom","label":"CDROM"}]}"#;
+        let devices = parse_labelled_devices(output).unwrap();
+        let mut matches = Vec::new();
+        collect_devices_by_labels(&devices, &["TRD_INSTALL", "CDROM"], &mut matches);
+        assert_eq!(
+            matches,
+            [PathBuf::from("/dev/sdb1"), PathBuf::from("/dev/sr0")]
+        );
+        let devices = parse_lsblk_output(output).unwrap();
+        assert_eq!(
+            devices[0].partition_table_type,
+            Some(PartitionTableType::Gpt)
+        );
+    }
 
     /// Output obtained from running `lsblk --json --bytes --output-all --paths /dev/sda`
     /// on the functional test VM AzL 3.0, lsblk from util-linux 2.40.2
