@@ -1,17 +1,7 @@
-use std::{
-    fmt,
-    future::Future,
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::{fmt, future::Future, time::Duration};
 
-use hyper_util::rt::TokioIo;
-use tokio::{net::UnixStream, time};
-use tonic::{
-    transport::{Channel, Endpoint, Uri},
-    Request, Response, Status, Streaming,
-};
-use tower::service_fn;
+use tokio::time;
+use tonic::{transport::Channel, Request, Response, Status, Streaming};
 
 use trident_api::{config::HostConfiguration, primitives::hash::Sha384Hash};
 use trident_proto::{
@@ -19,16 +9,18 @@ use trident_proto::{
         commit_service_client::CommitServiceClient, rollback_service_client::RollbackServiceClient,
         streaming_service_client::StreamingServiceClient,
         update_service_client::UpdateServiceClient, version_service_client::VersionServiceClient,
-        CommitRequest, FinalizeUpdateRequest, HostConfiguration as ProtoHostConfiguration,
-        ManualRollbackKind, RebootHandling, RebootManagement, RollbackFinalizeRequest,
-        RollbackRequest, RollbackStageRequest, ServicingResponse, StageUpdateRequest,
-        StreamDiskRequest, UpdateRequest, VersionRequest,
+        CommitRequest, FinalizeUpdateRequest, RollbackFinalizeRequest, RollbackRequest,
+        RollbackStageRequest, ServicingResponse, StageUpdateRequest, StreamDiskRequest,
+        UpdateRequest, VersionRequest,
     },
     TRIDENT_DEFAULT_SOCKET_URI,
 };
 use url::Url;
 
-use crate::{error, ClientError, Operation, RebootPolicy, RollbackKind, ServicingOperation};
+use crate::{
+    protocol::{self, Operation},
+    transport, ClientError, RebootPolicy, RollbackKind, ServicingOperation,
+};
 
 /// Default `tridentd` Unix socket URI.
 pub const DEFAULT_ENDPOINT: &str = TRIDENT_DEFAULT_SOCKET_URI;
@@ -36,7 +28,6 @@ pub const DEFAULT_ENDPOINT: &str = TRIDENT_DEFAULT_SOCKET_URI;
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_REQUEST_ACKNOWLEDGEMENT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_UNARY_TIMEOUT: Duration = Duration::from_secs(30);
-const CONNECTOR_ENDPOINT: &str = "http://[::]:50051";
 
 /// Builder for a multiplexed [`Client`].
 #[derive(Clone)]
@@ -53,7 +44,7 @@ impl fmt::Debug for ClientBuilder {
             .debug_struct("ClientBuilder")
             .field(
                 "endpoint",
-                &endpoint_for_diagnostics(self.endpoint.as_str()),
+                &transport::endpoint_for_diagnostics(self.endpoint.as_str()),
             )
             .field("connect_timeout", &self.connect_timeout)
             .field(
@@ -103,7 +94,7 @@ impl ClientBuilder {
 
     /// Establishes the shared HTTP/2 channel.
     pub async fn connect(self) -> Result<Client, ClientError> {
-        let channel = connect_channel(&self.endpoint, self.connect_timeout).await?;
+        let channel = transport::connect_channel(&self.endpoint, self.connect_timeout).await?;
         Ok(Client {
             channel,
             request_acknowledgement_timeout: self.request_acknowledgement_timeout,
@@ -168,10 +159,13 @@ impl Client {
         image_hash: Option<&Sha384Hash>,
         reboot: RebootPolicy,
     ) -> Result<ServicingOperation, ClientError> {
+        if let Some(image_hash) = image_hash {
+            protocol::validate_sha384_hash(image_hash)?;
+        }
         let request = StreamDiskRequest {
             image_url: image_url.to_string(),
             image_hash: image_hash.map(|hash| format!("sha384:{hash}")),
-            reboot: Some(reboot_management(reboot)),
+            reboot: Some(protocol::reboot_management(reboot)),
         };
         let mut client = StreamingServiceClient::new(self.channel.clone());
         self.servicing(
@@ -187,8 +181,11 @@ impl Client {
         config: &HostConfiguration,
         reboot: RebootPolicy,
     ) -> Result<ServicingOperation, ClientError> {
-        self.update_yaml(serialize_config(Operation::Update, config)?, reboot)
-            .await
+        self.update_yaml(
+            protocol::serialize_config(Operation::Update, config)?,
+            reboot,
+        )
+        .await
     }
 
     /// Performs an update using Host Configuration YAML unchanged.
@@ -199,10 +196,10 @@ impl Client {
     ) -> Result<ServicingOperation, ClientError> {
         let request = UpdateRequest {
             stage: Some(StageUpdateRequest {
-                config: Some(proto_config(config)),
+                config: Some(protocol::proto_config(config)),
             }),
             finalize: Some(FinalizeUpdateRequest {
-                reboot: Some(reboot_management(reboot)),
+                reboot: Some(protocol::reboot_management(reboot)),
             }),
         };
         let mut client = UpdateServiceClient::new(self.channel.clone());
@@ -215,7 +212,7 @@ impl Client {
         &self,
         config: &HostConfiguration,
     ) -> Result<ServicingOperation, ClientError> {
-        self.update_stage_yaml(serialize_config(Operation::UpdateStage, config)?)
+        self.update_stage_yaml(protocol::serialize_config(Operation::UpdateStage, config)?)
             .await
     }
 
@@ -225,7 +222,7 @@ impl Client {
         config: impl Into<String>,
     ) -> Result<ServicingOperation, ClientError> {
         let request = StageUpdateRequest {
-            config: Some(proto_config(config)),
+            config: Some(protocol::proto_config(config)),
         };
         let mut client = UpdateServiceClient::new(self.channel.clone());
         self.servicing(
@@ -241,7 +238,7 @@ impl Client {
         reboot: RebootPolicy,
     ) -> Result<ServicingOperation, ClientError> {
         let request = FinalizeUpdateRequest {
-            reboot: Some(reboot_management(reboot)),
+            reboot: Some(protocol::reboot_management(reboot)),
         };
         let mut client = UpdateServiceClient::new(self.channel.clone());
         self.servicing(
@@ -254,7 +251,7 @@ impl Client {
     /// Commits completed servicing.
     pub async fn commit(&self, reboot: RebootPolicy) -> Result<ServicingOperation, ClientError> {
         let request = CommitRequest {
-            reboot: Some(reboot_management(reboot)),
+            reboot: Some(protocol::reboot_management(reboot)),
         };
         let mut client = CommitServiceClient::new(self.channel.clone());
         self.servicing(Operation::Commit, client.commit(Request::new(request)))
@@ -269,10 +266,10 @@ impl Client {
     ) -> Result<ServicingOperation, ClientError> {
         let request = RollbackRequest {
             stage: Some(RollbackStageRequest {
-                kind: rollback_kind(kind),
+                kind: protocol::rollback_kind(kind),
             }),
             finalize: Some(RollbackFinalizeRequest {
-                reboot: Some(reboot_management(reboot)),
+                reboot: Some(protocol::reboot_management(reboot)),
             }),
         };
         let mut client = RollbackServiceClient::new(self.channel.clone());
@@ -286,7 +283,7 @@ impl Client {
         kind: RollbackKind,
     ) -> Result<ServicingOperation, ClientError> {
         let request = RollbackStageRequest {
-            kind: rollback_kind(kind),
+            kind: protocol::rollback_kind(kind),
         };
         let mut client = RollbackServiceClient::new(self.channel.clone());
         self.servicing(
@@ -302,7 +299,7 @@ impl Client {
         reboot: RebootPolicy,
     ) -> Result<ServicingOperation, ClientError> {
         let request = RollbackFinalizeRequest {
-            reboot: Some(reboot_management(reboot)),
+            reboot: Some(protocol::reboot_management(reboot)),
         };
         let mut client = RollbackServiceClient::new(self.channel.clone());
         self.servicing(
@@ -318,15 +315,17 @@ impl Client {
         request: F,
     ) -> Result<ServicingOperation, ClientError>
     where
-        F: FutureServicingResponse,
+        F: Future<Output = Result<Response<Streaming<ServicingResponse>>, Status>> + Send,
     {
-        let response = time::timeout(self.request_acknowledgement_timeout, request.into_future())
+        let response = time::timeout(self.request_acknowledgement_timeout, request)
             .await
-            .map_err(|_| ClientError::RequestAcknowledgementTimeout {
-                operation,
-                timeout: self.request_acknowledgement_timeout,
+            .map_err(|_| {
+                ClientError::request_acknowledgement_timeout(
+                    operation,
+                    self.request_acknowledgement_timeout,
+                )
             })?
-            .map_err(|status| error::rejected(operation, status))?;
+            .map_err(|status| ClientError::request_rejected(operation, status))?;
         Ok(ServicingOperation::new(operation, response.into_inner()))
     }
 
@@ -336,198 +335,11 @@ impl Client {
         request: F,
     ) -> Result<Response<T>, ClientError>
     where
-        F: FutureUnaryResponse<T>,
+        F: Future<Output = Result<Response<T>, Status>> + Send,
     {
-        time::timeout(self.unary_timeout, request.into_future())
+        time::timeout(self.unary_timeout, request)
             .await
-            .map_err(|_| ClientError::UnaryTimeout {
-                operation,
-                timeout: self.unary_timeout,
-            })?
-            .map_err(|status| error::rejected(operation, status))
+            .map_err(|_| ClientError::unary_timeout(operation, self.unary_timeout))?
+            .map_err(|status| ClientError::request_rejected(operation, status))
     }
-}
-
-pub(crate) trait FutureServicingResponse {
-    type Future: Future<Output = Result<Response<Streaming<ServicingResponse>>, Status>> + Send;
-
-    fn into_future(self) -> Self::Future;
-}
-
-impl<F> FutureServicingResponse for F
-where
-    F: Future<Output = Result<Response<Streaming<ServicingResponse>>, Status>> + Send,
-{
-    type Future = F;
-
-    fn into_future(self) -> Self::Future {
-        self
-    }
-}
-
-pub(crate) trait FutureUnaryResponse<T> {
-    type Future: Future<Output = Result<Response<T>, Status>> + Send;
-
-    fn into_future(self) -> Self::Future;
-}
-
-impl<T, F> FutureUnaryResponse<T> for F
-where
-    F: Future<Output = Result<Response<T>, Status>> + Send,
-{
-    type Future = F;
-
-    fn into_future(self) -> Self::Future {
-        self
-    }
-}
-
-async fn connect_channel(endpoint: &str, timeout: Duration) -> Result<Channel, ClientError> {
-    let url =
-        Url::parse(endpoint).map_err(|error| invalid_endpoint(endpoint, error.to_string()))?;
-
-    match url.scheme() {
-        "unix" => connect_unix(endpoint, &url, timeout).await,
-        "http" => connect_tcp(endpoint, timeout).await,
-        scheme => Err(invalid_endpoint(
-            endpoint,
-            format!("unsupported endpoint scheme '{scheme}'"),
-        )),
-    }
-}
-
-async fn connect_tcp(endpoint: &str, timeout: Duration) -> Result<Channel, ClientError> {
-    let transport = Endpoint::from_shared(endpoint.to_string())
-        .map_err(|error| invalid_endpoint(endpoint, error.to_string()))?;
-    time::timeout(timeout, transport.connect())
-        .await
-        .map_err(|_| connection_error(endpoint, format!("connection timed out after {timeout:?}")))?
-        .map_err(|error| connection_error(endpoint, error.to_string()))
-}
-
-async fn connect_unix(
-    endpoint: &str,
-    url: &Url,
-    timeout: Duration,
-) -> Result<Channel, ClientError> {
-    if url.host().is_some() || url.query().is_some() || url.fragment().is_some() {
-        return Err(invalid_endpoint(
-            endpoint,
-            "Unix endpoints must contain only an absolute socket path",
-        ));
-    }
-    let path = unix_socket_path(endpoint, url)?;
-    if !path.is_absolute() || path == Path::new("/") {
-        return Err(invalid_endpoint(
-            endpoint,
-            "Unix endpoint path must be absolute and non-empty",
-        ));
-    }
-
-    let transport = Endpoint::from_shared(CONNECTOR_ENDPOINT.to_string())
-        .map_err(|error| invalid_endpoint(endpoint, error.to_string()))?;
-    let connector = service_fn(move |_: Uri| {
-        let path = path.clone();
-        async move { UnixStream::connect(path).await.map(TokioIo::new) }
-    });
-    time::timeout(timeout, transport.connect_with_connector(connector))
-        .await
-        .map_err(|_| connection_error(endpoint, format!("connection timed out after {timeout:?}")))?
-        .map_err(|error| connection_error(endpoint, error.to_string()))
-}
-
-fn unix_socket_path(endpoint: &str, url: &Url) -> Result<PathBuf, ClientError> {
-    let file_url = Url::parse(&format!("file://{}", url.path())).map_err(|error| {
-        invalid_endpoint(
-            endpoint,
-            format!("Unix endpoint path could not be decoded: {error}"),
-        )
-    })?;
-    file_url
-        .to_file_path()
-        .map_err(|()| invalid_endpoint(endpoint, "Unix endpoint path could not be decoded"))
-}
-
-fn invalid_endpoint(endpoint: &str, details: impl Into<String>) -> ClientError {
-    ClientError::InvalidEndpoint {
-        endpoint: endpoint_for_diagnostics(endpoint),
-        details: endpoint_details_for_diagnostics(endpoint, details),
-    }
-}
-
-fn connection_error(endpoint: &str, details: impl Into<String>) -> ClientError {
-    ClientError::Connection {
-        endpoint: endpoint_for_diagnostics(endpoint),
-        details: endpoint_details_for_diagnostics(endpoint, details),
-    }
-}
-
-fn endpoint_for_diagnostics(endpoint: &str) -> String {
-    let Ok(mut url) = Url::parse(endpoint) else {
-        return "<invalid endpoint>".to_string();
-    };
-
-    if !url.username().is_empty() && url.set_username("redacted").is_err() {
-        return "<redacted endpoint>".to_string();
-    }
-    if url.password().is_some() && url.set_password(Some("redacted")).is_err() {
-        return "<redacted endpoint>".to_string();
-    }
-    if url.query().is_some() {
-        url.set_query(Some("redacted"));
-    }
-    if url.fragment().is_some() {
-        url.set_fragment(Some("redacted"));
-    }
-
-    url.to_string()
-}
-
-fn endpoint_details_for_diagnostics(endpoint: &str, details: impl Into<String>) -> String {
-    match Url::parse(endpoint) {
-        Ok(url)
-            if !url.username().is_empty()
-                || url.password().is_some()
-                || url.query().is_some()
-                || url.fragment().is_some() =>
-        {
-            "details redacted because the endpoint contains sensitive data".to_string()
-        }
-        _ => details.into(),
-    }
-}
-
-pub(crate) fn serialize_config(
-    operation: Operation,
-    config: &HostConfiguration,
-) -> Result<String, ClientError> {
-    serde_yaml::to_string(config).map_err(|error| ClientError::Serialization {
-        operation,
-        details: error.to_string(),
-    })
-}
-
-pub(crate) fn proto_config(config: impl Into<String>) -> ProtoHostConfiguration {
-    ProtoHostConfiguration {
-        config: config.into(),
-    }
-}
-
-pub(crate) fn reboot_management(policy: RebootPolicy) -> RebootManagement {
-    let handling = match policy {
-        RebootPolicy::Trident => RebootHandling::TridentHandlesReboot,
-        RebootPolicy::Caller => RebootHandling::CallerHandlesReboot,
-    };
-    RebootManagement {
-        handling: handling.into(),
-    }
-}
-
-pub(crate) fn rollback_kind(kind: RollbackKind) -> i32 {
-    match kind {
-        RollbackKind::Any => ManualRollbackKind::AnyRollbackRequested,
-        RollbackKind::Ab => ManualRollbackKind::AbRollbackRequested,
-        RollbackKind::Runtime => ManualRollbackKind::RuntimeRollbackRequested,
-    }
-    .into()
 }

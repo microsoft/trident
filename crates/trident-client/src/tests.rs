@@ -1,6 +1,7 @@
 use super::*;
 
 use std::{
+    collections::VecDeque,
     io::Error as IoError,
     sync::{Arc, Mutex},
     time::Duration,
@@ -16,37 +17,38 @@ use tonic::{
 };
 use tower::service_fn;
 
-use trident_api::{config::HostConfiguration, primitives::hash::Sha384Hash, status::ServicingType};
-
-#[cfg(feature = "preview")]
-use trident_api::status::ServicingState;
 use trident_proto::v1::{
+    commit_service_server::{CommitService, CommitServiceServer},
     rollback_service_server::{RollbackService, RollbackServiceServer},
     servicing_response::Response as ResponseBody,
     streaming_service_server::{StreamingService, StreamingServiceServer},
     update_service_server::{UpdateService, UpdateServiceServer},
     version_service_server::{VersionService, VersionServiceServer},
-    Completed, FileLocation, FinalizeUpdateRequest, Log, LogLevel as ProtoLogLevel,
+    CommitRequest, Completed, FileLocation, FinalizeUpdateRequest, Log, LogLevel as ProtoLogLevel,
     ManualRollbackKind, RebootHandling, RebootStatus, RollbackFinalizeRequest, RollbackRequest,
-    RollbackStageRequest, ServicingKind, ServicingResponse, StageUpdateRequest, StatusCode,
-    StreamDiskRequest, TridentError, TridentErrorKind, UpdateRequest, VersionRequest,
-    VersionResponse,
+    RollbackStageRequest, ServicingKind as ProtoServicingKind, ServicingResponse,
+    StageUpdateRequest, StatusCode, StreamDiskRequest, TridentError, TridentErrorKind,
+    UpdateRequest, VersionRequest, VersionResponse,
 };
 
 #[cfg(feature = "preview")]
-use trident_proto::{
-    v1::HostConfiguration as ProtoHostConfiguration,
-    v1preview::{
-        install_service_server::{InstallService, InstallServiceServer},
-        status_service_server::{StatusService, StatusServiceServer},
-        validation_service_server::{ValidationService, ValidationServiceServer},
-        AbVolumeState, FinalizeInstallRequest, GetActiveVolumeRequest, GetActiveVolumeResponse,
-        GetConfigRequest, GetConfigResponse, GetLastErrorRequest, GetLastErrorResponse,
-        GetRequiredServicingTypeRequest, GetRequiredServicingTypeResponse,
-        GetServicingStateRequest, GetServicingStateResponse, InstallRequest,
-        ServicingState as ProtoServicingState, ServicingType as ProtoServicingType,
-        StageInstallRequest, ValidateHostConfigurationRequest, ValidateHostConfigurationResponse,
+use trident_proto::v1preview::{
+    install_service_server::{InstallService, InstallServiceServer},
+    rebuild_raid_service_server::{RebuildRaidService, RebuildRaidServiceServer},
+    rollback_service_server::{
+        RollbackService as PreviewRollbackService,
+        RollbackServiceServer as PreviewRollbackServiceServer,
     },
+    status_service_server::{StatusService, StatusServiceServer},
+    validation_service_server::{ValidationService, ValidationServiceServer},
+    AbVolumeState, CheckRollbackKind, CheckRollbackRequest, CheckRollbackResponse,
+    FinalizeInstallRequest, GetActiveVolumeRequest, GetActiveVolumeResponse, GetConfigRequest,
+    GetConfigResponse, GetLastErrorRequest, GetLastErrorResponse, GetRequiredServicingTypeRequest,
+    GetRequiredServicingTypeResponse, GetRollbackChainRequest, GetRollbackChainResponse,
+    GetRollbackTargetRequest, GetRollbackTargetResponse, GetServicingStateRequest,
+    GetServicingStateResponse, InstallRequest, RebuildRaidRequest,
+    ServicingState as ProtoServicingState, StageInstallRequest, ValidateHostConfigurationRequest,
+    ValidateHostConfigurationResponse,
 };
 
 const DUPLEX_BUFFER_BYTES: usize = 64 * 1024;
@@ -72,10 +74,14 @@ enum Action {
 
 #[derive(Default)]
 struct Captured {
+    version_requests: usize,
     update_yaml: Vec<String>,
     update_reboots: Vec<i32>,
     update_stage_yaml: Vec<String>,
+    update_finalize_reboots: Vec<i32>,
     stream_disk: Vec<(String, Option<String>, i32)>,
+    commit_reboots: Vec<i32>,
+    rollbacks: Vec<(i32, i32)>,
     rollback_stages: Vec<i32>,
     rollback_finalizes: Vec<i32>,
     #[cfg(feature = "preview")]
@@ -83,36 +89,52 @@ struct Captured {
     #[cfg(feature = "preview")]
     install_reboots: Vec<i32>,
     #[cfg(feature = "preview")]
+    install_stage_yaml: Vec<String>,
+    #[cfg(feature = "preview")]
+    install_finalize_reboots: Vec<i32>,
+    #[cfg(feature = "preview")]
+    rebuild_raid_requests: usize,
+    #[cfg(feature = "preview")]
+    servicing_state_requests: usize,
+    #[cfg(feature = "preview")]
+    active_volume_requests: usize,
+    #[cfg(feature = "preview")]
     validation_yaml: Vec<String>,
+    #[cfg(feature = "preview")]
+    check_rollback_kinds: Vec<i32>,
 }
 
 struct MockState {
-    action: Mutex<Option<Action>>,
+    actions: Mutex<VecDeque<Action>>,
     captured: Mutex<Captured>,
     version_delay: Mutex<Option<Duration>>,
     #[cfg(feature = "preview")]
-    status_config_yaml: Mutex<Option<String>>,
-    #[cfg(feature = "preview")]
     servicing_state: Mutex<i32>,
     #[cfg(feature = "preview")]
+    active_volume: Mutex<i32>,
+    #[cfg(feature = "preview")]
     validation_response: Mutex<ValidateHostConfigurationResponse>,
+    #[cfg(feature = "preview")]
+    check_rollback_kind: Mutex<i32>,
 }
 
 impl Default for MockState {
     fn default() -> Self {
         Self {
-            action: Mutex::new(None),
+            actions: Mutex::new(VecDeque::new()),
             captured: Mutex::new(Captured::default()),
             version_delay: Mutex::new(None),
             #[cfg(feature = "preview")]
-            status_config_yaml: Mutex::new(None),
-            #[cfg(feature = "preview")]
             servicing_state: Mutex::new(ProtoServicingState::Provisioned.into()),
+            #[cfg(feature = "preview")]
+            active_volume: Mutex::new(AbVolumeState::VolumeA.into()),
             #[cfg(feature = "preview")]
             validation_response: Mutex::new(ValidateHostConfigurationResponse {
                 ok: true,
                 error: None,
             }),
+            #[cfg(feature = "preview")]
+            check_rollback_kind: Mutex::new(CheckRollbackKind::AbRollbackExpected.into()),
         }
     }
 }
@@ -126,10 +148,10 @@ impl MockServer {
     async fn respond(&self) -> Result<Response<ResponseStream>, Status> {
         let action = self
             .state
-            .action
+            .actions
             .lock()
             .unwrap()
-            .take()
+            .pop_front()
             .expect("test must configure a mock action");
         let steps = match action {
             Action::Reject(status) => return Err(status),
@@ -162,6 +184,7 @@ impl VersionService for MockServer {
         &self,
         _request: Request<VersionRequest>,
     ) -> Result<Response<VersionResponse>, Status> {
+        self.state.captured.lock().unwrap().version_requests += 1;
         let delay = self.state.version_delay.lock().unwrap().take();
         if let Some(delay) = delay {
             time::sleep(delay).await;
@@ -221,8 +244,42 @@ impl UpdateService for MockServer {
 
     async fn update_finalize(
         &self,
-        _request: Request<FinalizeUpdateRequest>,
+        request: Request<FinalizeUpdateRequest>,
     ) -> Result<Response<Self::UpdateFinalizeStream>, Status> {
+        let reboot = request
+            .into_inner()
+            .reboot
+            .expect("client should send update-finalize reboot policy")
+            .handling;
+        self.state
+            .captured
+            .lock()
+            .unwrap()
+            .update_finalize_reboots
+            .push(reboot);
+        self.respond().await
+    }
+}
+
+#[tonic::async_trait]
+impl CommitService for MockServer {
+    type CommitStream = ResponseStream;
+
+    async fn commit(
+        &self,
+        request: Request<CommitRequest>,
+    ) -> Result<Response<Self::CommitStream>, Status> {
+        let reboot = request
+            .into_inner()
+            .reboot
+            .expect("client should send commit reboot policy")
+            .handling;
+        self.state
+            .captured
+            .lock()
+            .unwrap()
+            .commit_reboots
+            .push(reboot);
         self.respond().await
     }
 }
@@ -257,8 +314,24 @@ impl RollbackService for MockServer {
 
     async fn rollback(
         &self,
-        _request: Request<RollbackRequest>,
+        request: Request<RollbackRequest>,
     ) -> Result<Response<Self::RollbackStream>, Status> {
+        let request = request.into_inner();
+        let kind = request
+            .stage
+            .expect("client should send rollback stage")
+            .kind;
+        let reboot = request
+            .finalize
+            .and_then(|finalize| finalize.reboot)
+            .expect("client should send rollback reboot policy")
+            .handling;
+        self.state
+            .captured
+            .lock()
+            .unwrap()
+            .rollbacks
+            .push((kind, reboot));
         self.respond().await
     }
 
@@ -326,15 +399,51 @@ impl InstallService for MockServer {
 
     async fn install_stage(
         &self,
-        _request: Request<StageInstallRequest>,
+        request: Request<StageInstallRequest>,
     ) -> Result<Response<Self::InstallStageStream>, Status> {
+        let yaml = request
+            .into_inner()
+            .config
+            .expect("client should send install-stage config")
+            .config;
+        self.state
+            .captured
+            .lock()
+            .unwrap()
+            .install_stage_yaml
+            .push(yaml);
         self.respond().await
     }
 
     async fn install_finalize(
         &self,
-        _request: Request<FinalizeInstallRequest>,
+        request: Request<FinalizeInstallRequest>,
     ) -> Result<Response<Self::InstallFinalizeStream>, Status> {
+        let reboot = request
+            .into_inner()
+            .reboot
+            .expect("client should send install-finalize reboot policy")
+            .handling;
+        self.state
+            .captured
+            .lock()
+            .unwrap()
+            .install_finalize_reboots
+            .push(reboot);
+        self.respond().await
+    }
+}
+
+#[cfg(feature = "preview")]
+#[tonic::async_trait]
+impl RebuildRaidService for MockServer {
+    type RebuildRaidStream = ResponseStream;
+
+    async fn rebuild_raid(
+        &self,
+        _request: Request<RebuildRaidRequest>,
+    ) -> Result<Response<Self::RebuildRaidStream>, Status> {
+        self.state.captured.lock().unwrap().rebuild_raid_requests += 1;
         self.respond().await
     }
 }
@@ -346,34 +455,28 @@ impl StatusService for MockServer {
         &self,
         _request: Request<GetConfigRequest>,
     ) -> Result<Response<GetConfigResponse>, Status> {
-        let config = self
-            .state
-            .status_config_yaml
-            .lock()
-            .unwrap()
-            .clone()
-            .map(|config| ProtoHostConfiguration { config });
-        Ok(Response::new(GetConfigResponse { config }))
+        Err(Status::unimplemented("not exposed by client"))
     }
 
     async fn get_servicing_config(
         &self,
-        request: Request<GetConfigRequest>,
+        _request: Request<GetConfigRequest>,
     ) -> Result<Response<GetConfigResponse>, Status> {
-        self.get_provisioned_config(request).await
+        Err(Status::unimplemented("not exposed by client"))
     }
 
     async fn get_last_error(
         &self,
         _request: Request<GetLastErrorRequest>,
     ) -> Result<Response<GetLastErrorResponse>, Status> {
-        Ok(Response::new(GetLastErrorResponse { error: None }))
+        Err(Status::unimplemented("not exposed by client"))
     }
 
     async fn get_servicing_state(
         &self,
         _request: Request<GetServicingStateRequest>,
     ) -> Result<Response<GetServicingStateResponse>, Status> {
+        self.state.captured.lock().unwrap().servicing_state_requests += 1;
         Ok(Response::new(GetServicingStateResponse {
             state: *self.state.servicing_state.lock().unwrap(),
         }))
@@ -383,8 +486,9 @@ impl StatusService for MockServer {
         &self,
         _request: Request<GetActiveVolumeRequest>,
     ) -> Result<Response<GetActiveVolumeResponse>, Status> {
+        self.state.captured.lock().unwrap().active_volume_requests += 1;
         Ok(Response::new(GetActiveVolumeResponse {
-            active_volume: AbVolumeState::VolumeA.into(),
+            active_volume: *self.state.active_volume.lock().unwrap(),
         }))
     }
 }
@@ -416,9 +520,40 @@ impl ValidationService for MockServer {
         &self,
         _request: Request<GetRequiredServicingTypeRequest>,
     ) -> Result<Response<GetRequiredServicingTypeResponse>, Status> {
-        Ok(Response::new(GetRequiredServicingTypeResponse {
-            servicing_type: ProtoServicingType::AbUpdate.into(),
+        Err(Status::unimplemented("not exposed by client"))
+    }
+}
+
+#[cfg(feature = "preview")]
+#[tonic::async_trait]
+impl PreviewRollbackService for MockServer {
+    async fn check_rollback(
+        &self,
+        request: Request<CheckRollbackRequest>,
+    ) -> Result<Response<CheckRollbackResponse>, Status> {
+        self.state
+            .captured
+            .lock()
+            .unwrap()
+            .check_rollback_kinds
+            .push(request.into_inner().kind);
+        Ok(Response::new(CheckRollbackResponse {
+            kind: *self.state.check_rollback_kind.lock().unwrap(),
         }))
+    }
+
+    async fn get_rollback_chain(
+        &self,
+        _request: Request<GetRollbackChainRequest>,
+    ) -> Result<Response<GetRollbackChainResponse>, Status> {
+        Err(Status::unimplemented("not exposed by client"))
+    }
+
+    async fn get_rollback_target(
+        &self,
+        _request: Request<GetRollbackTargetRequest>,
+    ) -> Result<Response<GetRollbackTargetResponse>, Status> {
+        Err(Status::unimplemented("not exposed by client"))
     }
 }
 
@@ -440,12 +575,15 @@ async fn connect_mock_with_timeouts(
             .add_service(VersionServiceServer::new(mock.clone()))
             .add_service(UpdateServiceServer::new(mock.clone()))
             .add_service(StreamingServiceServer::new(mock.clone()))
+            .add_service(CommitServiceServer::new(mock.clone()))
             .add_service(RollbackServiceServer::new(mock.clone()));
         #[cfg(feature = "preview")]
         let server = server
             .add_service(InstallServiceServer::new(mock.clone()))
+            .add_service(RebuildRaidServiceServer::new(mock.clone()))
             .add_service(StatusServiceServer::new(mock.clone()))
-            .add_service(ValidationServiceServer::new(mock));
+            .add_service(ValidationServiceServer::new(mock.clone()))
+            .add_service(PreviewRollbackServiceServer::new(mock));
         server
             .serve_with_incoming(tokio_stream::once(Ok::<_, IoError>(server_io)))
             .await
@@ -468,7 +606,7 @@ async fn connect_mock_with_timeouts(
 }
 
 fn set_action(state: &Arc<MockState>, action: Action) {
-    *state.action.lock().unwrap() = Some(action);
+    state.actions.lock().unwrap().push_back(action);
 }
 
 fn success() -> ServicingResponse {
@@ -519,7 +657,8 @@ async fn endpoint_schemes_support_only_unix_and_http() {
             .connect()
             .await
             .expect_err("unsupported endpoint scheme should fail");
-        assert!(matches!(error, ClientError::InvalidEndpoint { .. }));
+        assert_eq!(error.execution_state(), ExecutionState::NotStarted);
+        assert!(error.to_string().starts_with("invalid Trident endpoint"));
     }
 
     for endpoint in [
@@ -532,7 +671,8 @@ async fn endpoint_schemes_support_only_unix_and_http() {
             .connect()
             .await
             .expect_err("supported endpoint without a server should fail to connect");
-        assert!(matches!(error, ClientError::Connection { .. }));
+        assert_eq!(error.execution_state(), ExecutionState::NotStarted);
+        assert!(error.to_string().starts_with("failed to connect"));
     }
 }
 
@@ -546,6 +686,8 @@ async fn endpoint_diagnostics_redact_sensitive_data() {
     }
 
     let error = builder.connect().await.unwrap_err();
+    assert_eq!(format!("{error:?}"), error.to_string());
+    assert!(!format!("{error:?}").contains("InvalidEndpoint"));
     for diagnostic in [error.to_string(), format!("{error:?}")] {
         for secret in ["client", "password", "token=secret", "fragment-secret"] {
             assert!(!diagnostic.contains(secret));
@@ -557,6 +699,7 @@ async fn endpoint_diagnostics_redact_sensitive_data() {
         .connect()
         .await
         .unwrap_err();
+    assert_eq!(format!("{malformed:?}"), malformed.to_string());
     for diagnostic in [malformed.to_string(), format!("{malformed:?}")] {
         assert!(!diagnostic.contains("token=secret"));
     }
@@ -593,14 +736,12 @@ async fn delayed_unary_response_uses_unary_timeout() {
     let client = connect_mock_with_timeouts(state, REQUEST_TIMEOUT, SHORT_TIMEOUT).await;
 
     let error = client.version().await.unwrap_err();
-    assert!(matches!(
-        &error,
-        ClientError::UnaryTimeout {
-            operation: Operation::Version,
-            ..
-        }
-    ));
     assert_eq!(error.execution_state(), ExecutionState::OutcomeUnknown);
+    assert_eq!(error.rpc_code(), None);
+    assert!(error.to_string().contains("did not complete"));
+    assert_eq!(format!("{error:?}"), error.to_string());
+    assert!(!format!("{error:?}").contains("UnaryTimeout"));
+    assert!(!format!("{error:?}").contains("operation:"));
 }
 
 #[tokio::test]
@@ -677,6 +818,30 @@ async fn stream_disk_maps_structured_url_and_hash() {
 }
 
 #[tokio::test]
+async fn stream_disk_rejects_malformed_hashes_before_rpc() {
+    let url = Url::parse("https://example.test/image.cosi").unwrap();
+    let cases = [
+        Sha384Hash::from("a".repeat(95)),
+        Sha384Hash::from(format!("{}g", "a".repeat(95))),
+    ];
+
+    for hash in cases {
+        let state = Arc::new(MockState::default());
+        let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
+        let error = client
+            .stream_disk(&url, Some(&hash), RebootPolicy::Caller)
+            .await
+            .err()
+            .expect("malformed hash should be rejected");
+        assert_eq!(error.execution_state(), ExecutionState::NotStarted);
+        assert_eq!(error.rpc_code(), None);
+        assert!(error.to_string().starts_with("invalid input"));
+        assert!(state.captured.lock().unwrap().stream_disk.is_empty());
+        assert!(state.actions.lock().unwrap().is_empty());
+    }
+}
+
+#[tokio::test]
 async fn started_log_and_success_events_decode_to_domain_types() {
     let state = Arc::new(MockState::default());
     let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
@@ -705,7 +870,7 @@ async fn started_log_and_success_events_decode_to_domain_types() {
         error: None,
         reboot_status: RebootStatus::RebootRequired.into(),
         image_hash: Some(format!("sha384:{SHA384}")),
-        servicing_kind: Some(ServicingKind::AbUpdate.into()),
+        servicing_kind: Some(ProtoServicingKind::AbUpdate.into()),
     });
     set_action(&state, stream(vec![started, log, done]));
 
@@ -738,8 +903,11 @@ async fn started_log_and_success_events_decode_to_domain_types() {
         }) if message == "careful"
     ));
     assert_eq!(completion.reboot, RebootDisposition::Required);
-    assert_eq!(completion.servicing_type, Some(ServicingType::AbUpdate));
-    assert_eq!(completion.image_hash.as_ref().unwrap().as_str(), SHA384);
+    assert_eq!(completion.servicing_kind, Some(ServicingKind::AbUpdate));
+    assert!(matches!(
+        completion.image_hash,
+        Some(ImageHash::Sha384(ref hash)) if hash.as_str() == SHA384
+    ));
 }
 
 #[tokio::test]
@@ -770,6 +938,39 @@ async fn structured_remote_failure_is_preserved() {
     assert_eq!(remote.subkind, "bad-config");
     assert_eq!(remote.cause(), "bad field");
     assert_eq!(remote.location.as_ref().unwrap().line, 42);
+    assert_eq!(remote.to_string(), remote.message);
+    let remote_error: &(dyn std::error::Error + 'static) = remote;
+    assert_eq!(remote_error.to_string(), remote.message);
+    assert_eq!(format!("{error:?}"), error.to_string());
+    assert!(!format!("{error:?}").contains("RemoteFailure"));
+}
+
+#[tokio::test]
+async fn manual_event_consumers_receive_remote_errors_directly() {
+    let state = Arc::new(MockState::default());
+    let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
+    set_action(
+        &state,
+        stream(vec![completed(Completed {
+            status: StatusCode::Failure.into(),
+            error: Some(valid_remote_error()),
+            reboot_status: RebootStatus::Unspecified.into(),
+            image_hash: None,
+            servicing_kind: None,
+        })]),
+    );
+
+    let mut operation = client.update_stage_yaml("{}\n").await.unwrap();
+    let event = operation.next_event().await.unwrap().unwrap();
+    let ServicingEvent::Completed(Err(remote)) = event else {
+        panic!("expected failed completion event");
+    };
+    assert_eq!(remote.category, RemoteErrorCategory::InvalidInput);
+    assert_eq!(
+        remote.to_string(),
+        "configuration is invalid: caused by bad field"
+    );
+    assert!(operation.next_event().await.unwrap().is_none());
 }
 
 #[tokio::test]
@@ -812,16 +1013,9 @@ async fn protocol_invariants_are_rejected_centrally() {
         completed(Completed {
             status: StatusCode::Success.into(),
             error: None,
-            reboot_status: RebootStatus::RebootNotRequired.into(),
-            image_hash: Some("sha384:not-a-hash".to_string()),
-            servicing_kind: None,
-        }),
-        completed(Completed {
-            status: StatusCode::Success.into(),
-            error: None,
-            reboot_status: RebootStatus::RebootNotRequired.into(),
+            reboot_status: 99,
             image_hash: None,
-            servicing_kind: Some(ServicingKind::Unspecified.into()),
+            servicing_kind: None,
         }),
     ];
 
@@ -834,7 +1028,157 @@ async fn protocol_invariants_are_rejected_centrally() {
             .wait()
             .await
             .unwrap_err();
-        assert!(matches!(error, ClientError::InvalidProtocol { .. }));
+        assert!(error
+            .to_string()
+            .starts_with("invalid Trident protocol response"));
+        assert_eq!(error.remote_error(), None);
+        assert_eq!(error.rpc_code(), None);
+    }
+}
+
+#[tokio::test]
+async fn forward_compatible_stream_values_preserve_completion() {
+    let log_levels = [
+        (ProtoLogLevel::Warn as i32, LogLevel::Warn),
+        (ProtoLogLevel::Unspecified as i32, LogLevel::Unspecified),
+        (99, LogLevel::Unknown(99)),
+    ];
+
+    for (wire, expected) in log_levels {
+        let state = Arc::new(MockState::default());
+        let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
+        let log = ServicingResponse {
+            timestamp: None,
+            response: Some(ResponseBody::Log(Log {
+                level: wire,
+                message: "forward-compatible".to_string(),
+                module: String::new(),
+                target: String::new(),
+                location: None,
+            })),
+        };
+        set_action(&state, stream(vec![log, success()]));
+
+        let mut observed = None;
+        client
+            .update_stage_yaml("{}\n")
+            .await
+            .unwrap()
+            .wait_with(|event| {
+                if let ServicingEvent::Log(record) = event {
+                    observed = Some(record.level);
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(observed, Some(expected));
+    }
+
+    let servicing_kinds = [
+        (ProtoServicingKind::AbUpdate as i32, ServicingKind::AbUpdate),
+        (
+            ProtoServicingKind::Unspecified as i32,
+            ServicingKind::Unspecified,
+        ),
+        (99, ServicingKind::Unknown(99)),
+    ];
+    for (wire, expected) in servicing_kinds {
+        let state = Arc::new(MockState::default());
+        let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
+        set_action(
+            &state,
+            stream(vec![completed(Completed {
+                status: StatusCode::Success.into(),
+                error: None,
+                reboot_status: RebootStatus::RebootNotRequired.into(),
+                image_hash: None,
+                servicing_kind: Some(wire),
+            })]),
+        );
+        let completion = client
+            .update_stage_yaml("{}\n")
+            .await
+            .unwrap()
+            .wait()
+            .await
+            .unwrap();
+        assert_eq!(completion.servicing_kind, Some(expected));
+    }
+}
+
+#[tokio::test]
+async fn forward_compatible_error_categories_and_image_hashes_are_preserved() {
+    let categories = [
+        (
+            TridentErrorKind::InvalidInputError as i32,
+            RemoteErrorCategory::InvalidInput,
+        ),
+        (
+            TridentErrorKind::Unspecified as i32,
+            RemoteErrorCategory::Unspecified,
+        ),
+        (99, RemoteErrorCategory::Unknown(99)),
+    ];
+    for (wire, expected) in categories {
+        let state = Arc::new(MockState::default());
+        let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
+        let mut remote = valid_remote_error();
+        remote.kind = wire;
+        set_action(
+            &state,
+            stream(vec![completed(Completed {
+                status: StatusCode::Failure.into(),
+                error: Some(remote),
+                reboot_status: RebootStatus::Unspecified.into(),
+                image_hash: None,
+                servicing_kind: None,
+            })]),
+        );
+        let error = client
+            .update_stage_yaml("{}\n")
+            .await
+            .unwrap()
+            .wait()
+            .await
+            .unwrap_err();
+        assert_eq!(error.remote_error().unwrap().category, expected);
+    }
+
+    let hashes = [
+        (
+            format!("sha384:{SHA384}"),
+            ImageHash::Sha384(Sha384Hash::from(SHA384)),
+        ),
+        (
+            "sha384:not-a-hash".to_string(),
+            ImageHash::Unknown("sha384:not-a-hash".to_string()),
+        ),
+        (
+            "sha512:future".to_string(),
+            ImageHash::Unknown("sha512:future".to_string()),
+        ),
+    ];
+    for (wire, expected) in hashes {
+        let state = Arc::new(MockState::default());
+        let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
+        set_action(
+            &state,
+            stream(vec![completed(Completed {
+                status: StatusCode::Success.into(),
+                error: None,
+                reboot_status: RebootStatus::RebootNotRequired.into(),
+                image_hash: Some(wire),
+                servicing_kind: None,
+            })]),
+        );
+        let completion = client
+            .update_stage_yaml("{}\n")
+            .await
+            .unwrap()
+            .wait()
+            .await
+            .unwrap();
+        assert_eq!(completion.image_hash, Some(expected));
     }
 }
 
@@ -850,13 +1194,7 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         .err()
         .expect("request should be rejected");
     assert_eq!(rejected.execution_state(), ExecutionState::NotStarted);
-    assert!(matches!(
-        rejected,
-        ClientError::RequestRejected {
-            code: RpcCode::InvalidArgument,
-            ..
-        }
-    ));
+    assert_eq!(rejected.rpc_code(), Some(RpcCode::InvalidArgument));
 
     set_action(&state, Action::Reject(Status::unavailable("unavailable")));
     let unavailable = client
@@ -868,13 +1206,7 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         unavailable.execution_state(),
         ExecutionState::OutcomeUnknown
     );
-    assert!(matches!(
-        unavailable,
-        ClientError::RequestRejected {
-            code: RpcCode::Unavailable,
-            ..
-        }
-    ));
+    assert_eq!(unavailable.rpc_code(), Some(RpcCode::Unavailable));
 
     set_action(
         &state,
@@ -889,10 +1221,7 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         acknowledgement_timeout.execution_state(),
         ExecutionState::OutcomeUnknown
     );
-    assert!(matches!(
-        acknowledgement_timeout,
-        ClientError::RequestAcknowledgementTimeout { .. }
-    ));
+    assert_eq!(acknowledgement_timeout.rpc_code(), None);
 
     set_action(
         &state,
@@ -915,7 +1244,7 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         stream_error.execution_state(),
         ExecutionState::OutcomeUnknown
     );
-    assert!(matches!(stream_error, ClientError::StreamFailure { .. }));
+    assert_eq!(stream_error.rpc_code(), Some(RpcCode::Unavailable));
 
     set_action(&state, Action::Stream(Vec::new()));
     let missing = client
@@ -926,7 +1255,8 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         .await
         .unwrap_err();
     assert_eq!(missing.execution_state(), ExecutionState::OutcomeUnknown);
-    assert!(matches!(missing, ClientError::MissingCompletion { .. }));
+    assert_eq!(missing.rpc_code(), None);
+    assert!(missing.to_string().contains("ended without completion"));
 
     set_action(
         &state,
@@ -951,16 +1281,50 @@ async fn transport_and_timeout_errors_report_execution_certainty() {
         completion_timeout.execution_state(),
         ExecutionState::OutcomeUnknown
     );
-    assert!(matches!(
-        completion_timeout,
-        ClientError::CompletionTimeout { .. }
-    ));
+    assert_eq!(completion_timeout.rpc_code(), None);
 }
 
 #[tokio::test]
-async fn stable_rollback_stage_and_finalize_map_requests() {
+async fn stable_rpc_families_map_request_fields() {
     let state = Arc::new(MockState::default());
     let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
+    let config = HostConfiguration::default();
+    let expected_config = serde_yaml::to_string(&config).unwrap();
+
+    assert_eq!(client.version().await.unwrap(), "test-version");
+
+    set_action(&state, stream(vec![success()]));
+    client
+        .update_stage(&config)
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    set_action(&state, stream(vec![success()]));
+    client
+        .update_finalize(RebootPolicy::Trident)
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    set_action(&state, stream(vec![success()]));
+    client
+        .commit(RebootPolicy::Caller)
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    set_action(&state, stream(vec![success()]));
+    client
+        .rollback(RollbackKind::Runtime, RebootPolicy::Trident)
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
     set_action(&state, stream(vec![success()]));
     client
         .rollback_stage(RollbackKind::Ab)
@@ -979,6 +1343,23 @@ async fn stable_rollback_stage_and_finalize_map_requests() {
         .unwrap();
 
     let captured = state.captured.lock().unwrap();
+    assert_eq!(captured.version_requests, 1);
+    assert!(captured.update_stage_yaml.contains(&expected_config));
+    assert_eq!(
+        captured.update_finalize_reboots,
+        [RebootHandling::TridentHandlesReboot as i32]
+    );
+    assert_eq!(
+        captured.commit_reboots,
+        [RebootHandling::CallerHandlesReboot as i32]
+    );
+    assert_eq!(
+        captured.rollbacks,
+        [(
+            ManualRollbackKind::RuntimeRollbackRequested as i32,
+            RebootHandling::TridentHandlesReboot as i32,
+        )]
+    );
     assert_eq!(
         captured.rollback_stages,
         [ManualRollbackKind::AbRollbackRequested as i32]
@@ -991,7 +1372,7 @@ async fn stable_rollback_stage_and_finalize_map_requests() {
 
 #[cfg(feature = "preview")]
 #[tokio::test]
-async fn preview_install_typed_and_raw_requests_have_parity() {
+async fn preview_servicing_rpc_families_map_request_fields() {
     let state = Arc::new(MockState::default());
     let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
     let config = HostConfiguration::default();
@@ -1014,9 +1395,30 @@ async fn preview_install_typed_and_raw_requests_have_parity() {
         .wait()
         .await
         .unwrap();
+    set_action(&state, stream(vec![success()]));
+    client
+        .install_stage(&config)
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    set_action(&state, stream(vec![success()]));
+    client
+        .install_finalize(RebootPolicy::Caller)
+        .await
+        .unwrap()
+        .wait()
+        .await
+        .unwrap();
+    set_action(&state, stream(vec![success()]));
+    client.rebuild_raid().await.unwrap().wait().await.unwrap();
 
     let captured = state.captured.lock().unwrap();
-    assert_eq!(captured.install_yaml, [expected_typed, raw.to_string()]);
+    assert_eq!(
+        captured.install_yaml,
+        [expected_typed.clone(), raw.to_string()]
+    );
     assert_eq!(
         captured.install_reboots,
         [
@@ -1024,39 +1426,32 @@ async fn preview_install_typed_and_raw_requests_have_parity() {
             RebootHandling::TridentHandlesReboot as i32,
         ]
     );
+    assert_eq!(captured.install_stage_yaml, [expected_typed]);
+    assert_eq!(
+        captured.install_finalize_reboots,
+        [RebootHandling::CallerHandlesReboot as i32]
+    );
+    assert_eq!(captured.rebuild_raid_requests, 1);
 }
 
 #[cfg(feature = "preview")]
 #[tokio::test]
-async fn preview_status_config_state_and_validation_use_domain_types() {
+async fn preview_status_validation_and_rollback_use_domain_types() {
     let state = Arc::new(MockState::default());
     let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
     let config = HostConfiguration::default();
-    let future_yaml = "# future daemon field\nfutureField: true\n";
-    *state.status_config_yaml.lock().unwrap() = Some(future_yaml.to_string());
     *state.servicing_state.lock().unwrap() = ProtoServicingState::UpdateAbStaged.into();
+    *state.active_volume.lock().unwrap() = AbVolumeState::VolumeB.into();
     *state.validation_response.lock().unwrap() = ValidateHostConfigurationResponse {
         ok: false,
         error: Some(valid_remote_error()),
     };
 
     assert_eq!(
-        client.provisioned_config_yaml().await.unwrap().as_deref(),
-        Some(future_yaml)
-    );
-    assert_eq!(
-        client.servicing_config_yaml().await.unwrap().as_deref(),
-        Some(future_yaml)
-    );
-    let error = client.provisioned_config().await.unwrap_err();
-    assert!(matches!(error, ClientError::Deserialization { .. }));
-
-    *state.status_config_yaml.lock().unwrap() = Some(serde_yaml::to_string(&config).unwrap());
-    assert_eq!(client.provisioned_config().await.unwrap(), Some(config));
-    assert_eq!(
         client.servicing_state().await.unwrap(),
         ServicingState::AbUpdateStaged
     );
+    assert_eq!(client.active_volume().await.unwrap(), ActiveVolume::VolumeB);
     let raw = "# validation\n{}\n";
     let validation = client.validate_host_configuration_yaml(raw).await.unwrap();
     assert!(!validation.valid);
@@ -1068,28 +1463,91 @@ async fn preview_status_config_state_and_validation_use_domain_types() {
         state.captured.lock().unwrap().validation_yaml,
         [raw.to_string()]
     );
+
+    *state.validation_response.lock().unwrap() = ValidateHostConfigurationResponse {
+        ok: true,
+        error: None,
+    };
+    client.validate_host_configuration(&config).await.unwrap();
+
     assert_eq!(
-        client.required_servicing_type_yaml("{}\n").await.unwrap(),
-        ServicingType::AbUpdate
+        client.check_rollback(RollbackKind::Any).await.unwrap(),
+        RollbackAvailability::Ab
     );
+
+    let captured = state.captured.lock().unwrap();
+    assert_eq!(captured.servicing_state_requests, 1);
+    assert_eq!(captured.active_volume_requests, 1);
+    assert_eq!(
+        captured.check_rollback_kinds,
+        [ManualRollbackKind::AnyRollbackRequested as i32]
+    );
+    assert_eq!(captured.validation_yaml.len(), 2);
 }
 
-#[test]
-fn public_domain_types_do_not_require_transport_types() {
-    fn accepts_domain(
-        _: Operation,
-        _: RebootPolicy,
-        _: RollbackKind,
-        _: ExecutionState,
-        _: RpcCode,
-    ) {
+#[cfg(feature = "preview")]
+#[tokio::test]
+async fn preview_status_enums_preserve_known_unspecified_and_unknown_values() {
+    let servicing_states = [
+        (
+            ProtoServicingState::Provisioned as i32,
+            ServicingState::Provisioned,
+        ),
+        (
+            ProtoServicingState::Unspecified as i32,
+            ServicingState::Unspecified,
+        ),
+        (99, ServicingState::Unknown(99)),
+    ];
+    for (wire, expected) in servicing_states {
+        let state = Arc::new(MockState::default());
+        *state.servicing_state.lock().unwrap() = wire;
+        let client = connect_mock(state, REQUEST_TIMEOUT).await;
+        assert_eq!(client.servicing_state().await.unwrap(), expected);
     }
 
-    accepts_domain(
-        Operation::Update,
-        RebootPolicy::Caller,
-        RollbackKind::Ab,
-        ExecutionState::OutcomeUnknown,
-        RpcCode::Unavailable,
-    );
+    let active_volumes = [
+        (AbVolumeState::VolumeA as i32, ActiveVolume::VolumeA),
+        (AbVolumeState::Unspecified as i32, ActiveVolume::Unspecified),
+        (99, ActiveVolume::Unknown(99)),
+    ];
+    for (wire, expected) in active_volumes {
+        let state = Arc::new(MockState::default());
+        *state.active_volume.lock().unwrap() = wire;
+        let client = connect_mock(state, REQUEST_TIMEOUT).await;
+        assert_eq!(client.active_volume().await.unwrap(), expected);
+    }
+
+    let rollback_availability = [
+        (
+            CheckRollbackKind::RuntimeRollbackExpected as i32,
+            RollbackAvailability::Runtime,
+        ),
+        (
+            CheckRollbackKind::Unspecified as i32,
+            RollbackAvailability::Unspecified,
+        ),
+        (99, RollbackAvailability::Unknown(99)),
+    ];
+    for (wire, expected) in rollback_availability {
+        let state = Arc::new(MockState::default());
+        *state.check_rollback_kind.lock().unwrap() = wire;
+        let client = connect_mock(state, REQUEST_TIMEOUT).await;
+        assert_eq!(
+            client.check_rollback(RollbackKind::Any).await.unwrap(),
+            expected
+        );
+    }
+}
+
+#[tokio::test]
+async fn cloned_clients_multiplex_concurrent_requests() {
+    let state = Arc::new(MockState::default());
+    let client = connect_mock(state.clone(), REQUEST_TIMEOUT).await;
+    let clone = client.clone();
+
+    let (first, second) = tokio::join!(client.version(), clone.version());
+    assert_eq!(first.unwrap(), "test-version");
+    assert_eq!(second.unwrap(), "test-version");
+    assert_eq!(state.captured.lock().unwrap().version_requests, 2);
 }
