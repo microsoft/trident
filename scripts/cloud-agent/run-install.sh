@@ -11,6 +11,7 @@ readonly INSTALLER_ISO="$REPO_ROOT/artifacts/iso/trident-direct-streaming-instal
 readonly COSI_DIRECTORY="$REPO_ROOT/artifacts/test-image"
 readonly CANDIDATE_TRIDENT="$REPO_ROOT/target/release/trident"
 readonly CANDIDATE_LAUNCHER="$REPO_ROOT/target/release/trident-acl-agent"
+readonly CANDIDATE_SELINUX_POLICY_DIR="$REPO_ROOT/packaging/selinux-policy-trident"
 readonly INSTALL_TIMEOUT="${TRIDENT_INSTALL_TIMEOUT:-30m}"
 readonly SSH_ATTEMPTS="${TRIDENT_INSTALL_SSH_ATTEMPTS:-60}"
 readonly SSH_DELAY_SECONDS="${TRIDENT_INSTALL_SSH_DELAY_SECONDS:-5}"
@@ -163,17 +164,9 @@ main() {
         --keypath "$ssh_key" \
         --hostconfig "$host_config" \
         --runtimeEnv host
-    python3 - "$host_config" <<'PY'
-import sys
-from pathlib import Path
-
-import yaml
-
-path = Path(sys.argv[1])
-config = yaml.safe_load(path.read_text(encoding="utf-8"))
-config.setdefault("internalParams", {})["selfUpgradeTrident"] = True
-path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
-PY
+    python3 scripts/cloud-agent/prepare_install_host_config.py \
+        "$host_config" \
+        "$CANDIDATE_SELINUX_POLICY_DIR"
     chmod 0600 "$ssh_key"
     "$CANDIDATE_TRIDENT" validate "$host_config" -v info
     cp "$host_config" "$log_dir/trident-config.yaml"

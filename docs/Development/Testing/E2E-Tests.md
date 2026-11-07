@@ -137,7 +137,9 @@ The test:
    and `virtdeploy` binaries.
 3. Creates a fresh two-disk libvirt VM and a temporary copy of the `base` Host
    Configuration with an ephemeral SSH key and the development-only
-   `selfUpgradeTrident` flag.
+   `selfUpgradeTrident` flag. A pre-servicing hook compiles and loads the
+   candidate `trident-selinux` policy in the installer environment so policy
+   changes from the branch are exercised even though the installer is pinned.
 4. Uses netlaunch's RCP CLI mode to inject the candidate Trident and launcher
    binaries into the pinned installer environment.
 5. Waits for the installed host to reach `servicingState: provisioned`.
