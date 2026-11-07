@@ -5,6 +5,7 @@ default-members = ["crates/trident"]
 members = [
     "crates/docbuilder",
     "crates/trident-acl-agent",
+    "crates/trident-client",
     "crates/osmodifier",
     "crates/osutils",
     "crates/pytest_gen",
@@ -20,6 +21,9 @@ members = [
 exclude = [
     "tools/tailor",
 ]
+
+[workspace.package]
+version = "1.2.0"
 
 [workspace.dependencies]
 anyhow = { version = "1.0.94", features = ["backtrace"] }
