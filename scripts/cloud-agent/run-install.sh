@@ -7,7 +7,7 @@ readonly DATA_DISK_MOUNT="/mnt/storage"
 readonly INSTALL_CACHE_DIR="${TRIDENT_INSTALL_CACHE_DIR:-$DATA_DISK_MOUNT/trident-cloud-agent/install}"
 readonly INSTALL_LOG_ROOT="${TRIDENT_INSTALL_LOG_DIR:-$DATA_DISK_MOUNT/trident-cloud-agent/install-runs}"
 readonly HOST_CONFIG_SOURCE="$REPO_ROOT/tests/e2e_tests/trident_configurations/base/trident-config.yaml"
-readonly INSTALLER_ISO="$REPO_ROOT/artifacts/iso/trident-installer.iso"
+readonly INSTALLER_ISO="$REPO_ROOT/artifacts/iso/trident-direct-streaming-installer-amd64.iso"
 readonly COSI_DIRECTORY="$REPO_ROOT/artifacts/test-image"
 readonly CANDIDATE_TRIDENT="$REPO_ROOT/target/release/trident"
 readonly CANDIDATE_LAUNCHER="$REPO_ROOT/target/release/trident-acl-agent"
@@ -274,7 +274,10 @@ payloads = {
 print("Phase C1 fresh-install smoke test passed")
 print(f"ADO build ID: {provenance['build']['id']}")
 print(f"Pinned source commit: {provenance['build']['sourceVersion']}")
-print(f"Installer ISO SHA-256: {payloads['trident-installer']}")
+print(
+    "Installer ISO SHA-256: "
+    f"{payloads['trident-direct-streaming-installer-amd64']}"
+)
 print(f"Install COSI SHA-256: {payloads['trident-testimage']}")
 print(f"Candidate Trident SHA-256: {sys.argv[2]}")
 print(f"Installed Trident SHA-256: {sys.argv[3]}")

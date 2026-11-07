@@ -9,15 +9,15 @@
   "buildResult": "succeeded",
   "artifacts": [
     {
-      "artifactId": 5487405,
-      "artifactName": "trident-installer",
+      "artifactId": 5487396,
+      "artifactName": "trident-direct-streaming-installer-amd64",
       "artifactType": "PipelineArtifact",
-      "artifactSize": 268930372,
-      "archivePath": "trident-installer/trident-installer.iso",
-      "payloadSize": 263161856,
-      "payloadSha256": "753143695a474deccab36f7a32508bf8423ff160d6cd7c8025f1727df33a3e9f",
-      "cacheFilename": "trident-installer.iso",
-      "destinationPath": "artifacts/iso/trident-installer.iso"
+      "artifactSize": 275698060,
+      "archivePath": "trident-direct-streaming-installer-amd64/trident-direct-streaming-installer-amd64.iso",
+      "payloadSize": 269924352,
+      "payloadSha256": "25757547c58273c31274c3a6567d765c02f5b858a5fb6c908e45526442ef9389",
+      "cacheFilename": "trident-direct-streaming-installer-amd64.iso",
+      "destinationPath": "artifacts/iso/trident-direct-streaming-installer-amd64.iso"
     },
     {
       "artifactId": 5487395,

@@ -109,11 +109,13 @@ commands are run from `tests/e2e_tests`.
 ## GitHub cloud agent fresh-install smoke test
 
 The GitHub cloud agent has a bounded Phase C1 smoke test for code changes that
-affect installer boot, clean installation, or initial provisioning. It uses
-pinned installer ISO and COSI artifacts from an existing successful ADO build
-instead of rebuilding images during the task. The complete pin, including the
-ADO build and payload SHA-256 values, is recorded in
-`scripts/cloud-agent/install-artifacts.json`.
+affect installer boot, clean installation, or initial provisioning. It uses a
+pinned RCP-capable installer ISO and regular COSI from an existing successful
+ADO build instead of rebuilding images during the task. The installer is the
+direct-streaming variant because it contains the RCP agent used to inject the
+candidate binaries, but C1 runs its normal installation path rather than
+stream-image mode. The complete pin, including the ADO build and payload
+SHA-256 values, is recorded in `scripts/cloud-agent/install-artifacts.json`.
 
 On the configured 1ES runner, install the nested-virtualization dependencies:
 
@@ -129,7 +131,8 @@ scripts/cloud-agent/validate.sh install
 
 The test:
 
-1. Verifies and downloads the exact pinned installer ISO and regular COSI.
+1. Verifies and downloads the exact pinned RCP-capable installer ISO and
+   regular COSI.
 2. Builds the candidate branch's `trident`, `trident-acl-agent`, `netlaunch`,
    and `virtdeploy` binaries.
 3. Creates a fresh two-disk libvirt VM and a temporary copy of the `base` Host
