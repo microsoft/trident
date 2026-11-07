@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::VecDeque,
     fs::{File, OpenOptions},
     io::{self, IsTerminal, Write},
@@ -417,6 +418,10 @@ impl Model {
                         self.fail(details, true)
                     }
                 },
+                _ => self.fail(
+                    "Unsupported Trident servicing event; installation outcome is unknown".into(),
+                    true,
+                ),
             },
         }
     }
@@ -1127,22 +1132,26 @@ fn display_text(text: &str) -> String {
 fn log_visible(level: LogLevel, verbosity: LevelFilter) -> bool {
     let level = match level {
         LogLevel::Error => Level::Error,
-        LogLevel::Warn => Level::Warn,
+        LogLevel::Warn | LogLevel::Unspecified | LogLevel::Unknown(_) => Level::Warn,
         LogLevel::Info => Level::Info,
         LogLevel::Debug => Level::Debug,
         LogLevel::Trace => Level::Trace,
+        _ => Level::Warn,
     };
     level.to_level_filter() <= verbosity
 }
 
 /// Preserves the uppercase severity names used by TUI and serial records.
-fn level_label(level: LogLevel) -> &'static str {
+fn level_label(level: LogLevel) -> Cow<'static, str> {
     match level {
-        LogLevel::Error => "ERROR",
-        LogLevel::Warn => "WARN",
-        LogLevel::Info => "INFO",
-        LogLevel::Debug => "DEBUG",
-        LogLevel::Trace => "TRACE",
+        LogLevel::Error => Cow::Borrowed("ERROR"),
+        LogLevel::Warn => Cow::Borrowed("WARN"),
+        LogLevel::Info => Cow::Borrowed("INFO"),
+        LogLevel::Debug => Cow::Borrowed("DEBUG"),
+        LogLevel::Trace => Cow::Borrowed("TRACE"),
+        LogLevel::Unspecified => Cow::Borrowed("UNSPECIFIED"),
+        LogLevel::Unknown(value) => Cow::Owned(format!("UNKNOWN({value})")),
+        _ => Cow::Borrowed("UNSUPPORTED"),
     }
 }
 
@@ -1150,10 +1159,11 @@ fn level_label(level: LogLevel) -> &'static str {
 fn log_color(level: LogLevel) -> Color {
     match level {
         LogLevel::Error => COLOR_ERROR,
-        LogLevel::Warn => COLOR_WARN,
+        LogLevel::Warn | LogLevel::Unspecified | LogLevel::Unknown(_) => COLOR_WARN,
         LogLevel::Info => COLOR_INFO,
         LogLevel::Debug => COLOR_DEBUG,
         LogLevel::Trace => COLOR_TRACE,
+        _ => COLOR_WARN,
     }
 }
 
@@ -1494,7 +1504,7 @@ mod tests {
     use tempfile::TempDir;
 
     use trident_client::{
-        Completion as ClientCompletion, LogRecord, OperationOutcome, RebootDisposition,
+        Completion as ClientCompletion, LogRecord, RebootDisposition, ServicingKind,
     };
 
     /// A failed serial destination is removed without blocking healthy mirrors.
@@ -1837,20 +1847,55 @@ mod tests {
         assert_eq!(entry.plain(), "00:00 [TRIDENT:INFO] Preparing storage");
     }
 
+    /// Unknown daemon severities remain identifiable in serial output and visible as warnings.
+    #[test]
+    fn unknown_log_level_is_not_silently_discarded() {
+        let mut model = Model::new();
+        let entry = model.event(Event::Response(ServicingEvent::Log(LogRecord {
+            timestamp: None,
+            level: LogLevel::Unknown(42),
+            message: "New severity".into(),
+            module: String::new(),
+            target: String::new(),
+            location: None,
+        })));
+        assert_eq!(entry.plain(), "00:00 [TRIDENT:UNKNOWN(42)] New severity");
+        assert!(log_visible(entry.level, LevelFilter::Warn));
+        assert_eq!(log_color(entry.level), COLOR_WARN);
+    }
+
     /// The autorun default schedules a reboot when servicing requires one.
     #[test]
     fn headless_autorun_keeps_automatic_reboot_enabled_by_default() {
         let config = Config::parse("mode = 'autorun'\nserialMode = 'logs'").unwrap();
         let mut model = Model::new();
         model.reboot = config.autorun.reboot;
-        model.event(Event::Response(ServicingEvent::Completed(
-            OperationOutcome::Succeeded(ClientCompletion {
+        model.event(Event::Response(ServicingEvent::Completed(Ok(
+            ClientCompletion {
                 reboot: RebootDisposition::Required,
-                servicing_type: None,
+                servicing_kind: None,
                 image_hash: None,
-            }),
-        )));
+            },
+        ))));
         assert!(model.reboot_at.is_some());
+    }
+
+    /// Unknown servicing kinds fail rather than triggering an automatic reboot.
+    #[test]
+    fn unknown_completion_kind_does_not_claim_success() {
+        let mut model = Model::new();
+        model.reboot = true;
+        let entry = model.event(Event::Response(ServicingEvent::Completed(Ok(
+            ClientCompletion {
+                reboot: RebootDisposition::Required,
+                servicing_kind: Some(ServicingKind::Unknown(42)),
+                image_hash: None,
+            },
+        ))));
+        assert!(model.failed);
+        assert!(model.uncertain);
+        assert!(model.reboot_at.is_none());
+        assert!(entry.plain().contains("Unsupported daemon servicing kind"));
     }
 
     /// Missing inputs produce a tagged failure record suitable for serial output.
@@ -1877,13 +1922,13 @@ mod tests {
             LogLevel::Debug,
             "Earlier disk action".into(),
         );
-        let result = model.event(Event::Response(ServicingEvent::Completed(
-            OperationOutcome::Succeeded(ClientCompletion {
+        let result = model.event(Event::Response(ServicingEvent::Completed(Ok(
+            ClientCompletion {
                 reboot: RebootDisposition::NotRequired,
-                servicing_type: None,
+                servicing_kind: None,
                 image_hash: None,
-            }),
-        )));
+            },
+        ))));
         assert_eq!(result.result_color, Some(Color::Rgb(93, 200, 148)));
         assert_eq!(
             result.plain(),

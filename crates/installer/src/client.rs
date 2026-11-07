@@ -1,13 +1,14 @@
-use anyhow::{anyhow, ensure, Error};
+use std::borrow::Cow;
+
+use anyhow::{anyhow, bail, Error};
 use log::Level;
 use tokio::{sync::mpsc::Sender, task};
 use url::Url;
 
-use trident_api::status::ServicingType;
 use trident_client::{
-    Client, ClientError, Completion as ClientCompletion, ExecutionState, OperationOutcome,
-    RebootDisposition, RebootPolicy, RemoteError, RemoteErrorCategory, ServicingEvent,
-    ServicingOperation,
+    Client, ClientError, Completion as ClientCompletion, ExecutionState, RebootDisposition,
+    RebootPolicy, RemoteError, RemoteErrorCategory, ServicingEvent, ServicingKind,
+    ServicingOperation, ServicingState,
 };
 
 use crate::{
@@ -51,36 +52,59 @@ pub(super) enum Completion {
 }
 
 /// Interprets a domain completion, enforcing the installer's caller-managed reboot contract.
-pub(super) fn completion(outcome: OperationOutcome) -> Result<Completion, Error> {
+pub(super) fn completion(
+    outcome: Result<ClientCompletion, RemoteError>,
+) -> Result<Completion, Error> {
     match outcome {
-        OperationOutcome::Succeeded(ClientCompletion {
+        Ok(ClientCompletion {
             reboot,
-            servicing_type,
+            servicing_kind,
             ..
         }) => {
-            ensure!(
-                reboot != RebootDisposition::Started,
-                "Daemon did not honour caller-managed reboot: {reboot:?}"
-            );
+            let reboot_required = match reboot {
+                RebootDisposition::NotRequired => false,
+                RebootDisposition::Required => true,
+                RebootDisposition::Started => {
+                    bail!("Daemon did not honour caller-managed reboot: {reboot:?}")
+                }
+                _ => bail!("Unsupported daemon reboot disposition: {reboot:?}"),
+            };
+            let performed = match servicing_kind {
+                None => true,
+                Some(ServicingKind::NoneRequired) => false,
+                Some(
+                    ServicingKind::RuntimeUpdate
+                    | ServicingKind::AbUpdate
+                    | ServicingKind::CleanInstall
+                    | ServicingKind::ManualRollbackAb
+                    | ServicingKind::ManualRollbackRuntime,
+                ) => true,
+                Some(other) => bail!("Unsupported daemon servicing kind: {other:?}"),
+            };
             Ok(Completion::Success {
-                reboot_required: reboot == RebootDisposition::Required,
-                performed: servicing_type != Some(ServicingType::NoActiveServicing),
+                reboot_required,
+                performed,
             })
         }
-        OperationOutcome::Failed(error) => Ok(Completion::Failure(format_error(&error))),
+        Err(error) => Ok(Completion::Failure(format_error(&error))),
     }
 }
 
 /// Renders a structured Trident error as readable multi-line diagnostics.
 fn format_error(error: &RemoteError) -> String {
     let category = match error.category {
-        RemoteErrorCategory::ExecutionEnvironmentMisconfiguration => "Execution environment",
-        RemoteErrorCategory::HealthChecks => "Health checks",
-        RemoteErrorCategory::Initialization => "Initialization",
-        RemoteErrorCategory::Internal => "Internal error",
-        RemoteErrorCategory::InvalidInput => "Invalid input",
-        RemoteErrorCategory::Servicing => "Servicing",
-        RemoteErrorCategory::UnsupportedConfiguration => "Unsupported configuration",
+        RemoteErrorCategory::ExecutionEnvironmentMisconfiguration => {
+            Cow::Borrowed("Execution environment")
+        }
+        RemoteErrorCategory::HealthChecks => Cow::Borrowed("Health checks"),
+        RemoteErrorCategory::Initialization => Cow::Borrowed("Initialization"),
+        RemoteErrorCategory::Internal => Cow::Borrowed("Internal error"),
+        RemoteErrorCategory::InvalidInput => Cow::Borrowed("Invalid input"),
+        RemoteErrorCategory::Servicing => Cow::Borrowed("Servicing"),
+        RemoteErrorCategory::UnsupportedConfiguration => Cow::Borrowed("Unsupported configuration"),
+        RemoteErrorCategory::Unspecified => Cow::Borrowed("Unspecified"),
+        RemoteErrorCategory::Unknown(value) => Cow::Owned(format!("Unknown ({value})")),
+        other => Cow::Owned(format!("{other:?}")),
     };
     let mut details = format!(
         "{}\n\nCategory: {category}\nCode: {}",
@@ -98,8 +122,25 @@ fn format_error(error: &RemoteError) -> String {
 
 /// Keeps invalid completions and unacknowledged writes uncertain, but not known remote failures.
 fn operation_uncertain(error: &ClientError) -> bool {
-    !matches!(error, ClientError::RemoteFailure { .. })
-        && error.execution_state() != ExecutionState::NotStarted
+    error.remote_error().is_none() && error.execution_state() != ExecutionState::NotStarted
+}
+
+/// Rejects unrecognized states before retrying an operation with an unknown prior outcome.
+fn recognized_servicing_state(state: ServicingState) -> bool {
+    matches!(
+        state,
+        ServicingState::NotProvisioned
+            | ServicingState::CleanInstallStaged
+            | ServicingState::AbUpdateStaged
+            | ServicingState::ManualRollbackAbStaged
+            | ServicingState::ManualRollbackRuntimeStaged
+            | ServicingState::RuntimeUpdateStaged
+            | ServicingState::CleanInstallFinalized
+            | ServicingState::AbUpdateFinalized
+            | ServicingState::ManualRollbackAbFinalized
+            | ServicingState::Provisioned
+            | ServicingState::AbUpdateHealthCheckFailed
+    )
 }
 
 /// Prepares a source, checks stream safety, and forwards Trident's domain events to the UI.
@@ -203,11 +244,20 @@ pub(super) async fn execute(
         }
     };
     if require_idle {
-        if let Err(error) = client.servicing_state().await {
-            return send(&tx, Event::Error {
-                details: format!("The previous operation's outcome is unknown. Cannot establish that Trident is idle; refusing another write.\n{error}"),
-                uncertain: true,
-            }).await;
+        match client.servicing_state().await {
+            Ok(state) if recognized_servicing_state(state) => {}
+            Ok(state) => {
+                return send(&tx, Event::Error {
+                    details: format!("The previous operation's outcome is unknown. Trident returned an unsupported servicing state {state:?}; refusing another write."),
+                    uncertain: true,
+                }).await;
+            }
+            Err(error) => {
+                return send(&tx, Event::Error {
+                    details: format!("The previous operation's outcome is unknown. Cannot establish that Trident is idle; refusing another write.\n{error}"),
+                    uncertain: true,
+                }).await;
+            }
         }
     }
     let response = match start(&client, plan).await {
@@ -281,7 +331,7 @@ pub(super) async fn send(tx: &Sender<Event>, event: Event) -> Result<(), Error> 
 mod tests {
     use super::*;
 
-    use trident_client::{Operation, RpcCode, SourceLocation};
+    use trident_client::SourceLocation;
 
     #[test]
     /// Ensures a configured force flag does not affect manually chosen streams.
@@ -296,7 +346,7 @@ mod tests {
     fn successful() -> ClientCompletion {
         ClientCompletion {
             reboot: RebootDisposition::Required,
-            servicing_type: Some(ServicingType::CleanInstall),
+            servicing_kind: Some(ServicingKind::CleanInstall),
             image_hash: None,
         }
     }
@@ -305,20 +355,20 @@ mod tests {
     /// Ensures caller-managed reboot and no-op completions retain their installer semantics.
     fn final_response_is_strict() {
         assert_eq!(
-            completion(OperationOutcome::Succeeded(successful())).unwrap(),
+            completion(Ok(successful())).unwrap(),
             Completion::Success {
                 reboot_required: true,
                 performed: true,
             }
         );
-        completion(OperationOutcome::Succeeded(ClientCompletion {
+        completion(Ok(ClientCompletion {
             reboot: RebootDisposition::Started,
             ..successful()
         }))
         .unwrap_err();
         assert_eq!(
-            completion(OperationOutcome::Succeeded(ClientCompletion {
-                servicing_type: Some(ServicingType::NoActiveServicing),
+            completion(Ok(ClientCompletion {
+                servicing_kind: Some(ServicingKind::NoneRequired),
                 ..successful()
             }))
             .unwrap(),
@@ -327,6 +377,11 @@ mod tests {
                 performed: false,
             }
         );
+        completion(Ok(ClientCompletion {
+            servicing_kind: Some(ServicingKind::Unknown(42)),
+            ..successful()
+        }))
+        .unwrap_err();
     }
 
     /// Builds a structured remote failure for formatting and execution-state tests.
@@ -355,30 +410,32 @@ mod tests {
         assert!(!formatted.contains("TridentError {"));
         assert!(!formatted.contains("\\n"));
         assert_eq!(
-            completion(OperationOutcome::Failed(remote_failure())).unwrap(),
+            completion(Err(remote_failure())).unwrap(),
             Completion::Failure(formatted)
         );
+        let category = RemoteError {
+            category: RemoteErrorCategory::Unknown(42),
+            ..remote_failure()
+        };
+        assert!(format_error(&category).contains("Category: Unknown (42)"));
+    }
+
+    /// Connection errors cannot be mistaken for an accepted servicing request.
+    #[tokio::test]
+    async fn connection_errors_do_not_mark_a_write_uncertain() {
+        let error = Client::connect("not an endpoint").await.unwrap_err();
+        assert_eq!(error.execution_state(), ExecutionState::NotStarted);
+        assert!(!operation_uncertain(&error));
     }
 
     #[test]
-    /// Distinguishes rejected writes and known failures from ambiguous servicing outcomes.
-    fn execution_uncertainty_is_preserved() {
-        assert!(!operation_uncertain(&ClientError::RequestRejected {
-            operation: Operation::StreamDisk,
-            code: RpcCode::FailedPrecondition,
-            message: "not started".into(),
-        }));
-        assert!(operation_uncertain(&ClientError::MissingCompletion {
-            operation: Operation::StreamDisk,
-        }));
-        assert!(operation_uncertain(&ClientError::InvalidProtocol {
-            operation: Operation::StreamDisk,
-            details: "invalid final status".into(),
-            state: ExecutionState::Completed,
-        }));
-        assert!(!operation_uncertain(&ClientError::RemoteFailure {
-            operation: Operation::StreamDisk,
-            remote: remote_failure(),
-        }));
+    /// Unknown servicing states cannot clear the uncertainty of a previous write.
+    fn unknown_servicing_state_is_not_accepted_for_retry() {
+        assert!(recognized_servicing_state(ServicingState::NotProvisioned));
+        assert!(recognized_servicing_state(
+            ServicingState::CleanInstallFinalized
+        ));
+        assert!(!recognized_servicing_state(ServicingState::Unspecified));
+        assert!(!recognized_servicing_state(ServicingState::Unknown(42)));
     }
 }

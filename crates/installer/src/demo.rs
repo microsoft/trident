@@ -4,10 +4,9 @@ use anyhow::Error;
 use clap::ValueEnum;
 use tokio::{sync::mpsc::Sender, time};
 
-use trident_api::status::ServicingType;
 use trident_client::{
-    Completion, LogLevel, LogRecord, OperationOutcome, RebootDisposition, RemoteError,
-    RemoteErrorCategory, ServicingEvent,
+    Completion, LogLevel, LogRecord, RebootDisposition, RemoteError, RemoteErrorCategory,
+    ServicingEvent, ServicingKind,
 };
 
 use crate::{
@@ -81,7 +80,7 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
     response(
         &tx,
         ServicingEvent::Completed(if failed {
-            OperationOutcome::Failed(RemoteError {
+            Err(RemoteError {
                 category: RemoteErrorCategory::Servicing,
                 message:
                     "DEMO: Installation failed\nFailed to stream the OS image\nConnection timed out"
@@ -91,9 +90,9 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
                 location: None,
             })
         } else {
-            OperationOutcome::Succeeded(Completion {
+            Ok(Completion {
                 reboot: RebootDisposition::Required,
-                servicing_type: Some(ServicingType::CleanInstall),
+                servicing_kind: Some(ServicingKind::CleanInstall),
                 image_hash: None,
             })
         }),
