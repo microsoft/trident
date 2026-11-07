@@ -35,8 +35,12 @@ sudo NEEDRESTART_MODE=a apt-get install -y --no-install-recommends \
 python3 -m pip install \
     --user \
     --disable-pip-version-check \
-    -r tests/functional_tests/requirements.txt \
+    -r tests/functional_tests/requirements.txt
+
+sudo -E python3 -m pip install \
+    --disable-pip-version-check \
     "virt-firmware==26.2"
+sudo sh -c 'command -v virt-fw-vars'
 
 sudo usermod -a -G libvirt "$USER"
 sudo install -d \
