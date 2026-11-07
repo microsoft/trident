@@ -2,35 +2,6 @@ use std::{error::Error, fmt};
 
 use trident_api::primitives::hash::Sha384Hash;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Operation {
-    Version,
-    StreamDisk,
-    Update,
-    UpdateStage,
-    UpdateFinalize,
-    Commit,
-    Rollback,
-    RollbackStage,
-    RollbackFinalize,
-    #[cfg(feature = "preview")]
-    Install,
-    #[cfg(feature = "preview")]
-    InstallStage,
-    #[cfg(feature = "preview")]
-    InstallFinalize,
-    #[cfg(feature = "preview")]
-    RebuildRaid,
-    #[cfg(feature = "preview")]
-    ServicingState,
-    #[cfg(feature = "preview")]
-    ActiveVolume,
-    #[cfg(feature = "preview")]
-    ValidateHostConfiguration,
-    #[cfg(feature = "preview")]
-    CheckRollback,
-}
-
 /// Selects who performs a reboot required by servicing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]

@@ -6,17 +6,14 @@ use trident_proto::v1preview::{
     rebuild_raid_service_client::RebuildRaidServiceClient,
     rollback_service_client::RollbackServiceClient as PreviewRollbackServiceClient,
     status_service_client::StatusServiceClient, validation_service_client::ValidationServiceClient,
-    AbVolumeState, CheckRollbackKind, CheckRollbackRequest, FinalizeInstallRequest,
-    GetActiveVolumeRequest, GetServicingStateRequest, InstallRequest, RebuildRaidRequest,
-    ServicingState as ProtoServicingState, StageInstallRequest, ValidateHostConfigurationRequest,
+    CheckRollbackRequest, FinalizeInstallRequest, GetActiveVolumeRequest, GetServicingStateRequest,
+    InstallRequest, RebuildRaidRequest, StageInstallRequest, ValidateHostConfigurationRequest,
 };
 
 use crate::{
-    client::{proto_config, reboot_management, rollback_kind, serialize_config},
-    operation::{decode_remote_error, invalid_protocol},
-    types::Operation,
-    ActiveVolume, Client, ClientError, ExecutionState, RebootPolicy, RollbackAvailability,
-    RollbackKind, ServicingOperation, ServicingState, ValidationResult,
+    protocol::{self, Operation},
+    ActiveVolume, Client, ClientError, RebootPolicy, RollbackAvailability, RollbackKind,
+    ServicingOperation, ServicingState, ValidationResult,
 };
 
 impl Client {
@@ -26,8 +23,11 @@ impl Client {
         config: &HostConfiguration,
         reboot: RebootPolicy,
     ) -> Result<ServicingOperation, ClientError> {
-        self.install_yaml(serialize_config(Operation::Install, config)?, reboot)
-            .await
+        self.install_yaml(
+            protocol::serialize_config(Operation::Install, config)?,
+            reboot,
+        )
+        .await
     }
 
     /// Performs an install using Host Configuration YAML unchanged.
@@ -38,10 +38,10 @@ impl Client {
     ) -> Result<ServicingOperation, ClientError> {
         let request = InstallRequest {
             stage: Some(StageInstallRequest {
-                config: Some(proto_config(config)),
+                config: Some(protocol::proto_config(config)),
             }),
             finalize: Some(FinalizeInstallRequest {
-                reboot: Some(reboot_management(reboot)),
+                reboot: Some(protocol::reboot_management(reboot)),
             }),
         };
         let mut client = InstallServiceClient::new(self.channel.clone());
@@ -54,7 +54,7 @@ impl Client {
         &self,
         config: &HostConfiguration,
     ) -> Result<ServicingOperation, ClientError> {
-        self.install_stage_yaml(serialize_config(Operation::InstallStage, config)?)
+        self.install_stage_yaml(protocol::serialize_config(Operation::InstallStage, config)?)
             .await
     }
 
@@ -64,7 +64,7 @@ impl Client {
         config: impl Into<String>,
     ) -> Result<ServicingOperation, ClientError> {
         let request = StageInstallRequest {
-            config: Some(proto_config(config)),
+            config: Some(protocol::proto_config(config)),
         };
         let mut client = InstallServiceClient::new(self.channel.clone());
         self.servicing(
@@ -80,7 +80,7 @@ impl Client {
         reboot: RebootPolicy,
     ) -> Result<ServicingOperation, ClientError> {
         let request = FinalizeInstallRequest {
-            reboot: Some(reboot_management(reboot)),
+            reboot: Some(protocol::reboot_management(reboot)),
         };
         let mut client = InstallServiceClient::new(self.channel.clone());
         self.servicing(
@@ -110,29 +110,7 @@ impl Client {
             )
             .await?
             .into_inner();
-        match ProtoServicingState::try_from(response.state) {
-            Ok(ProtoServicingState::Unspecified) => Ok(ServicingState::Unspecified),
-            Ok(ProtoServicingState::NotProvisioned) => Ok(ServicingState::NotProvisioned),
-            Ok(ProtoServicingState::InstallStaged) => Ok(ServicingState::CleanInstallStaged),
-            Ok(ProtoServicingState::UpdateAbStaged) => Ok(ServicingState::AbUpdateStaged),
-            Ok(ProtoServicingState::ManualRollbackAbStaged) => {
-                Ok(ServicingState::ManualRollbackAbStaged)
-            }
-            Ok(ProtoServicingState::ManualRollbackRuntimeStaged) => {
-                Ok(ServicingState::ManualRollbackRuntimeStaged)
-            }
-            Ok(ProtoServicingState::UpdateRuntimeStaged) => Ok(ServicingState::RuntimeUpdateStaged),
-            Ok(ProtoServicingState::InstallFinalized) => Ok(ServicingState::CleanInstallFinalized),
-            Ok(ProtoServicingState::UpdateAbFinalized) => Ok(ServicingState::AbUpdateFinalized),
-            Ok(ProtoServicingState::ManualRollbackAbFinalized) => {
-                Ok(ServicingState::ManualRollbackAbFinalized)
-            }
-            Ok(ProtoServicingState::Provisioned) => Ok(ServicingState::Provisioned),
-            Ok(ProtoServicingState::UpdateAbHealthCheckFailed) => {
-                Ok(ServicingState::AbUpdateHealthCheckFailed)
-            }
-            Err(_) => Ok(ServicingState::Unknown(response.state)),
-        }
+        Ok(protocol::decode_servicing_state(response.state))
     }
 
     /// Returns the active A/B volume.
@@ -145,13 +123,7 @@ impl Client {
             )
             .await?
             .into_inner();
-        match AbVolumeState::try_from(response.active_volume) {
-            Ok(AbVolumeState::Unspecified) => Ok(ActiveVolume::Unspecified),
-            Ok(AbVolumeState::NoVolume) => Ok(ActiveVolume::None),
-            Ok(AbVolumeState::VolumeA) => Ok(ActiveVolume::VolumeA),
-            Ok(AbVolumeState::VolumeB) => Ok(ActiveVolume::VolumeB),
-            Err(_) => Ok(ActiveVolume::Unknown(response.active_volume)),
-        }
+        Ok(protocol::decode_active_volume(response.active_volume))
     }
 
     /// Validates a typed Host Configuration.
@@ -159,7 +131,7 @@ impl Client {
         &self,
         config: &HostConfiguration,
     ) -> Result<ValidationResult, ClientError> {
-        self.validate_host_configuration_yaml(serialize_config(
+        self.validate_host_configuration_yaml(protocol::serialize_config(
             Operation::ValidateHostConfiguration,
             config,
         )?)
@@ -172,7 +144,7 @@ impl Client {
         config: impl Into<String>,
     ) -> Result<ValidationResult, ClientError> {
         let request = ValidateHostConfigurationRequest {
-            config: Some(proto_config(config)),
+            config: Some(protocol::proto_config(config)),
         };
         let mut client = ValidationServiceClient::new(self.channel.clone());
         let response = self
@@ -182,22 +154,7 @@ impl Client {
             )
             .await?
             .into_inner();
-        let error = response.error.map(decode_remote_error);
-        if response.ok == error.is_some() {
-            return Err(invalid_protocol(
-                Operation::ValidateHostConfiguration,
-                if response.ok {
-                    "successful validation carries an error"
-                } else {
-                    "failed validation is missing error details"
-                },
-                ExecutionState::Completed,
-            ));
-        }
-        Ok(ValidationResult {
-            valid: response.ok,
-            error,
-        })
+        protocol::decode_validation_result(response.ok, response.error)
     }
 
     /// Checks which rollback kind is available.
@@ -210,17 +167,11 @@ impl Client {
             .unary(
                 Operation::CheckRollback,
                 client.check_rollback(Request::new(CheckRollbackRequest {
-                    kind: rollback_kind(kind),
+                    kind: protocol::rollback_kind(kind),
                 })),
             )
             .await?
             .into_inner();
-        match CheckRollbackKind::try_from(response.kind) {
-            Ok(CheckRollbackKind::Unspecified) => Ok(RollbackAvailability::Unspecified),
-            Ok(CheckRollbackKind::NoRollbackAvailable) => Ok(RollbackAvailability::None),
-            Ok(CheckRollbackKind::AbRollbackExpected) => Ok(RollbackAvailability::Ab),
-            Ok(CheckRollbackKind::RuntimeRollbackExpected) => Ok(RollbackAvailability::Runtime),
-            Err(_) => Ok(RollbackAvailability::Unknown(response.kind)),
-        }
+        Ok(protocol::decode_rollback_availability(response.kind))
     }
 }

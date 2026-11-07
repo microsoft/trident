@@ -60,7 +60,10 @@
 
 mod client;
 mod error;
-mod operation;
+mod error_kind;
+mod protocol;
+mod servicing;
+mod transport;
 mod types;
 
 #[cfg(feature = "preview")]
@@ -72,7 +75,7 @@ pub use trident_api::{config::HostConfiguration, primitives::hash::Sha384Hash};
 
 pub use client::{Client, ClientBuilder, DEFAULT_ENDPOINT};
 pub use error::{ClientError, ExecutionState, RpcCode};
-pub use operation::ServicingOperation;
+pub use servicing::ServicingOperation;
 pub use types::{
     Completion, EventTimestamp, ImageHash, LogLevel, LogRecord, RebootDisposition, RebootPolicy,
     RemoteError, RemoteErrorCategory, RollbackKind, ServicingEvent, ServicingKind, SourceLocation,
