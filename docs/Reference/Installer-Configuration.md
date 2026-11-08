@@ -166,11 +166,11 @@ iso:
       - trident.installer=1
 ```
 
-The RPM includes the installer TOML, Trident and common runtime tools. It
+The RPM includes the installer TOML and requires Trident and Bash. It
 starts its service and gRPC socket on a marked installer boot and prevents
 gettys from reclaiming tty1 or mixing login prompts with serial logs.
 No separate service enablement, getty override, or label override is
 necessary for a single `CDROM` ISO or `TRD_INSTALL` USB. On an unmarked
 normal OS, the service does not run and gettys are unaffected. A Host
 Configuration may require additional tools for optional features such as
-RAID or encryption.
+RAID, encryption, or verity.

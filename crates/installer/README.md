@@ -172,11 +172,13 @@ automatically reboot.
 
 On a full-OS installer ISO, install `trident-installer`, add
 `trident.installer=1` to its **ISO kernel command line**, and provide a COSI
-under `cosi/` or a Host Configuration. The RPM pulls in Trident and common
-installer tools, enables its service, starts the gRPC socket through the
+under `cosi/` or a Host Configuration. The RPM pulls in Trident and Bash for
+the recovery shell, enables its service, starts the gRPC socket through the
 service dependency, and suppresses tty1 and serial gettys on marked boots.
 Without that flag the service skips startup and normal gettys are unchanged,
 including on an installed OS that happens to have the RPM.
+Include optional tools in the ISO when the image or Host Configuration needs
+them (for example, `veritysetup` for verity-enabled storage).
 
 Do not also enable `trident-install.service` or older autologin entrypoints.
 The daemon must be built with `grpc-preview` for regular Install; repository

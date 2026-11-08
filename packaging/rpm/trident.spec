@@ -255,12 +255,6 @@ The Trident ACL components required to orchestrate servicing of ACL images.
 Summary:        Trident Linux Installer console for installer media
 Requires:       %{name} = %{version}-%{release}
 Requires:       bash
-Requires:       device-mapper
-Requires:       squashfs-tools
-Requires:       veritysetup
-Requires:       curl
-Requires:       less
-Requires:       iproute
 Conflicts:      %{name}-install-service
 
 %description installer
