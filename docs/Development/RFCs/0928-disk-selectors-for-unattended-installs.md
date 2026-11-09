@@ -182,15 +182,16 @@ Disappearance or changed identity aborts, never triggers another selection.
 
 ## Servicing
 
-Checkpoint the resolved HC and necessary identity state before destructive I/O,
-then retain the concrete HC in Host Status. Recovery requires durable state
-outside the erase set; if unavailable, fail rather than rediscover. Do not save
-strategies or selector options in the HC.
+Servicing is largely unchanged. Before saving the HC to the datastore, Trident
+replaces each selector with the actual disk path it selected. Only the resolved
+HC is saved; selectors, strategies, and selector options are not stored in the
+datastore.
 
-Retries, updates, and rollback retain the concrete binding under existing
-storage-change invariants.[^servicing] Newly attached disks do not affect it.
-Missing disks or state fail closed. Reselection requires explicit reprovisioning.
-Existing configurations stay valid; older Trident rejects the new input fields.
+Retries, updates, and rollback use that saved disk just as they do with an
+explicit `device` path.[^servicing] They do not run selection again. If the disk
+is missing, report an error rather than choose another one. Existing
+configurations continue to work; older Trident versions reject the new input
+fields.
 
 ## Testing and Metrics
 
@@ -202,14 +203,11 @@ restart without rebinding.
 Verify the saved HC contains concrete paths and no selector fields. Report
 selected identities and refusal reasons, not image contents.
 
-## Counter-Arguments and Open Questions
+## Counter-Arguments
 
 Explicit stable paths remain preferable when capacity/order cannot distinguish
 boot and data disks. Keeping this proposal strategy-only avoids a matching
 language or a second policy input channel.
-
-Agree how installer environments provide recoverable journal storage. This
-does not permit transient-only bindings or automatic reselection.
 
 [^stream]: [Current StreamDisk selector](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/stream.rs).
 [^servicing]: [Current storage validation](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/subsystems/storage/mod.rs).
