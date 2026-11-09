@@ -7,8 +7,9 @@
 ## Summary
 
 Add an input-only `storage.disks[].selector` with a required selection strategy
-as an alternative to an explicit device path. Resolve it to a concrete `device`
-before saving the Host Configuration (HC). Storage remains authored, the
+as an alternative to an explicit device path. Resolve it to a stable,
+identity-based `device` reference before saving the Host Configuration (HC).
+Storage remains authored, the
 persisted HC schema is unchanged, and servicing never repeats selection.
 
 ## Motivation and Goals
@@ -168,9 +169,12 @@ No backtracking or reuse.
 No eligible disk, duplicate binding, or inventory failure produces a structured
 error with required capacity and refusal reasons.
 
-Replace each selector with its resolved `device` path, remove all selector
-fields/options, and apply existing HC validation. Persist only the existing HC
-representation, as if the user had authored the concrete paths directly.
+Replace each selector with an unambiguous identity-based `device` reference,
+such as `/dev/disk/by-id/wwn-...`, then remove all selector fields/options and
+apply existing HC validation. If no stable reference is available, fail
+resolution. Persist that reference, not its current kernel enumeration path
+such as `/dev/sda` or `/dev/nvme0n1`. The HC representation is unchanged, as if
+the user had authored the stable reference directly.
 
 ### Final validation
 
@@ -182,16 +186,24 @@ Disappearance or changed identity aborts, never triggers another selection.
 
 ## Servicing
 
-Servicing is largely unchanged. Before saving the HC to the datastore, Trident
-replaces each selector with the actual disk path it selected. Only the resolved
-HC is saved; selectors, strategies, and selector options are not stored in the
-datastore.
+Selectors are input-only. Save only the resolved HC and stable disk bindings,
+never selectors, strategies, or selector options.
 
-Retries, updates, and rollback use that saved disk just as they do with an
-explicit `device` path.[^servicing] They do not run selection again. If the disk
-is missing, report an error rather than choose another one. Existing
-configurations continue to work; older Trident versions reject the new input
-fields.
+Before any destructive install work, durably checkpoint the resolved bindings.
+Current clean-install staging clears the saved HC before partitioning and only
+saves the new HC after staging succeeds.[^staging] The implementation must keep
+the checkpoint through that reset and any staging failure.
+
+The checkpoint must survive a live-image restart, outside RAM and the disks
+being rewritten. If that durability cannot be provided, stop before disk
+writes. A retry or restart must recover the checkpoint and reuse its disks,
+even if they are now partially partitioned. If recovery fails or a bound disk
+is missing, stop rather than selecting another disk.
+
+After installation, updates and rollback use the saved stable references just
+like authored `device` paths, under existing storage validation.[^servicing]
+They do not run selection again. Existing configurations continue to work;
+older Trident versions reject the new input fields.
 
 ## Implementation
 
@@ -203,6 +215,8 @@ The initial implementation should support:
 All other strategies are optional future additions, not requirements for initial
 delivery. Reject strategies that are not implemented rather than substituting
 another strategy. Shared safety, resolution, and persistence rules still apply.
+Initial delivery includes stable-reference resolution and crash-safe binding
+persistence, not just the selection algorithms.
 
 ## Testing and Metrics
 
@@ -211,9 +225,12 @@ skipping unsafe/undersized
 families, natural ordering/ties, capacity, multi-disk reservation, media/holder
 exclusions (including USB devices reported as non-removable and non-USB
 removable media), writable eMMC boot-region rejection, erasure opt-in, unplug, and
-restart without rebinding.
-Verify the saved HC contains concrete paths and no selector fields. Report
-selected identities and refusal reasons, not image contents.
+restart without rebinding. Interrupt after partitioning, restart the live image
+with another blank disk attached, and verify recovery uses the same checkpointed
+disk rather than running selection again. Also cover unavailable checkpoint
+storage and kernel device renumbering across restart.
+Verify the saved HC contains stable identity-based paths and no selector fields.
+Report selected identities and refusal reasons, not image contents.
 
 ## Counter-Arguments
 
@@ -223,4 +240,5 @@ language or a second policy input channel.
 
 [^stream]: [Current StreamDisk selector](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/stream.rs).
 [^servicing]: [Current storage validation](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/subsystems/storage/mod.rs).
+[^staging]: [Current clean-install staging and Host Status reset](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/engine/clean_install.rs).
 [^mmc]: [Linux MMC device partitions and boot-region protection](https://docs.kernel.org/driver-api/mmc/mmc-dev-parts.html).
