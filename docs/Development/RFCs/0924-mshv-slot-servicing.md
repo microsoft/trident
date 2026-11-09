@@ -592,26 +592,6 @@ Source observations are pinned baselines, not claims about deployment:
 - [HvLoader source](https://github.com/microsoft/HvLoader/blob/main/HvLoader.c)
   and [external loader packaging](https://github.com/microsoft/openvmm-deps/blob/main/pkg/hvloader/README.md).
 
-## Short-term iteration on microsoft/trident#915
-
-A distinct interim option could enable A/B updates without changing
-efitreeloader, but with **no guaranteed rollback**:
-
-- Keep `HvLoader.efi`, `lxhvloader.dll` and `Windows/System32/` at the shared
-  ESP paths already hardcoded in efitreeloader: `EFI/HvLoader.efi`,
-  `EFI/lxhvloader.dll` and `EFI/Windows/System32/`.
-- Place unchanged efitreeloader as `grubx64.efi`, alongside `second.efi`,
-  in the `EFI/AZLA`, `EFI/AZLB` and `EFI/BOOT` chains.
-- Installation creates this structure. Updates maintain it, including
-  replacing the shared HvLoader, DLL and `Windows/System32/` payload with
-  the new image's versions.
-
-An OS rollback would still use the updated shared hypervisor payload,
-not the previous version. It may work or fail depending on compatibility;
-rollback is not guaranteed. This interim option does not provide the
-slot-owned rollback guarantees described above. Appendix A continues to
-illustrate the slot-owned design, not this shared-payload iteration.
-
 ## Appendix A: Proposed code changes
 
 These are concrete source-based diffs for the preferred template approach,
