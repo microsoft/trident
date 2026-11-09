@@ -100,14 +100,14 @@ chooses the 1024 GiB `sd` disk. The tiered variants choose the 128 GiB and
 
 ### Configuration example
 
-First fitting NVMe namespace, retaining the existing authored layout:
+Smallest fitting disk in the first eligible tier, retaining the authored layout:
 
 ```yaml
 storage:
   disks:
     - id: os
       selector:
-        strategy: first-nvme-fit
+        strategy: tiered-smallest-fit
       partitionTableType: gpt
       partitions:
         - id: esp
@@ -193,9 +193,21 @@ is missing, report an error rather than choose another one. Existing
 configurations continue to work; older Trident versions reject the new input
 fields.
 
+## Implementation
+
+The initial implementation should support:
+
+- `tiered-smallest-fit`
+- `smallest-fit`
+
+All other strategies are optional future additions, not requirements for initial
+delivery. Reject strategies that are not implemented rather than substituting
+another strategy. Shared safety, resolution, and persistence rules still apply.
+
 ## Testing and Metrics
 
-Cover global versus tiered smallest/largest, skipping unsafe/undersized
+Test each strategy as it is implemented. Cover global versus tiered selection,
+skipping unsafe/undersized
 families, natural ordering/ties, capacity, multi-disk reservation, media/holder
 exclusions (including USB devices reported as non-removable and non-USB
 removable media), writable eMMC boot-region rejection, erasure opt-in, unplug, and
