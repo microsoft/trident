@@ -558,9 +558,12 @@ storage alive through child execution and preserve its encoding.
 
 ## Open Questions
 
-- Ensure that the MSHV payload does not have a hidden dependency on the
-  current root: will moving the payload into slot-specific path cause
-  unanticipated failure?
+- Does HvLoader, or its external loader DLL, load anything beyond the inputs
+  passed by efitreeloader as arguments? If so, are those paths relative or
+  absolute, and does HvLoader's location affect how they are resolved?
+- For encryption sealed with a TPM, how are the MSHV components measured
+  and their expected PCR values predicted? What changes are needed in the
+  existing measurement/prediction flow?
 - How can Trident establish the running hypervisor's slot identity?
 - Is new HostStatus API needed?  What impact as far as trident backward and
   forward compatibility does that carry?
@@ -588,15 +591,6 @@ Source observations are pinned baselines, not claims about deployment:
   and [loader build script](https://dev.azure.com/mariner-org/ACL/_git/acl-baremetal?path=/tools/build-efitreeloader.sh&version=GC6c67ec657279ff9c8e7513fc05c4e6be49d104af).
 - [HvLoader source](https://github.com/microsoft/HvLoader/blob/main/HvLoader.c)
   and [external loader packaging](https://github.com/microsoft/openvmm-deps/blob/main/pkg/hvloader/README.md).
-
-## Some questions in need of answers
-
-- Does HvLoader, or its external loader DLL, load anything beyond the inputs
-  passed by efitreeloader as arguments? If so, are those paths relative or
-  absolute, and does HvLoader's location affect how they are resolved?
-- For encryption sealed with a TPM, how are the MSHV components measured
-  and their expected PCR values predicted? What changes are needed in the
-  existing measurement/prediction flow?
 
 ## Short-term iteration on microsoft/trident#915
 
