@@ -17,17 +17,22 @@ HC values, without changing the persisted HC schema.
 
 ## Motivation and Goals
 
+Bootable media carrying one HC and COSI should work across physical servers and
+VMs without per-host YAML or remastering. Targets may be NVMe, `sd*`, or `vd*`,
+alongside data disks and installation media; capacity alone does not identify
+the intended OS disk.
+
 Today, [Disk.device](../../Reference/Host-Configuration/API-Reference/Disk.md)
 requires a literal path. StreamDisk has a private smallest-fit selector and
 derives configuration from the image. Its capacity threshold is COSI
 `disk.size`: the original virtual disk size, **not compressed archive size**.[^selector]
 
-Unattended provisioning needs reusable configurations across different disk
-names and capacities. Disk strategies remove external path-replacement scripts;
-image templates remove duplicated storage definitions. Once invoked with an
-explicit policy, Install must finish without prompts or return a clear failure,
-not fall back to interactive selection. This does not invent missing image
-metadata or make existing-data erasure implicit.
+Moving to HC-driven Install should retain those conveniences while enabling
+declarative servicing and customized storage. Selectors solve path portability;
+templates avoid duplicating a sealed image's storage graph and drifting from
+boot/verity identities. Streamed images can contain A/B partitions: reproducing
+layout bytes does not itself supply HC A/B servicing semantics. An explicitly
+unattended invocation must succeed or fail without prompting or implicit erasure.
 
 ## Scope
 
