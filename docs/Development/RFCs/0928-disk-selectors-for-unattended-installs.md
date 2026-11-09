@@ -50,14 +50,19 @@ The selector is an object with these input-only fields:
 | `first-sd-fit` | First whole `sd*` disk in natural letter order |
 | `first-vd-fit` | First whole `vd*` disk in natural letter order |
 | `smallest-fit` | Least capacity across supported families |
-| `smallest-fit-by-type` | First eligible family in the priority order below, then least capacity within that family |
 | `largest` | Greatest capacity across supported families |
+| `tiered-smallest-fit` | First eligible family in the priority order below, then least capacity within that family |
+| `tiered-largest` | First eligible family in that priority order, then greatest capacity within that family |
 
-`smallest-fit-by-type` uses fixed priority **NVMe, `sd`, `vd`, `mmcblk`, `hd`**.
+Both tiered strategies use fixed priority **NVMe, `sd`, `vd`, `mmcblk`, `hd`**.
 Skip a family if it has no eligible disk large enough. Family preference
-outranks size: with a 32 GiB requirement, a 256 GiB NVMe and a 64 GiB `sd` disk,
-`smallest-fit` chooses the `sd` disk; `smallest-fit-by-type` chooses the NVMe.
-`largest` still chooses globally by capacity, not by family.
+outranks size; select the smallest or largest fitting disk within the first
+eligible family. Global `smallest-fit` and `largest` rank by capacity instead.
+
+For a 32 GiB requirement, consider NVMe disks of 128/256 GiB and `sd` disks
+of 64/1024 GiB. Global `smallest-fit` chooses the 64 GiB `sd` disk; `largest`
+chooses the 1024 GiB `sd` disk. The tiered variants choose the 128 GiB and
+256 GiB NVMe disks, respectively.
 
 Capacity ties use that family order, then natural device-name order. Compare
 NVMe controller/namespace numbers and `mmcblk` indices numerically; use natural
@@ -150,7 +155,7 @@ Existing configurations stay valid; older Trident rejects the new input fields.
 
 ## Testing and Metrics
 
-Cover global versus family-first smallest-fit, skipping unsafe/undersized
+Cover global versus tiered smallest/largest, skipping unsafe/undersized
 families, natural ordering/ties, capacity, multi-disk reservation, media/holder
 exclusions, writable eMMC boot-region rejection, erasure opt-in, unplug, and
 restart without rebinding.
