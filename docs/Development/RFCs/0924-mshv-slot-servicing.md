@@ -567,13 +567,12 @@ storage alive through child execution and preserve its encoding.
 - How can Trident establish the running hypervisor's slot identity?
 - Is new HostStatus API needed?  What impact as far as trident backward and
   forward compatibility does that carry?
-
-- How should an explicit BOOT entry be mapped to a managed firmware entry
-  for promotion? Until resolved, ambiguous promotion remains blocked.
-- How can a fallback payload's slot identity be established without adding
-  payload metadata files? A BOOT directory path alone is insufficient.
 - What persisted layout/identity state prevents unsafe opt-out and supports
-  expected-payload diagnostics through commit and rollback?
+  expected-payload diagnostics through commit and rollback?  For example, if
+  the active OS is the VHD-based initial OS, does it have anything in its
+  HostStatus identifying it as mshv-enabled?  Do we want to validate during
+  update that it has the requisite mshv payload in the appropriate location?
+  How much error checking do we want to include?
 - Which minimum component versions, install roots and firmware platforms
   are supported at launch? What measured peak ESP size do their images need?
 
