@@ -11,11 +11,9 @@ Enable Trident to install, update and roll back MSHV-enabled Azure Container
 Linux (ACL) images by keeping a complete hypervisor boot payload beside each
 slot's EFI chain. Preserve existing firmware and UKI selection. Extend the
 existing Rust slot validation for applicable MSHV boots so a mixed
-hypervisor/OS boot cannot
-be promoted. The preferred efitreeloader approach expands a signed argument
-template using the executing efitreeloader binary's directory. Deriving
-the prefix from the firmware boot entry and selecting complete signed
-directory profiles remain alternatives.
+hypervisor/OS boot cannot be committed.
+
+Update efitreeloader to enable slot-owned MSHV boot payloads.
 
 ## Motivation and Goals
 
@@ -34,7 +32,10 @@ UEFI -> \efi\BOOT\bootx64.efi       shim
            -> selected UKI -> Linux
 ```
 
-Efitreeloader's JSON configuration is compiled into its signed binary.
+Efitreeloader currently has a compiled-in set of absolute paths that are
+used at runtime to enable MSHV boot. These paths are configurable at build
+time via efitreeloader's JSON configuration.
+
 The loader already resolves relative child executable paths against its
 executing directory using `LoadedImageDevicePath`. However, the current
 HvLoader/DLL arguments name fixed absolute DLL and hypervisor-root paths.
@@ -43,14 +44,12 @@ slot-owned.
 
 HvLoader verifies and loads the external DLL. Its public source describes
 preparing the hypervisor without running it and registering a kernel-facing
-protocol. This RFC does not assume that it starts an independent VM before
-booting Linux, or that its public source establishes the external DLL's
-complete verification and measurement behavior.
+protocol.
 
 [microsoft/trident#915](https://github.com/microsoft/trident/pull/915)
 proposes preserving the existing shared-path payload during clean install.
-That is useful initial enablement, but it does not provide slot-owned
-payload servicing or retain separate hypervisor versions for rollback.
+That is useful initial enablement, but because it overwrites the "shared"
+MSHV payload, it does not provide a dependable rollback.
 
 ### Problem
 
@@ -100,7 +99,17 @@ mixed launch.
 ### Out of Scope
 
 - General MSHV support; this feature is gated by the internal parameter
-  `mshvSlotEspPayload`.
+  `mshvSlotEspPayload`, and only tested for specific 1es images.
+
+### Unsure
+
+- Initial testing uncovered that 2 1es images built from the same ACL-T base
+  image contain /usr partitions that share the same btrfs fs uuid, but differing
+  verity hashes (reflecting different content). Trident cannot handle this in
+  v0.30.0. We need to either 1) update the 1es builds (and/or ImageCustomizer)
+  to ensure that the btrfs fs uuid is unique for each /usr partition, or 2) explicitly
+  ensure that we do not publish this conflicting combination of /usr partitions. I
+  think we want `#1` and this should be in-scope.
 
 ### Exit Criteria
 
@@ -168,144 +177,15 @@ ACL slot/firstboot policies remain unchanged. `AZL2B` is an additional
 installation's EFI directory and corresponds to UKI suffix `azlb1`, not
 `azlb2`. Reuse Trident's naming helpers.
 
-### Efitreeloader resolver alternatives
+### Efitreeloader MSHV payload resolution
 
-Prefer **Alternative A**, subject to signing-policy approval: 
-* Alternative A uses the executing efitreeloader binary's directory as the
-template prefix.
-* Alternative B derives the prefix from the firmware boot entry.
-* Alternative C retains complete signed argument strings.
+Updating efitreeloader to enable slot-owned MSHV payloads could be
+achieved through several approaches. Three approaches are outlined
+[below](#efitreeloader-resolver-alternatives).
 
-#### Alternative A (preferred): executing-loader directory prefix
-
-See the [proposed loader diff](#a1-efitreeloader-template-expansion).
-
-Compile one argument template into the signed efitreeloader. Efitreeloader,
-not HvLoader or the DLL, expands the designated `${{PREFIX}}` token before
-invoking the child.
-
-Use `LoadedImageDevicePath` on efitreeloader's own image handle, as the
-loader already does for relative child executable paths. Set `${{PREFIX}}`
-to the parent directory of the executing binary, not its filename, the
-firmware boot entry's path or the Linux ESP mount point.
-
-```json
-{
-  "load_entries": [
-    {
-      "path": "HvLoader.efi",
-      "args": "${{PREFIX}}\\lxhvloader.dll MSHV_ROOT=\\${{PREFIX}}\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
-    },
-    { "path": "second.efi" }
-  ]
-}
-```
-
-```text
-Executing efitreeloader = ESP device path + \EFI\AZLB\grubx64.efi
-  -> ${{PREFIX}} = \EFI\AZLB
-  -> DLL argument = \EFI\AZLB\lxhvloader.dll
-     MSHV_ROOT=\\EFI\AZLB\Windows
-```
-
-Reuse the same loaded device/ESP and directory for child executable
-resolution and argument expansion. Normalize the directory to one leading
-backslash and no trailing backslash; validate the supported path before
-starting any child. Missing, malformed or ambiguous loaded-image paths
-must fail closed.
-
-The exact `${{PREFIX}}` token in a child's compiled `args` is the opt-in;
-there is no separate JSON flag. Resolve and validate the prefix only if at
-least one child needs expansion.
-
-Without that token, pass the compiled arguments unchanged, including full
-absolute paths, relative arguments and empty strings. Do not apply new
-prefix validation to literal-only configurations. Only the exact token is
-reserved; other text remains literal.
-
-#### Alternative B: runtime boot-entry prefix
-
-Use the same compiled argument template and token-based opt-in as Alternative
-A, but derive `${{PREFIX}}` from the firmware-selected executable instead
-of efitreeloader's own location:
-
-```text
-BootCurrent = 0008
-  -> Boot0008 = ESP device path + \EFI\AZLB\bootx64.efi
-  -> ${{PREFIX}} = \EFI\AZLB
-```
-
-Read `BootCurrent` as a binary 16-bit value and parse the corresponding
-`Boot####` EFI load option. Both variables use global-variable GUID
-`8be4df61-93ca-11d2-aa0d-00e098032b8c`. Extract the executable's parent
-from its device path, not its description or `BootNext`/`BootOrder`.
-The variable contains a concrete path, not the placeholder.
-
-Preserve the device/ESP identity and corroborate it and the directory
-against the executing chain's loaded-image context before loading children.
-`BootCurrent` identifies the firmware option, not every later chainloaded
-executable. Missing/malformed variables, unsupported paths or disagreement
-must fail closed; test firmware fallback and chainloading explicitly.
-This is exact token substitution, not shell expansion or runtime JSON input.
-
-#### Alternative C: signed directory profiles
-
-Compile a generic list of `{root, load_entries}` profiles into the signed
-loader. Each profile contains complete child argument strings.
-
-The following illustrates B's profile only. A deployable image must also
-cover A and configured BOOT fallback.
-
-```json
-{
-  "profiles": [
-    {
-      "root": "\\EFI\\AZLB",
-      "load_entries": [
-        {
-          "path": "HvLoader.efi",
-          "args": "\\EFI\\AZLB\\lxhvloader.dll MSHV_ROOT=\\\\EFI\\AZLB\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
-        },
-        { "path": "second.efi" }
-      ]
-    }
-  ]
-}
-```
-
-Reject duplicate/malformed roots, empty profiles and documents mixing the
-legacy and profile forms at build time. Reject zero or multiple runtime
-matches before starting any child. Retain the existing top-level
-`load_entries` schema as a separate legacy configuration.
-
-This bounds runtime selection to complete signed strings. Additional roots
-such as `AZL2A`/`AZL2B` require explicit profiles and release coverage.
-Reject unsupported install indices before deployment; an unsigned manifest
-must not expand the signed root list.
-
-For all three alternatives, preserve the current extra-leading-backslash
-`MSHV_ROOT` convention and validate it with the packaged DLL. Keep argument
-storage alive through child execution and preserve its encoding.
-
-### Deployment
-
-See the [proposed Trident diff](#a3-trident-payload-deployment-and-fallback).
-
-Introduce a separately gated slot layout, provisionally
-`internalParams.mshvSlotEspPayload`. Require this opt-in and validate the
-required payload files. Reject non-UKI images, incomplete bundles,
-conflicting legacy flags and unsupported resolver coverage before modifying
-the target.
-
-Use the existing target-directory calculation, inactive-slot clearing,
-deployment, flush/unmount and finalization paths. Replace only the
-boot-file copy operation with complete-bundle copying. Do not copy updated
-files into the committed slot or the legacy fixed `\efi` paths.
-
-Complete validation, copying and persistence before ordinary firmware/UKI
-finalization advertises the trial. A failed copy uses existing deployment
-errors and retry semantics. No new payload-generation state machine or
-second boot-variable finalizer is introduced.
+I prefer [**Alternative A**](#alternative-a-executing-loader-directory-prefix),
+which uses the executing efitreeloader binary's directory to
+resolve the MSHV payload.
 
 ### Extend existing slot validation for MSHV
 
@@ -362,25 +242,18 @@ BOOT entry therefore needs deliberate mapping to the validated managed
 entry. Until that is defined and tested, reject ambiguous promotion rather
 than accidentally promoting BOOT.
 
-Use a trustworthy runtime hypervisor identity query if available. Neither
-successful HvLoader return nor firmware labels are cryptographic
-attestation of the running hypervisor.
-
 ### Scaffolding for invalid hypervisor auto-rollback
 
 The following is proposed scaffolding for automatically rolling back an
 update with an invalid hypervisor, not existing active-volume mismatch
-handling. The state, transition and recovery implementation remains TBD;
-the slot-validation error alone neither changes state nor initiates rollback.
+handling.
 
 For an A/B update with an unexpected hypervisor or missing/contradictory
 required MSHV identity evidence, persist
 `ServicingError::ValidateAbActiveHypervisor` and a new failure state,
 provisionally `AbUpdateHypervisorCheckFailed`, before initiating rollback.
-Reserve `AbUpdateHealthCheckFailed` for failures of the existing health
-checks. Reuse rollback actions where appropriate, but explicitly extend
-commit, reboot and recovery dispatch to recognize the new state; it must
-not be treated as an idle/completed update or a health-hook result.
+Reuse rollback actions where appropriate, but explicitly extend
+commit, reboot and recovery dispatch to recognize the new state.
 
 Recovery from the new state expects the retained pre-update OS slot and
 its matching hypervisor. Return to `Provisioned` only after the expanded
@@ -388,7 +261,6 @@ slot check validates both, preserving/reporting the original
 unexpected-hypervisor error. If recovery is still mixed or cannot establish
 the required identity, retain the failure state and report recovery failure
 rather than promoting either payload or repeatedly oscillating slots.
-The final failure-state name remains an implementation review item.
 
 ### Lifecycle
 
@@ -429,16 +301,8 @@ Preserve existing fallback modes:
 | Optimistic | Copy B payload to BOOT. | Retain B payload. |
 | Disabled | Do not create/update fallback. | Unchanged. |
 
-The existing flat `replace_boot_files` copy cannot copy nested directories.
-Extend its copy/removal operations only for validated opt-in bundles,
-retaining its existing `.new`/`.old` phases, callers, return type and
-servicing-error propagation. Stage the complete replacement tree before
-renaming; handle only exact, validated Trident-owned stale entries on retry.
-Never recursively remove an ESP root, arbitrary directory or active slot.
-
 An MSHV fallback-copy failure has the same state/error behavior as ordinary
-fallback-copy failure. The extension does not make FAT publication an atomic
-whole-bundle transaction or expand existing power-loss guarantees.
+fallback-copy failure.
 
 Exercise optimistic B fallback surviving a failed trial and later B restage.
 A mixed fallback boot reaching Linux must fail validation; an ambiguous
@@ -448,24 +312,15 @@ BOOT-to-managed promotion remains unsupported.
 
 No new public Host Configuration API or COSI metadata revision is proposed.
 The provisional internal flag is off by default and requires validation of
-the payload files. Its final name and supported combinations are
-implementation review items, not an existing API.
+the payload files.
 
-Efitreeloader configuration changes are described above. Alternatives A
-and B interpret the exact `${{PREFIX}}` token in compiled `args`, with
-different prefix sources and no additional JSON field. Other arguments
-and non-MSHV behavior remain unchanged; the token itself becomes reserved.
-Alternative C adds a strict `profiles`
-form while retaining legacy `load_entries`.
-
-No new UEFI variable or loader/Trident preparation-record API is proposed.
+Efitreeloader build-time configuration changes are described above.
 
 The [auto-rollback scaffolding](#scaffolding-for-invalid-hypervisor-auto-rollback)
 proposes `AbUpdateHypervisorCheckFailed` as a new persisted Host Status
 value, distinct from `AbUpdateHealthCheckFailed`.
-Finalize its name, serialization and status API mappings during
-implementation review. Consumers must recognize it as a failed update
-requiring recovery, not an idle or successfully provisioned host.
+> Note: it should be verified that this change will not cause some trident conflicts
+> when trident reads a datastore containing this new HostStatus state.
 
 ## Testing and Metrics
 
@@ -578,6 +433,126 @@ boot; define persisted layout detection and reject unsafe disablement.
    semantics; test interruption, retry and slot reuse.
 5. Complete Secure Boot, measurements, capacity and supported firmware
    validation, then enable the opt-in in production image pipelines.
+
+## Efitreeloader resolver alternatives
+
+Prefer **Alternative A**, subject to signing-policy approval: 
+* Alternative A uses the executing efitreeloader binary's directory as the
+template prefix.
+* Alternative B derives the prefix from the firmware boot entry.
+* Alternative C retains complete signed argument strings.
+
+### Alternative A: executing-loader directory prefix
+
+See the [proposed loader diff](#a1-efitreeloader-template-expansion).
+
+Compile one argument template into the signed efitreeloader. Efitreeloader,
+not HvLoader or the DLL, expands the designated `${{PREFIX}}` token before
+invoking the child.
+
+Use `LoadedImageDevicePath` on efitreeloader's own image handle, as the
+loader already does for relative child executable paths. Set `${{PREFIX}}`
+to the parent directory of the executing binary, not its filename, the
+firmware boot entry's path or the Linux ESP mount point.
+
+```json
+{
+  "load_entries": [
+    {
+      "path": "HvLoader.efi",
+      "args": "${{PREFIX}}\\lxhvloader.dll MSHV_ROOT=\\${{PREFIX}}\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
+    },
+    { "path": "second.efi" }
+  ]
+}
+```
+
+```text
+Executing efitreeloader = ESP device path + \EFI\AZLB\grubx64.efi
+  -> ${{PREFIX}} = \EFI\AZLB
+  -> DLL argument = \EFI\AZLB\lxhvloader.dll
+     MSHV_ROOT=\\EFI\AZLB\Windows
+```
+
+Reuse the same loaded device/ESP and directory for child executable
+resolution and argument expansion. Normalize the directory to one leading
+backslash and no trailing backslash; validate the supported path before
+starting any child. Missing, malformed or ambiguous loaded-image paths
+must fail closed.
+
+The exact `${{PREFIX}}` token in a child's compiled `args` is the opt-in;
+there is no separate JSON flag. Resolve and validate the prefix only if at
+least one child needs expansion.
+
+Without that token, pass the compiled arguments unchanged, including full
+absolute paths, relative arguments and empty strings. Do not apply new
+prefix validation to literal-only configurations. Only the exact token is
+reserved; other text remains literal.
+
+### Alternative B: runtime boot-entry prefix
+
+Use the same compiled argument template and token-based opt-in as Alternative
+A, but derive `${{PREFIX}}` from the firmware-selected executable instead
+of efitreeloader's own location:
+
+```text
+BootCurrent = 0008
+  -> Boot0008 = ESP device path + \EFI\AZLB\bootx64.efi
+  -> ${{PREFIX}} = \EFI\AZLB
+```
+
+Read `BootCurrent` as a binary 16-bit value and parse the corresponding
+`Boot####` EFI load option. Both variables use global-variable GUID
+`8be4df61-93ca-11d2-aa0d-00e098032b8c`. Extract the executable's parent
+from its device path, not its description or `BootNext`/`BootOrder`.
+The variable contains a concrete path, not the placeholder.
+
+Preserve the device/ESP identity and corroborate it and the directory
+against the executing chain's loaded-image context before loading children.
+`BootCurrent` identifies the firmware option, not every later chainloaded
+executable. Missing/malformed variables, unsupported paths or disagreement
+must fail closed; test firmware fallback and chainloading explicitly.
+This is exact token substitution, not shell expansion or runtime JSON input.
+
+### Alternative C: signed directory profiles
+
+Compile a generic list of `{root, load_entries}` profiles into the signed
+loader. Each profile contains complete child argument strings.
+
+The following illustrates B's profile only. A deployable image must also
+cover A and configured BOOT fallback.
+
+```json
+{
+  "profiles": [
+    {
+      "root": "\\EFI\\AZLB",
+      "load_entries": [
+        {
+          "path": "HvLoader.efi",
+          "args": "\\EFI\\AZLB\\lxhvloader.dll MSHV_ROOT=\\\\EFI\\AZLB\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
+        },
+        { "path": "second.efi" }
+      ]
+    }
+  ]
+}
+```
+
+Reject duplicate/malformed roots, empty profiles and documents mixing the
+legacy and profile forms at build time. Reject zero or multiple runtime
+matches before starting any child. Retain the existing top-level
+`load_entries` schema as a separate legacy configuration.
+
+This bounds runtime selection to complete signed strings. Additional roots
+such as `AZL2A`/`AZL2B` require explicit profiles and release coverage.
+Reject unsupported install indices before deployment; an unsigned manifest
+must not expand the signed root list.
+
+For all three alternatives, preserve the current extra-leading-backslash
+`MSHV_ROOT` convention and validate it with the packaged DLL. Keep argument
+storage alive through child execution and preserve its encoding.
+
 
 ## Counter-Arguments
 
