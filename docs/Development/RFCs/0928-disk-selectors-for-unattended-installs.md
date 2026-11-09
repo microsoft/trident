@@ -36,6 +36,8 @@ adoption. Storage templates remain a separate proposal.
 
 ## Public API Design
 
+### Selector fields
+
 Each authored disk has exactly one of existing `device` or new `selector`.
 The selector is an object with these input-only fields:
 
@@ -43,6 +45,8 @@ The selector is an object with these input-only fields:
 | --- | --- | --- |
 | `strategy` | Enum below | Required; no default |
 | `allowExistingData` | Boolean | Default `false`; explicit existing-data erasure opt-in |
+
+### Available strategies
 
 | Strategy | Selection among eligible disks with sufficient capacity |
 | --- | --- |
@@ -54,32 +58,47 @@ The selector is an object with these input-only fields:
 | `tiered-smallest-fit` | First eligible family in the priority order below, then least capacity within that family |
 | `tiered-largest` | First eligible family in that priority order, then greatest capacity within that family |
 
-Both tiered strategies use fixed priority **NVMe, `sd`, `vd`, `mmcblk`, `hd`**.
+### Tier preference order
+
+Both tiered strategies use fixed priority:
+
+1. NVMe
+2. `sd`
+3. `vd`
+4. `mmcblk`
+5. `hd`
+
 Skip a family if it has no eligible disk large enough. Family preference
 outranks size; select the smallest or largest fitting disk within the first
 eligible family. Global `smallest-fit` and `largest` rank by capacity instead.
+
+### Worked example: 32 GiB requirement
 
 For a 32 GiB requirement, consider NVMe disks of 128/256 GiB and `sd` disks
 of 64/1024 GiB. Global `smallest-fit` chooses the 64 GiB `sd` disk; `largest`
 chooses the 1024 GiB `sd` disk. The tiered variants choose the 128 GiB and
 256 GiB NVMe disks, respectively.
 
-Capacity ties use that family order, then natural device-name order. Compare
-NVMe controller/namespace numbers and `mmcblk` indices numerically; use natural
-letter order for `sd`, `vd`, and `hd`. For example, `nvme2n1` precedes
-`nvme10n1`, `mmcblk2` precedes `mmcblk10`, and `sdz` precedes `sdaa`.
-This is a discovery-snapshot order, not identity across reboots. All strategies
-require the authored storage to fit. The three family-specific strategies
-never fall back to another family.
+### Edge-case decisions
 
-Unknown fields/values, missing strategy, and specifying both `device` and
-`selector` are validation errors. Supported families are NVMe namespaces,
-`sd*`, `vd*` (virtio), `mmcblkN` (non-removable eMMC user-area disks), and `hd*`
-(legacy IDE names). Verify whole-device kind and topology, not prefixes alone.
-`sd*` can include SAS, SATA, USB, and VM disks. VMs can also expose NVMe, so this
-is a device-family preference, not a physical-versus-virtual guarantee.
+- **Tie-breaking:** Capacity ties use that family order, then natural
+  device-name order. Compare NVMe controller/namespace numbers and `mmcblk`
+  indices numerically; use natural letter order for `sd`, `vd`, and `hd`.
+  For example, `nvme2n1` precedes `nvme10n1`, `mmcblk2` precedes `mmcblk10`,
+  and `sdz` precedes `sdaa`.
+- **Identity and capacity:** This is a discovery-snapshot order, not identity
+  across reboots. All strategies require the authored storage to fit. The three
+  family-specific strategies never fall back to another family.
+- **Validation:** Unknown fields/values, missing strategy, and specifying both
+  `device` and `selector` are validation errors.
+- **Supported devices:** Supported families are NVMe namespaces, `sd*`, `vd*`
+  (virtio), `mmcblkN` (non-removable eMMC user-area disks), and `hd*` (legacy
+  IDE names). Verify whole-device kind and topology, not prefixes alone.
+- **Family versus transport:** `sd*` can include SAS, SATA, USB, and VM disks.
+  VMs can also expose NVMe, so this is a device-family preference, not a
+  physical-versus-virtual guarantee.
 
-### Example
+### Configuration example
 
 First fitting NVMe namespace, retaining the existing authored layout:
 
@@ -104,36 +123,53 @@ use `device: /dev/disk/by-id/...` instead of `selector`.
 
 ## Resolution and Safety
 
+### Capacity requirement
+
 Compute each disk's minimum capacity from authored fixed sizes, alignment/GPT
 overhead, and grow-partition minima, including uncompressed image payloads and
 filesystem/device-layer overhead. Fail if a safe minimum cannot be computed.
 Compressed archive size is not the capacity requirement.
 
-Candidates must be writable whole disks with recoverable stable identities.
-Exclude USB/removable media, installation-media and live-root backing disks,
-mounted descendants, swap, and active device-mapper/RAID holders. Trace backing
-relationships transitively and deduplicate aliases; ambiguous identity or
-unsupported multipath fails.
+### Candidate eligibility
 
-For `mmcblk`, accept only the whole non-removable eMMC user-area device.
-Exclude SD cards, partitions, boot0/boot1, and RPMB regions. Boot regions remain
-excluded even if their default write protection has been disabled.[^mmc]
+- **Device requirements:** Candidates must be writable whole disks with
+  recoverable stable identities.
+- **Protected devices:** Exclude USB/removable media, installation-media and
+  live-root backing disks, mounted descendants, swap, and active
+  device-mapper/RAID holders.
+- **Identity:** Trace backing relationships transitively and deduplicate
+  aliases; ambiguous identity or unsupported multipath fails.
+- **eMMC:** For `mmcblk`, accept only the whole non-removable eMMC user-area
+  device. Exclude SD cards, partitions, boot0/boot1, and RPMB regions. Boot
+  regions remain excluded even if their default write protection has been
+  disabled.[^mmc]
 
-By default, exclude disks with partition tables or recognized data signatures.
-This is a conservative blank-disk check, not proof that no valuable bytes exist.
-`allowExistingData: true` permits erasing the selected disk's existing data, but
-never overrides live/media/read-only protections. Size and ordering alone do
-not identify the intended OS disk. Explicit paths retain existing adoption
-behavior without permission to erase live/media data.
+### Existing data and erasure
 
-Reserve explicit targets first, then resolve selectors in disk-list order,
-removing each chosen identity from the candidate set. No backtracking or reuse.
+- **Default:** By default, exclude disks with partition tables or recognized
+  data signatures. This is a conservative blank-disk check, not proof that no
+  valuable bytes exist.
+- **Opt-in:** `allowExistingData: true` permits erasing the selected disk's
+  existing data, but never overrides live/media/read-only protections.
+- **Intent:** Size and ordering alone do not identify the intended OS disk.
+  Explicit paths retain existing adoption behavior without permission to erase
+  live/media data.
+
+### Allocation and resolution
+
+1. Reserve explicit targets first.
+2. Then resolve selectors in disk-list order, removing each chosen identity
+   from the candidate set.
+
+No backtracking or reuse.
 No eligible disk, duplicate binding, or inventory failure produces a structured
 error with required capacity and refusal reasons.
 
 Replace each selector with its resolved `device` path, remove all selector
 fields/options, and apply existing HC validation. Persist only the existing HC
 representation, as if the user had authored the concrete paths directly.
+
+### Final validation
 
 Installer supplies media identities/exclusions and presents the resolved
 identity, capacity, layout, and erase scope. Its manual picker remains a
