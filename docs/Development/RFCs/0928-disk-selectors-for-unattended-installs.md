@@ -70,7 +70,7 @@ Each authored disk has exactly one of existing `device` or new `selector`.
 | `match.name` | Kernel disk basename or glob | For example `vda`, `sd*`, `nvme*n*` |
 | `match.serial` | Exact reported serial string | No globbing |
 | `match.wwn` | Exact reported WWN string | No globbing |
-| `strategy` | `first`, `smallest-fit`, `largest-fit` | Optional if `match` is present |
+| `strategy` | `first`, `smallest-fit`, `largest` | Optional if `match` is present |
 | `allowExistingData` | Boolean | Default `false`; explicit existing-data erasure opt-in |
 
 A valid inline selector contains a non-empty `match`, a `strategy`, or both. Empty
@@ -90,7 +90,7 @@ strategy, choose one from the matching set:
 | --- | --- |
 | `first` | First in deterministic natural device-name order |
 | `smallest-fit` | Least capacity that fits authored storage |
-| `largest-fit` | Greatest capacity that fits authored storage |
+| `largest` | Greatest capacity among matching eligible disks |
 
 Capacity ties use the same natural ordering. Initially support NVMe namespaces,
 `sd*`, and `vd*` whole disks, ordered by family NVMe, `sd`, `vd`. Within NVMe,
@@ -141,7 +141,7 @@ Other useful combinations:
 | `match.wwn: "<boot-disk-wwn>"` | Pin a physical disk despite kernel-name changes |
 | `match.name: "nvme*n*"` plus `smallest-fit` | Prefer a smaller OS disk among NVMe devices |
 | `strategy: smallest-fit` | Choose the smallest eligible disk across supported families |
-| `strategy: largest-fit` | Allocate a capacity-oriented single-disk host |
+| `strategy: largest` | Allocate a capacity-oriented single-disk host |
 
 Family matches can still select a data disk. Matching, ordering, and capacity
 are policy inputs, not proof that the intended OS disk was identified.
