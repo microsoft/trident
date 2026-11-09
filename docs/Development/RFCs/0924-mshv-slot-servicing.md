@@ -436,11 +436,15 @@ boot; define persisted layout detection and reject unsafe disablement.
 
 ## Efitreeloader resolver alternatives
 
-Prefer **Alternative A**, subject to signing-policy approval: 
-* Alternative A uses the executing efitreeloader binary's directory as the
-template prefix.
-* Alternative B derives the prefix from the firmware boot entry.
-* Alternative C retains complete signed argument strings.
+My preference is **Alternative A** as it seems the most straightforward and simple
+for resolving the template prefix.
+
+* [Alternative A](#alternative-a-executing-loader-directory-prefix) uses a build-time template
+  and runtime resolution using the executing binary's directory.
+* [Alternative B](#alternative-b-firmware-boot-entry-prefix) uses a build-time template and
+  runtime resolution based on the firmware path contained in the current boot entry.
+* [Alternative C](#alternative-c-complete-signed-argument-strings) expands the existing build-time
+  path specification json to include multiple absolute paths, chosen at runtime.
 
 ### Alternative A: executing-loader directory prefix
 
