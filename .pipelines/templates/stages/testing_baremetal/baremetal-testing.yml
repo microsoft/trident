@@ -13,6 +13,14 @@ parameters:
     type: string
     default: trident_baremetal_tests
 
+  - name: pool
+    displayName: Agent pool
+    type: string
+    default: trident-bmp-lab-conn-1es-pool
+    values:
+      - trident-bmp-lab-conn-1es-pool
+      - trident-aods-conn-1es-pool
+
   - name: testingRun
     displayName: "Download prebuilt test artifacts"
     type: boolean
@@ -73,7 +81,7 @@ stages:
         timeoutInMinutes: 90
         pool:
           type: linux
-          name: trident-aods-conn-1es-pool
+          name: ${{ parameters.pool }}
           hostArchitecture: amd64
 
         strategy:
