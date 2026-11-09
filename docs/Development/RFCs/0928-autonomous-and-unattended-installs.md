@@ -12,6 +12,8 @@ image layouts. Add per-disk `selector` objects and `storage.template` with
 three types: `none` preserves authored storage, `image` reproduces COSI storage,
 and `image-grow-last` also uses extra capacity for the last eligible filesystem.
 Existing literal paths remain valid; templates do not switch to StreamDisk.
+Selectors and templates are input-only conveniences: they resolve to existing
+HC values, without changing the persisted HC schema.
 
 ## Motivation and Goals
 
@@ -57,7 +59,7 @@ never infer its relationships from labels.
 
 ### New Fields and Values
 
-These are proposed additions, not currently supported syntax:
+These are proposed **input-only** additions, not currently supported syntax:
 
 | New field | Type / values | Default or constraint |
 | --- | --- | --- |
@@ -86,6 +88,13 @@ No selector is implicit. Existing `storage.disks[].device` is unchanged.
 Image types require `image` and forbid authored disks, filesystems, verity, A/B,
 RAID, encryption, or swap configuration. Conflicts are errors, not precedence
 rules. Template targets cannot contain partition definitions.
+
+Before saving the HC, replace each selector with a concrete `device` path and
+expand templates into ordinary disks, partitions, filesystems, and related
+storage fields. Template growth becomes a concrete partition size. Remove every
+`selector` and `storage.template`, including `type: none` and selector options.
+The persisted HC contains only existing fields and resolved values, exactly as
+if the user had authored them directly.
 
 ### Examples and Strategy Semantics
 
@@ -156,6 +165,25 @@ storage:
 
 This fragment uses the same `image` section.
 
+### Secondary Idea: Install RPC Selector
+
+Optionally add `disk_selector` to `StageInstallRequest`, used by both `Install`
+and `InstallStage`.[^installrpc] Proposed protobuf sketch:
+
+```protobuf
+message StageInstallRequest {
+  trident.v1.HostConfiguration config = 1;
+  DiskSelector disk_selector = 2;
+}
+```
+
+`DiskSelector` follows the HC selector schema above. When present, it supplies
+or overrides the sole authored disk/template target before validation;
+multi-disk configurations fail rather than guessing a target. Absence preserves
+HC behavior. The same core resolver produces concrete HC values; neither the
+request selector nor its options are persisted. This optional extension avoids
+editing the source YAML and is secondary to the HC proposal.
+
 ## Implementation
 
 ### Resolution and Safety
@@ -165,6 +193,8 @@ includes fixed sizes, alignment/GPT overhead, and grow-partition minima,
 including uncompressed payloads and filesystem/device-layer overhead.
 Uncomputable minima fail. Image templates require at least COSI `disk.size`,
 regardless of compressed/summed payload size; neither shrinks image geometry.
+Validate convenience syntax first, then apply existing HC validation to the
+resolved configuration. Persistence and storage comparisons see only that HC.
 
 Automatic candidates must be writable whole disks with a recoverable stable
 identity. Exclude USB/removable media, installation-media backing disks, live
@@ -199,8 +229,8 @@ existing image-integrity path. Derive partition order, offsets, types, flags,
 labels, sizes, and UUIDs from GPT; derive filesystem identity, mounts, ESP, and
 verity data/hash relationships only where metadata describes them.
 
-Persist geometry and region-to-device mapping alongside the expanded Host
-Configuration: the current translator alone cannot express every GPT detail.
+Keep required geometry and region mappings in internal servicing state, not new
+HC fields: the current translator cannot express every GPT detail.
 Install must deploy mapped unmounted regions too, while retaining normal
 Install boot/ESP orchestration.[^deployment] Layout replication is not a
 byte-for-byte whole-disk copy; unallocated bytes are not image content.
@@ -228,20 +258,20 @@ Acceptance covers unattended success/refusal, ordering/ties, capacity,
 multi-disk reservation, exclusions, erase consent, unplug, and lost-journal
 refusal. Verify template geometry/identities, unmounted regions, metadata
 failures, GPT relocation, and safe growth. Report refusal reasons, not image
-contents.
+contents. Verify the saved HC contains resolved values and no convenience fields.
 
 ## Servicing
 
-Persist bindings, expanded storage, geometry, template intent, and metadata
-digest in a recoverable servicing journal **before destructive I/O**, then
-retain them in installed Host Status. The provisioning environment must provide
-durable journal storage outside the erase set; without it, refuse automatic
-selector/template installation. Retry requires that journal, not renewed
-discovery.
+Persist the resolved HC and necessary concrete servicing state in a recoverable
+journal **before destructive I/O**, then retain the resolved HC in Host Status.
+Do not save selector strategies, template types, or their options in the HC.
+The environment must provide durable journal storage outside the erase set;
+otherwise refuse installation using these conveniences. Retry consumes the
+resolved journal, not the original selectors or templates.
 
-Updates and rollback reuse bindings and compare effective storage with the
-persisted plan under existing storage-change invariants.[^servicing] A new COSI
-may replace compatible payloads, not re-expand or resize installed storage.
+Updates and rollback use the concrete HC and existing storage-change
+invariants.[^servicing] They do not re-evaluate conveniences. A new COSI may
+replace compatible payloads, not re-expand or resize installed storage.
 Missing disks or journal state fail closed. Replacement/reselection requires
 an explicitly new reprovisioning operation, never an ordinary retry.
 
@@ -265,3 +295,4 @@ persistence.
 [^derivation]: [COSI specification](../../Reference/Composable-OS-Image.md) and [current translator](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/osimage/cosi/derived_hc.rs).
 [^deployment]: [Current image deployment](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/engine/storage/image.rs).
 [^servicing]: [Current storage validation](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/subsystems/storage/mod.rs).
+[^installrpc]: [Current Install request](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/proto/trident/v1preview/install_service.proto).
