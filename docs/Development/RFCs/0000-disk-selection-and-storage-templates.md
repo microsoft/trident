@@ -1,4 +1,4 @@
-# 0000 Disk Selection and Storage Templates
+# 0000 Autonomous and Unattended Installs
 
 - Date: 2026-11-09
 - RFC PR: Not opened
@@ -6,10 +6,12 @@
 
 ## Summary
 
-Allow Host Configuration disks to select a target by strategy instead of device
-path. Add an opt-in `storage.template` object that derives storage from a COSI,
-optionally growing its last eligible filesystem. These are inputs to normal
-Install, not a request to switch to StreamDisk.
+Make normal Install autonomous: one Host Configuration can select suitable
+disks and derive storage without interactive disk picking or hand-written
+image layouts. Add per-disk `selector` objects and `storage.template` with
+three types: `none` preserves authored storage, `image` reproduces COSI storage,
+and `image-grow-last` also uses extra capacity for the last eligible filesystem.
+Existing literal paths remain valid; templates do not switch to StreamDisk.
 
 ## Motivation and Goals
 
@@ -18,45 +20,77 @@ requires a literal path. StreamDisk has a private smallest-fit selector and
 derives configuration from the image. Its capacity threshold is COSI
 `disk.size`: the original virtual disk size, **not compressed archive size**.[^selector]
 
-Users should be able to install onto the first suitable NVMe, SCSI-style, or
-virtio disk without an external path-replacement script. Image-derived storage
-should remove duplicated partition and filesystem definitions without inventing
-information the image does not contain.
+Unattended provisioning needs reusable configurations across different disk
+names and capacities. Disk strategies remove external path-replacement scripts;
+image templates remove duplicated storage definitions. Once invoked with an
+explicit policy, Install must finish without prompts or return a clear failure,
+not fall back to interactive selection. This does not invent missing image
+metadata or make existing-data erasure implicit.
 
 ## Scope
 
 ### Requirements
 
-Preserve explicit paths and authored storage. Make selection deterministic,
-safe, shared by all entry points, and immutable during servicing. Replicate
-image-described storage and preserve boot-critical identities.
+Preserve authored storage and boot-critical identities. Make selection
+deterministic, safe, shared by all entry points, and immutable during servicing.
 
 ### Out of Scope
 
-Disk replacement, hotplug rebinding, automatic shrink-to-fit, RAID/encryption
-inference, arbitrary template overrides, and distribution-specific partition
-numbers or GUID constants. Selectors with adopted partitions are initially
-unsupported; adoption continues to require an explicit path.
+Unsupported: replacement/rebinding, shrink-to-fit, RAID/encryption inference,
+arbitrary overrides, distribution-specific constants, and selectors with
+adopted partitions. Adoption still requires an explicit path.
 
 ### Exit Criteria
 
-The examples resolve to inspectable plans; unsafe targets fail before writes;
-restart, update, and rollback retain the original bindings.
+An eligible host installs without prompts; unsafe targets fail before writes.
+Restart, update, and rollback retain the original bindings.
 
 ## Dependencies
 
-COSI 1.2 provides GPT geometry and filesystem/verity metadata, but **not A/B
-pairing, active-slot designation, inactive-slot mounts, or complete mount
-options**. The current translator does not derive `storage.abUpdate`.[^derivation]
-Full A/B template installs need a versioned COSI deployment-metadata contract.
-COSI 1.2 templates alone do not enable A/B servicing. Use authored storage when
-A/B is required; partition labels are not a substitute for that contract.
+COSI 1.2 describes GPT, filesystems, and verity, but **not A/B pairing,
+active-slot designation, inactive-slot mounts, or complete mount options**.
+The translator leaves `storage.abUpdate` unset.[^derivation] Full A/B templates
+need versioned deployment metadata. Until then, use authored storage for A/B;
+never infer its relationships from labels.
 
 ## Public API Design
 
-The following are proposed Host Configuration fragments, not currently
-supported syntax. Existing filesystem definitions are omitted in the first
-example.
+### New Fields and Values
+
+These are proposed additions, not currently supported syntax:
+
+| New field | Type / values | Default or constraint |
+| --- | --- | --- |
+| `storage.disks[].selector` | Selector object | Exactly one of `device` or `selector` per authored disk |
+| `storage.template` | Template object | Omitted means `{type: none}` |
+| `storage.template.type` | `none`, `image`, `image-grow-last` | `none` |
+| `storage.template.disk` | Target object | Required for image types; forbidden for `none` |
+| `storage.template.disk.device` | Device-path string | Exactly one of `device` or `selector` |
+| `storage.template.disk.selector` | Selector object | Same selector schema as authored disks |
+
+Both selector objects add exactly these fields:
+
+| Field | Type / values | Default or constraint |
+| --- | --- | --- |
+| `strategy` | `first-nvme-fit`, `first-sd-fit`, `first-vd-fit`, `smallest-fit`, `largest-fit` | Required |
+| `allowExistingData` | Boolean: `true`, `false` | `false`; `true` explicitly permits existing-data erasure |
+
+No selector is implicit. Existing `storage.disks[].device` is unchanged.
+
+| Template type | Storage behavior |
+| --- | --- |
+| `none` | Use existing authored storage; no image-derived layout |
+| `image` | Derive storage from COSI; leave extra target capacity unused |
+| `image-grow-last` | Derive storage from COSI and grow the final eligible partition/filesystem into extra capacity |
+
+Image types require `image` and forbid authored disks, filesystems, verity, A/B,
+RAID, encryption, or swap configuration. Conflicts are errors, not precedence
+rules. Template targets cannot contain partition definitions.
+
+### Examples and Strategy Semantics
+
+Host Configuration fragments follow; existing filesystem definitions are
+omitted in the first example.
 
 ```yaml
 storage:
@@ -76,10 +110,7 @@ storage:
           size: grow
 ```
 
-Each authored disk requires exactly one of existing `device` or new `selector`.
-`selector.strategy` is required; `selector.allowExistingData` defaults to
-`false`. No selector is implicit. Fixed hardware can continue to use
-`device: /dev/disk/by-id/...` instead.
+Fixed hardware can continue to use `device: /dev/disk/by-id/...` instead.
 
 | Strategy | Selection among eligible, fitting disks |
 | --- | --- |
@@ -97,7 +128,7 @@ These are Linux device families, not guarantees about physical attachment:
 transport through kernel topology; never use a prefix-only eligibility check.
 The general strategies use these same three families.
 
-An image template supplies its own target because no disk list is authored:
+Image templates supply their target instead of an authored disk list:
 
 ```yaml
 image:
@@ -123,24 +154,17 @@ storage:
         allowExistingData: true
 ```
 
-This fragment uses the same `image` section. The template's `disk` also accepts
-`device` instead of `selector`, but no partition definitions.
-
-Omitting `template` equals `{type: none}`. `none` forbids a template disk.
-`image` and `image-grow-last` require `image` and exactly one template target;
-they forbid authored disks, filesystems, verity, A/B, RAID, encryption, or swap
-configuration. Conflicts are validation errors, not precedence rules.
+This fragment uses the same `image` section.
 
 ## Implementation
 
 ### Resolution and Safety
 
-Resolve metadata and candidate inventory before provisioning. Authored-storage
-fit means all fixed partitions, alignment/GPT overhead, and minimum space for
-grow partitions, including uncompressed image payloads and applicable
-filesystem/device-layer overhead. Fail if a safe minimum cannot be computed.
-Image templates require at least COSI `disk.size`, even when the archive or
-summed payload is smaller. Neither template shrinks image geometry.
+Resolve metadata and inventory before provisioning. Authored-storage fit
+includes fixed sizes, alignment/GPT overhead, and grow-partition minima,
+including uncompressed payloads and filesystem/device-layer overhead.
+Uncomputable minima fail. Image templates require at least COSI `disk.size`,
+regardless of compressed/summed payload size; neither shrinks image geometry.
 
 Automatic candidates must be writable whole disks with a recoverable stable
 identity. Exclude USB/removable media, installation-media backing disks, live
@@ -160,8 +184,9 @@ reuse. No match, duplicate binding, ambiguous identity, or inventory failure
 returns a structured error with required capacity and exclusion reasons.
 
 Core Trident owns selection and safety for CLI and gRPC. Installer supplies
-media identities/exclusions and handles presentation or a manual picker. Show
-the effective layout, device identity, capacity, and erase scope before writes.
+media identities/exclusions; its manual picker remains a separate interactive
+workflow. Emit the layout, device identity, capacity, and erase scope before
+writes without requiring confirmation in an explicitly unattended invocation.
 Immediately before partitioning, revalidate identity, size, sector geometry,
 and exclusions against that plan under a servicing lock. Hold the target device
 open; disappearance or changed identity aborts, never selects another disk.
@@ -199,12 +224,11 @@ growth fails in preflight, including when the final entry is a hash partition.
 
 ## Testing and Metrics
 
-Acceptance covers natural ordering/ties, misleading compressed sizes,
-multi-disk reservation, media/holder exclusions, data-erasure opt-in, unplug
-between planning and writes, and lost-journal refusal. Template coverage
-includes GPT/UUID preservation, unmounted regions, missing A/B metadata,
-larger-target GPT relocation, supported filesystem growth, and sealed-device
-rejection. Report selected identity and refusal reasons without image contents.
+Acceptance covers unattended success/refusal, ordering/ties, capacity,
+multi-disk reservation, exclusions, erase consent, unplug, and lost-journal
+refusal. Verify template geometry/identities, unmounted regions, metadata
+failures, GPT relocation, and safe growth. Report refusal reasons, not image
+contents.
 
 ## Servicing
 
@@ -221,22 +245,21 @@ may replace compatible payloads, not re-expand or resize installed storage.
 Missing disks or journal state fail closed. Replacement/reselection requires
 an explicitly new reprovisioning operation, never an ordinary retry.
 
-Old configurations remain unchanged. Older Trident versions reject these new
-fields; callers must require a supporting version.
+Existing configurations stay valid. Older Trident rejects new fields; require
+a supporting version.
 
 ## Counter-Arguments
 
-Literal paths remain simpler for fixed hardware. Installer-only selection
-would duplicate policy and omit direct CLI/gRPC users. A scalar template is
-shorter but has nowhere to put its target; an object keeps that choice explicit.
-Strict metadata and journal requirements limit immediate adoption but avoid
-unsafe guesses and rebinding.
+Literal paths suit fixed hardware. Installer-only selection would duplicate
+policy and omit CLI/gRPC. An object template carries its explicit target; a
+scalar cannot. Strict metadata and journal requirements limit adoption but
+prevent guesses and rebinding.
 
 ## Open Questions
 
-Agree the COSI deployment-metadata extension for A/B roles and mount options,
-and how installer environments expose recoverable journal storage. Neither
-gap permits heuristic inference or transient-only persistence.
+Agree versioned A/B/mount metadata and recoverable installer journal
+integration. Neither gap permits heuristic inference or transient-only
+persistence.
 
 [^selector]: [Current StreamDisk selector](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/stream.rs).
 [^derivation]: [COSI specification](../../Reference/Composable-OS-Image.md) and [current translator](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/osimage/cosi/derived_hc.rs).
