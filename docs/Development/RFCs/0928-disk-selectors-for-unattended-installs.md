@@ -40,12 +40,11 @@ adoption. Storage templates remain a separate proposal.
 ### Selector fields
 
 Each authored disk has exactly one of existing `device` or new `selector`.
-The selector is an object with these input-only fields:
+The selector is an object with one required input-only field:
 
 | Field under `storage.disks[].selector` | Type | Rule |
 | --- | --- | --- |
 | `strategy` | Enum below | Required; no default |
-| `allowExistingData` | Boolean | Default `false`; explicit existing-data erasure opt-in |
 
 ### Available strategies
 
@@ -137,10 +136,10 @@ Compressed archive size is not the capacity requirement.
   recoverable stable identities.
 - **USB and removable media:** Exclude USB-backed devices even when reported
   as non-removable. Exclude all removable media regardless of transport.
-  These are hard exclusions for every strategy; erasure opt-in cannot bypass
-  them.
+  These are hard exclusions for every strategy.
 - **Other protected devices:** Exclude installation-media and live-root backing
-  disks, mounted descendants, swap, and active device-mapper/RAID holders.
+  disks, candidate disks that are themselves mounted or have mounted
+  descendants, swap, and active device-mapper/RAID holders.
 - **Identity:** Trace backing relationships transitively and deduplicate
   aliases; ambiguous identity or unsupported multipath fails.
 - **eMMC:** For `mmcblk`, accept only the whole non-removable eMMC user-area
@@ -150,11 +149,9 @@ Compressed archive size is not the capacity requirement.
 
 ### Existing data and erasure
 
-- **Default:** By default, exclude disks with partition tables or recognized
-  data signatures. This is a conservative blank-disk check, not proof that no
-  valuable bytes exist.
-- **Opt-in:** `allowExistingData: true` permits erasing the selected disk's
-  existing data, but never overrides live/media/read-only protections.
+- **Install behavior:** Existing partition tables or filesystem signatures do
+  not exclude a disk. Install overwrites the selected disk according to the
+  authored layout, even if it already contains data.
 - **Intent:** Size and ordering alone do not identify the intended OS disk.
   Explicit paths retain existing adoption behavior without permission to erase
   live/media data.
@@ -170,7 +167,7 @@ No eligible disk, duplicate binding, or inventory failure produces a structured
 error with required capacity and refusal reasons.
 
 Replace each selector with an unambiguous identity-based `device` reference,
-such as `/dev/disk/by-id/wwn-...`, then remove all selector fields/options and
+such as `/dev/disk/by-id/wwn-...`, then remove the selector input and
 apply existing HC validation. If no stable reference is available, fail
 resolution. Persist that reference, not its current kernel enumeration path
 such as `/dev/sda` or `/dev/nvme0n1`. The HC representation is unchanged, as if
@@ -187,7 +184,7 @@ Disappearance or changed identity aborts, never triggers another selection.
 ## Servicing
 
 Selectors are input-only. Save only the resolved HC and stable disk bindings,
-never selectors, strategies, or selector options.
+never selector inputs.
 
 Before any destructive install work, durably checkpoint the resolved bindings.
 Current clean-install staging clears the saved HC before partitioning and only
@@ -223,8 +220,9 @@ persistence, not just the selection algorithms.
 Test each strategy as it is implemented. Cover global versus tiered selection,
 skipping unsafe/undersized
 families, natural ordering/ties, capacity, multi-disk reservation, media/holder
-exclusions (including USB devices reported as non-removable and non-USB
-removable media), writable eMMC boot-region rejection, erasure opt-in, unplug, and
+exclusions (including directly mounted disks, disks with mounted descendants,
+USB devices reported as non-removable, and non-USB removable media), writable
+eMMC boot-region rejection, installation over existing data, unplug, and
 restart without rebinding. Interrupt after partitioning, restart the live image
 with another blank disk attached, and verify recovery uses the same checkpointed
 disk rather than running selection again. Also cover unavailable checkpoint
