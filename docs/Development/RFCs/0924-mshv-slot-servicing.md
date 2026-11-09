@@ -574,14 +574,6 @@ storage alive through child execution and preserve its encoding.
 - Which minimum component versions, install roots and firmware platforms
   are supported at launch? What measured peak ESP size do their images need?
 
-## Future Possibilities
-
-Support raw-image adoption, validated legacy conversion, more install roots
-and TPM/PCR-bound encryption after their prerequisites pass. A separate
-long-term design could prepare the hypervisor after UKI selection and add
-relative-path support inside HvLoader and its DLL. No such facility is
-assumed available by this RFC.
-
 ## References
 
 Source observations are pinned baselines, not claims about deployment:
