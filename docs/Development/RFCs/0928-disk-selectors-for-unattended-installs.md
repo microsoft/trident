@@ -50,19 +50,29 @@ The selector is an object with these input-only fields:
 | `first-sd-fit` | First whole `sd*` disk in natural letter order |
 | `first-vd-fit` | First whole `vd*` disk in natural letter order |
 | `smallest-fit` | Least capacity across supported families |
+| `smallest-fit-by-type` | First eligible family in the priority order below, then least capacity within that family |
 | `largest` | Greatest capacity across supported families |
 
-For example, `nvme2n1` precedes `nvme10n1`, and `sdz` precedes `sdaa`.
-Capacity ties use the same natural ordering, with family order NVMe, `sd`, `vd`.
-This is a discovery-snapshot order, not identity across reboots. All strategies,
-including `largest`, require the authored storage to fit. A family-specific
-strategy never falls back to another family.
+`smallest-fit-by-type` uses fixed priority **NVMe, `sd`, `vd`, `mmcblk`, `hd`**.
+Skip a family if it has no eligible disk large enough. Family preference
+outranks size: with a 32 GiB requirement, a 256 GiB NVMe and a 64 GiB `sd` disk,
+`smallest-fit` chooses the `sd` disk; `smallest-fit-by-type` chooses the NVMe.
+`largest` still chooses globally by capacity, not by family.
+
+Capacity ties use that family order, then natural device-name order. Compare
+NVMe controller/namespace numbers and `mmcblk` indices numerically; use natural
+letter order for `sd`, `vd`, and `hd`. For example, `nvme2n1` precedes
+`nvme10n1`, `mmcblk2` precedes `mmcblk10`, and `sdz` precedes `sdaa`.
+This is a discovery-snapshot order, not identity across reboots. All strategies
+require the authored storage to fit. The three family-specific strategies
+never fall back to another family.
 
 Unknown fields/values, missing strategy, and specifying both `device` and
-`selector` are validation errors. The strategies use whole disks/namespaces of
-these three families, verified through device kind and topology, not name
-prefixes alone. `sd*` can include SAS, SATA, and USB; it does not mean internal
-SATA.
+`selector` are validation errors. Supported families are NVMe namespaces,
+`sd*`, `vd*` (virtio), `mmcblkN` (non-removable eMMC user-area disks), and `hd*`
+(legacy IDE names). Verify whole-device kind and topology, not prefixes alone.
+`sd*` can include SAS, SATA, USB, and VM disks. VMs can also expose NVMe, so this
+is a device-family preference, not a physical-versus-virtual guarantee.
 
 ### Example
 
@@ -100,6 +110,10 @@ mounted descendants, swap, and active device-mapper/RAID holders. Trace backing
 relationships transitively and deduplicate aliases; ambiguous identity or
 unsupported multipath fails.
 
+For `mmcblk`, accept only the whole non-removable eMMC user-area device.
+Exclude SD cards, partitions, boot0/boot1, and RPMB regions. Boot regions remain
+excluded even if their default write protection has been disabled.[^mmc]
+
 By default, exclude disks with partition tables or recognized data signatures.
 This is a conservative blank-disk check, not proof that no valuable bytes exist.
 `allowExistingData: true` permits erasing the selected disk's existing data, but
@@ -136,8 +150,10 @@ Existing configurations stay valid; older Trident rejects the new input fields.
 
 ## Testing and Metrics
 
-Cover family selection, natural ordering/ties, capacity, multi-disk reservation,
-media/holder exclusions, erasure opt-in, unplug, and restart without rebinding.
+Cover global versus family-first smallest-fit, skipping unsafe/undersized
+families, natural ordering/ties, capacity, multi-disk reservation, media/holder
+exclusions, writable eMMC boot-region rejection, erasure opt-in, unplug, and
+restart without rebinding.
 Verify the saved HC contains concrete paths and no selector fields. Report
 selected identities and refusal reasons, not image contents.
 
@@ -152,3 +168,4 @@ does not permit transient-only bindings or automatic reselection.
 
 [^stream]: [Current StreamDisk selector](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/stream.rs).
 [^servicing]: [Current storage validation](https://github.com/microsoft/trident/blob/bfeff0fd37193b011fe54fa23a766b901d3cf0f8/crates/trident/src/subsystems/storage/mod.rs).
+[^mmc]: [Linux MMC device partitions and boot-region protection](https://docs.kernel.org/driver-api/mmc/mmc-dev-parts.html).
