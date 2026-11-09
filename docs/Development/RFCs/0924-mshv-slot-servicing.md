@@ -419,19 +419,17 @@ boot; define persisted layout detection and reject unsafe disablement.
 
 ## Implementation Plan
 
-1. Resolve the signing-policy/resolver choice and demonstrate packaged DLL
-   relocation for A, B and BOOT. Stop if either prerequisite fails.
-2. Implement the chosen generic loader resolver and image bundle.
+1. Implement the chosen generic loader resolver and image bundle.
    Verify exact arguments and actual hypervisor preparation.
-3. Define reliable hypervisor identity evidence without a new temporary
+2. Define reliable hypervisor identity evidence without a new temporary
    UEFI variable, then extend the existing Rust slot check with the
    applicable MSHV comparison. Add the distinct hypervisor-failure servicing
    state/error and extend rollback/recovery dispatch, including mixed trial,
    manual rollback and recovery. Preserve existing root-slot and health-check
    failure behavior; do not add an implicit health check.
-4. Extend inactive-slot and fallback copying with existing state/error
+3. Extend inactive-slot and fallback copying with existing state/error
    semantics; test interruption, retry and slot reuse.
-5. Complete Secure Boot, measurements, capacity and supported firmware
+4. Complete Secure Boot, measurements, capacity and supported firmware
    validation, then enable the opt-in in production image pipelines.
 
 ## Efitreeloader resolver alternatives
@@ -558,50 +556,15 @@ For all three alternatives, preserve the current extra-leading-backslash
 storage alive through child execution and preserve its encoding.
 
 
-## Counter-Arguments
-
-### Drawbacks
-
-Slot-owned payloads consume more shared ESP space and increase boot-chain
-and image-producer coordination. The independent firmware/UKI selectors
-still permit transient mixed launches; pre-Linux failures require platform
-recovery. Diagnostic evidence cannot prove authenticity against privileged
-writers.
-
-Profiles require signed-build coverage for every allowed root. Prefix
-expansion reduces that enumeration but depends on validated runtime path
-evidence and an explicitly approved runtime-argument policy. Alternative A
-uses the executing image directly; B additionally requires correct
-firmware-option attribution.
-
-### Alternatives
-
-- **Keep one shared payload:** simpler, but an update overwrites the
-  committed release's rollback payload.
-- **Have efitreeloader pin a UKI:** adds another selector and changes
-  existing ownership. Exact UKI references in loader configuration can
-  also outlive Trident's UKI cleanup. Not proposed.
-- **Add a global active-slot variable:** can diverge from the executing
-  firmware chain and adds state synchronization rather than attribution.
-- **Require a new publication/reset state machine:** not justified by a
-  demonstrated MSHV-specific regression. Extend existing copy and recovery
-  behavior first and document its limits.
-- **Prepare after UKI selection:** a possible long-term direction, but no
-  existing UKI-prerun mechanism or interface has been identified. It is not
-  a dependency of this short-term proposal.
-
 ## Open Questions
 
-- Which resolver is accepted by the efitreeloader owner? Does the approved
-  signed-argument policy permit prefix expansion, and with what validation?
-- Does the packaged external DLL support each absolute root without
-  substitution, and is a trustworthy runtime payload identity available?
-- How can Trident establish the running hypervisor's slot identity without
-  a new temporary UEFI variable?
-- What are the final name and status API/serialization mappings for the
-  proposed `AbUpdateHypervisorCheckFailed` state, and the fields of
-  `ServicingError::ValidateAbActiveHypervisor`? All commit/recovery consumers
-  must recognize the new failure state.
+- Ensure that the MSHV payload does not have a hidden dependency on the
+  current root: will moving the payload into slot-specific path cause
+  unanticipated failure?
+- How can Trident establish the running hypervisor's slot identity?
+- Is new HostStatus API needed?  What impact as far as trident backward and
+  forward compatibility does that carry?
+
 - How should an explicit BOOT entry be mapped to a managed firmware entry
   for promotion? Until resolved, ambiguous promotion remains blocked.
 - How can a fallback payload's slot identity be established without adding
