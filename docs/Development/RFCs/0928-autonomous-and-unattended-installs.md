@@ -1,7 +1,7 @@
-# 0000 Autonomous and Unattended Installs
+# 0928 Autonomous and Unattended Installs
 
 - Date: 2026-11-09
-- RFC PR: Not opened
+- RFC PR: [microsoft/trident#928](https://github.com/microsoft/trident/pull/928)
 - Issue: Not created
 
 ## Summary
