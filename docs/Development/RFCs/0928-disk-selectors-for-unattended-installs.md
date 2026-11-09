@@ -10,6 +10,8 @@ Add an input-only `storage.disks[].selector` as an alternative to an explicit
 device path. A selector can identify a disk by matching properties, choose among
 eligible disks with a strategy, or combine both. **A strategy is not required
 when matching uniquely identifies a target.**
+For caller-provided policy, `selector: external` explicitly delegates selection
+outside the HC instead of allowing an unsolicited override.
 
 Resolve selectors to concrete `device` paths before saving the Host
 Configuration (HC). The persisted HC schema is unchanged, and servicing never
@@ -58,7 +60,9 @@ the binding through restart, update, and rollback.
 
 ### New Input-Only Fields
 
-Each authored disk has exactly one of existing `device` or new `selector`:
+Each authored disk has exactly one of existing `device` or new `selector`.
+`selector` is either an inline object below or the scalar `external`, meaning
+"require policy from the caller." There is no parent configuration to inherit.
 
 | Field under `storage.disks[].selector` | Type / values | Rule |
 | --- | --- | --- |
@@ -69,7 +73,7 @@ Each authored disk has exactly one of existing `device` or new `selector`:
 | `strategy` | `first`, `smallest-fit`, `largest-fit` | Optional if `match` is present |
 | `allowExistingData` | Boolean | Default `false`; explicit existing-data erasure opt-in |
 
-A valid selector contains a non-empty `match`, a `strategy`, or both. Empty
+A valid inline selector contains a non-empty `match`, a `strategy`, or both. Empty
 objects, unknown fields/values, and `allowExistingData` alone are invalid. No
 selector or strategy is implicit.
 
@@ -144,6 +148,16 @@ are policy inputs, not proof that the intended OS disk was identified.
 
 ### Secondary Idea: Install RPC Selector
 
+An HC can explicitly leave target policy to the caller while retaining its
+authored layout. Fragment:
+
+```yaml
+storage:
+  disks:
+    - id: os
+      selector: external
+```
+
 Optionally add `disk_selector` to `StageInstallRequest`, used by both `Install`
 and `InstallStage`.[^installrpc] Proposed protobuf sketch:
 
@@ -154,11 +168,29 @@ message StageInstallRequest {
 }
 ```
 
-`DiskSelector` follows the HC selector schema, including match-only selection.
-When present, it replaces the sole authored disk's device/selector input before
-validation. Multi-disk overrides fail rather than guess. Absence preserves HC
-behavior. It uses the same resolver and is not persisted; the YAML need not be
-edited. This remains secondary to the HC proposal.
+The caller supplies the inline object form, including match-only selection.
+For example, a request fragment using protobuf JSON field names:
+
+```yaml
+stage:
+  diskSelector:
+    match:
+      name: "nvme*n*"
+    strategy: smallest-fit
+```
+
+Before initial resolution, bind that policy to exactly one `external` entry;
+other disk entries are unaffected. A missing policy, unsolicited policy when
+no entry delegates, multiple external entries, or an empty/unresolved policy
+is an error. The request policy cannot itself be `external`. It never overrides
+a literal `device` or an inline selector.
+
+The marker alone does not authorize erasure; the supplied policy retains the
+same defaults, safety checks, and resolver. Without a supported caller-policy
+channel, `external` fails rather than consulting the environment or inventing a
+default. Resolve both marker and policy to a concrete device before saving HC;
+neither is persisted. Reusable YAML can then accept different deployment
+policies without editing. This remains secondary to the inline HC proposal.
 
 ## Implementation
 
@@ -184,8 +216,8 @@ removing each chosen identity from the candidate set. No backtracking or reuse.
 No match, ambiguity, duplicate binding, or inventory failure returns a
 structured error with capacity, candidate identities, and refusal reasons.
 
-Validate input syntax first; replace each selector with its resolved `device`
-path and remove all selector fields/options. Apply existing HC validation to
+Validate input syntax and explicit delegation first; replace each selector
+with its resolved `device` path and remove all selector fields/options. Apply existing HC validation to
 that concrete HC. Persistence and storage comparisons see only existing fields,
 as if the user had authored the resolved paths.
 
@@ -199,8 +231,10 @@ lock. Hold the target open; changes abort, never trigger another selection.
 
 Cover match-only success/ambiguity, AND semantics, absent attributes, globs,
 ordering/ties, capacity, multi-disk reservation, exclusions, erase consent,
-unplug, and lost-journal refusal. Verify the saved HC has concrete paths and no
-selector fields. Report identities and refusal reasons, not image contents.
+unplug, and lost-journal refusal. Cover external-policy success, missing or
+unsolicited policies, ambiguous delegation, and rejection of recursive
+deferral. Verify the saved HC has concrete paths and no selector/marker fields.
+Report identities and refusal reasons, not image contents.
 
 ## Servicing
 
@@ -209,8 +243,9 @@ then retain the concrete HC in Host Status. Recovery requires durable state
 outside the erase set; if unavailable, fail rather than rediscover. Do not save
 match rules, strategies, or selector options in the HC.
 
-Retries, updates, and rollback use the concrete binding and existing
-storage-change invariants.[^servicing] Newly attached disks do not affect it.
+Retries, updates, and rollback retain the concrete binding under existing
+storage-change invariants.[^servicing] They never re-evaluate caller policy;
+newly attached disks do not affect the target.
 Missing disks or state fail closed. Reselection requires explicit
 reprovisioning. Existing configurations stay valid; older Trident rejects new
 input fields.
