@@ -134,9 +134,12 @@ Compressed archive size is not the capacity requirement.
 
 - **Device requirements:** Candidates must be writable whole disks with
   recoverable stable identities.
-- **Protected devices:** Exclude USB/removable media, installation-media and
-  live-root backing disks, mounted descendants, swap, and active
-  device-mapper/RAID holders.
+- **USB and removable media:** Exclude USB-backed devices even when reported
+  as non-removable. Exclude all removable media regardless of transport.
+  These are hard exclusions for every strategy; erasure opt-in cannot bypass
+  them.
+- **Other protected devices:** Exclude installation-media and live-root backing
+  disks, mounted descendants, swap, and active device-mapper/RAID holders.
 - **Identity:** Trace backing relationships transitively and deduplicate
   aliases; ambiguous identity or unsupported multipath fails.
 - **eMMC:** For `mmcblk`, accept only the whole non-removable eMMC user-area
@@ -193,7 +196,8 @@ Existing configurations stay valid; older Trident rejects the new input fields.
 
 Cover global versus tiered smallest/largest, skipping unsafe/undersized
 families, natural ordering/ties, capacity, multi-disk reservation, media/holder
-exclusions, writable eMMC boot-region rejection, erasure opt-in, unplug, and
+exclusions (including USB devices reported as non-removable and non-USB
+removable media), writable eMMC boot-region rejection, erasure opt-in, unplug, and
 restart without rebinding.
 Verify the saved HC contains concrete paths and no selector fields. Report
 selected identities and refusal reasons, not image contents.
