@@ -561,9 +561,6 @@ storage alive through child execution and preserve its encoding.
 - Does HvLoader, or its external loader DLL, load anything beyond the inputs
   passed by efitreeloader as arguments? If so, are those paths relative or
   absolute, and does HvLoader's location affect how they are resolved?
-- For encryption sealed with a TPM, how are the MSHV components measured
-  and their expected PCR values predicted? What changes are needed in the
-  existing measurement/prediction flow?
 - How can Trident establish the running hypervisor's slot identity?
 - Is new HostStatus API needed?  What impact as far as trident backward and
   forward compatibility does that carry?
@@ -575,6 +572,9 @@ storage alive through child execution and preserve its encoding.
   How much error checking do we want to include?
 - Which minimum component versions, install roots and firmware platforms
   are supported at launch? What measured peak ESP size do their images need?
+- For encryption sealed with a TPM, how are the MSHV components measured
+  and their expected PCR values predicted? What changes are needed in the
+  existing measurement/prediction flow?
 
 ## References
 
