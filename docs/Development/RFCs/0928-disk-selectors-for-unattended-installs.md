@@ -186,16 +186,16 @@ Disappearance or changed identity aborts, never triggers another selection.
 Selectors are input-only. Save only the resolved HC and stable disk bindings,
 never selector inputs.
 
-Before any destructive install work, durably checkpoint the resolved bindings.
+Before any destructive install work, save the resolved bindings for retries
+within the current installer boot.
 Current clean-install staging clears the saved HC before partitioning and only
 saves the new HC after staging succeeds.[^staging] The implementation must keep
-the checkpoint through that reset and any staging failure.
+the bindings through that reset and any staging failure.
 
-The checkpoint must survive a live-image restart, outside RAM and the disks
-being rewritten. If that durability cannot be provided, stop before disk
-writes. A retry or restart must recover the checkpoint and reuse its disks,
-even if they are now partially partitioned. If recovery fails or a bound disk
-is missing, stop rather than selecting another disk.
+A retry within the same boot reuses those disks, even if they are now partly
+partitioned. If a bound disk is missing, stop rather than selecting another
+disk. Rebooting the live image starts a fresh install and runs selection again.
+No separate cross-reboot checkpoint storage is required.
 
 After installation, updates and rollback use the saved stable references just
 like authored `device` paths, under existing storage validation.[^servicing]
@@ -212,8 +212,8 @@ The initial implementation should support:
 All other strategies are optional future additions, not requirements for initial
 delivery. Reject strategies that are not implemented rather than substituting
 another strategy. Shared safety, resolution, and persistence rules still apply.
-Initial delivery includes stable-reference resolution and crash-safe binding
-persistence, not just the selection algorithms.
+Initial delivery includes stable-reference resolution and binding reuse within
+an installer boot, not just the selection algorithms.
 
 ## Testing and Metrics
 
@@ -223,10 +223,10 @@ families, natural ordering/ties, capacity, multi-disk reservation, media/holder
 exclusions (including directly mounted disks, disks with mounted descendants,
 USB devices reported as non-removable, and non-USB removable media), writable
 eMMC boot-region rejection, installation over existing data, unplug, and
-restart without rebinding. Interrupt after partitioning, restart the live image
-with another blank disk attached, and verify recovery uses the same checkpointed
-disk rather than running selection again. Also cover unavailable checkpoint
-storage and kernel device renumbering across restart.
+retry without rebinding. Interrupt after partitioning and retry within the same
+boot with another eligible disk attached; verify the saved binding is reused.
+Reboot the live image and verify selection runs afresh. Also cover failure to
+save bindings and kernel device renumbering after a successful installation.
 Verify the saved HC contains stable identity-based paths and no selector fields.
 Report selected identities and refusal reasons, not image contents.
 
