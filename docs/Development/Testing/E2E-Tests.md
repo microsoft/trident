@@ -205,6 +205,51 @@ matrix. The `update` group is excluded from the default source-only validation
 and requires the configured 1ES runner with nested virtualization and internal
 ADO access.
 
+## GitHub cloud agent manual rollback smoke test
+
+The bounded Phase C3 smoke test extends the same C1 and C2 VM lifecycle through
+a manual A/B rollback. Run the install setup first:
+
+```bash
+bash scripts/cloud-agent/setup-install.sh
+```
+
+Then run:
+
+```bash
+scripts/cloud-agent/validate.sh rollback
+```
+
+The test performs the complete fresh installation and A/B update described
+above, then:
+
+1. Captures the rollback chain and verifies the next rollback is an A/B
+   rollback that restores `volume-a`.
+2. Stages the rollback directly through the candidate `/usr/bin/trident` and
+   verifies `servicingState: manual-rollback-ab-staged` while the active volume
+   remains `volume-b`.
+3. Finalizes the rollback, verifies that the VM boot ID changes, waits for SSH
+   recovery and the Trident service commit, and verifies the final host is
+   `servicingState: provisioned` on `volume-a`.
+4. Verifies `/usr/bin/trident` still matches the candidate SHA-256, SELinux
+   remains enforcing, and the candidate Trident SELinux module is installed
+   after booting back into the initial OS volume.
+5. Verifies the completed rollback is removed from the rollback chain, then
+   stops the update server and cleans the VM and libvirt network.
+
+The retained run directory adds the rollback chain and target, rollback stage
+and finalize logs, pre- and post-rollback boot IDs, rollback-staged and final
+host states, candidate and installed Trident hashes, SELinux policy evidence,
+and cleanup diagnostics. Record those values and the exact command result in
+the pull request.
+
+The rollback lane intentionally validates one manual A/B rollback using the
+pinned C1/C2 fixtures. It does not rebuild fixtures from source, test runtime or
+health-check-triggered rollback, or cover the full configuration matrix. The
+`rollback` group is excluded from the default source-only validation and
+requires the configured 1ES runner with nested virtualization and internal ADO
+access.
+
 ## Building Dependencies
 
 ### 1. Build Trident

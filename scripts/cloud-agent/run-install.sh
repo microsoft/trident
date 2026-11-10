@@ -162,6 +162,35 @@ wait_for_ssh() {
     return 1
 }
 
+wait_for_reboot() {
+    local host_ip="$1"
+    local key_path="$2"
+    local previous_boot_id="$3"
+    local attempt
+    local current_boot_id
+    local ssh_options=(
+        -i "$key_path"
+        -o BatchMode=yes
+        -o ConnectTimeout=10
+        -o StrictHostKeyChecking=no
+        -o UserKnownHostsFile=/dev/null
+    )
+
+    for ((attempt = 1; attempt <= SSH_ATTEMPTS; attempt++)); do
+        current_boot_id="$(
+            ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+                "cat /proc/sys/kernel/random/boot_id" 2>/dev/null || true
+        )"
+        if [[ -n "$current_boot_id" && "$current_boot_id" != "$previous_boot_id" ]]; then
+            return
+        fi
+        echo "Waiting for target reboot ($attempt/$SSH_ATTEMPTS)"
+        sleep "$SSH_DELAY_SECONDS"
+    done
+    echo "Target did not complete a reboot at $host_ip" >&2
+    return 1
+}
+
 assert_host_status() {
     local status_path="$1"
     local expected_state="$2"
@@ -188,8 +217,9 @@ assert_host_status() {
 
 main() {
     local mode="${1:-install}"
-    if (($# > 1)) || [[ "$mode" != "install" && "$mode" != "update" ]]; then
-        echo "Usage: scripts/cloud-agent/run-install.sh [install|update]" >&2
+    if (($# > 1)) ||
+        [[ "$mode" != "install" && "$mode" != "update" && "$mode" != "rollback" ]]; then
+        echo "Usage: scripts/cloud-agent/run-install.sh [install|update|rollback]" >&2
         return 2
     fi
 
@@ -234,14 +264,14 @@ main() {
     cp "$provenance_path" "$log_dir/provenance.json"
 
     make -j2 target/release/trident bin/netlaunch bin/virtdeploy
-    if [[ "$mode" == "update" ]]; then
+    if [[ "$mode" != "install" ]]; then
         make -j2 bin/netlisten bin/storm-trident
     fi
     test -x "$CANDIDATE_TRIDENT"
     test -x "$CANDIDATE_LAUNCHER"
     test -x bin/netlaunch
     test -x bin/virtdeploy
-    if [[ "$mode" == "update" ]]; then
+    if [[ "$mode" != "install" ]]; then
         test -x bin/netlisten
         test -x bin/storm-trident
     fi
@@ -495,7 +525,8 @@ PY
         exit 1
     fi
 
-    python3 - "$log_dir/provenance.json" "$candidate_sha" "$initial_remote_sha" "$staged_remote_sha" "$final_remote_sha" "$host_ip" "$log_dir" <<'PY'
+    if [[ "$mode" == "update" ]]; then
+        python3 - "$log_dir/provenance.json" "$candidate_sha" "$initial_remote_sha" "$staged_remote_sha" "$final_remote_sha" "$host_ip" "$log_dir" <<'PY'
 import json
 import sys
 
@@ -529,6 +560,231 @@ print("Staged state: ab-update-staged, volume-a")
 print("Final state: provisioned, volume-b")
 print("SELinux before, during, and after update: Enforcing")
 print(f"Logs: {sys.argv[7]}")
+PY
+        return
+    fi
+
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get rollback-chain" |
+        tee "$log_dir/rollback-chain-before.yaml"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get rollback-target" |
+        tee "$log_dir/rollback-target-before.yaml"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident rollback --check" |
+        tee "$log_dir/rollback-check-before.txt"
+
+    python3 - "$log_dir/rollback-chain-before.yaml" \
+        "$log_dir/rollback-check-before.txt" <<'PY'
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as file:
+    rollback_chain = yaml.safe_load(file)
+if not isinstance(rollback_chain, list) or not rollback_chain:
+    raise SystemExit("Expected at least one available rollback")
+first_rollback = rollback_chain[0]
+if first_rollback.get("kind") != "ab":
+    raise SystemExit(
+        f"Expected first rollback kind ab, got: {first_rollback.get('kind')}"
+    )
+if first_rollback.get("abActiveVolume") != "volume-a":
+    raise SystemExit(
+        "Expected first rollback to restore volume-a, got: "
+        f"{first_rollback.get('abActiveVolume')}"
+    )
+with open(sys.argv[2], encoding="utf-8") as file:
+    rollback_check = file.read().strip()
+if rollback_check != "ab":
+    raise SystemExit(f"Expected rollback --check to report ab, got: {rollback_check}")
+PY
+
+    timeout "$UPDATE_TIMEOUT" \
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident rollback -v trace --allowed-operations stage" \
+        2>&1 | tee "$log_dir/stage-manual-rollback.log"
+
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get" |
+        tee "$log_dir/host-status-rollback-staged.yaml"
+    assert_host_status \
+        "$log_dir/host-status-rollback-staged.yaml" \
+        manual-rollback-ab-staged \
+        volume-b
+
+    local rollback_staged_remote_sha
+    rollback_staged_remote_sha="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "sudo sha256sum /usr/bin/trident" |
+            awk '{print $1}'
+    )"
+    if [[ "$rollback_staged_remote_sha" != "$candidate_sha" ]]; then
+        echo "Rollback-staged Trident SHA-256 does not match the candidate binary" >&2
+        echo "candidate: $candidate_sha" >&2
+        echo "rollback-staged host: $rollback_staged_remote_sha" >&2
+        exit 1
+    fi
+    printf '%s\n' "$rollback_staged_remote_sha" \
+        >"$log_dir/installed-trident-sha256-rollback-staged.txt"
+
+    local rollback_staged_selinux_state
+    rollback_staged_selinux_state="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" "sudo getenforce"
+    )"
+    printf '%s\n' "$rollback_staged_selinux_state" \
+        >"$log_dir/selinux-state-rollback-staged.txt"
+    if [[ "$rollback_staged_selinux_state" != "Enforcing" ]]; then
+        echo "Expected SELinux Enforcing after rollback stage, got: $rollback_staged_selinux_state" >&2
+        exit 1
+    fi
+
+    local pre_rollback_boot_id
+    pre_rollback_boot_id="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "cat /proc/sys/kernel/random/boot_id"
+    )"
+    printf '%s\n' "$pre_rollback_boot_id" >"$log_dir/boot-id-before-rollback.txt"
+
+    local rollback_finalize_code
+    set +e
+    timeout "$UPDATE_TIMEOUT" \
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident rollback -v trace --allowed-operations finalize" \
+        >"$log_dir/finalize-manual-rollback.log" 2>&1
+    rollback_finalize_code=$?
+    set -e
+    cat "$log_dir/finalize-manual-rollback.log"
+    if ((rollback_finalize_code != 0)) &&
+        ! grep -Fq "Requesting reboot" "$log_dir/finalize-manual-rollback.log"; then
+        echo "Rollback finalize failed with exit code $rollback_finalize_code" >&2
+        return "$rollback_finalize_code"
+    fi
+
+    wait_for_reboot "$host_ip" "$ssh_key" "$pre_rollback_boot_id"
+
+    local rollback_status_tmp="$runtime_dir/host-status-rollback-final.yaml"
+    local rollback_status_ready=0
+    local rollback_status_attempt
+    for ((rollback_status_attempt = 1; rollback_status_attempt <= SSH_ATTEMPTS; rollback_status_attempt++)); do
+        if ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "sudo /usr/bin/trident get" >"$rollback_status_tmp" 2>/dev/null &&
+            assert_host_status "$rollback_status_tmp" provisioned volume-a; then
+            rollback_status_ready=1
+            break
+        fi
+        echo "Waiting for rollback commit ($rollback_status_attempt/$SSH_ATTEMPTS)"
+        sleep "$SSH_DELAY_SECONDS"
+    done
+    if ((rollback_status_ready == 0)); then
+        echo "Rollback did not commit to provisioned on volume-a" >&2
+        return 1
+    fi
+    cp "$rollback_status_tmp" "$log_dir/host-status-rollback-final.yaml"
+    cat "$log_dir/host-status-rollback-final.yaml"
+
+    local rollback_boot_id
+    rollback_boot_id="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "cat /proc/sys/kernel/random/boot_id"
+    )"
+    printf '%s\n' "$rollback_boot_id" >"$log_dir/boot-id-after-rollback.txt"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo cat /etc/os-release; sudo findmnt -no SOURCE /" |
+        tee "$log_dir/target-system-rollback-final.txt"
+
+    local rollback_remote_sha
+    rollback_remote_sha="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "sudo sha256sum /usr/bin/trident" |
+            awk '{print $1}'
+    )"
+    if [[ "$rollback_remote_sha" != "$candidate_sha" ]]; then
+        echo "Rolled-back Trident SHA-256 does not match the candidate binary" >&2
+        echo "candidate: $candidate_sha" >&2
+        echo "rolled back: $rollback_remote_sha" >&2
+        exit 1
+    fi
+    printf '%s\n' "$rollback_remote_sha" \
+        >"$log_dir/installed-trident-sha256-rollback-final.txt"
+
+    local rollback_selinux_state
+    rollback_selinux_state="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" "sudo getenforce"
+    )"
+    printf '%s\n' "$rollback_selinux_state" \
+        >"$log_dir/selinux-state-rollback-final.txt"
+    if [[ "$rollback_selinux_state" != "Enforcing" ]]; then
+        echo "Expected SELinux Enforcing after rollback, got: $rollback_selinux_state" >&2
+        exit 1
+    fi
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo semodule -l | grep -E '^trident([[:space:]]|$)' && sudo ls -lZ /usr/bin/trident" |
+        tee "$log_dir/selinux-policy-rollback-final.txt"
+
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get rollback-chain" |
+        tee "$log_dir/rollback-chain-after.yaml"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident rollback --check" |
+        tee "$log_dir/rollback-check-after.txt"
+    python3 - "$log_dir/rollback-chain-after.yaml" \
+        "$log_dir/rollback-check-after.txt" <<'PY'
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as file:
+    rollback_chain = yaml.safe_load(file)
+if rollback_chain != []:
+    raise SystemExit(
+        "Expected an empty rollback chain after returning to the initial installation"
+    )
+with open(sys.argv[2], encoding="utf-8") as file:
+    rollback_check = file.read().strip()
+if rollback_check != "none":
+    raise SystemExit(f"Expected rollback --check to report none, got: {rollback_check}")
+PY
+
+    python3 - "$log_dir/provenance.json" "$candidate_sha" "$initial_remote_sha" "$staged_remote_sha" "$final_remote_sha" "$rollback_staged_remote_sha" "$rollback_remote_sha" "$host_ip" "$log_dir" <<'PY'
+import json
+import sys
+
+provenance = json.load(open(sys.argv[1], encoding="utf-8"))
+payloads = {
+    artifact["payload"]["archivePath"]: artifact["payload"]["sha256"]
+    for artifact in provenance["artifacts"]
+}
+print("Phase C3 manual rollback smoke test passed")
+print(f"ADO build ID: {provenance['build']['id']}")
+print(f"Pinned source commit: {provenance['build']['sourceVersion']}")
+print(
+    "Installer ISO SHA-256: "
+    f"{payloads['trident-direct-streaming-installer-amd64/trident-direct-streaming-installer-amd64.iso']}"
+)
+print(
+    "Install COSI SHA-256: "
+    f"{payloads['trident-testimage/trident-testimage_0.cosi']}"
+)
+print(
+    "Update COSI SHA-256: "
+    f"{payloads['trident-testimage/trident-testimage_1.cosi']}"
+)
+print(f"Candidate Trident SHA-256: {sys.argv[2]}")
+print(f"Initial installed Trident SHA-256: {sys.argv[3]}")
+print(f"Update-staged host Trident SHA-256: {sys.argv[4]}")
+print(f"Updated installed Trident SHA-256: {sys.argv[5]}")
+print(f"Rollback-staged host Trident SHA-256: {sys.argv[6]}")
+print(f"Rolled-back installed Trident SHA-256: {sys.argv[7]}")
+print(f"Target IP: {sys.argv[8]}")
+print("Initial state: provisioned, volume-a")
+print("Update-staged state: ab-update-staged, volume-a")
+print("Updated state: provisioned, volume-b")
+print("Rollback-staged state: manual-rollback-ab-staged, volume-b")
+print("Rolled-back state: provisioned, volume-a")
+print("Rollback chain: ab to volume-a before rollback; none after rollback")
+print("SELinux throughout install, update, and rollback: Enforcing")
+print(f"Logs: {sys.argv[9]}")
 PY
 }
 

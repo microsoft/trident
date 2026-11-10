@@ -489,6 +489,16 @@ These rules apply to agents writing code:
 - Update validation is explicit and is not included in the default `all`
   group. It requires the same 1ES runner capabilities and may take up to 50
   minutes including the fresh installation.
+- For changes that affect manual rollback staging, finalization, reboot, commit,
+  or rollback-chain behavior, run the same setup followed by
+  `scripts/cloud-agent/validate.sh rollback`. This performs C1 and C2, verifies
+  an A/B rollback to `volume-a` is available, stages it while remaining on
+  `volume-b`, finalizes and reboots, waits for the Trident service to commit,
+  and verifies the host is `provisioned` on `volume-a` with the candidate
+  `/usr/bin/trident`.
+- Rollback validation is explicit and is not included in the default `all`
+  group. It requires the same 1ES runner capabilities and may take up to 70
+  minutes including the fresh installation and A/B update.
 - Documentation-only changes may skip the suite when it is not applicable,
   but the pull request **Validation** section must record that it was not run
   and explain why.
@@ -503,3 +513,8 @@ These rules apply to agents writing code:
   initial, staged, and final servicing states and active volumes, candidate and
   installed Trident SHA-256 values, reboot and SSH recovery result, SELinux
   state before and after the update, cleanup result, and exact test result.
+- When rollback validation runs, additionally record the rollback chain before
+  and after rollback, rollback-staged and final servicing states and active
+  volumes, candidate and installed Trident SHA-256 values, reboot and SSH
+  recovery result, SELinux state and policy evidence after rollback, cleanup
+  result, and exact test result.
