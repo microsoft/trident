@@ -9,6 +9,10 @@ import yaml
 # The installed interface is already in the SELinux development include path.
 POLICY_FILES = ("trident.te", "trident.fc")
 POLICY_SCRIPT_NAME = "load-candidate-trident-selinux-policy"
+POLICY_INSTALL_SCRIPT_NAME = "install-candidate-trident-selinux-policy"
+POLICY_STAGING_DIR = "/tmp/trident-cloud-agent-policy"
+POLICY_PACKAGE_PATH = f"{POLICY_STAGING_DIR}/trident.pp"
+TARGET_POLICY_PACKAGE_PATH = "/var/lib/trident/cloud-agent/trident.pp"
 
 
 def build_policy_loader(policy_dir: Path) -> str:
@@ -20,8 +24,9 @@ def build_policy_loader(policy_dir: Path) -> str:
 
     commands = [
         "set -eux",
-        'policy_dir="$(mktemp -d /tmp/trident-policy.XXXXXX)"',
-        "trap 'rm -rf \"$policy_dir\"' EXIT",
+        f'policy_dir="{POLICY_STAGING_DIR}"',
+        'rm -rf "$policy_dir"',
+        'install -d -m 0700 "$policy_dir"',
     ]
     for name in POLICY_FILES:
         encoded = (
@@ -46,6 +51,29 @@ def build_policy_loader(policy_dir: Path) -> str:
     return "\n".join(commands) + "\n"
 
 
+def build_target_policy_installer() -> str:
+    return (
+        "\n".join(
+            [
+                "set -eux",
+                f'source_policy="{POLICY_PACKAGE_PATH}"',
+                'if [ ! -f "$source_policy" ]; then',
+                f'    source_policy="{TARGET_POLICY_PACKAGE_PATH}"',
+                "fi",
+                'test -f "$source_policy"',
+                f'target_policy="$TARGET_ROOT{TARGET_POLICY_PACKAGE_PATH}"',
+                'install -d -m 0700 "$(dirname "$target_policy")"',
+                'install -m 0600 "$source_policy" "$target_policy"',
+                'semodule -p "$TARGET_ROOT" -i "$source_policy"',
+                f'if [ "$source_policy" = "{POLICY_PACKAGE_PATH}" ]; then',
+                f'    rm -rf "{POLICY_STAGING_DIR}"',
+                "fi",
+            ]
+        )
+        + "\n"
+    )
+
+
 def prepare_host_config(config: dict, policy_dir: Path) -> dict:
     config.setdefault("internalParams", {})["selfUpgradeTrident"] = True
 
@@ -60,6 +88,20 @@ def prepare_host_config(config: dict, policy_dir: Path) -> dict:
             "name": POLICY_SCRIPT_NAME,
             "runOn": ["clean-install"],
             "content": build_policy_loader(policy_dir),
+        },
+    )
+    post_provision = scripts.setdefault("postProvision", [])
+    post_provision[:] = [
+        script
+        for script in post_provision
+        if script.get("name") != POLICY_INSTALL_SCRIPT_NAME
+    ]
+    post_provision.insert(
+        0,
+        {
+            "name": POLICY_INSTALL_SCRIPT_NAME,
+            "runOn": ["clean-install", "ab-update"],
+            "content": build_target_policy_installer(),
         },
     )
     return config

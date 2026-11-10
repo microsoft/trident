@@ -65,7 +65,15 @@ capture_diagnostics() {
                 -o StrictHostKeyChecking=no \
                 -o UserKnownHostsFile=/dev/null \
                 "testing-user@$target_host_ip" \
-                "sudo /usr/bin/trident get; sudo journalctl --no-pager -u trident.service -n 200" ||
+                "sudo /usr/bin/trident get; \
+                 sudo getenforce; \
+                 sudo ls -lZ /usr/bin/trident; \
+                 sudo findmnt -no TARGET,SOURCE,FSTYPE,OPTIONS /; \
+                 if command -v ausearch >/dev/null 2>&1; then \
+                     sudo ausearch -m AVC,USER_AVC -ts recent; \
+                 fi; \
+                 sudo journalctl --no-pager -k -n 300 | grep -Ei 'avc:|selinux|denied' || true; \
+                 sudo journalctl --no-pager -u trident.service -n 200" ||
                 true
         fi
         sudo journalctl --no-pager -u libvirtd.service -n 200 || true

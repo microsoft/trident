@@ -35,16 +35,40 @@ class PrepareInstallHostConfigTests(unittest.TestCase):
                             "runOn": ["clean-install"],
                             "content": "true",
                         }
-                    ]
+                    ],
+                    "postProvision": [
+                        {
+                            "name": "existing-post-provision",
+                            "runOn": ["clean-install"],
+                            "content": "true",
+                        }
+                    ],
                 }
             }
 
             MODULE.prepare_host_config(config, policy_dir)
 
             self.assertTrue(config["internalParams"]["selfUpgradeTrident"])
-            scripts = config["scripts"]["preServicing"]
-            self.assertEqual(scripts[0]["name"], MODULE.POLICY_SCRIPT_NAME)
-            self.assertEqual(scripts[1]["name"], "existing")
+            pre_servicing = config["scripts"]["preServicing"]
+            self.assertEqual(pre_servicing[0]["name"], MODULE.POLICY_SCRIPT_NAME)
+            self.assertEqual(
+                pre_servicing[0]["runOn"],
+                ["clean-install"],
+            )
+            self.assertEqual(pre_servicing[1]["name"], "existing")
+            post_provision = config["scripts"]["postProvision"]
+            self.assertEqual(
+                post_provision[0]["name"],
+                MODULE.POLICY_INSTALL_SCRIPT_NAME,
+            )
+            self.assertEqual(
+                post_provision[0]["runOn"],
+                ["clean-install", "ab-update"],
+            )
+            self.assertEqual(
+                post_provision[1]["name"],
+                "existing-post-provision",
+            )
 
     def test_policy_loader_embeds_candidate_policy_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -58,6 +82,15 @@ class PrepareInstallHostConfigTests(unittest.TestCase):
                 self.assertIn(encoded, loader)
             self.assertIn("make -C", loader)
             self.assertIn("semodule -i", loader)
+            self.assertIn(MODULE.POLICY_STAGING_DIR, loader)
+            self.assertIn('"$policy_dir/trident.pp"', loader)
+
+    def test_target_policy_installer_persists_candidate_module(self):
+        installer = MODULE.build_target_policy_installer()
+
+        self.assertIn(MODULE.POLICY_PACKAGE_PATH, installer)
+        self.assertIn(MODULE.TARGET_POLICY_PACKAGE_PATH, installer)
+        self.assertIn('semodule -p "$TARGET_ROOT"', installer)
 
     def test_policy_loader_rejects_missing_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
