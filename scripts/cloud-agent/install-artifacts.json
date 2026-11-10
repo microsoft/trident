@@ -29,6 +29,17 @@
       "payloadSha256": "d032580f6a8a54da2246fcf8cc736cd731848c7490890b6cf8471c5535f737aa",
       "cacheFilename": "trident-testimage_0.cosi",
       "destinationPath": "artifacts/test-image/regular.cosi"
+    },
+    {
+      "artifactId": 5487395,
+      "artifactName": "trident-testimage",
+      "artifactType": "PipelineArtifact",
+      "artifactSize": 360856917,
+      "archivePath": "trident-testimage/trident-testimage_1.cosi",
+      "payloadSize": 177011712,
+      "payloadSha256": "a34c5a5821a5b335d3078de6b70742aae8ac76723668e759131162c1d444e032",
+      "cacheFilename": "trident-testimage_1.cosi",
+      "destinationPath": "artifacts/test-image/regular_v2.cosi"
     }
   ]
 }

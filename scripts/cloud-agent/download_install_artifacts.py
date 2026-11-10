@@ -199,56 +199,64 @@ def prepare_artifacts(
     output_dir = output_root / f"build-{build_id}"
     output_dir.mkdir(parents=True, exist_ok=True)
     prepared_artifacts = []
+    downloaded_archives: Dict[int, Path] = {}
 
-    for artifact_config in config["artifacts"]:
-        artifact_query = urllib.parse.urlencode(
-            {
-                "artifactName": artifact_config["artifactName"],
-                "api-version": "7.1",
-            }
-        )
-        artifact_url = build_api_url(
-            config, f"build/builds/{build_id}/artifacts?{artifact_query}"
-        )
-        artifact = request_json(artifact_url, token)
-        download_url = verify_artifact({**config, **artifact_config}, artifact)
-        verify_artifact_id(artifact_config, artifact)
+    try:
+        for artifact_config in config["artifacts"]:
+            artifact_query = urllib.parse.urlencode(
+                {
+                    "artifactName": artifact_config["artifactName"],
+                    "api-version": "7.1",
+                }
+            )
+            artifact_url = build_api_url(
+                config, f"build/builds/{build_id}/artifacts?{artifact_query}"
+            )
+            artifact = request_json(artifact_url, token)
+            download_url = verify_artifact({**config, **artifact_config}, artifact)
+            verify_artifact_id(artifact_config, artifact)
 
-        payload_path = output_dir / artifact_config["cacheFilename"]
-        cache_hit = payload_matches(artifact_config, payload_path)
-        if not cache_hit:
-            if payload_path.exists():
-                raise ArtifactError(
-                    f"Cached payload does not match pinned provenance: {payload_path}"
-                )
-            with tempfile.NamedTemporaryFile(
-                dir=output_dir, prefix="artifact-", suffix=".zip", delete=False
-            ) as temporary_file:
-                archive_path = Path(temporary_file.name)
-            try:
-                download_file(download_url, token, archive_path)
+            payload_path = output_dir / artifact_config["cacheFilename"]
+            cache_hit = payload_matches(artifact_config, payload_path)
+            if not cache_hit:
+                if payload_path.exists():
+                    raise ArtifactError(
+                        f"Cached payload does not match pinned provenance: {payload_path}"
+                    )
+                archive_path = downloaded_archives.get(artifact["id"])
+                if archive_path is None:
+                    with tempfile.NamedTemporaryFile(
+                        dir=output_dir,
+                        prefix="artifact-",
+                        suffix=".zip",
+                        delete=False,
+                    ) as temporary_file:
+                        archive_path = Path(temporary_file.name)
+                    downloaded_archives[artifact["id"]] = archive_path
+                    download_file(download_url, token, archive_path)
                 extract_payload(artifact_config, archive_path, payload_path)
-            finally:
-                archive_path.unlink(missing_ok=True)
 
-        destination_path = repository_root / artifact_config["destinationPath"]
-        ensure_link(payload_path, destination_path)
-        prepared_artifacts.append(
-            {
-                "id": artifact["id"],
-                "name": artifact["name"],
-                "type": artifact["resource"]["type"],
-                "size": int(artifact["resource"]["properties"]["artifactsize"]),
-                "cacheHit": cache_hit,
-                "payload": {
-                    "archivePath": artifact_config["archivePath"],
-                    "path": str(payload_path),
-                    "destinationPath": str(destination_path),
-                    "size": payload_path.stat().st_size,
-                    "sha256": artifact_config["payloadSha256"],
+            destination_path = repository_root / artifact_config["destinationPath"]
+            ensure_link(payload_path, destination_path)
+            prepared_artifacts.append(
+                {
+                    "id": artifact["id"],
+                    "name": artifact["name"],
+                    "type": artifact["resource"]["type"],
+                    "size": int(artifact["resource"]["properties"]["artifactsize"]),
+                    "cacheHit": cache_hit,
+                    "payload": {
+                        "archivePath": artifact_config["archivePath"],
+                        "path": str(payload_path),
+                        "destinationPath": str(destination_path),
+                        "size": payload_path.stat().st_size,
+                        "sha256": artifact_config["payloadSha256"],
+                    },
                 },
-            }
-        )
+            )
+    finally:
+        for archive_path in downloaded_archives.values():
+            archive_path.unlink(missing_ok=True)
 
     provenance_path = output_dir / "provenance.json"
     write_provenance(config, build, prepared_artifacts, provenance_path)

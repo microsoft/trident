@@ -7,12 +7,14 @@ readonly TAILOR_RUST_TOOLCHAIN="1.98.1"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/cloud-agent/validate.sh [all|format|rust|go|tailor|cloud-agent|functional|install]
+Usage: scripts/cloud-agent/validate.sh [all|format|rust|go|tailor|cloud-agent|functional|install|update]
 
 The default "all" group runs source-only validation. The explicit "functional"
 group downloads the pinned VM artifact and runs the bounded functional smoke suite.
 The explicit "install" group downloads the pinned installer and COSI artifacts
 and runs the Phase C1 fresh-install smoke test.
+The explicit "update" group extends the fresh installation through the Phase C2
+A/B stage, finalize, reboot, and commit smoke test.
 EOF
 }
 
@@ -88,7 +90,11 @@ validate_functional() {
 }
 
 validate_install() {
-    run bash scripts/cloud-agent/run-install.sh
+    run bash scripts/cloud-agent/run-install.sh install
+}
+
+validate_update() {
+    run bash scripts/cloud-agent/run-install.sh update
 }
 
 main() {
@@ -122,6 +128,9 @@ main() {
             ;;
         install)
             validate_install
+            ;;
+        update)
+            validate_update
             ;;
         -h | --help)
             usage

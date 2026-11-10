@@ -110,8 +110,9 @@ commands are run from `tests/e2e_tests`.
 
 The GitHub cloud agent has a bounded Phase C1 smoke test for code changes that
 affect installer boot, clean installation, or initial provisioning. It uses a
-pinned RCP-capable installer ISO and regular COSI from an existing successful
-ADO build instead of rebuilding images during the task. The installer is the
+pinned RCP-capable installer ISO and two regular COSIs from an existing
+successful ADO build instead of rebuilding images during the task. C1 uses the
+first COSI; the Phase C2 A/B update test uses the second. The installer is the
 direct-streaming variant because it contains the RCP agent used to inject the
 candidate binaries, but C1 runs its normal installation path rather than
 stream-image mode. The complete pin, including the ADO build and payload
@@ -131,8 +132,9 @@ scripts/cloud-agent/validate.sh install
 
 The test:
 
-1. Verifies and downloads the exact pinned RCP-capable installer ISO and
-   regular COSI.
+1. Verifies and downloads the exact pinned RCP-capable installer ISO and both
+   regular COSIs. Payloads from the shared ADO artifact are extracted from one
+   downloaded archive.
 2. Builds the candidate branch's `trident`, `trident-acl-agent`, `netlaunch`,
    and `virtdeploy` binaries.
 3. Creates a fresh two-disk libvirt VM and a temporary copy of the `base` Host
@@ -154,9 +156,54 @@ pinned source commit, installer and COSI SHA-256 values, candidate binary
 SHA-256, installed binary SHA-256, and exact result in the pull request.
 
 This lane intentionally does not build the installer or COSI from source, run
-an A/B update or rollback, or cover the full configuration matrix. Those are
-separate later phases. The `install` group is also excluded from the default
-source-only `scripts/cloud-agent/validate.sh all` run.
+a rollback, or cover the full configuration matrix. The `install` group is
+also excluded from the default source-only
+`scripts/cloud-agent/validate.sh all` run.
+
+## GitHub cloud agent A/B update smoke test
+
+The bounded Phase C2 smoke test extends the same C1 VM lifecycle through one
+A/B servicing update. Run the install setup first:
+
+```bash
+bash scripts/cloud-agent/setup-install.sh
+```
+
+Then run:
+
+```bash
+scripts/cloud-agent/validate.sh update
+```
+
+The test performs the complete fresh installation described above, then:
+
+1. Reads the installed Host Configuration and prepares a temporary update
+   configuration that points from `regular.cosi` to `regular_v2.cosi`, removes
+   the install-only storage section, and keeps `selfUpgradeTrident` enabled.
+2. Starts `netlisten` on the same host port retained in the installed image
+   URL and verifies the pinned update COSI is reachable.
+3. Stages the update directly through the candidate `/usr/bin/trident` and
+   verifies `servicingState: ab-update-staged` while the active volume remains
+   `volume-a`.
+4. Finalizes the update, waits for the reboot and SSH recovery, and verifies
+   the Trident service commits the update.
+5. Verifies the final host is `servicingState: provisioned` on `volume-b`,
+   `/usr/bin/trident` still matches the candidate SHA-256, and SELinux remains
+   enforcing before, during, and after servicing.
+6. Stops the update server and cleans the VM and libvirt network on both
+   success and failure.
+
+The retained run directory records the ADO build and pinned source, installer,
+install COSI, and update COSI hashes, candidate and installed Trident hashes,
+Host Configuration snapshots, initial, staged, and final host states, update
+logs, SELinux states, and cleanup diagnostics. Record those values and the
+exact command result in the pull request.
+
+The update lane intentionally uses pinned ADO-produced images. It does not
+rebuild fixtures from source, run rollback, or cover the full configuration
+matrix. The `update` group is excluded from the default source-only validation
+and requires the configured 1ES runner with nested virtualization and internal
+ADO access.
 
 ## Building Dependencies
 

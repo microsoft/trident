@@ -480,6 +480,15 @@ These rules apply to agents writing code:
 - Install validation is explicit and is not included in the default `all`
   group. It requires the 1ES runner's nested virtualization, internal ADO
   access, and up to 30 minutes for a fresh installation.
+- For changes that affect A/B staging, finalization, reboot, commit, or
+  self-upgrade behavior, run the same setup followed by
+  `scripts/cloud-agent/validate.sh update`. This performs the C1 fresh install,
+  stages the pinned update COSI while remaining on `volume-a`, finalizes and
+  reboots, waits for the Trident service to commit, and verifies the host is
+  `provisioned` on `volume-b` with the candidate `/usr/bin/trident`.
+- Update validation is explicit and is not included in the default `all`
+  group. It requires the same 1ES runner capabilities and may take up to 50
+  minutes including the fresh installation.
 - Documentation-only changes may skip the suite when it is not applicable,
   but the pull request **Validation** section must record that it was not run
   and explain why.
@@ -490,3 +499,7 @@ These rules apply to agents writing code:
 - When install validation runs, also record the ADO build ID, pinned source
   commit, installer ISO and COSI SHA-256 values, candidate Trident SHA-256,
   installed Trident SHA-256, servicing state, active volume, and result.
+- When update validation runs, additionally record the update COSI SHA-256,
+  initial, staged, and final servicing states and active volumes, candidate and
+  installed Trident SHA-256 values, reboot and SSH recovery result, SELinux
+  state before and after the update, cleanup result, and exact test result.
