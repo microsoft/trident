@@ -128,6 +128,9 @@ use `device: /dev/disk/by-id/...` instead of `selector`.
 Compute each disk's minimum capacity from authored fixed sizes, alignment/GPT
 overhead, and grow-partition minima, including uncompressed image payloads and
 filesystem/device-layer overhead. Fail if a safe minimum cannot be computed.
+The HC is the source of truth: use fixed partition sizes exactly as authored.
+COSI metadata only estimates grow-partition minima; it does not override or
+set size requirements for fixed partitions.
 Compressed archive size is not the capacity requirement.
 
 ### Candidate eligibility
