@@ -91,10 +91,21 @@ class PrepareInstallHostConfigTests(unittest.TestCase):
         self.assertIn(MODULE.POLICY_PACKAGE_PATH, installer)
         self.assertIn(MODULE.TARGET_POLICY_PACKAGE_PATH, installer)
         self.assertIn(
+            'policy_install_source="$source_policy"',
+            installer,
+        )
+        self.assertIn(
+            f'install -m 0600 "$source_policy" "{MODULE.POLICY_PACKAGE_PATH}"',
+            installer,
+        )
+        self.assertIn(
             'if [ ! "$source_policy" -ef "$target_policy" ]; then',
             installer,
         )
-        self.assertIn('semodule -p "$TARGET_ROOT"', installer)
+        self.assertIn(
+            'semodule -p "$TARGET_ROOT" -i "$policy_install_source"',
+            installer,
+        )
 
     def test_policy_loader_rejects_missing_files(self):
         with tempfile.TemporaryDirectory() as temp_dir:
