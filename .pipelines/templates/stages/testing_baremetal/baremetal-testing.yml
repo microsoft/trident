@@ -144,6 +144,10 @@ stages:
           - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
 
+          - bash: ./.pipelines/templates/stages/testing_baremetal/resolve_target_ips.py
+            displayName: "Resolve bare-metal target IPs"
+            workingDirectory: $(TRIDENT_SOURCE_DIR)
+
           - bash: |
               set -xe
               ping -c 3 "$(baremetal_controller.lab_canary_ip)"
