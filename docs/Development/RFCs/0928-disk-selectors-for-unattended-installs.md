@@ -173,29 +173,25 @@ resolution. Persist that reference, not its current kernel enumeration path
 such as `/dev/sda` or `/dev/nvme0n1`. The HC representation is unchanged, as if
 the user had authored the stable reference directly.
 
-### Final validation
+### Resolution boundary
 
 Installer supplies media identities/exclusions and presents the resolved
 identity, capacity, layout, and erase scope. Its manual picker remains a
-separate workflow. Core revalidates the chosen identity, geometry, capacity,
-and exclusions immediately before partitioning under a servicing lock.
-Disappearance or changed identity aborts, never triggers another selection.
+separate workflow. Core checks eligibility and capacity during resolution,
+then passes the concrete HC to the existing install flow.
 
 ## Servicing
 
-Selectors are input-only. Save only the resolved HC and stable disk bindings,
-never selector inputs.
+Little changes in servicing. Selectors are input-only: replace them with stable
+`device` paths before the existing install flow. The datastore saves the resolved
+HC as usual, never selector inputs.
 
-Before any destructive install work, save the resolved bindings for retries
-within the current installer boot.
-Current clean-install staging clears the saved HC before partitioning and only
-saves the new HC after staging succeeds.[^staging] The implementation must keep
-the bindings through that reset and any staging failure.
-
-A retry within the same boot reuses those disks, even if they are now partly
-partitioned. If a bound disk is missing, stop rather than selecting another
-disk. Rebooting the live image starts a fresh install and runs selection again.
-No separate cross-reboot checkpoint storage is required.
+No new Host Status fields, datastore tables, checkpoints, or staging/retry
+lifecycle changes are introduced. If the normal flow has a saved resolved HC,
+reuse its devices. Staging clears that HC before partitioning and saves the new
+one only after success.[^staging] Without a saved resolved HC, a retry runs
+selection again and may choose a different eligible disk. No separate same-boot
+binding guarantee is added.
 
 After installation, updates and rollback use the saved stable references just
 like authored `device` paths, under existing storage validation.[^servicing]
@@ -211,9 +207,9 @@ The initial implementation should support:
 
 All other strategies are optional future additions, not requirements for initial
 delivery. Reject strategies that are not implemented rather than substituting
-another strategy. Shared safety, resolution, and persistence rules still apply.
-Initial delivery includes stable-reference resolution and binding reuse within
-an installer boot, not just the selection algorithms.
+another strategy. Shared safety and stable-reference resolution rules still
+apply. Keep this input normalization separate from the existing persistence and
+servicing lifecycle.
 
 ## Testing and Metrics
 
@@ -222,11 +218,10 @@ skipping unsafe/undersized
 families, natural ordering/ties, capacity, multi-disk reservation, media/holder
 exclusions (including directly mounted disks, disks with mounted descendants,
 USB devices reported as non-removable, and non-USB removable media), writable
-eMMC boot-region rejection, installation over existing data, unplug, and
-retry without rebinding. Interrupt after partitioning and retry within the same
-boot with another eligible disk attached; verify the saved binding is reused.
-Reboot the live image and verify selection runs afresh. Also cover failure to
-save bindings and kernel device renumbering after a successful installation.
+eMMC boot-region rejection, installation over existing data, and unplug.
+Verify retries use the normal saved HC when available and run selection again
+when no resolved HC was retained. Cover kernel device renumbering after a
+successful installation.
 Verify the saved HC contains stable identity-based paths and no selector fields.
 Report selected identities and refusal reasons, not image contents.
 
