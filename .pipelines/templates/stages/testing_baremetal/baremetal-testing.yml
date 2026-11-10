@@ -148,6 +148,7 @@ stages:
               set -xe
               ping -c 3 "$(baremetal_controller.lab_canary_ip)"
             displayName: "Validate if the Baremetal lab is up and running"
+            condition: and(succeeded(), ne(variables['baremetal_controller.lab_canary_ip'], 'skip'))
             retryCountOnTaskFailure: 10
 
           - bash: |
