@@ -21,6 +21,11 @@ parameters:
       - trident-bmp-lab-conn-1es-pool
       - trident-aods-conn-1es-pool
 
+  - name: maxParallel
+    displayName: Maximum parallel bare-metal jobs
+    type: number
+    default: 2
+
   - name: testingRun
     displayName: "Download prebuilt test artifacts"
     type: boolean
@@ -86,7 +91,7 @@ stages:
 
         strategy:
           matrix: $[ dependencies.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
-          maxParallel: 2
+          maxParallel: ${{ parameters.maxParallel }}
 
         variables:
           # Sourced from the matrix
@@ -144,7 +149,9 @@ stages:
           - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
 
-          - bash: ./.pipelines/templates/stages/testing_baremetal/resolve_target_ips.py
+          - bash: |
+              ./.pipelines/templates/stages/testing_baremetal/resolve_target_ips.py \
+                --max-parallel ${{ parameters.maxParallel }}
             displayName: "Resolve bare-metal target IPs"
             workingDirectory: $(TRIDENT_SOURCE_DIR)
 
