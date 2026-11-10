@@ -52,6 +52,16 @@ pub fn stop_unit(unit: impl AsRef<str>) -> Result<(), Error> {
         .with_context(|| format!("Failed to stop unit '{unit}'"))
 }
 
+/// Starts the named systemd unit and waits for its start job to finish.
+pub fn start_unit(unit: impl AsRef<str>) -> Result<(), Error> {
+    let unit = unit.as_ref();
+    Dependency::Systemctl
+        .cmd()
+        .args(["start", unit])
+        .run_and_check()
+        .with_context(|| format!("Failed to start unit '{unit}'"))
+}
+
 /// Requests a reboot through systemd and reports command failures.
 pub fn reboot() -> Result<(), Error> {
     Dependency::Systemctl.cmd().arg("reboot").run_and_check()?;

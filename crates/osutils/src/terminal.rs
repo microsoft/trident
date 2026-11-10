@@ -1,7 +1,10 @@
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, IsTerminal, Write},
-    os::{fd::AsRawFd, unix::fs::FileTypeExt},
+    os::{
+        fd::AsRawFd,
+        unix::fs::{FileTypeExt, OpenOptionsExt},
+    },
     path::{Path, PathBuf},
 };
 
@@ -80,6 +83,16 @@ pub fn preferred_console(consoles: &[PathBuf]) -> Result<&Path, Error> {
         .context("No console available")
 }
 
+/// Opens a serial console without allowing flow control to block a caller's event loop.
+pub fn open_nonblocking_console(path: impl AsRef<Path>) -> Result<File, Error> {
+    let path = path.as_ref();
+    OpenOptions::new()
+        .write(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
+        .open(path)
+        .with_context(|| format!("Failed to open console '{}'", path.display()))
+}
+
 /// Claims a character terminal as the controlling TTY and redirects stdin/stdout to it.
 ///
 /// The caller must stop competing getty units before attaching.
@@ -152,6 +165,17 @@ mod tests {
         );
         console_paths("../tty1").unwrap_err();
         console_paths("").unwrap_err();
+    }
+
+    #[test]
+    /// Serial mirrors must not block the installer when a console stops draining.
+    fn serial_console_is_nonblocking() {
+        let terminal = nix::pty::openpty(None, None).unwrap();
+        let path = unistd::ttyname(&terminal.slave).unwrap();
+        let mirror = open_nonblocking_console(path).unwrap();
+        let flags = unsafe { libc::fcntl(mirror.as_raw_fd(), libc::F_GETFL) };
+        assert!(flags >= 0);
+        assert_ne!(flags & libc::O_NONBLOCK, 0);
     }
 
     #[test]

@@ -112,6 +112,8 @@ Configuration image URL of `installer://image` fails if no COSI is available.
 Authored disk paths and image checksums remain unchanged. Even with an
 explicit Host Configuration source, autorun checks for media first (up to
 the 60-second label-discovery wait) so it can resolve `installer://image`.
+Explicit remote Stream COSI recovery bypasses local media discovery and
+overlays, so it remains available when the local media cannot be read.
 
 Without a Host Configuration, the first regular COSI in `cosiDirectory` is
 streamed. If neither source is available, the graphical console offers
@@ -166,9 +168,10 @@ iso:
       - trident.installer=1
 ```
 
-The RPM includes the installer TOML and requires Trident and Bash. It
-starts its service and gRPC socket on a marked installer boot and prevents
-gettys from reclaiming tty1 or mixing login prompts with serial logs.
+The RPM includes the installer TOML and requires Trident and Bash. It starts
+its service on a marked installer boot; the installer starts the gRPC socket
+and waits for udev before servicing. It prevents gettys from reclaiming tty1
+or mixing login prompts with serial logs.
 No separate service enablement, getty override, or label override is
 necessary for a single `CDROM` ISO or `TRD_INSTALL` USB. On an unmarked
 normal OS, the service does not run and gettys are unaffected. A Host

@@ -10,6 +10,7 @@ use std::{
 use anyhow::{anyhow, bail, ensure, Context, Error};
 use reqwest::blocking::Client;
 use serde::Deserialize;
+use sha2::{Digest, Sha384};
 use tar::Archive;
 use url::Url;
 
@@ -19,7 +20,9 @@ use osutils::{
     lsblk::{self, BlockDevice, BlockDeviceType},
     mount, mountpoint,
 };
-use trident_api::{config::HostConfiguration, constants::MOUNT_OPTION_READ_ONLY};
+use trident_api::{
+    config::HostConfiguration, constants::MOUNT_OPTION_READ_ONLY, primitives::hash::Sha384Hash,
+};
 
 use crate::config::{self, Config};
 
@@ -54,9 +57,31 @@ impl Plan {
     /// Describes the selected source for the progress window.
     pub(super) fn description(&self) -> String {
         match self {
-            Self::Install { source, .. } => format!("Install from {source}"),
-            Self::Stream { image } => format!("StreamDisk from {image}"),
+            Self::Install { source, .. } => format!("Install from {}", display_source(source)),
+            Self::Stream { image } => format!("StreamDisk from {}", display_url(image)),
         }
+    }
+}
+
+/// Removes URL credentials and signed query data from diagnostic source names.
+pub(super) fn display_url(source: &Url) -> String {
+    let mut url = source.clone();
+    if (url.password().is_some() && url.set_password(None).is_err())
+        || (!url.username().is_empty() && url.set_username("").is_err())
+    {
+        return "<redacted URL>".into();
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string()
+}
+
+/// Preserves local path descriptions without exposing URL secrets.
+pub(super) fn display_source(source: &str) -> String {
+    match Url::parse(source) {
+        Ok(url) => display_url(&url),
+        Err(_) if source.contains("://") => "<invalid URL>".into(),
+        Err(_) => source.to_owned(),
     }
 }
 
@@ -68,6 +93,9 @@ pub(super) fn prepare_with_progress(
     request: &Request,
     mut progress: impl FnMut(&str) -> Result<(), Error>,
 ) -> Result<(Config, Plan), Error> {
+    if matches!(request, Request::Stream(_)) {
+        return prepare_from_media_with_progress(settings, request, None, &mut progress);
+    }
     let root = media_root(settings, request == &Request::Autorun, &mut progress)?;
     prepare_from_media_with_progress(settings, request, root.as_deref(), &mut progress)
 }
@@ -89,6 +117,15 @@ fn prepare_from_media_with_progress(
     root: Option<&Path>,
     progress: &mut impl FnMut(&str) -> Result<(), Error>,
 ) -> Result<(Config, Plan), Error> {
+    if let Request::Stream(image) = request {
+        settings.require_autorun()?;
+        return Ok((
+            settings.clone(),
+            Plan::Stream {
+                image: image.clone(),
+            },
+        ));
+    }
     progress("Reading installer configuration")?;
     let settings = match root {
         Some(root) => settings.overlay(root)?,
@@ -101,20 +138,11 @@ fn prepare_from_media_with_progress(
         None => Vec::new(),
     };
     progress("Checking Host Configuration")?;
-    let source = match request {
-        Request::HostConfiguration(source) => {
-            remote_url(source)?;
-            Some(source.clone())
-        }
-        Request::Stream(source) => {
-            return Ok((
-                settings,
-                Plan::Stream {
-                    image: source.clone(),
-                },
-            ));
-        }
-        Request::Autorun => match &settings.autorun.host_configuration {
+    let source = if let Request::HostConfiguration(source) = request {
+        remote_url(source)?;
+        Some(source.clone())
+    } else {
+        match &settings.autorun.host_configuration {
             Some(source) => Some(source.clone()),
             None => match fs::metadata(config::DEFAULT_HOST_CONFIGURATION) {
                 Ok(_) => Some(config::DEFAULT_HOST_CONFIGURATION.into()),
@@ -123,7 +151,7 @@ fn prepare_from_media_with_progress(
                     return Err(error).context("Failed to inspect default Host Configuration")
                 }
             },
-        },
+        }
     };
     let plan = match source {
         Some(source) => {
@@ -286,14 +314,22 @@ fn reader(url: &Url) -> Result<Box<dyn Read>, Error> {
                 format!("Failed to open '{}'", path.display())
             })?))
         }
-        "http" | "https" => Ok(Box::new(
-            Client::builder()
+        "http" | "https" => {
+            let response = Client::builder()
                 .timeout(SOURCE_TIMEOUT)
                 .build()?
                 .get(url.clone())
-                .send()?
-                .error_for_status()?,
-        )),
+                .send()
+                .and_then(reqwest::blocking::Response::error_for_status)
+                .map_err(|error| {
+                    anyhow!(
+                        "Failed to fetch '{}': {}",
+                        display_url(url),
+                        error.without_url()
+                    )
+                })?;
+            Ok(Box::new(response))
+        }
         _ => bail!("Unsupported source scheme '{}'", url.scheme()),
     }
 }
@@ -351,8 +387,8 @@ struct ImageMetadata {
     fs_uuid: Option<String>,
 }
 
-/// Extracts and checks COSI disk metadata within a bounded archive read.
-fn metadata(reader: impl Read) -> Result<Metadata, Error> {
+/// Extracts and hashes the raw COSI metadata within a bounded archive read.
+fn metadata(reader: impl Read) -> Result<(Metadata, Sha384Hash), Error> {
     let mut archive = Archive::new(reader.take(MAX_METADATA_BYTES));
     for entry in archive.entries().context("Invalid COSI archive")? {
         let mut entry = entry?;
@@ -365,8 +401,10 @@ fn metadata(reader: impl Read) -> Result<Metadata, Error> {
                 entry.size() <= MAX_METADATA_BYTES,
                 "COSI metadata is too large"
             );
+            let mut raw = Vec::new();
+            entry.read_to_end(&mut raw)?;
             let metadata: Metadata =
-                serde_json::from_reader(&mut entry).context("Invalid COSI metadata")?;
+                serde_json::from_slice(&raw).context("Invalid COSI metadata")?;
             ensure!(
                 metadata.disk.as_ref().is_some_and(|disk| disk.size > 0),
                 "StreamDisk requires COSI disk metadata"
@@ -383,17 +421,20 @@ fn metadata(reader: impl Read) -> Result<Metadata, Error> {
                 major == "1" && minor.parse::<u32>()? >= 2,
                 "StreamDisk requires COSI v1.2 or newer"
             );
-            return Ok(metadata);
+            return Ok((
+                metadata,
+                Sha384Hash::from(format!("{:x}", Sha384::digest(&raw))),
+            ));
         }
     }
     bail!("COSI metadata.json was not found within the metadata read limit")
 }
 
-/// Checks disk eligibility and reports whether a complete matching image is already present.
+/// Checks disk eligibility and returns the metadata hash to bind the daemon's fetch.
 ///
 /// `force` bypasses only the repeat-install guard, not the installer-media safety check.
-pub(super) fn stream_preflight(image: &Url, force: bool) -> Result<bool, Error> {
-    let metadata = metadata(reader(image)?)?;
+pub(super) fn stream_preflight(image: &Url, force: bool) -> Result<(bool, Sha384Hash), Error> {
+    let (metadata, hash) = metadata(reader(image)?)?;
     let devices = lsblk::list().context("Failed to inspect attached disks")?;
     let required = metadata
         .disk
@@ -402,7 +443,7 @@ pub(super) fn stream_preflight(image: &Url, force: bool) -> Result<bool, Error> 
         .size;
     ensure_stream_target_safe(&devices, required)?;
     if force {
-        return Ok(false);
+        return Ok((false, hash));
     }
     let expected = metadata
         .images
@@ -415,7 +456,7 @@ pub(super) fn stream_preflight(image: &Url, force: bool) -> Result<bool, Error> 
         !expected.is_empty(),
         "COSI has no filesystem UUIDs for repeat-install protection"
     );
-    Ok(contains_image(&devices, &expected))
+    Ok((contains_image(&devices, &expected), hash))
 }
 
 /// Refuses streaming if Trident could choose a mounted or read-only smallest fitting disk.
@@ -484,6 +525,60 @@ mod tests {
         ] {
             remote_url(invalid).unwrap_err();
         }
+    }
+
+    #[test]
+    /// Keeps signed source credentials out of operator-visible descriptions.
+    fn source_descriptions_redact_url_secrets() {
+        let url =
+            Url::parse("https://user:password@example.com/image.cosi?token=secret#key").unwrap();
+        assert_eq!(display_url(&url), "https://example.com/image.cosi");
+        assert_eq!(
+            display_source(url.as_str()),
+            "https://example.com/image.cosi"
+        );
+        assert_eq!(
+            Plan::Stream { image: url.clone() }.description(),
+            "StreamDisk from https://example.com/image.cosi"
+        );
+        assert_eq!(
+            Plan::Install {
+                config: Box::default(),
+                source: url.to_string()
+            }
+            .description(),
+            "Install from https://example.com/image.cosi"
+        );
+        assert_eq!(
+            display_source("/etc/trident/config.yaml"),
+            "/etc/trident/config.yaml"
+        );
+        assert_eq!(
+            display_url(&Url::parse("file:///media/image.cosi").unwrap()),
+            "file:///media/image.cosi"
+        );
+        assert_eq!(
+            display_source("https://bad URL?token=secret"),
+            "<invalid URL>"
+        );
+    }
+
+    #[test]
+    /// Explicit stream recovery ignores broken media mounts, overlays and COSI directories.
+    fn explicit_stream_ignores_local_media() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir(root.path().join("installer")).unwrap();
+        fs::write(root.path().join(config::MEDIA_CONFIG), "invalid TOML").unwrap();
+        let mut settings = Config::default();
+        settings.media.mount_path = Some("/nonexistent-installer-media".into());
+        let url = Url::parse("https://example.com/image.cosi?token=secret").unwrap();
+        let (_, plan) =
+            prepare_from_media(&settings, &Request::Stream(url.clone()), Some(root.path()))
+                .unwrap();
+        assert!(matches!(plan, Plan::Stream { image } if image == url));
+        let (_, plan) =
+            prepare_with_progress(&settings, &Request::Stream(url.clone()), |_| Ok(())).unwrap();
+        assert!(matches!(plan, Plan::Stream { image } if image == url));
     }
 
     #[test]
@@ -582,6 +677,31 @@ mod tests {
         let mut builder = TarBuilder::new(Vec::new());
         builder.finish().unwrap();
         metadata(Cursor::new(builder.into_inner().unwrap())).unwrap_err();
+    }
+
+    #[test]
+    /// Hashes the original metadata bytes rather than re-serialized JSON.
+    fn preflight_metadata_hash_matches_daemon_contract() {
+        let raw = br#"{"version":"1.2","disk":{"size":4294967296},"images":[{"fsUuid":"uuid-1"}]}"#;
+        let inspect = |raw: &[u8]| {
+            let mut builder = TarBuilder::new(Vec::new());
+            let mut header = tar::Header::new_gnu();
+            header.set_size(raw.len() as u64);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, METADATA_PATH, raw)
+                .unwrap();
+            builder.finish().unwrap();
+            metadata(Cursor::new(builder.into_inner().unwrap())).unwrap()
+        };
+        let (parsed, hash) = inspect(raw);
+        assert_eq!(parsed.disk.unwrap().size, 4294967296);
+        assert_eq!(hash, Sha384Hash::from(format!("{:x}", Sha384::digest(raw))));
+
+        let padded =
+            br#"{ "version":"1.2","disk":{"size":4294967296},"images":[{"fsUuid":"uuid-1"}]}"#;
+        let (_, padded_hash) = inspect(padded);
+        assert_ne!(hash, padded_hash);
     }
 
     #[test]

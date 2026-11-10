@@ -105,6 +105,8 @@ async fn run(args: Args) -> Result<(), Error> {
         );
         fs::set_permissions(LOG_PATH, Permissions::from_mode(PRIVATE_FILE_MODE))?;
         if args.system_console {
+            systemd::start_unit("tridentd.socket")?;
+            systemd::start_unit("systemd-udev-settle.service")?;
             let consoles = terminal::active_consoles()?;
             if let Some(graphical) = consoles.iter().find(|path| path.ends_with("tty1")) {
                 systemd::stop_unit("getty@tty1.service")?;
@@ -112,7 +114,7 @@ async fn run(args: Args) -> Result<(), Error> {
                 linux_vt = true;
             }
             for path in consoles.iter().filter(|path| !path.ends_with("tty1")) {
-                match OpenOptions::new().write(true).open(path) {
+                match terminal::open_nonblocking_console(path) {
                     Ok(terminal) => output.mirrors.push((path.clone(), terminal)),
                     Err(error) => warn!("Could not mirror status to '{}': {error}", path.display()),
                 }

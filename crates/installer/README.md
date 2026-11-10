@@ -63,13 +63,14 @@ The older `cdromLabel` key is accepted as an alias; setting both is an error.
 Media is mounted read-only with filesystem auto-detection at
 `/run/trident/installer-media`. Media discovery waits up to 60 seconds for
 USB/BMC block-device enumeration during autorun before reporting a missing
-source; manually supplied recovery URLs do not wait. Other filesystem types
-require corresponding kernel mount support on the live OS. Duplicate
-labels are rejected. Optional
-`installer/installer.toml` on the mounted media can
-override mode, image directory, and autorun options, but not bootstrap media
-discovery or `serialMode`. Relative HC paths are media-relative; absolute paths and `file://`
-refer to the live filesystem. HTTP(S) HC sources are supported.
+source. Explicit remote Stream COSI recovery bypasses local media discovery,
+configuration overlays, and COSI scanning, including when media is broken.
+Other filesystem types require corresponding kernel mount support on the live
+OS. Duplicate labels are rejected. Optional `installer/installer.toml` on the
+mounted media can override mode, image directory, and autorun options, but not
+bootstrap media discovery or `serialMode`. Relative HC paths are media-relative;
+absolute paths and `file://` refer to the live filesystem. HTTP(S) HC sources
+are supported.
 
 With an HC, use Install. Otherwise stream the first regular `.cosi` file in
 the configured folder, sorted by filename, without recursing or following
@@ -107,6 +108,8 @@ Failures to open or write a serial console are logged and mirroring to that
 console stops; they do not stop installation. On boots with
 `trident.installer=1`, the RPM's getty drop-ins prevent serial login prompts
 from mixing with the log stream and prevent tty1 getty from taking input.
+Serial mirrors are nonblocking; a console that cannot accept a record is
+disabled rather than delaying installation or reboot.
 Firmware, kernel and systemd output during boot is separate from the
 installer's stream and may precede it; scrapers should match tagged log lines.
 
@@ -155,6 +158,9 @@ checks. It does not change HC installs or manually supplied recovery URLs.
 **With force enabled, an ISO left in the boot path can reimage the machine on
 every boot.** Remove or deprioritize the media after installation.
 Mounted or read-only potential stream targets are never force-overwritten.
+For StreamDisk, the daemon checks the SHA-384 of the metadata inspected by
+the installer before selecting the target disk; changed metadata stops the
+operation instead of bypassing this safety check.
 If the installer USB itself is the smallest disk fitting the COSI, streaming
 stops rather than overwriting it; use a USB smaller than the COSI's original
 disk size or an HC selecting an explicit target. The current StreamDisk RPC
@@ -173,8 +179,9 @@ automatically reboot.
 On a full-OS installer ISO, install `trident-installer`, add
 `trident.installer=1` to its **ISO kernel command line**, and provide a COSI
 under `cosi/` or a Host Configuration. The RPM pulls in Trident and Bash for
-the recovery shell, enables its service, starts the gRPC socket through the
-service dependency, and suppresses tty1 and serial gettys on marked boots.
+the recovery shell, enables its service, starts the gRPC socket and waits for
+udev from the running installer only on marked boots, and suppresses tty1 and
+serial gettys on those boots.
 Without that flag the service skips startup and normal gettys are unchanged,
 including on an installed OS that happens to have the RPM.
 Include optional tools in the ISO when the image or Host Configuration needs

@@ -8,7 +8,7 @@ use url::Url;
 use trident_client::{
     Client, ClientError, Completion as ClientCompletion, ExecutionState, RebootDisposition,
     RebootPolicy, RemoteError, RemoteErrorCategory, ServicingEvent, ServicingKind,
-    ServicingOperation, ServicingState,
+    ServicingOperation, ServicingState, Sha384Hash,
 };
 
 use crate::{
@@ -143,6 +143,25 @@ fn recognized_servicing_state(state: ServicingState) -> bool {
     )
 }
 
+/// Describes the requested operation without exposing credentials in source URLs.
+fn request_description(settings: &Config, request: &Request) -> String {
+    match request {
+        Request::Autorun => format!(
+            "Autorun: HC '{}' or first media COSI in '{}'",
+            source::display_source(
+                settings
+                    .autorun
+                    .host_configuration
+                    .as_deref()
+                    .unwrap_or(DEFAULT_HOST_CONFIGURATION)
+            ),
+            settings.media.cosi_directory.display()
+        ),
+        Request::HostConfiguration(url) => format!("Install from {}", source::display_source(url)),
+        Request::Stream(url) => format!("StreamDisk from {}", source::display_url(url)),
+    }
+}
+
 /// Prepares a source, checks stream safety, and forwards Trident's domain events to the UI.
 ///
 /// After an uncertain previous operation, `require_idle` prevents a new write until the daemon
@@ -155,19 +174,7 @@ pub(super) async fn execute(
     tx: Sender<Event>,
 ) -> Result<(), Error> {
     let automatic = request == Request::Autorun;
-    let description = match &request {
-        Request::Autorun => format!(
-            "Autorun: HC '{}' or first media COSI in '{}'",
-            settings
-                .autorun
-                .host_configuration
-                .as_deref()
-                .unwrap_or(DEFAULT_HOST_CONFIGURATION),
-            settings.media.cosi_directory.display()
-        ),
-        Request::HostConfiguration(url) => format!("Install from {url}"),
-        Request::Stream(url) => format!("StreamDisk from {url}"),
-    };
+    let description = request_description(&settings, &request);
     send(
         &tx,
         Event::Prepared {
@@ -213,7 +220,7 @@ pub(super) async fn execute(
         },
     )
     .await?;
-    if let Plan::Stream { image } = &plan {
+    let stream_hash: Option<Sha384Hash> = if let Plan::Stream { image } = &plan {
         send(
             &tx,
             Event::Preparing("Checking image metadata and available disks".into()),
@@ -222,13 +229,15 @@ pub(super) async fn execute(
         let image = image.clone();
         let force = stream_force_requested(automatic, settings.autorun.force, force);
         match task::spawn_blocking(move || source::stream_preflight(&image, force)).await? {
-            Ok(true) => return send(&tx, Event::AlreadyPresent(
+            Ok((true, _)) => return send(&tx, Event::AlreadyPresent(
                 "Every COSI filesystem UUID was found on an attached disk.\nNo installation was started.".into()
             )).await,
-            Ok(false) => {}
+            Ok((false, hash)) => Some(hash),
             Err(error) => return send(&tx, Event::Error { details: format!("{error:#}"), uncertain: false }).await,
         }
-    }
+    } else {
+        None
+    };
     send(&tx, Event::Preparing("Connecting to Trident daemon".into())).await?;
     let client = match Client::connect_default().await {
         Ok(client) => client,
@@ -260,7 +269,20 @@ pub(super) async fn execute(
             }
         }
     }
-    let response = match start(&client, plan).await {
+    let response = match (plan, stream_hash) {
+        (Plan::Stream { image }, Some(hash)) => {
+            client
+                .stream_disk(&image, Some(&hash), RebootPolicy::Caller)
+                .await
+        }
+        (Plan::Install { config, .. }, None) => client.install(&config, RebootPolicy::Caller).await,
+        _ => {
+            return Err(anyhow!(
+                "Installer plan and preflight hash are inconsistent"
+            ))
+        }
+    };
+    let response = match response {
         Ok(response) => response,
         Err(error) => {
             return send(
@@ -274,14 +296,6 @@ pub(super) async fn execute(
         }
     };
     receive(response, &tx).await
-}
-
-/// Selects the shared client's typed RPC while leaving reboot control to the installer.
-async fn start(client: &Client, plan: Plan) -> Result<ServicingOperation, ClientError> {
-    match plan {
-        Plan::Stream { image } => client.stream_disk(&image, None, RebootPolicy::Caller).await,
-        Plan::Install { config, .. } => client.install(&config, RebootPolicy::Caller).await,
-    }
 }
 
 /// Forwards domain events until a completed result; a broken stream leaves the outcome unknown.
@@ -332,6 +346,25 @@ mod tests {
     use super::*;
 
     use trident_client::SourceLocation;
+
+    #[test]
+    /// Autorun and recovery descriptions must not disclose signed source URLs.
+    fn request_descriptions_redact_secrets() {
+        let url = "https://user:password@example.com/image.cosi?token=secret#fragment";
+        let mut settings = Config::default();
+        settings.autorun.host_configuration = Some(url.into());
+        for request in [
+            Request::Autorun,
+            Request::HostConfiguration(url.into()),
+            Request::Stream(Url::parse(url).unwrap()),
+        ] {
+            let description = request_description(&settings, &request);
+            assert!(description.contains("https://example.com/image.cosi"));
+            for secret in ["user", "password", "token=secret", "fragment"] {
+                assert!(!description.contains(secret), "{description}");
+            }
+        }
+    }
 
     #[test]
     /// Ensures a configured force flag does not affect manually chosen streams.
