@@ -24,7 +24,7 @@ parameters:
   - name: maxParallel
     displayName: Maximum parallel bare-metal jobs
     type: number
-    default: 2
+    default: 5
 
   - name: testingRun
     displayName: "Download prebuilt test artifacts"
