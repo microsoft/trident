@@ -86,7 +86,7 @@ stages:
 
         strategy:
           matrix: $[ dependencies.DefineTests.outputs['setConfigurations.matrixConfigurations'] ]
-          maxParallel: 1
+          maxParallel: 2
 
         variables:
           # Sourced from the matrix
