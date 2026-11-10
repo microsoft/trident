@@ -135,7 +135,7 @@ stages:
             ${{ else }}:
               value: "trident-usrverity-testimage"
 
-          - group: baremetal_controller
+          - group: baremetal_controller_bmp_lab
 
           # Provides: ACR_NAME
           - group: trident_e2e_params
