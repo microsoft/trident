@@ -83,6 +83,8 @@ steps:
 
   - bash: |
       set -ex
+      # Metrics packages do not need the swtpm PPA, which can fail independently.
+      sudo rm -f /etc/apt/sources.list.d/stefanberger-ubuntu-swtpm-jammy-*.{list,sources}
       sudo apt update -y
       sudo apt install -y python3 python3-pip azure-cli
     displayName: "Install dependencies for metrics upload"

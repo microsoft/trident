@@ -302,6 +302,44 @@ async fn load_client_config(config: &KubernetesConfig) -> Result<Config, Error> 
 mod tests {
     use super::*;
 
+    use std::fs;
+
+    use indoc::indoc;
+
+    #[tokio::test]
+    async fn builds_client_with_http_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let kubeconfig = dir.path().join("kubeconfig");
+        fs::write(
+            &kubeconfig,
+            indoc! {"
+                apiVersion: v1
+                kind: Config
+                current-context: test
+                contexts:
+                - name: test
+                  context:
+                    cluster: test
+                clusters:
+                - name: test
+                  cluster:
+                    server: https://127.0.0.1:6443
+                    proxy-url: http://127.0.0.1:18080
+            "},
+        )
+        .unwrap();
+        let config = KubernetesConfig {
+            kubeconfig,
+            ..Default::default()
+        };
+        let client_config = load_client_config(&config).await.unwrap();
+        assert_eq!(
+            client_config.proxy_url.unwrap().to_string(),
+            "http://127.0.0.1:18080/"
+        );
+        NodeClient::new(&config).await.unwrap();
+    }
+
     fn error_response(code: u16) -> ErrorResponse {
         ErrorResponse {
             status: "Failure".to_string(),
