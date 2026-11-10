@@ -18,6 +18,9 @@ use trident_api::{
     error::{InternalError, InvalidInputError, TridentError, TridentResultExt},
 };
 
+const STORAGE_GRAPH_BUILDER_LOG_TARGET: &str =
+    "trident_api::config::host::storage::storage_graph::builder";
+
 fn run_trident(
     mut logstream: Logstream,
     mut tracestream: TraceStream,
@@ -260,7 +263,8 @@ fn setup_logging(
         .with_global_filter("tracing::span", LevelFilter::Error)
         .with_global_filter("h2", LevelFilter::Error)
         // Filter out this very noisy module that logs a lot when logstream is active.
-        .with_global_filter("hyper_util::client", LevelFilter::Info);
+        .with_global_filter("hyper_util::client", LevelFilter::Info)
+        .with_global_filter(STORAGE_GRAPH_BUILDER_LOG_TARGET, LevelFilter::Debug);
 
     // Attempt to use the systemd journal if stderr is directly connected to it, and otherwise fall
     // back to env_logger.
