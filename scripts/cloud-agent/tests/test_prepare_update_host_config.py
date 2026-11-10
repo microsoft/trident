@@ -16,7 +16,15 @@ class PrepareUpdateHostConfigTests(unittest.TestCase):
                 "url": "http://192.0.2.1:8133/files/regular.cosi",
                 "sha384": "old-hash",
             },
-            "storage": {"disks": []},
+            "storage": {
+                "disks": [{"id": "disk0", "deviceId": "scsi-0QEMU_QEMU_HARDDISK"}],
+                "filesystems": [
+                    {
+                        "deviceId": "root",
+                        "mountPoint": {"path": "/", "options": "defaults"},
+                    }
+                ],
+            },
             "internalParams": {"existing": True},
             "scripts": {"preServicing": [{"name": "existing"}]},
         }
@@ -30,7 +38,18 @@ class PrepareUpdateHostConfigTests(unittest.TestCase):
         self.assertEqual(config["image"]["sha384"], "ignored")
         self.assertTrue(config["internalParams"]["selfUpgradeTrident"])
         self.assertTrue(config["internalParams"]["existing"])
-        self.assertNotIn("storage", config)
+        self.assertEqual(
+            config["storage"],
+            {
+                "disks": [{"id": "disk0", "deviceId": "scsi-0QEMU_QEMU_HARDDISK"}],
+                "filesystems": [
+                    {
+                        "deviceId": "root",
+                        "mountPoint": {"path": "/", "options": "defaults"},
+                    }
+                ],
+            },
+        )
         self.assertEqual(
             config["scripts"]["preServicing"],
             [{"name": "existing"}],

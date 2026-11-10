@@ -40,7 +40,6 @@ def prepare_host_config(config: dict, version: int) -> str:
     if not isinstance(internal_params, dict):
         raise ValueError("Host Configuration internalParams must be a mapping")
     internal_params["selfUpgradeTrident"] = True
-    config.pop("storage", None)
     return image["url"]
 
 
