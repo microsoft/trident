@@ -240,14 +240,14 @@ pub fn cleanup_ukis_before_staging(
     esp_mount_path: &Path,
 ) -> Result<(), Error> {
     let esp_uki_directory = join_relative(mount_point, esp_mount_path).join(UKI_DIRECTORY);
-    for path in ukis_removed_before_staging(ctx, &esp_uki_directory)? {
+    for path in find_ukis_to_remove_before_staging(ctx, &esp_uki_directory)? {
         debug!("Pre-staging cleanup: removing old UKI '{}'", path.display());
         remove_uki_and_addons(&path)?;
     }
     Ok(())
 }
 
-pub(crate) fn ukis_removed_before_staging(
+pub(crate) fn find_ukis_to_remove_before_staging(
     ctx: &EngineContext,
     esp_uki_directory: &Path,
 ) -> Result<Vec<PathBuf>, Error> {

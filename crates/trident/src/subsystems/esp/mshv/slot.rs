@@ -131,7 +131,9 @@ pub(crate) fn preflight_staging(
         required += bundle.max(allocation(&existing_fallback, cluster)?);
     }
     let mut reclaimed = allocation(target_bundle, cluster)?;
-    for path in uki::ukis_removed_before_staging(ctx, &destination_esp.join(uki::UKI_DIRECTORY))? {
+    for path in
+        uki::find_ukis_to_remove_before_staging(ctx, &destination_esp.join(uki::UKI_DIRECTORY))?
+    {
         reclaimed += allocation(&path, cluster)? + allocation(&uki_addon_dir(&path), cluster)?;
     }
     check_space(stats.blocks_available() * cluster, reclaimed, required)
