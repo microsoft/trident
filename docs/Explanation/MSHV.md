@@ -122,21 +122,6 @@ combining this mode with `preserveMshvEspPayload` are rejected.
 
 Offline initialization of MSHV-enabled ACL images is not currently supported.
 
-### Disk Streaming
-
-[Disk streaming](./Disk-Streaming.md) preserves the image's partition contents
-rather than preparing slot-owned ESP bundles. A correctly prepared MSHV image
-may already contain the required boot layout; streaming itself does not
-inherently prevent that image from booting.
-
-The current configuration validator rejects `mshvSlotEspPayload: true` during
-disk-streaming execution. This is a restriction on initializing slot-owned
-management through that path, not a blanket prohibition on streaming an
-MSHV-capable image. Later slot-owned updates require either valid persisted
-HostStatus with the matching mode or first-update ACL adoption as described
-above. Booting a prepared image through disk streaming has not been validated
-as part of this implementation.
-
 ### Changing the Recorded Mode
 
 Here, "mode" means the `internalParams.mshvSlotEspPayload` flag, not whether
