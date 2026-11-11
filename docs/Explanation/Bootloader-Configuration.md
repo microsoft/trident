@@ -48,34 +48,8 @@ The bootloader choice (and choice of UKI) has some implications on
 
 ## Bootloader Servicing
 
-### Experimental slot-owned MSHV payloads
-
-For x86-64 ACL UKI COSIs built with the matching efitreeloader prefix resolver,
-`internalParams.mshvSlotEspPayload: true` copies the complete `EFI/BOOT`
-bundle into the target slot. The bundle contains `bootx64.efi`, `grubx64.efi`,
-`second.efi`, `HvLoader.efi`, `lxhvloader.dll` and
-`Windows/System32/{hvix64.exe,hvax64.exe,kdstub.dll}`.
-UKIs and addons remain in `EFI/Linux`; existing firmware and UKI selectors
-are unchanged.
-
-Enable the flag during installation or first-update ACL adoption, and keep it
-enabled for subsequent updates. Changing
-MSHV mode on an existing installation, combining it with
-`preserveMshvEspPayload`, raw/disk-streaming installation, and TPM/PCR-bound
-encryption are rejected. First-update ACL adoption discovers slot-owned mode
-from a complete existing BOOT bundle and requires the request to match it.
-It seeds the complete AZLA payload, following the normal ACL bootstrap.
-Offline-init adoption and mode conversion on an already-managed
-installation remain disabled.
-
-Staging validates the bundle and checks peak ESP allocation before clearing
-the inactive slot. Existing fallback modes apply to the complete nested bundle.
-A separate hypervisor-validation failure state supports recovery to the
-retained OS without classifying the failure as a user health-check failure.
-
-**Hypervisor identity validation is currently a success stub.** Commit and
-rollback call the hook, but cannot yet detect a mixed hypervisor/OS boot.
-This experimental implementation is not production or boot-validated.
+For ACL images with MSHV, see [MSHV](./MSHV.md) for the boot chain,
+slot-owned payload layout, and servicing requirements.
 
 :::note
 Trident handles bootloader servicing for A/B updates without any required user
