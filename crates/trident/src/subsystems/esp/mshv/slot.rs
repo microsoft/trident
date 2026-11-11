@@ -21,6 +21,8 @@ const FILES: &[&str] = &[
 
 const SPACE_RESERVE: u64 = 1024 * 1024;
 
+/// Checks allowed entries without requiring every payload file to be present.
+/// Replacement destinations may also contain known `.new` and `.old` files.
 fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<()> {
     ensure!(
         fs::symlink_metadata(directory)?.is_dir(),
@@ -61,6 +63,8 @@ fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<()> {
     Ok(())
 }
 
+/// Requires the complete supported payload and rejects unexpected entries.
+/// Validates layout, not executable contents or the running hypervisor.
 pub(crate) fn validate_bundle(root: &Path) -> Result<()> {
     validate_tree(root, root, false)?;
     for name in FILES {
@@ -74,6 +78,8 @@ pub(crate) fn validate_bundle(root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Estimates allocated bytes using the destination cluster size, including directories.
+/// Missing paths contribute zero.
 fn allocation(path: &Path, cluster: u64) -> Result<u64> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
@@ -95,6 +101,7 @@ fn allocation(path: &Path, cluster: u64) -> Result<u64> {
     Ok(total)
 }
 
+/// Requires room for the incoming allocation plus a reserve, crediting planned reclamation.
 fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<()> {
     ensure!(
         available.saturating_add(reclaimed) >= required.saturating_add(SPACE_RESERVE),
@@ -104,6 +111,8 @@ fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<()> {
     Ok(())
 }
 
+/// Estimates staging space for the slot bundle, UKIs, addons, and an enabled fallback copy.
+/// Credits inactive-slot contents and UKIs/addons scheduled for removal before staging.
 pub(crate) fn preflight_staging(
     ctx: &EngineContext,
     source_esp: &Path,
@@ -128,6 +137,7 @@ pub(crate) fn preflight_staging(
     check_space(stats.blocks_available() * cluster, reclaimed, required)
 }
 
+/// Checks room for a new bundle copy without reclaiming existing ESP contents.
 pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<()> {
     let stats = statvfs(esp)?;
     let cluster = stats.fragment_size();
@@ -139,6 +149,8 @@ pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<()> {
     )
 }
 
+/// Copies a complete validated bundle into an allowlisted destination.
+/// Callers are responsible for temporary-directory staging and atomic publication.
 pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<()> {
     validate_bundle(from)?;
     fs::create_dir_all(to)?;
@@ -151,6 +163,8 @@ pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Publishes the fallback bundle using per-file `.new` and `.old` names.
+/// Reconciles leftover `.old` files, but whole-bundle replacement is not atomic.
 pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<()> {
     validate_bundle(from)?;
     match fs::symlink_metadata(to) {
