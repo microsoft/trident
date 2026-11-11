@@ -192,8 +192,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 expected_device_path: expected_device_path.to_string_lossy().to_string(),
             }));
         }
-        (true, ServicingState::AbUpdateHealthCheckFailed)
-        | (true, ServicingState::AbUpdateHypervisorCheckFailed) => {
+        (true, ServicingState::AbUpdateHealthCheckFailed) => {
             // AbUpdateHealthCheckFailed, when booting from expected device (the servicing OS), mark host
             // status state as Provisioned
             info!("Rollback to servicing OS succeeded, setting host status from {current_servicing_state:?} to Provisioned");
@@ -203,26 +202,31 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 host_status.servicing_state = ServicingState::Provisioned;
             })?;
 
-            if current_servicing_state == ServicingState::AbUpdateHypervisorCheckFailed {
-                return Err(TridentError::new(
-                    ServicingError::ValidateAbActiveHypervisor {
-                        expected_slot: ctx
-                            .get_ab_update_volume()
-                            .map(|volume| super::boot::make_esp_dir_name(ctx.install_index, volume))
-                            .unwrap_or_default(),
-                        observed_slot: None,
-                    },
-                ))
-                .message(
-                    "Rollback to the retained OS succeeded after hypervisor validation failed",
-                );
-            }
-
             return Err(TridentError::new(
                 HealthChecksError::AbUpdateHealthCheckCommitCheck {
                     expected_device_path: current_device_path.to_string_lossy().to_string(),
                 },
             ));
+        }
+        (true, ServicingState::AbUpdateHypervisorCheckFailed) => {
+            // Restore the retained OS's status, but still report the rejected update's failure.
+            info!("Rollback to servicing OS succeeded, setting host status from {current_servicing_state:?} to Provisioned");
+            datastore.with_host_status(|host_status| {
+                host_status.spec = host_status.spec_old.clone();
+                host_status.spec_old = Default::default();
+                host_status.servicing_state = ServicingState::Provisioned;
+            })?;
+
+            return Err(TridentError::new(
+                ServicingError::ValidateAbActiveHypervisor {
+                    expected_slot: ctx
+                        .get_ab_update_volume()
+                        .map(|volume| super::boot::make_esp_dir_name(ctx.install_index, volume))
+                        .unwrap_or_default(),
+                    observed_slot: None,
+                },
+            ))
+            .message("Rollback to the retained OS succeeded after hypervisor validation failed");
         }
         (false, ServicingState::AbUpdateFinalized) => {
             // AbUpdateFinalize, when booting from incorrect device (the servicing OS), mark host status
