@@ -80,7 +80,6 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         _ => ServicingType::NoActiveServicing,
     };
 
-    // Create an EngineContext based on the Host Status
     if current_servicing_state != ServicingState::CleanInstallFinalized {
         super::mshv::validate_transition(
             &datastore.host_status().spec_old,
@@ -96,6 +95,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     } else {
         datastore.host_status().spec.clone()
     };
+    // Create an EngineContext based on the Host Status
     let ctx = EngineContext::new(EngineContextParams {
         spec: expected_spec,
         spec_old: datastore.host_status().spec_old.clone(),
