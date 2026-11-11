@@ -143,7 +143,7 @@ during first-update ACL adoption, before an installation is already managed.
 ### Hypervisor Identity
 
 **Hypervisor identity validation currently assumes success.** Commit and
-rollback invoke the hook, but it does not yet identify the running hypervisor
+rollback do not yet identify the running hypervisor
 or detect a mixed hypervisor/OS boot. Root-device validation and health checks
 still apply; passing them does not establish hypervisor/OS consistency or
 production readiness.
