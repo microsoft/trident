@@ -10,7 +10,7 @@ usage() {
 Usage: scripts/cloud-agent/validate.sh [all|format|rust|go|tailor|cloud-agent|functional]
 
 The default "all" group runs source-only validation. The explicit "functional"
-group downloads the pinned VM artifact and runs the bounded functional smoke suite.
+group downloads the selected VM artifact and runs the bounded functional smoke suite.
 EOF
 }
 

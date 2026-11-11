@@ -102,9 +102,10 @@ make functional-test FILTER="custom/test_trident_e2e.py -k test_name"
 ### GitHub cloud agent
 
 The GitHub cloud agent uses an existing functional-test image rather than
-building one during the task. The image pin is recorded in
-`scripts/cloud-agent/functional-artifact.json` and includes the ADO build,
-source commit, expected image size, and SHA-256.
+building one during the task. By default, the downloader resolves the latest
+successful completed `trident-ci` build from `main`, then records the resolved
+build, source commit, artifact metadata, image size, and SHA-256 in
+`provenance.json`.
 
 On the 1ES runner, install the optional libvirt/QEMU dependencies once:
 
@@ -118,10 +119,10 @@ Run the bounded smoke suite:
 scripts/cloud-agent/validate.sh functional
 ```
 
-The smoke suite verifies the pinned ADO artifact, creates the VM, proves SSH
-connectivity, and runs the positive `helpers` functional tests. It stores the
-large image under `/mnt/storage/trident-cloud-agent/functional` and symlinks it
-to `artifacts/trident-functest.qcow2`.
+The smoke suite verifies the selected ADO build and artifact, creates the VM,
+proves SSH connectivity, and runs the positive `helpers` functional tests. It
+stores each image under a cache directory named for its immutable build ID and
+symlinks the selected image to `artifacts/trident-functest.qcow2`.
 
 Run the complete functional suite when the changed behavior requires it:
 
@@ -132,6 +133,12 @@ bash scripts/cloud-agent/run-functional.sh full
 The generated `provenance.json` beside the cached image records the exact build
 and artifact used. Include its build ID, source commit, and image SHA-256 in the
 pull request validation evidence.
+
+To reproduce a run with the same image, select the recorded build explicitly:
+
+```bash
+TRIDENT_FUNCTIONAL_BUILD_ID=<build-id> scripts/cloud-agent/validate.sh functional
+```
 
 ## Architecture
 

@@ -2,6 +2,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import urllib.parse
 import zipfile
 
 from pathlib import Path
@@ -17,32 +18,31 @@ SPEC.loader.exec_module(MODULE)
 class FunctionalArtifactTests(unittest.TestCase):
     def setUp(self):
         self.config = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
+            "organization": "mariner-org",
+            "project": "ECF",
             "definitionId": 5067,
-            "buildId": 1244644,
             "sourceBranch": "refs/heads/main",
-            "sourceVersion": "abc123",
+            "buildStatus": "completed",
             "buildResult": "succeeded",
             "artifactName": "trident-functest",
             "artifactType": "PipelineArtifact",
-            "artifactSize": 10,
             "imageFilename": "trident-functest.qcow2",
         }
 
-    def test_verify_build_rejects_source_mismatch(self):
-        build = {
-            "id": 1244644,
+    def build(self, build_id=1244644):
+        return {
+            "id": build_id,
             "definition": {"id": 5067},
+            "status": "completed",
             "result": "succeeded",
             "sourceBranch": "refs/heads/main",
-            "sourceVersion": "different",
+            "sourceVersion": "abc123",
         }
 
-        with self.assertRaisesRegex(MODULE.ArtifactError, "sourceVersion"):
-            MODULE.verify_build(self.config, build)
-
-    def test_verify_artifact_returns_direct_download_url(self):
-        artifact = {
+    def artifact(self):
+        return {
+            "id": 42,
             "name": "trident-functest",
             "resource": {
                 "type": "PipelineArtifact",
@@ -52,6 +52,60 @@ class FunctionalArtifactTests(unittest.TestCase):
                 ),
             },
         }
+
+    def test_verify_build_rejects_selection_mismatch(self):
+        mismatches = {
+            "definition.id": ("definition", {"id": 9999}),
+            "status": ("status", "inProgress"),
+            "result": ("result", "failed"),
+            "sourceBranch": ("sourceBranch", "refs/heads/feature"),
+        }
+        for expected_error, (field, value) in mismatches.items():
+            with self.subTest(field=field):
+                build = self.build()
+                build[field] = value
+                with self.assertRaisesRegex(MODULE.ArtifactError, expected_error):
+                    MODULE.verify_build(self.config, build)
+
+    def test_resolve_build_selects_latest_successful_main_build(self):
+        build = self.build()
+        requested_urls = []
+
+        def request_json(url, token):
+            requested_urls.append(url)
+            self.assertEqual(token, "token")
+            return {"value": [build]}
+
+        original_request_json = MODULE.request_json
+        MODULE.request_json = request_json
+        self.addCleanup(setattr, MODULE, "request_json", original_request_json)
+
+        self.assertEqual(MODULE.resolve_build(self.config, "token", None), build)
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(requested_urls[0]).query)
+        self.assertEqual(query["definitions"], ["5067"])
+        self.assertEqual(query["branchName"], ["refs/heads/main"])
+        self.assertEqual(query["statusFilter"], ["completed"])
+        self.assertEqual(query["resultFilter"], ["succeeded"])
+        self.assertEqual(query["queryOrder"], ["finishTimeDescending"])
+        self.assertEqual(query["$top"], ["1"])
+
+    def test_resolve_build_uses_explicit_override(self):
+        build = self.build(7654321)
+        requested_urls = []
+
+        def request_json(url, token):
+            requested_urls.append(url)
+            return build
+
+        original_request_json = MODULE.request_json
+        MODULE.request_json = request_json
+        self.addCleanup(setattr, MODULE, "request_json", original_request_json)
+
+        self.assertEqual(MODULE.resolve_build(self.config, "token", 7654321), build)
+        self.assertIn("/build/builds/7654321?", requested_urls[0])
+
+    def test_verify_artifact_returns_direct_download_url(self):
+        artifact = self.artifact()
 
         self.assertEqual(
             MODULE.verify_artifact(self.config, artifact),
@@ -70,9 +124,7 @@ class FunctionalArtifactTests(unittest.TestCase):
                     MODULE.find_image_entry(archive, "trident-functest.qcow2")
 
     def test_extract_image_verifies_size_and_hash(self):
-        image = b"pinned image bytes"
-        self.config["imageSize"] = len(image)
-        self.config["imageSha256"] = MODULE.hashlib.sha256(image).hexdigest()
+        image = b"functional image bytes"
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -81,10 +133,74 @@ class FunctionalArtifactTests(unittest.TestCase):
             with zipfile.ZipFile(archive_path, "w") as archive:
                 archive.writestr("trident-functest/trident-functest.qcow2", image)
 
-            MODULE.extract_image(self.config, archive_path, image_path)
+            image_size, image_sha256 = MODULE.extract_image(
+                self.config, archive_path, image_path
+            )
 
             self.assertEqual(image_path.read_bytes(), image)
-            self.assertTrue(MODULE.image_matches(self.config, image_path))
+            self.assertEqual(image_size, len(image))
+            self.assertEqual(image_sha256, MODULE.hashlib.sha256(image).hexdigest())
+            self.assertTrue(MODULE.image_matches(image_path, image_size, image_sha256))
+
+    def test_prepare_artifact_caches_by_build_and_records_computed_hash(self):
+        image = b"fresh functional image"
+        build = self.build(7654321)
+        artifact = self.artifact()
+        download_count = 0
+
+        def request_json(url, token):
+            if "/artifacts?" in url:
+                return artifact
+            return build
+
+        def download_file(url, token, destination):
+            nonlocal download_count
+            download_count += 1
+            with zipfile.ZipFile(destination, "w") as archive:
+                archive.writestr("trident-functest/trident-functest.qcow2", image)
+
+        original_request_json = MODULE.request_json
+        original_download_file = MODULE.download_file
+        MODULE.request_json = request_json
+        MODULE.download_file = download_file
+        self.addCleanup(setattr, MODULE, "request_json", original_request_json)
+        self.addCleanup(setattr, MODULE, "download_file", original_download_file)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            provenance_path = MODULE.prepare_artifact(
+                self.config,
+                temp_path / "cache",
+                temp_path / "artifacts" / "trident-functest.qcow2",
+                "token",
+                build_id=7654321,
+            )
+            provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+
+            self.assertEqual(provenance_path.parent.name, "build-7654321")
+            self.assertEqual(provenance["build"]["id"], 7654321)
+            self.assertEqual(provenance["image"]["size"], len(image))
+            self.assertEqual(
+                provenance["image"]["sha256"],
+                MODULE.hashlib.sha256(image).hexdigest(),
+            )
+
+            provenance["build"].pop("status")
+            provenance_path.write_text(
+                json.dumps(provenance, indent=2) + "\n", encoding="utf-8"
+            )
+            second_provenance_path = MODULE.prepare_artifact(
+                self.config,
+                temp_path / "cache",
+                temp_path / "artifacts" / "trident-functest.qcow2",
+                "token",
+                build_id=7654321,
+            )
+            second_provenance = json.loads(
+                second_provenance_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(download_count, 1)
+            self.assertTrue(second_provenance["cacheHit"])
 
     def test_temporary_paths_are_unique(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -99,7 +215,7 @@ class FunctionalArtifactTests(unittest.TestCase):
     def test_load_config_rejects_unknown_schema(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.json"
-            config_path.write_text(json.dumps({"schemaVersion": 2}), encoding="utf-8")
+            config_path.write_text(json.dumps({"schemaVersion": 3}), encoding="utf-8")
 
             with self.assertRaisesRegex(MODULE.ArtifactError, "Unsupported"):
                 MODULE.load_config(config_path)
@@ -117,6 +233,13 @@ class FunctionalArtifactTests(unittest.TestCase):
 
             self.assertTrue(link_path.is_symlink())
             self.assertEqual(link_path.resolve(), image_path.resolve())
+
+            replacement_path = temp_path / "cache" / "replacement.qcow2"
+            replacement_path.write_bytes(b"replacement")
+            MODULE.ensure_link(replacement_path.resolve(), link_path)
+
+            self.assertTrue(link_path.is_symlink())
+            self.assertEqual(link_path.resolve(), replacement_path.resolve())
 
 
 if __name__ == "__main__":

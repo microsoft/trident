@@ -462,14 +462,15 @@ These rules apply to agents writing code:
 - For changes that affect host interaction, storage, filesystems, boot,
   servicing, or functional-test infrastructure, also run
   `bash scripts/cloud-agent/setup-functional.sh` followed by
-  `scripts/cloud-agent/validate.sh functional`. This downloads the pinned
-  ADO-produced image, verifies its build and SHA-256 provenance, creates a
-  libvirt VM, and runs the bounded positive helper suite. Use
+  `scripts/cloud-agent/validate.sh functional`. This resolves the latest
+  successful `trident-ci` image from `main`, records its immutable build and
+  SHA-256 provenance, creates a libvirt VM, and runs the bounded positive helper
+  suite. Use
   `bash scripts/cloud-agent/run-functional.sh full` when the change requires
   the complete functional suite.
 - Functional validation is explicit and is not included in the default `all`
   group because it requires the 1ES runner's nested virtualization and the
-  pinned VM artifact.
+  ADO-produced VM artifact.
 - Documentation-only changes may skip the suite when it is not applicable,
   but the pull request **Validation** section must record that it was not run
   and explain why.
