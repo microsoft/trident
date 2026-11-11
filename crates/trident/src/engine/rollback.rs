@@ -88,6 +88,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             &datastore.host_status().spec,
         )?;
     }
+    // After candidate validation fails, recovery must validate the retained OS
+    // using spec_old rather than the failed candidate's configuration.
     let recovering = matches!(
         current_servicing_state,
         ServicingState::AbUpdateHealthCheckFailed | ServicingState::AbUpdateHypervisorCheckFailed
