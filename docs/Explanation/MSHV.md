@@ -9,8 +9,9 @@ that payload alongside each OS slot.
 ## How MSHV Boot Differs
 
 In an ordinary UKI-based image, shim starts systemd-boot, which loads the
-selected Unified Kernel Image (UKI). An MSHV image adds efitreeloader and
-hypervisor-loading components before systemd-boot:
+selected Unified Kernel Image (UKI). An MSHV image adds
+[efitreeloader](https://github.com/microsoft/efitreeloader) and hypervisor-loading
+components before systemd-boot:
 
 ```text
 UEFI
