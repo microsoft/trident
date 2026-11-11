@@ -117,12 +117,45 @@ without classifying an identity failure as a user health-check failure.
 ## Current Limitations
 
 The current implementation is limited to x86-64 ACL UKI images because the
-payload definition hardcodes x64 filenames. It requires file-based ESP
-deployment. Raw/disk-streaming installation, TPM/PCR-bound encryption, and
+payload definition hardcodes x64 filenames. TPM/PCR-bound encryption and
 combining this mode with `preserveMshvEspPayload` are rejected.
 
 Offline initialization of MSHV-enabled ACL images is not currently supported.
-Changing slot-owned mode on an already-managed installation is also rejected.
+
+### Disk Streaming
+
+[Disk streaming](./Disk-Streaming.md) preserves the image's partition contents
+rather than preparing slot-owned ESP bundles. A correctly prepared MSHV image
+may already contain the required boot layout; streaming itself does not
+inherently prevent that image from booting.
+
+The current configuration validator rejects `mshvSlotEspPayload: true` during
+disk-streaming execution. This is a restriction on initializing slot-owned
+management through that path, not a blanket prohibition on streaming an
+MSHV-capable image. Later slot-owned updates require either valid persisted
+HostStatus with the matching mode or first-update ACL adoption as described
+above. Booting a prepared image through disk streaming has not been validated
+as part of this implementation.
+
+### Changing the Recorded Mode
+
+Here, "mode" means the `internalParams.mshvSlotEspPayload` flag, not whether
+the kernel supports MSHV. An installation is already managed once Trident has
+persisted its HostStatus. Subsequent update requests and historical
+configurations selected for manual rollback must retain the recorded flag:
+
+* If recorded as enabled, keep `mshvSlotEspPayload: true`. Setting it to false
+  or omitting it from an update request is rejected.
+* If recorded as disabled, setting `mshvSlotEspPayload: true` is rejected,
+  even if the new COSI contains an MSHV bundle.
+
+Trident does not convert an existing shared/non-MSHV payload layout into
+slot-owned management, or convert a slot-owned installation back out of it.
+Normal A/B updates and rollbacks that retain the same flag remain supported.
+The initial mode is established during clean installation or discovered
+during first-update ACL adoption, before an installation is already managed.
+
+### Hypervisor Identity
 
 **Hypervisor identity validation currently assumes success.** Commit and
 rollback invoke the hook, but it does not yet identify the running hypervisor
