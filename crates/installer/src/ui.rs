@@ -29,7 +29,7 @@ use ratatui::{
 use tokio::{
     signal::unix::{self, SignalKind},
     sync::mpsc,
-    task::{self, JoinHandle},
+    task::{self, JoinError, JoinHandle},
     time,
 };
 
@@ -820,6 +820,21 @@ fn spawn_operation(
     })
 }
 
+/// Reports shell failures without changing the result of an independent installation.
+fn shell_result_event(result: Result<Result<(), Error>, JoinError>) -> Option<Event> {
+    match result {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => Some(Event::InstallerLog {
+            level: Level::Warn,
+            message: format!("Recovery shell failed: {error:#}"),
+        }),
+        Err(error) => Some(Event::InstallerLog {
+            level: Level::Warn,
+            message: format!("Recovery shell task terminated: {error}"),
+        }),
+    }
+}
+
 /// Runs the installer event loop, starting autorun and offering recovery on a terminal.
 /// Noninteractive runs return after work completes and fail if recovery needs user input;
 /// `plain` selects text output instead of the full-screen display.
@@ -893,15 +908,10 @@ pub(super) async fn run(
         }
         if shell.as_ref().is_some_and(JoinHandle::is_finished) {
             if let Some(finished) = shell.take() {
-                let failure = match finished.await {
-                    Ok(Ok(())) => None,
-                    Ok(Err(error)) => Some(model.fail(format!("Shell failed: {error:#}"), false)),
-                    Err(error) => {
-                        Some(model.fail(format!("Shell task terminated: {error}"), false))
-                    }
-                };
-                if let Some(failure) = failure {
-                    output.announce(&failure, model.serial_verbosity);
+                if let Some(event) = shell_result_event(finished.await) {
+                    output.record(&event)?;
+                    let warning = model.event(event);
+                    output.announce(&warning, model.serial_verbosity);
                 }
             }
             if let Some(display) = &mut display {
@@ -1873,6 +1883,28 @@ mod tests {
             },
         ))));
         assert!(model.reboot_at.is_some());
+    }
+
+    /// A failed recovery shell cannot erase a successful servicing result or its reboot.
+    #[test]
+    fn shell_exit_failure_is_only_a_warning() {
+        let mut model = Model::new();
+        model.event(Event::Response(ServicingEvent::Completed(Ok(
+            ClientCompletion {
+                reboot: RebootDisposition::Required,
+                servicing_kind: Some(ServicingKind::CleanInstall),
+                image_hash: None,
+            },
+        ))));
+        let reboot_at = model.reboot_at;
+        assert!(reboot_at.is_some());
+        assert!(shell_result_event(Ok(Ok(()))).is_none());
+        let warning = model.event(shell_result_event(Ok(Err(anyhow!("exit 1")))).unwrap());
+        assert_eq!(warning.level, LogLevel::Warn);
+        assert!(warning.plain().contains("Recovery shell failed: exit 1"));
+        assert_eq!(model.screen, Screen::Success);
+        assert!(!model.failed);
+        assert_eq!(model.reboot_at, reboot_at);
     }
 
     /// Unknown servicing kinds fail rather than triggering an automatic reboot.

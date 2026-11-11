@@ -118,8 +118,9 @@ scrollable full error details and Esc returns to the logs. Successful installs
 keep their logs in a green result frame. Each result is also the last highlighted
 log entry. Continue opens recovery: Shell,
 Stream COSI URL, remote HC URL, or Shutdown. Shell `exit` returns to the
-originating screen. The recovery shell is a root login Bash, so it reads
-`/etc/profile` and the root profile (if present); on the installer ISO,
+originating screen; a nonzero shell exit is logged without changing the
+installation result or reboot decision. The recovery shell is a root login
+Bash, so it reads `/etc/profile` and the root profile (if present); on the installer ISO,
 `/etc/profile` gives root a red prompt. The ISO service sets `TERM=linux`
 for tty1 so terminal tools such as `clear` work in the shell. Installation
 continues while a shell is open; automatic reboot waits. The success screen
