@@ -106,12 +106,13 @@ pub(super) struct Autorun {
     pub host_configuration: Option<String>,
     #[serde(default = "default_reboot")]
     pub reboot: bool,
+    /// Accepted for compatibility with older installer media; autorun does not check UUIDs.
     #[serde(default)]
     pub force: bool,
 }
 
 impl Default for Autorun {
-    /// Enables reboot after a successful install but never forces a repeat stream.
+    /// Enables reboot after a successful install.
     fn default() -> Self {
         Self {
             host_configuration: None,
@@ -315,8 +316,8 @@ mod tests {
     }
 
     #[test]
-    /// Ensures force is false by default and accepts only a boolean override.
-    fn autorun_force_is_opt_in() {
+    /// Older media can still specify the now-ignored force flag.
+    fn legacy_force_setting_remains_compatible() {
         let config = Config::parse("mode = 'autorun'\n[autorun]\nforce = true").unwrap();
         assert!(config.autorun.force);
         let config = Config::parse("mode = 'autorun'\n[autorun]\nforce = false").unwrap();

@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fs::{self, File},
     io::{ErrorKind, Read},
     path::{Path, PathBuf},
@@ -10,7 +9,7 @@ use std::{
 use anyhow::{anyhow, bail, ensure, Context, Error};
 use log::warn;
 use reqwest::blocking::Client;
-use serde::Deserialize;
+use serde::{de::IgnoredAny, Deserialize};
 use sha2::{Digest, Sha384};
 use tar::Archive;
 use url::Url;
@@ -43,7 +42,6 @@ pub(super) enum Request {
     Autorun,
     HostConfiguration(String),
     Stream(Url),
-    StreamMedia(Url),
 }
 
 #[derive(Debug, Clone)]
@@ -136,18 +134,6 @@ fn prepare_from_media_with_progress(
         None => settings.clone(),
     };
     settings.require_autorun()?;
-    if let Request::StreamMedia(image) = request {
-        ensure!(
-            root.is_some(),
-            "Cannot retry a media stream without installer media"
-        );
-        return Ok((
-            settings,
-            Plan::Stream {
-                image: image.clone(),
-            },
-        ));
-    }
     progress("Scanning media for COSI images")?;
     let images = match root {
         Some(root) => config::discover_images(root, &settings.media.cosi_directory)?,
@@ -411,24 +397,18 @@ pub(super) fn resolve_host_configuration(
     Ok(config)
 }
 
-// Only the repeat-install preflight needs these fields; Trident validates the full COSI.
+// Only disk sizing and the metadata hash are needed here; Trident validates the full COSI.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Metadata {
     version: String,
     disk: Option<DiskMetadata>,
-    images: Vec<ImageMetadata>,
+    images: Vec<IgnoredAny>,
 }
 
 #[derive(Debug, Deserialize)]
 struct DiskMetadata {
     size: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ImageMetadata {
-    fs_uuid: Option<String>,
 }
 
 /// Extracts and hashes the raw COSI metadata within a bounded archive read.
@@ -475,32 +455,25 @@ fn metadata(reader: impl Read) -> Result<(Metadata, Sha384Hash), Error> {
 }
 
 /// Checks disk eligibility and returns the metadata hash to bind the daemon's fetch.
-///
-/// `force` bypasses only the repeat-install guard, not the installer-media safety check.
-pub(super) fn stream_preflight(image: &Url, force: bool) -> Result<(bool, Sha384Hash), Error> {
+pub(super) fn stream_preflight(image: &Url) -> Result<Sha384Hash, Error> {
     let (metadata, hash) = metadata(reader(image)?)?;
     let devices = lsblk::list().context("Failed to inspect attached disks")?;
+    checked_stream_hash(&metadata, hash, &devices)
+}
+
+/// Keeps target-media safety independent of previously installed filesystem UUIDs.
+fn checked_stream_hash(
+    metadata: &Metadata,
+    hash: Sha384Hash,
+    devices: &[BlockDevice],
+) -> Result<Sha384Hash, Error> {
     let required = metadata
         .disk
         .as_ref()
         .context("COSI disk metadata is missing")?
         .size;
-    ensure_stream_target_safe(&devices, required)?;
-    if force {
-        return Ok((false, hash));
-    }
-    let expected = metadata
-        .images
-        .iter()
-        .filter_map(|image| image.fs_uuid.as_deref())
-        .filter(|uuid| !uuid.is_empty())
-        .map(str::to_ascii_lowercase)
-        .collect::<HashSet<_>>();
-    ensure!(
-        !expected.is_empty(),
-        "COSI has no filesystem UUIDs for repeat-install protection"
-    );
-    Ok((contains_image(&devices, &expected), hash))
+    ensure_stream_target_safe(devices, required)?;
+    Ok(hash)
 }
 
 /// Refuses streaming if Trident could choose a mounted or read-only smallest fitting disk.
@@ -529,22 +502,6 @@ fn ensure_stream_target_safe(devices: &[BlockDevice], required: u64) -> Result<(
         );
     }
     Ok(())
-}
-
-/// Checks whether every filesystem UUID in the COSI is present on attached devices.
-fn contains_image(devices: &[BlockDevice], expected: &HashSet<String>) -> bool {
-    /// Collects filesystem UUIDs recursively, normalizing case for matching.
-    fn collect(devices: &[BlockDevice], present: &mut HashSet<String>) {
-        for device in devices {
-            if let Some(uuid) = &device.fsuuid {
-                present.insert(uuid.to_string().to_ascii_lowercase());
-            }
-            collect(&device.children, present);
-        }
-    }
-    let mut present = HashSet::new();
-    collect(devices, &mut present);
-    expected.iter().all(|uuid| present.contains(uuid))
 }
 
 #[cfg(test)]
@@ -660,28 +617,6 @@ mod tests {
     }
 
     #[test]
-    /// Force retry keeps the original COSI while reloading its media settings.
-    fn force_media_stream_reapplies_overlay_without_switching_to_install() {
-        let root = TempDir::new().unwrap();
-        fs::create_dir(root.path().join("installer")).unwrap();
-        fs::write(
-            root.path().join(config::MEDIA_CONFIG),
-            "[autorun]\nreboot = false\nhostConfiguration = 'https://example.test/host.yaml'\n",
-        )
-        .unwrap();
-        let image = Url::parse("file:///run/trident/installer-media/cosi/image.cosi").unwrap();
-        let (settings, plan) = prepare_from_media(
-            &Config::default(),
-            &Request::StreamMedia(image.clone()),
-            Some(root.path()),
-        )
-        .unwrap();
-        assert!(!settings.autorun.reboot);
-        assert!(matches!(plan, Plan::Stream { image: selected } if selected == image));
-        prepare_from_media(&Config::default(), &Request::StreamMedia(image), None).unwrap_err();
-    }
-
-    #[test]
     /// Ensures the image marker needs a COSI and leaves other image URLs untouched.
     fn marker_requires_an_image_and_does_not_touch_other_urls() {
         let yaml = valid_host_configuration();
@@ -782,7 +717,7 @@ mod tests {
     #[test]
     /// Hashes the original metadata bytes rather than re-serialized JSON.
     fn preflight_metadata_hash_matches_daemon_contract() {
-        let raw = br#"{"version":"1.2","disk":{"size":4294967296},"images":[{"fsUuid":"uuid-1"}]}"#;
+        let raw = br#"{"version":"1.2","disk":{"size":4294967296},"images":[{}]}"#;
         let inspect = |raw: &[u8]| {
             let mut builder = TarBuilder::new(Vec::new());
             let mut header = tar::Header::new_gnu();
@@ -798,27 +733,38 @@ mod tests {
         assert_eq!(parsed.disk.unwrap().size, 4294967296);
         assert_eq!(hash, Sha384Hash::from(format!("{:x}", Sha384::digest(raw))));
 
-        let padded =
-            br#"{ "version":"1.2","disk":{"size":4294967296},"images":[{"fsUuid":"uuid-1"}]}"#;
+        let padded = br#"{ "version":"1.2","disk":{"size":4294967296},"images":[{}]}"#;
         let (_, padded_hash) = inspect(padded);
         assert_ne!(hash, padded_hash);
     }
 
     #[test]
-    /// Ensures repeat-install detection requires every expected filesystem UUID.
-    fn repeat_guard_requires_the_complete_nonempty_uuid_set() {
-        let devices = vec![BlockDevice {
+    /// Autorun still streams to a safe disk with matching UUIDs already present.
+    fn existing_filesystem_uuids_do_not_block_stream_preflight() {
+        let raw = br#"{"version":"1.2","disk":{"size":4294967296},"images":[{"fsUuid":"existing-root"}]}"#;
+        let mut builder = TarBuilder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_size(raw.len() as u64);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, METADATA_PATH, &raw[..])
+            .unwrap();
+        builder.finish().unwrap();
+        let (metadata, hash) = metadata(Cursor::new(builder.into_inner().unwrap())).unwrap();
+        let disk = BlockDevice {
+            name: "vda".into(),
+            size: 8 * 1024 * 1024 * 1024,
+            blkdev_type: BlockDeviceType::Disk,
             children: vec![BlockDevice {
-                fsuuid: Some("uuid-1".into()),
+                fsuuid: Some("existing-root".into()),
                 ..Default::default()
             }],
             ..Default::default()
-        }];
-        assert!(contains_image(&devices, &HashSet::from(["uuid-1".into()])));
-        assert!(!contains_image(
-            &devices,
-            &HashSet::from(["uuid-1".into(), "uuid-2".into()])
-        ));
+        };
+        assert_eq!(
+            checked_stream_hash(&metadata, hash.clone(), &[disk]).unwrap(),
+            hash
+        );
     }
 
     #[test]

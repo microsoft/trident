@@ -3,7 +3,6 @@ use std::time::Duration;
 use anyhow::Error;
 use clap::ValueEnum;
 use tokio::{sync::mpsc::Sender, time};
-use url::Url;
 
 use trident_client::{
     Completion, LogLevel, LogRecord, RebootDisposition, RemoteError, RemoteErrorCategory,
@@ -22,7 +21,6 @@ pub(super) enum Scenario {
     Success,
     Failure,
     NoImages,
-    AlreadyPresent,
     Disconnect,
 }
 
@@ -34,20 +32,14 @@ pub(super) async fn run(scenario: Scenario, tx: Sender<Event>) -> Result<(), Err
             description: "DEMO: StreamDisk from ISO image".into(),
             reboot: false,
             serial_verbosity: SerialVerbosity::Debug,
-            stream_image: Some(Url::parse("file:///demo/image.cosi")?),
         },
     )
     .await?;
-    match scenario {
-        Scenario::NoImages => return client::send(&tx, Event::Error {
+    if scenario == Scenario::NoImages {
+        return client::send(&tx, Event::Error {
             details: "DEMO: No Host Configuration and no COSI images in cosi/.\nTry the simulated shell or a remote-source recovery action.\nNo network requests or machine operations will be performed.".into(),
             uncertain: false,
-        }).await,
-        Scenario::AlreadyPresent => return client::send(&tx, Event::AlreadyPresent {
-            details: "DEMO: Matching COSI filesystem UUIDs found. No writes performed.".into(),
-            automatic: true,
-        }).await,
-        _ => {}
+        }).await;
     }
     response(&tx, ServicingEvent::Started { timestamp: None }).await?;
     for (level, message) in [

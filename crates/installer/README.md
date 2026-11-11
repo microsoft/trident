@@ -10,7 +10,6 @@ crate, not a partitioning engine.
 cargo run -p installer -- --demo
 cargo run -p installer -- --demo failure
 cargo run -p installer -- --demo no-images
-cargo run -p installer -- --demo already-present
 cargo run -p installer -- --demo disconnect
 ```
 
@@ -43,7 +42,6 @@ cosiDirectory = "cosi/"
 # If omitted, use /etc/trident/config.yaml when that file exists.
 # hostConfiguration = "installer/host-configuration.yaml"
 reboot = true
-force = false
 ```
 
 Unknown fields and conflicting media selectors are errors. `interactive` is
@@ -103,8 +101,8 @@ On the ISO, `--system-console` uses the graphical virtual console for local
 keyboard/monitor and BMC KVM, independent of `console=` order. With
 `serialMode = "logs"`, active serial consoles receive only formatted installer
 and gRPC logs, never a TUI, even when no graphical console exists. Autorun
-continues without an interactive console; missing inputs, repeat-install
-protection and other cases needing operator input emit an error and stop.
+continues without an interactive console; missing inputs and failures
+emit an error and stop.
 Failures to open or write a serial console are logged and mirroring to that
 console stops; they do not stop installation. On boots with
 `trident.installer=1`, the RPM's getty drop-ins prevent serial login prompts
@@ -154,17 +152,12 @@ outcome, not success. Another write requires a successful Trident status query
 establishing that the daemon is idle; power actions remain unavailable until
 that check or a confirmed completion resolves the uncertain outcome.
 
-Streaming checks COSI filesystem UUIDs before writing. A complete match opens
-the already-present screen with a separately confirmed Force reinstall action.
-For media autorun, a confirmed retry keeps the original COSI and re-applies
-the media-local configuration; a manually entered stream retains its URL and
-does not apply media overrides.
-`autorun.force` defaults to false. Setting it to true skips the matching-UUID
-check on automatic COSI streams, without weakening the mounted/read-only target
-checks. It does not change HC installs or manually supplied recovery URLs.
-**With force enabled, an ISO left in the boot path can reimage the machine on
-every boot.** Remove or deprioritize the media after installation.
-Mounted or read-only potential stream targets are never force-overwritten.
+Autorun does not compare filesystem UUIDs or confirm repeat installations.
+**An ISO left in the boot path can reimage the machine on every boot.** Remove
+or deprioritize the media after installation. The former `autorun.force` key
+is accepted for compatibility but ignored; interactive mode, where an operator
+could confirm a repeat install, is not implemented yet.
+Mounted or read-only potential stream targets are still refused.
 For StreamDisk, the daemon checks the SHA-384 of the metadata inspected by
 the installer before selecting the target disk; changed metadata stops the
 operation instead of bypassing this safety check.
@@ -172,13 +165,13 @@ If the installer USB itself is the smallest disk fitting the COSI, streaming
 stops rather than overwriting it; use a USB smaller than the COSI's original
 disk size or an HC selecting an explicit target. The current StreamDisk RPC
 cannot exclude a specific disk.
-**HC installation intentionally has no repeat-install/Force guard:** the HC is
+**HC installation also has no repeat-install guard:** the HC is
 the operator's authority to overwrite its selected disks. Remove ISO media or
 correct boot order to avoid repeated HC-driven installations.
 
 `autorun.reboot` defaults to true. Successful installations requiring reboot
 show a short countdown, then reboot; false leaves the success screen. Errors,
-unknown outcomes, already-present images, and no-servicing results never
+unknown outcomes, and no-servicing results never
 automatically reboot.
 
 ## ISO integration

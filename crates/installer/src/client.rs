@@ -3,7 +3,6 @@ use std::borrow::Cow;
 use anyhow::{anyhow, bail, Error};
 use log::Level;
 use tokio::{sync::mpsc::Sender, task};
-use url::Url;
 
 use trident_client::{
     Client, ClientError, Completion as ClientCompletion, ExecutionState, RebootDisposition,
@@ -16,11 +15,6 @@ use crate::{
     source::{self, Plan, Request},
 };
 
-/// Applies configured force only to autorun streams, while respecting explicit confirmation.
-fn stream_force_requested(automatic: bool, configured: bool, confirmed: bool) -> bool {
-    confirmed || (automatic && configured)
-}
-
 #[derive(Debug)]
 pub(super) enum Event {
     InstallerLog {
@@ -32,17 +26,12 @@ pub(super) enum Event {
         description: String,
         reboot: bool,
         serial_verbosity: SerialVerbosity,
-        stream_image: Option<Url>,
     },
     Response(ServicingEvent),
     IdleConfirmed,
     Error {
         details: String,
         uncertain: bool,
-    },
-    AlreadyPresent {
-        details: String,
-        automatic: bool,
     },
 }
 
@@ -162,9 +151,7 @@ fn request_description(settings: &Config, request: &Request) -> String {
             settings.media.cosi_directory.display()
         ),
         Request::HostConfiguration(url) => format!("Install from {}", source::display_source(url)),
-        Request::Stream(url) | Request::StreamMedia(url) => {
-            format!("StreamDisk from {}", source::display_url(url))
-        }
+        Request::Stream(url) => format!("StreamDisk from {}", source::display_url(url)),
     }
 }
 
@@ -175,11 +162,9 @@ fn request_description(settings: &Config, request: &Request) -> String {
 pub(super) async fn execute(
     settings: Config,
     request: Request,
-    force: bool,
     require_idle: bool,
     tx: Sender<Event>,
 ) -> Result<(), Error> {
-    let automatic = matches!(request, Request::Autorun | Request::StreamMedia(_));
     let description = request_description(&settings, &request);
     send(
         &tx,
@@ -187,7 +172,6 @@ pub(super) async fn execute(
             description,
             reboot: settings.autorun.reboot,
             serial_verbosity: settings.serial_verbosity,
-            stream_image: None,
         },
     )
     .await?;
@@ -219,10 +203,6 @@ pub(super) async fn execute(
             description: plan.description(),
             reboot: settings.autorun.reboot,
             serial_verbosity: settings.serial_verbosity,
-            stream_image: match &plan {
-                Plan::Stream { image } => Some(image.clone()),
-                Plan::Install { .. } => None,
-            },
         },
     )
     .await?;
@@ -233,14 +213,18 @@ pub(super) async fn execute(
         )
         .await?;
         let image = image.clone();
-        let force = stream_force_requested(automatic, settings.autorun.force, force);
-        match task::spawn_blocking(move || source::stream_preflight(&image, force)).await? {
-            Ok((true, _)) => return send(&tx, Event::AlreadyPresent {
-                details: "Every COSI filesystem UUID was found on an attached disk.\nNo installation was started.".into(),
-                automatic,
-            }).await,
-            Ok((false, hash)) => Some(hash),
-            Err(error) => return send(&tx, Event::Error { details: format!("{error:#}"), uncertain: false }).await,
+        match task::spawn_blocking(move || source::stream_preflight(&image)).await? {
+            Ok(hash) => Some(hash),
+            Err(error) => {
+                return send(
+                    &tx,
+                    Event::Error {
+                        details: format!("{error:#}"),
+                        uncertain: false,
+                    },
+                )
+                .await
+            }
         }
     } else {
         None
@@ -354,6 +338,8 @@ pub(super) async fn send(tx: &Sender<Event>, event: Event) -> Result<(), Error> 
 mod tests {
     use super::*;
 
+    use url::Url;
+
     use trident_client::SourceLocation;
 
     #[test]
@@ -366,7 +352,6 @@ mod tests {
             Request::Autorun,
             Request::HostConfiguration(url.into()),
             Request::Stream(Url::parse(url).unwrap()),
-            Request::StreamMedia(Url::parse(url).unwrap()),
         ] {
             let description = request_description(&settings, &request);
             assert!(description.contains("https://example.com/image.cosi"));
@@ -374,15 +359,6 @@ mod tests {
                 assert!(!description.contains(secret), "{description}");
             }
         }
-    }
-
-    #[test]
-    /// Ensures a configured force flag does not affect manually chosen streams.
-    fn only_automatic_streams_use_configured_force() {
-        assert!(!stream_force_requested(true, false, false));
-        assert!(stream_force_requested(true, true, false));
-        assert!(!stream_force_requested(false, true, false));
-        assert!(stream_force_requested(false, false, true));
     }
 
     /// Builds a valid domain completion for installer-specific result checks.

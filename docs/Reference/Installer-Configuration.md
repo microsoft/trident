@@ -23,7 +23,6 @@ cosiDirectory = "cosi/"
 
 [autorun]
 reboot = true
-force = false
 ```
 
 There is **no implicit default for `mode`** in a TOML file: omitting it is an
@@ -86,8 +85,8 @@ necessarily the value written in the packaged file.
 | `media.mountPath` | Unset | Absolute path to an **already mounted** filesystem instead of label discovery. Cannot be combined with `filesystemLabel`; this path is not mounted or made read-only by the installer. |
 | `media.cosiDirectory` | `"cosi"` | Nonempty directory relative to the media root. Absolute paths and `..` are rejected. Only regular `.cosi` files directly inside it are considered, in filename order. |
 | `autorun.hostConfiguration` | Unset | Host Configuration source. When omitted, `/etc/trident/config.yaml` is used **if it exists**; otherwise autorun looks for a COSI. |
-| `autorun.reboot` | `true` | Reboot after successful servicing **only if** Trident reports that work was performed and a reboot is required. Confirmed Force retries of media streams re-apply the media-local value. |
-| `autorun.force` | `false` | On automatic COSI streaming, bypass the matching-filesystem-UUID repeat-install guard. Does not affect Host Configuration installs, manual recovery sources, or the mounted/read-only disk safety check. |
+| `autorun.reboot` | `true` | Reboot after successful servicing **only if** Trident reports that work was performed and a reboot is required. |
+| `autorun.force` | `false` | Legacy key accepted for compatibility but ignored. Autorun never compares installed filesystem UUIDs or asks for repeat-install confirmation. |
 
 Media discovery waits up to 60 seconds during autorun for late USB/BMC device
 enumeration. It fails if more than one device matches the selected/default
@@ -119,10 +118,11 @@ overlays, so it remains available when the local media cannot be read.
 
 Without a Host Configuration, the first regular COSI in `cosiDirectory` is
 streamed. If neither source is available, the graphical console offers
-recovery; a headless run reports an error instead. Even with
-`autorun.force = true`, streaming refuses a mounted or read-only disk that
-Trident could select as its smallest fitting target, such as a large
-installer USB.
+recovery; a headless run reports an error instead. **Autorun streams on every
+boot from the installer media, even after a successful install:** remove or
+deprioritize the media before rebooting into the installed OS. The separate
+media safety check still refuses a mounted or read-only disk that Trident
+could select as its smallest fitting target, such as a large installer USB.
 
 ## Optional configuration on the media
 

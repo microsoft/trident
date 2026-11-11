@@ -7,4 +7,3 @@ cosiDirectory = "cosi/"
 
 [autorun]
 reboot = true
-force = false

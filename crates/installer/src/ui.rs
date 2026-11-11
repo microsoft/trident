@@ -32,7 +32,6 @@ use tokio::{
     task::{self, JoinHandle},
     time,
 };
-use url::Url;
 
 use osutils::{systemd, terminal as os_terminal};
 use trident_client::{LogLevel, ServicingEvent};
@@ -142,8 +141,6 @@ enum Screen {
     Error,
     Recovery,
     Success,
-    AlreadyPresent,
-    Force,
     StreamUrl,
     HostConfigUrl,
     Menu,
@@ -248,8 +245,6 @@ struct Model {
     uncertain: bool,
     reboot: bool,
     reboot_at: Option<Instant>,
-    stream_image: Option<Url>,
-    stream_from_autorun: bool,
     started: Instant,
     failed: bool,
     error_details_open: bool,
@@ -275,8 +270,6 @@ impl Model {
             uncertain: false,
             reboot: true,
             reboot_at: None,
-            stream_image: None,
-            stream_from_autorun: false,
             started: Instant::now(),
             failed: false,
             error_details_open: false,
@@ -357,13 +350,10 @@ impl Model {
                 description,
                 reboot,
                 serial_verbosity,
-                stream_image,
             } => {
                 self.source = description.clone();
                 self.reboot = reboot;
                 self.serial_verbosity = serial_verbosity.filter();
-                self.stream_image = stream_image;
-                self.stream_from_autorun = false;
                 self.log(LogSource::Inst, LogLevel::Info, description)
             }
             Event::IdleConfirmed => {
@@ -372,18 +362,6 @@ impl Model {
                     LogSource::Inst,
                     LogLevel::Info,
                     "Trident confirmed that no servicing is active".into(),
-                )
-            }
-            Event::AlreadyPresent { details, automatic } => {
-                self.details = details.clone();
-                self.stream_from_autorun = automatic;
-                self.reboot_at = None;
-                self.screen = Screen::AlreadyPresent;
-                self.selected = 0;
-                self.result_log(
-                    LogLevel::Warn,
-                    format!("ALREADY PRESENT: {details}"),
-                    COLOR_WARN,
                 )
             }
             Event::Error { details, uncertain } => self.fail(details, uncertain),
@@ -453,8 +431,6 @@ impl Model {
                 actions
             }
             Screen::Success => vec!["Reboot", "Shell"],
-            Screen::AlreadyPresent => vec!["Reboot", "Force reinstall", "Shell"],
-            Screen::Force => vec!["Cancel", "Force reinstall and erase"],
             Screen::Menu => vec!["Return to installation", "Shell"],
             Screen::Error => vec!["Continue to recovery", "Shell"],
             _ => Vec::new(),
@@ -465,7 +441,7 @@ impl Model {
     fn showing_logs(&self) -> bool {
         matches!(
             self.screen,
-            Screen::Progress | Screen::Menu | Screen::Success | Screen::AlreadyPresent
+            Screen::Progress | Screen::Menu | Screen::Success
         ) || self.screen == Screen::Error && !self.error_details_open
     }
 
@@ -518,14 +494,11 @@ impl Model {
                     None
                 }
                 KeyCode::Enter => match source::remote_url(self.url.trim()) {
-                    Ok(url) => Some(Action::Start(
-                        if self.screen == Screen::StreamUrl {
-                            Request::Stream(url)
-                        } else {
-                            Request::HostConfiguration(url.to_string())
-                        },
-                        false,
-                    )),
+                    Ok(url) => Some(Action::Start(if self.screen == Screen::StreamUrl {
+                        Request::Stream(url)
+                    } else {
+                        Request::HostConfiguration(url.to_string())
+                    })),
                     Err(error) => {
                         self.fail(format!("{error:#}"), false);
                         None
@@ -592,7 +565,6 @@ impl Model {
                 self.screen = match self.screen {
                     Screen::Progress => Screen::Menu,
                     Screen::Menu => Screen::Progress,
-                    Screen::Force => Screen::AlreadyPresent,
                     Screen::Error => Screen::Recovery,
                     other => other,
                 };
@@ -611,7 +583,6 @@ impl Model {
                 let action = match (self.screen, self.selected) {
                     (Screen::Recovery, 0)
                     | (Screen::Success, 1)
-                    | (Screen::AlreadyPresent, 2)
                     | (Screen::Menu, 1)
                     | (Screen::Error, 1) => Some(Action::Shell),
                     (Screen::Recovery, 1) => {
@@ -625,27 +596,7 @@ impl Model {
                         None
                     }
                     (Screen::Recovery, 3) => Some(Action::Poweroff),
-                    (Screen::Success, 0) | (Screen::AlreadyPresent, 0) => Some(Action::Reboot),
-                    (Screen::AlreadyPresent, 1) => {
-                        self.screen = Screen::Force;
-                        self.selected = 0;
-                        None
-                    }
-                    (Screen::Force, 0) => {
-                        self.screen = Screen::AlreadyPresent;
-                        self.selected = 0;
-                        None
-                    }
-                    (Screen::Force, 1) => self.stream_image.clone().map(|image| {
-                        Action::Start(
-                            if self.stream_from_autorun {
-                                Request::StreamMedia(image)
-                            } else {
-                                Request::Stream(image)
-                            },
-                            true,
-                        )
-                    }),
+                    (Screen::Success, 0) => Some(Action::Reboot),
                     (Screen::Menu, 0) => {
                         self.screen = Screen::Progress;
                         None
@@ -673,7 +624,7 @@ impl Model {
 
 #[derive(Debug, PartialEq, Eq)]
 enum Action {
-    Start(Request, bool),
+    Start(Request),
     Shell,
     BlockedPower,
     Reboot,
@@ -841,19 +792,18 @@ impl Drop for Display {
 fn spawn_operation(
     config_path: Option<PathBuf>,
     request: Request,
-    force: bool,
     uncertain: bool,
     scenario: Option<Scenario>,
     tx: mpsc::Sender<Event>,
 ) -> JoinHandle<Result<(), Error>> {
     task::spawn(async move {
         match scenario {
-            Some(scenario) => demo::run(if force { Scenario::Success } else { scenario }, tx).await,
+            Some(scenario) => demo::run(scenario, tx).await,
             None => {
                 let path = config_path
                     .context("Live installation requires an explicit configuration path")?;
                 match Config::read(path) {
-                    Ok(settings) => client::execute(settings, request, force, uncertain, tx).await,
+                    Ok(settings) => client::execute(settings, request, uncertain, tx).await,
                     Err(error) => {
                         client::send(
                             &tx,
@@ -893,7 +843,6 @@ pub(super) async fn run(
         config_path.clone(),
         Request::Autorun,
         false,
-        false,
         scenario,
         tx.clone(),
     ));
@@ -916,7 +865,6 @@ pub(super) async fn run(
                 },
             };
             output.record(&event)?;
-            let already_present = matches!(event, Event::AlreadyPresent { .. });
             let entry = model.event(event);
             output.announce(&entry, model.serial_verbosity);
             if display.is_none()
@@ -925,14 +873,6 @@ pub(super) async fn run(
                 && log_visible(entry.level, model.verbosity)
             {
                 println!("{}", entry.plain());
-            }
-            if !interactive && already_present {
-                model.failed = true;
-                let explanation =
-                    "Already installed; remove the media or confirm a force reinstall on a graphical console";
-                model.details.push_str(&format!("\n{explanation}"));
-                let error = model.log(LogSource::Inst, LogLevel::Error, explanation.into());
-                output.announce(&error, model.serial_verbosity);
             }
         }
         if worker.as_ref().is_some_and(JoinHandle::is_finished) {
@@ -1069,7 +1009,7 @@ pub(super) async fn run(
                                 shell =
                                     Some(task::spawn_blocking(move || os_terminal::shell(&tty)));
                             }
-                            Action::Start(request, force) => {
+                            Action::Start(request) => {
                                 if worker.is_some() {
                                     let failure = model.fail("An installer operation is still active. Wait for it to finish.".into(), true);
                                     output.announce(&failure, model.serial_verbosity);
@@ -1084,7 +1024,6 @@ pub(super) async fn run(
                                     worker = Some(spawn_operation(
                                         config_path.clone(),
                                         request,
-                                        force,
                                         model.uncertain,
                                         recovery_demo,
                                         tx.clone(),
@@ -1219,8 +1158,6 @@ fn title(screen: Screen) -> &'static str {
         Screen::Error => "INSTALLATION ERROR",
         Screen::Recovery => "RECOVERY",
         Screen::Success => "INSTALLATION COMPLETE",
-        Screen::AlreadyPresent => "IMAGE ALREADY PRESENT",
-        Screen::Force => "CONFIRM FORCE REINSTALL",
         Screen::StreamUrl => "STREAM COSI FROM URL",
         Screen::HostConfigUrl => "INSTALL FROM HOST CONFIGURATION URL",
         Screen::Menu => "INSTALLER MENU",
@@ -1318,7 +1255,6 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
     let (title, color) = match model.screen {
         Screen::Success => ("SUCCESS - Installation complete", COLOR_SUCCESS),
         Screen::Error => ("FAILURE - Installation stopped", COLOR_ERROR),
-        Screen::AlreadyPresent => ("ALREADY PRESENT - No write", COLOR_WARN),
         _ => ("Activity / logs", COLOR_FRAME),
     };
     let mut lines = Vec::new();
@@ -1339,10 +1275,7 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
         .iter()
         .filter(|entry| entry.result_color.is_some() || log_visible(entry.level, model.verbosity))
         .collect::<Vec<_>>();
-    if matches!(
-        model.screen,
-        Screen::Success | Screen::Error | Screen::AlreadyPresent
-    ) {
+    if matches!(model.screen, Screen::Success | Screen::Error) {
         if let Some(index) = logs.iter().rposition(|entry| entry.result_color.is_some()) {
             let result = logs.remove(index);
             logs.push(result);
@@ -1387,7 +1320,6 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         Constraint::Length(header_height(frame.area())),
         Constraint::Length(match model.screen {
             Screen::Recovery => 0,
-            Screen::AlreadyPresent => 1,
             _ => 2,
         }),
         Constraint::Min(3),
@@ -1403,7 +1335,6 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         match model.screen {
             Screen::Error => COLOR_ERROR,
             Screen::Success => COLOR_SUCCESS,
-            Screen::AlreadyPresent => COLOR_WARN,
             _ => COLOR_BRAND,
         },
         model.linux_vt,
@@ -1429,16 +1360,22 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
     }
     let content = match model.screen {
         _ if model.showing_logs() => log_panel(model, areas[2]),
-        Screen::StreamUrl | Screen::HostConfigUrl => Paragraph::new(format!("Enter an http:// or https:// URL:\n\n{}\n\nEnter: start   Esc: back", display_text(&model.url)))
-            .block(block("Remote source", model.linux_vt)).wrap(Wrap { trim: false }),
-        Screen::Force => Paragraph::new("Force reinstall will erase the disk selected by Trident.\n\nExisting partitions and files will be lost.\nCancel is selected by default.")
-            .block(block("Destructive action", model.linux_vt)).wrap(Wrap { trim: false }),
+        Screen::StreamUrl | Screen::HostConfigUrl => Paragraph::new(format!(
+            "Enter an http:// or https:// URL:\n\n{}\n\nEnter: start   Esc: back",
+            display_text(&model.url)
+        ))
+        .block(block("Remote source", model.linux_vt))
+        .wrap(Wrap { trim: false }),
         Screen::Error => Paragraph::new(display_text(&model.details))
-            .block(block("Full error details / Esc to return", model.linux_vt)
-                .border_style(Style::default().fg(theme_color(COLOR_ERROR, model.linux_vt))))
-            .wrap(Wrap { trim: false }).scroll((model.scroll, 0)),
+            .block(
+                block("Full error details / Esc to return", model.linux_vt)
+                    .border_style(Style::default().fg(theme_color(COLOR_ERROR, model.linux_vt))),
+            )
+            .wrap(Wrap { trim: false })
+            .scroll((model.scroll, 0)),
         _ => Paragraph::new(display_text(&model.details))
-            .block(block("Result", model.linux_vt)).wrap(Wrap { trim: false }),
+            .block(block("Result", model.linux_vt))
+            .wrap(Wrap { trim: false }),
     };
     frame.render_widget(content, areas[2]);
     let choices = choices
@@ -2199,8 +2136,7 @@ mod tests {
         for (text, diagnostic) in [("", "mode"), ("mode = 'not-a-mode'", "not-a-mode")] {
             fs::write(&path, text).unwrap();
             let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
-            let worker =
-                spawn_operation(Some(path.clone()), Request::Autorun, false, false, None, tx);
+            let worker = spawn_operation(Some(path.clone()), Request::Autorun, false, None, tx);
             let Event::Error { details, uncertain } = rx.recv().await.unwrap() else {
                 panic!("Invalid settings must fail before preparing a source");
             };
@@ -2227,50 +2163,6 @@ mod tests {
         assert_eq!(model.screen, Screen::Success);
         model.selected = 0;
         assert_eq!(model.key(enter(), false, false), Some(Action::Reboot));
-    }
-
-    /// Force reinstall opens with Cancel selected and needs a second confirmation.
-    #[test]
-    fn force_is_never_the_default_and_requires_confirmation() {
-        let mut model = Model::new();
-        model.screen = Screen::AlreadyPresent;
-        model.selected = 1;
-        assert!(model.key(enter(), false, false).is_none());
-        assert_eq!(model.screen, Screen::Force);
-        assert_eq!(model.selected, 0);
-        assert!(model.key(enter(), false, false).is_none());
-        assert_eq!(model.screen, Screen::AlreadyPresent);
-    }
-
-    /// Retrying an automatic stream re-applies media overrides; manual streams keep their URL.
-    #[test]
-    fn force_retry_preserves_the_original_stream_source() {
-        let image = Url::parse("file:///run/trident/installer-media/cosi/image.cosi").unwrap();
-        let mut model = Model::new();
-        model.stream_image = Some(image.clone());
-        model.event(Event::AlreadyPresent {
-            details: "Image already present".into(),
-            automatic: true,
-        });
-        model.screen = Screen::Force;
-        model.selected = 1;
-        assert_eq!(
-            model.key(enter(), false, false),
-            Some(Action::Start(Request::StreamMedia(image), true))
-        );
-
-        let image = Url::parse("https://example.test/image.cosi").unwrap();
-        model.stream_image = Some(image.clone());
-        model.event(Event::AlreadyPresent {
-            details: "Remote image already present".into(),
-            automatic: false,
-        });
-        model.screen = Screen::Force;
-        model.selected = 1;
-        assert_eq!(
-            model.key(enter(), false, false),
-            Some(Action::Start(Request::Stream(image), true))
-        );
     }
 
     /// Repeated interrupts and power choices cannot shut down an active installation.
@@ -2328,12 +2220,7 @@ mod tests {
     /// Standard-size result and recovery screens expose their expected actions.
     #[test]
     fn screens_render_at_80_by_24_with_visible_actions() {
-        for screen in [
-            Screen::Recovery,
-            Screen::Success,
-            Screen::Error,
-            Screen::AlreadyPresent,
-        ] {
+        for screen in [Screen::Recovery, Screen::Success, Screen::Error] {
             let mut model = Model::new();
             model.screen = screen;
             model.details = "Diagnostic or result details".into();
