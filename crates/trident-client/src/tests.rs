@@ -1490,6 +1490,10 @@ async fn preview_status_validation_and_rollback_use_domain_types() {
 async fn preview_status_enums_preserve_known_unspecified_and_unknown_values() {
     let servicing_states = [
         (
+            ProtoServicingState::UpdateAbHypervisorCheckFailed as i32,
+            ServicingState::AbUpdateHypervisorCheckFailed,
+        ),
+        (
             ProtoServicingState::Provisioned as i32,
             ServicingState::Provisioned,
         ),

@@ -307,6 +307,9 @@ pub(crate) fn decode_servicing_state(state: i32) -> ServicingState {
         Ok(ProtoServicingState::UpdateAbHealthCheckFailed) => {
             ServicingState::AbUpdateHealthCheckFailed
         }
+        Ok(ProtoServicingState::UpdateAbHypervisorCheckFailed) => {
+            ServicingState::AbUpdateHypervisorCheckFailed
+        }
         Err(_) => ServicingState::Unknown(state),
     }
 }
