@@ -51,8 +51,13 @@ impl Subsystem for EspSubsystem {
         "esp"
     }
 
+    fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
+        crate::engine::mshv::validate_configuration(ctx)
+    }
+
     #[tracing::instrument(name = "esp_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
+        crate::engine::mshv::validate_configuration(ctx)?;
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized.
 
@@ -81,7 +86,16 @@ pub fn set_uefi_fallback_contents(
     servicing_state: ServicingState,
     mount_point: &Path,
 ) -> Result<(), Error> {
-    let source_esp_dir_name = find_uefi_fallback_source_dir_name(ctx, servicing_state);
+    let source_esp_dir_name = if crate::engine::mshv::enabled(&ctx.spec)
+        && servicing_state == ServicingState::AbUpdateFinalized
+        && ctx.spec.os.uefi_fallback == UefiFallbackMode::Conservative
+    {
+        // Commit still holds the pre-update active volume until validation finishes.
+        ctx.get_ab_update_volume()
+            .map(|volume| boot::make_esp_dir_name(ctx.install_index, volume))
+    } else {
+        find_uefi_fallback_source_dir_name(ctx, servicing_state)
+    };
     if let Some(source_esp_dir_name) = source_esp_dir_name {
         debug!(
             "Configuring UEFI fallback for servicing state {:?} using source ESP dir '{}'",
@@ -93,6 +107,7 @@ pub fn set_uefi_fallback_contents(
             &source_esp_dir_name,
             &ctx.servicing_type,
             ctx.install_index,
+            crate::engine::mshv::enabled(&ctx.spec),
         )?;
     } else {
         debug!(
@@ -354,11 +369,29 @@ fn copy_file_artifacts(
 
     // Generate list of filepaths to the boot files. Pass in the temp dir path where the image is
     // mounted to as an argument
-    let boot_files = generate_boot_filepaths(
-        temp_mount_dir,
-        ctx.is_uki().unstructured("UKI setting unknown")?,
-    )
-    .context("Failed to generate boot filepaths")?;
+    let slot_mshv = crate::engine::mshv::enabled(&ctx.spec);
+    let source_bundle = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+    let boot_files = if slot_mshv {
+        mshv::slot::validate_bundle(&source_bundle)?;
+        mshv::slot::preflight_staging(
+            ctx,
+            temp_mount_dir,
+            &path::join_relative(mount_point, &ctx.esp_mount_path),
+            &esp_dir_path,
+        )?;
+        uki::cleanup_ukis_before_staging(ctx, mount_point, &ctx.esp_mount_path)?;
+        Vec::new()
+    } else {
+        ensure!(
+            !source_bundle.join("HvLoader.efi").try_exists()?,
+            "A slot-owned MSHV image requires internalParams.mshvSlotEspPayload"
+        );
+        generate_boot_filepaths(
+            temp_mount_dir,
+            ctx.is_uki().unstructured("UKI setting unknown")?,
+        )
+        .context("Failed to generate boot filepaths")?
+    };
 
     // Clear esp_dir_path if it exists
     if esp_dir_path.exists() {
@@ -377,12 +410,16 @@ fn copy_file_artifacts(
     }
 
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
-    let grub_noprefix =
+    let grub_noprefix = if slot_mshv {
+        mshv::slot::copy_bundle(&source_bundle, &esp_dir_path)?;
+        false
+    } else {
         copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
             "Failed to copy boot files from directory {} to directory {}",
             temp_mount_dir.display(),
             esp_dir_path.display()
-        ))?;
+        ))?
+    };
 
     if ctx.is_uki().unstructured("UKI setting unknown")? {
         // Prepare ESP directory structure for UKI boot
@@ -394,7 +431,9 @@ fn copy_file_artifacts(
         // trade-off: a crash between cleanup and staging removes the target
         // slot's old UKI with no replacement, but the active slot's UKI is
         // preserved so the system remains bootable via A/B fallback.
-        uki::cleanup_ukis_before_staging(ctx, mount_point, &ctx.esp_mount_path)?;
+        if !slot_mshv {
+            uki::cleanup_ukis_before_staging(ctx, mount_point, &ctx.esp_mount_path)?;
+        }
 
         // Copy the UKI from the image into the ESP directory
         uki::stage_uki_on_esp(temp_mount_dir, mount_point, &ctx.esp_mount_path)?;
@@ -560,6 +599,7 @@ fn copy_boot_files_for_uefi_fallback(
     source_esp_name: &str,
     servicing_type: &ServicingType,
     install_index: usize,
+    slot_mshv: bool,
 ) -> Result<(), Error> {
     let esp_dir_path = path::join_relative(mount_point, esp_mount_path).join(ESP_EFI_DIRECTORY);
     if skip_uefi_fallback_copy(
@@ -583,7 +623,12 @@ fn copy_boot_files_for_uefi_fallback(
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     );
-    replace_boot_files(&source_esp_dir_path, &uefi_fallback_path).context(format!(
+    let result = if slot_mshv {
+        mshv::slot::replace_bundle(&source_esp_dir_path, &uefi_fallback_path)
+    } else {
+        replace_boot_files(&source_esp_dir_path, &uefi_fallback_path)
+    };
+    result.context(format!(
         "Failed to copy boot files from directory '{}' to directory '{}'",
         source_esp_dir_path.display(),
         uefi_fallback_path.display()

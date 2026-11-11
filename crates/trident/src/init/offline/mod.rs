@@ -510,6 +510,8 @@ pub fn execute(
         generate_host_status(&history, lsblk_output, lazy_partitions, disk)?
     };
 
+    crate::engine::mshv::validate_transition(&Default::default(), &host_status.spec)?;
+
     debug!(
         "host_status:\n{}",
         serde_yaml::to_string(&host_status).unwrap_or("Failed to serialize Host Status".into())

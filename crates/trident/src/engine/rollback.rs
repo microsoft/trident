@@ -34,6 +34,8 @@ pub enum BootValidationResult {
     ValidBootProvisioned,
     /// Target OS booted successfully, and the health checks failed
     ValidBootHealthCheckFailed(TridentError),
+    /// The trial OS booted, but its hypervisor failed validation and requires rollback.
+    InvalidHypervisor(TridentError),
 }
 
 /// Validates that the firmware did not perform a rollback, i.e. correctly booted from the updated
@@ -53,7 +55,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         | ServicingState::ManualRollbackAbFinalized => datastore.host_status().ab_active_volume,
         // For AbUpdateHealthCheckFailed, use the opposite active volume of the one
         // set in Host Status
-        ServicingState::AbUpdateHealthCheckFailed => {
+        ServicingState::AbUpdateHealthCheckFailed
+        | ServicingState::AbUpdateHypervisorCheckFailed => {
             match datastore.host_status().ab_active_volume {
                 Some(AbVolumeSelection::VolumeB) => Some(AbVolumeSelection::VolumeA),
                 Some(AbVolumeSelection::VolumeA) => Some(AbVolumeSelection::VolumeB),
@@ -69,17 +72,32 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     };
 
     let servicing_type = match current_servicing_state {
-        ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
-            ServicingType::AbUpdate
-        }
+        ServicingState::AbUpdateFinalized
+        | ServicingState::AbUpdateHealthCheckFailed
+        | ServicingState::AbUpdateHypervisorCheckFailed => ServicingType::AbUpdate,
         ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
         ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
         _ => ServicingType::NoActiveServicing,
     };
 
     // Create an EngineContext based on the Host Status
+    if current_servicing_state != ServicingState::CleanInstallFinalized {
+        super::mshv::validate_transition(
+            &datastore.host_status().spec_old,
+            &datastore.host_status().spec,
+        )?;
+    }
+    let recovering = matches!(
+        current_servicing_state,
+        ServicingState::AbUpdateHealthCheckFailed | ServicingState::AbUpdateHypervisorCheckFailed
+    );
+    let expected_spec = if recovering {
+        datastore.host_status().spec_old.clone()
+    } else {
+        datastore.host_status().spec.clone()
+    };
     let ctx = EngineContext::new(EngineContextParams {
-        spec: datastore.host_status().spec.clone(),
+        spec: expected_spec,
         spec_old: datastore.host_status().spec_old.clone(),
         servicing_type,
         is_stream_image: false,
@@ -104,6 +122,31 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         compare_device_paths(current_device_path.clone(), expected_device_path.clone())
             .message("Host failed to boot from expected boot device")?;
 
+    if booted_to_expected_device {
+        if let Err(error) =
+            super::mshv::validate_active_hypervisor(&ctx, ctx.get_ab_update_volume())
+        {
+            return record_hypervisor_failure(datastore, current_servicing_state, error);
+        }
+    } else if matches!(
+        current_servicing_state,
+        ServicingState::AbUpdateFinalized | ServicingState::ManualRollbackAbFinalized
+    ) {
+        let retained_ctx = EngineContext::new(EngineContextParams {
+            spec: datastore.host_status().spec_old.clone(),
+            spec_old: Default::default(),
+            servicing_type: ServicingType::NoActiveServicing,
+            is_stream_image: false,
+            ab_active_volume: datastore.host_status().ab_active_volume,
+            partition_paths: datastore.host_status().partition_paths.clone(),
+            disk_uuids: datastore.host_status().disk_uuids.clone(),
+            install_index: datastore.host_status().install_index,
+            image: None,
+            is_uki: Some(efivar::current_var_is_uki()),
+        })?;
+        super::mshv::validate_active_hypervisor(&retained_ctx, retained_ctx.ab_active_volume)?;
+    }
+
     match (booted_to_expected_device, current_servicing_state) {
         (true, ServicingState::CleanInstallFinalized)
         | (true, ServicingState::AbUpdateFinalized)
@@ -121,7 +164,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         //
         // Every case below will return an error.
         //
-        (false, ServicingState::AbUpdateHealthCheckFailed) => {
+        (false, ServicingState::AbUpdateHealthCheckFailed)
+        | (false, ServicingState::AbUpdateHypervisorCheckFailed) => {
             // For A/B Update, when health checks previously failed and host
             // failed to rollback, i.e boot from the servicing OS, report error
             // and leave host status alone
@@ -145,7 +189,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 expected_device_path: expected_device_path.to_string_lossy().to_string(),
             }));
         }
-        (true, ServicingState::AbUpdateHealthCheckFailed) => {
+        (true, ServicingState::AbUpdateHealthCheckFailed)
+        | (true, ServicingState::AbUpdateHypervisorCheckFailed) => {
             // AbUpdateHealthCheckFailed, when booting from expected device (the servicing OS), mark host
             // status state as Provisioned
             info!("Rollback to servicing OS succeeded, setting host status from {current_servicing_state:?} to Provisioned");
@@ -154,6 +199,21 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 host_status.spec_old = Default::default();
                 host_status.servicing_state = ServicingState::Provisioned;
             })?;
+
+            if current_servicing_state == ServicingState::AbUpdateHypervisorCheckFailed {
+                return Err(TridentError::new(
+                    ServicingError::ValidateAbActiveHypervisor {
+                        expected_slot: ctx
+                            .get_ab_update_volume()
+                            .map(|volume| super::boot::make_esp_dir_name(ctx.install_index, volume))
+                            .unwrap_or_default(),
+                        observed_slot: None,
+                    },
+                ))
+                .message(
+                    "Rollback to the retained OS succeeded after hypervisor validation failed",
+                );
+            }
 
             return Err(TridentError::new(
                 HealthChecksError::AbUpdateHealthCheckCommitCheck {
@@ -200,6 +260,23 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 state,
             }));
         }
+    }
+}
+
+fn record_hypervisor_failure(
+    datastore: &mut DataStore,
+    state: ServicingState,
+    error: TridentError,
+) -> Result<BootValidationResult, TridentError> {
+    if state == ServicingState::AbUpdateFinalized {
+        let serialized = serde_yaml::to_value(&error).structured(InternalError::SerializeError)?;
+        datastore.with_host_status(|status| {
+            status.servicing_state = ServicingState::AbUpdateHypervisorCheckFailed;
+            status.last_error = Some(serialized);
+        })?;
+        Ok(BootValidationResult::InvalidHypervisor(error))
+    } else {
+        Err(error)
     }
 }
 
@@ -799,6 +876,66 @@ mod tests {
         error::ErrorKind,
         status::AbVolumeSelection,
     };
+
+    #[test]
+    fn hypervisor_failure_is_persisted_before_requesting_rollback() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("datastore.sqlite");
+        let mut datastore = DataStore::open_or_create(&path).unwrap();
+        let error = TridentError::new(ServicingError::ValidateAbActiveHypervisor {
+            expected_slot: "AZLB".into(),
+            observed_slot: Some("AZLA".into()),
+        });
+        let expected_error = serde_yaml::to_value(&error).unwrap();
+        let result =
+            record_hypervisor_failure(&mut datastore, ServicingState::AbUpdateFinalized, error)
+                .unwrap();
+        assert!(matches!(result, BootValidationResult::InvalidHypervisor(_)));
+        assert_eq!(
+            datastore.host_status().servicing_state,
+            ServicingState::AbUpdateHypervisorCheckFailed
+        );
+        assert_eq!(
+            datastore.host_status().last_error.as_ref(),
+            Some(&expected_error)
+        );
+        drop(datastore);
+        let datastore = DataStore::open(&path).unwrap();
+        assert_eq!(
+            datastore.host_status().servicing_state,
+            ServicingState::AbUpdateHypervisorCheckFailed
+        );
+        assert_eq!(
+            datastore.host_status().last_error.as_ref(),
+            Some(&expected_error)
+        );
+    }
+
+    #[test]
+    fn recovery_identity_failure_does_not_request_another_rollback() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let mut datastore =
+            DataStore::open_or_create(&temp.path().join("datastore.sqlite")).unwrap();
+        datastore
+            .with_host_status(|status| {
+                status.servicing_state = ServicingState::AbUpdateHypervisorCheckFailed;
+            })
+            .unwrap();
+        let error = TridentError::new(ServicingError::ValidateAbActiveHypervisor {
+            expected_slot: "AZLA".into(),
+            observed_slot: None,
+        });
+        assert!(record_hypervisor_failure(
+            &mut datastore,
+            ServicingState::AbUpdateHypervisorCheckFailed,
+            error,
+        )
+        .is_err());
+        assert_eq!(
+            datastore.host_status().servicing_state,
+            ServicingState::AbUpdateHypervisorCheckFailed
+        );
+    }
 
     #[test]
     fn test_get_expected_device_path() {

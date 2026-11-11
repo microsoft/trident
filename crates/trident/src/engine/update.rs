@@ -59,6 +59,8 @@ pub(crate) fn update(
         image: Some(image),
     })?;
 
+    engine::mshv::validate_transition(&ctx.spec_old, &ctx.spec)?;
+
     // Before starting an update servicing, need to validate that the active volume is set
     // correctly.
     if ctx.spec.storage.ab_update.is_some() {

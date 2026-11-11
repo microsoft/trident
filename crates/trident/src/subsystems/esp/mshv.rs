@@ -1,5 +1,7 @@
 //! ACL, efitreeloader (ETL), and MSHV-related functionality for ESP provisioning.
 
+pub(super) mod slot;
+
 use std::{
     fs,
     path::{Path, PathBuf},

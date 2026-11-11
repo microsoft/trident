@@ -244,6 +244,9 @@ pub mod internal_params {
     /// Preserve the MSHV EFI payload during clean-install file-based ESP deployment.
     pub const PRESERVE_MSHV_ESP_PAYLOAD: &str = "preserveMshvEspPayload";
 
+    /// Stage an experimental slot-owned MSHV ESP bundle with its OS image.
+    pub const MSHV_SLOT_ESP_PAYLOAD: &str = "mshvSlotEspPayload";
+
     /// Re-encrypt the encrypted LUKS2 volumes in-place on clean install, instead of initializing
     /// new LUKS2 volumes.
     pub const REENCRYPT_ON_CLEAN_INSTALL: &str = "reencryptOnCleanInstall";

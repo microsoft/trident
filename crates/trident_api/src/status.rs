@@ -133,6 +133,8 @@ pub enum ServicingState {
     Provisioned,
     /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
+    /// The trial OS booted, but its hypervisor failed validation; recovery is pending.
+    AbUpdateHypervisorCheckFailed,
 }
 
 /// A/B volume selection. Determines which set of volumes are currently

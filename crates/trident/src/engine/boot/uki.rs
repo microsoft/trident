@@ -240,25 +240,33 @@ pub fn cleanup_ukis_before_staging(
     esp_mount_path: &Path,
 ) -> Result<(), Error> {
     let esp_uki_directory = join_relative(mount_point, esp_mount_path).join(UKI_DIRECTORY);
+    for path in ukis_removed_before_staging(ctx, &esp_uki_directory)? {
+        debug!("Pre-staging cleanup: removing old UKI '{}'", path.display());
+        remove_uki_and_addons(&path)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn ukis_removed_before_staging(
+    ctx: &EngineContext,
+    esp_uki_directory: &Path,
+) -> Result<Vec<PathBuf>, Error> {
+    let mut removals = Vec::new();
     if !esp_uki_directory.exists() {
-        return Ok(());
+        return Ok(removals);
     }
 
     let target_slot = target_slot_os_id(ctx);
     let target_suffix = format!("{target_slot}.efi");
     let active_slot = active_slot_os_id(ctx);
     let active_suffix = format!("{active_slot}.efi");
-    let trident_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)?;
+    let trident_ukis = enumerate_trident_managed_ukis(esp_uki_directory)?;
 
     // 1. Remove trident-managed UKIs for the target slot+os-index
     //    (all update indices, e.g. vmlinuz-100-azla0.efi, vmlinuz-102-azla0.efi).
     for (_index, suffix, path) in &trident_ukis {
         if *suffix == target_suffix {
-            debug!(
-                "Pre-staging cleanup: removing old target-slot UKI '{}'",
-                path.display()
-            );
-            remove_uki_and_addons(path)?;
+            removals.push(path.clone());
         }
     }
 
@@ -277,17 +285,13 @@ pub fn cleanup_ukis_before_staging(
         .any(|(_index, suffix, _)| *suffix == active_suffix);
 
     if has_active_slot_uki && ctx.install_index == 0 {
-        let non_trident_ukis = enumerate_non_trident_managed_ukis(&esp_uki_directory)?;
+        let non_trident_ukis = enumerate_non_trident_managed_ukis(esp_uki_directory)?;
         for (_version, path) in non_trident_ukis {
-            debug!(
-                "Pre-staging cleanup: removing superseded original UKI '{}'",
-                path.display()
-            );
-            remove_uki_and_addons(&path)?;
+            removals.push(path);
         }
     }
 
-    Ok(())
+    Ok(removals)
 }
 
 /// Enumerates existing UKIs managed by Trident (defined by naming convention: vmlinuz-<index>-azl<a|b><number>.efi)

@@ -306,9 +306,11 @@ impl Trident {
             datastore.host_status().servicing_state,
             datastore.host_status().last_error
         );
-        let last_error_to_preserve = if datastore.host_status().servicing_state
-            == ServicingState::AbUpdateHealthCheckFailed
-        {
+        let last_error_to_preserve = if matches!(
+            datastore.host_status().servicing_state,
+            ServicingState::AbUpdateHealthCheckFailed
+                | ServicingState::AbUpdateHypervisorCheckFailed
+        ) {
             datastore.host_status().last_error.clone()
         } else {
             None
@@ -627,6 +629,10 @@ impl Trident {
         self.execute_and_record_error(datastore, |datastore| {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
+                engine::mshv::validate_transition(
+                    &Default::default(),
+                    &host_config,
+                )?;
                 if acl::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
                     // For ACL, initialize datastore with known initial state when
                     // the datastore is not already created.
@@ -817,6 +823,7 @@ impl Trident {
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
+                | ServicingState::AbUpdateHypervisorCheckFailed
                 | ServicingState::ManualRollbackAbFinalized
         ) {
             info!(
@@ -827,9 +834,9 @@ impl Trident {
         }
 
         let servicing_type = match servicing_state {
-            ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
-                ServicingType::AbUpdate
-            }
+            ServicingState::AbUpdateFinalized
+            | ServicingState::AbUpdateHealthCheckFailed
+            | ServicingState::AbUpdateHypervisorCheckFailed => ServicingType::AbUpdate,
             ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
             ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
             _ => ServicingType::NoActiveServicing,
@@ -841,7 +848,10 @@ impl Trident {
             )
         });
 
-        if rollback_result.is_ok() {
+        if matches!(
+            rollback_result,
+            Ok(rollback::BootValidationResult::ValidBootProvisioned)
+        ) {
             if let Some(ref orchestrator) = self.orchestrator {
                 orchestrator.report_success(Some(
                     serde_yaml::to_string(&datastore.host_status())
@@ -854,8 +864,9 @@ impl Trident {
             Ok(rollback::BootValidationResult::ValidBootProvisioned) => {
                 Ok((ExitKind::Done, servicing_type))
             }
-            Ok(rollback::BootValidationResult::ValidBootHealthCheckFailed(e)) => {
-                debug!("Correct boot, but health check(s) failed: {e:?}");
+            Ok(rollback::BootValidationResult::InvalidHypervisor(e))
+            | Ok(rollback::BootValidationResult::ValidBootHealthCheckFailed(e)) => {
+                debug!("Boot validation requires rollback: {e:?}");
                 Ok((ExitKind::NeedsReboot, servicing_type))
             }
             Err(e) => {

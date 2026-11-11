@@ -77,6 +77,8 @@ enum ServicingState {
   // A/B update has been completed, the host booted into the target OS but the
   // health checks failed.
   UPDATE_AB_HEALTH_CHECK_FAILED = 11;
+  // The trial hypervisor failed validation; recovery to the retained OS is pending.
+  UPDATE_AB_HYPERVISOR_CHECK_FAILED = 12;
 }
 
 message GetServicingStateResponse {
