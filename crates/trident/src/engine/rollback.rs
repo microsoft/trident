@@ -80,6 +80,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         _ => ServicingType::NoActiveServicing,
     };
 
+    // Commit and recovery must preserve the installation's slot-owned MSHV mode.
+    // CleanInstallFinalized has no previous installed mode, so there is no transition to validate.
     if current_servicing_state != ServicingState::CleanInstallFinalized {
         super::mshv::validate_transition(
             &datastore.host_status().spec_old,
