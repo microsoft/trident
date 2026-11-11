@@ -70,13 +70,16 @@ pub(crate) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
     Ok(())
 }
 
+/// Hypervisor identity-validation hook for the expected installation and slot.
+/// Currently assumes success until runtime identity detection is implemented.
 pub(crate) fn validate_active_hypervisor(
-    ctx: &EngineContext,
+    spec: &HostConfiguration,
+    install_index: usize,
     expected_volume: Option<AbVolumeSelection>,
 ) -> Result<(), TridentError> {
-    if enabled(&ctx.spec) {
+    if enabled(spec) {
         let expected_directory =
-            expected_volume.map(|volume| boot::make_esp_dir_name(ctx.install_index, volume));
+            expected_volume.map(|volume| boot::make_esp_dir_name(install_index, volume));
         // TODO: Identify the running hypervisor and compare it with the expected OS payload.
         // Deliberately assume success until the identity mechanism is implemented.
         warn!(

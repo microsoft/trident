@@ -126,29 +126,28 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         compare_device_paths(current_device_path.clone(), expected_device_path.clone())
             .message("Host failed to boot from expected boot device")?;
 
+    // Validate the payload expected for the booted device. A trial-update failure
+    // enters recovery; failures during recovery must propagate without another rollback.
     if booted_to_expected_device {
-        if let Err(error) =
-            super::mshv::validate_active_hypervisor(&ctx, ctx.get_ab_update_volume())
-        {
+        if let Err(error) = super::mshv::validate_active_hypervisor(
+            &ctx.spec,
+            ctx.install_index,
+            ctx.get_ab_update_volume(),
+        ) {
             return record_hypervisor_failure(datastore, current_servicing_state, error);
         }
     } else if matches!(
         current_servicing_state,
         ServicingState::AbUpdateFinalized | ServicingState::ManualRollbackAbFinalized
     ) {
-        let retained_ctx = EngineContext::new(EngineContextParams {
-            spec: datastore.host_status().spec_old.clone(),
-            spec_old: Default::default(),
-            servicing_type: ServicingType::NoActiveServicing,
-            is_stream_image: false,
-            ab_active_volume: datastore.host_status().ab_active_volume,
-            partition_paths: datastore.host_status().partition_paths.clone(),
-            disk_uuids: datastore.host_status().disk_uuids.clone(),
-            install_index: datastore.host_status().install_index,
-            image: None,
-            is_uki: Some(efivar::current_var_is_uki()),
-        })?;
-        super::mshv::validate_active_hypervisor(&retained_ctx, retained_ctx.ab_active_volume)?;
+        // The requested device did not boot. Check the retained OS's payload,
+        // not the candidate's, before handling the firmware rollback.
+        let host_status = datastore.host_status();
+        super::mshv::validate_active_hypervisor(
+            &host_status.spec_old,
+            host_status.install_index,
+            host_status.ab_active_volume,
+        )?;
     }
 
     match (booted_to_expected_device, current_servicing_state) {
