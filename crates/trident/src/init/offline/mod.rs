@@ -510,6 +510,8 @@ pub fn execute(
         generate_host_status(&history, lsblk_output, lazy_partitions, disk)?
     };
 
+    // MSHV-enabled ACL images are not currently supported by offline initialization.
+    // Reject explicit slot-owned mode; this path does not discover MSHV payloads.
     crate::engine::mshv::validate_transition(&Default::default(), &host_status.spec)?;
 
     debug!(
