@@ -30,6 +30,7 @@ check:
 	cargo clippy --locked --workspace --all-features -- -D warnings 2>&1
 	cargo clippy --locked --workspace --tests -- -D warnings 2>&1
 	cargo clippy --locked --workspace --tests --all-features -- -D warnings 2>&1
+	RUSTDOCFLAGS="-D warnings" cargo doc --locked -p trident-client --all-features --no-deps
 
 .PHONY: check-pipelines
 check-pipelines:
@@ -141,6 +142,7 @@ format:
 .PHONY: test
 test: .cargo/config
 	cargo test --all --no-fail-fast
+	cargo test -p trident-client --all-features --no-fail-fast
 
 COVERAGE_EXCLUDED_FILES_REGEX='crates/docbuilder|crates/pytest|crates/setsail|target|/mnt/vss'
 
