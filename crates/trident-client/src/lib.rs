@@ -82,7 +82,7 @@ pub use types::{
 };
 
 #[cfg(feature = "preview")]
-pub use types::{ActiveVolume, RollbackAvailability, ServicingState, ValidationResult};
+pub use preview::{ActiveVolume, RollbackAvailability, ServicingState, ValidationResult};
 
 #[cfg(test)]
 mod tests;

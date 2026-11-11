@@ -12,9 +12,56 @@ use trident_proto::v1preview::{
 
 use crate::{
     protocol::{self, Operation},
-    ActiveVolume, Client, ClientError, RebootPolicy, RollbackAvailability, RollbackKind,
-    ServicingOperation, ServicingState, ValidationResult,
+    Client, ClientError, RebootPolicy, RemoteError, RollbackKind, ServicingOperation,
 };
+
+/// Result of static Host Configuration validation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidationResult {
+    pub valid: bool,
+    pub error: Option<RemoteError>,
+}
+
+/// Rollback availability reported by preview rollback inspection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum RollbackAvailability {
+    Unspecified,
+    None,
+    Ab,
+    Runtime,
+    Unknown(i32),
+}
+
+/// Current servicing state reported by `tridentd`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ServicingState {
+    Unspecified,
+    NotProvisioned,
+    CleanInstallStaged,
+    AbUpdateStaged,
+    ManualRollbackAbStaged,
+    ManualRollbackRuntimeStaged,
+    RuntimeUpdateStaged,
+    CleanInstallFinalized,
+    AbUpdateFinalized,
+    ManualRollbackAbFinalized,
+    Provisioned,
+    AbUpdateHealthCheckFailed,
+    Unknown(i32),
+}
+
+/// Active A/B volume reported by `tridentd`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ActiveVolume {
+    Unspecified,
+    None,
+    VolumeA,
+    VolumeB,
+    Unknown(i32),
+}
 
 impl Client {
     /// Performs an install from a typed Host Configuration.
