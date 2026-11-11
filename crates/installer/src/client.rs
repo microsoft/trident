@@ -35,6 +35,7 @@ pub(super) enum Event {
         stream_image: Option<Url>,
     },
     Response(ServicingEvent),
+    IdleConfirmed,
     Error {
         details: String,
         uncertain: bool,
@@ -260,7 +261,9 @@ pub(super) async fn execute(
     };
     if require_idle {
         match client.servicing_state().await {
-            Ok(state) if recognized_servicing_state(state) => {}
+            Ok(state) if recognized_servicing_state(state) => {
+                send(&tx, Event::IdleConfirmed).await?;
+            }
             Ok(state) => {
                 return send(&tx, Event::Error {
                     details: format!("The previous operation's outcome is unknown. Trident returned an unsupported servicing state {state:?}; refusing another write."),

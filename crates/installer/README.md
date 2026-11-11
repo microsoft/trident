@@ -151,7 +151,8 @@ terminal rows, keeping the latest result visible.
 TRACE output can expose low-level inputs; restrict access to BMC serial captures.
 A missing final Completed response means unknown
 outcome, not success. Another write requires a successful Trident status query
-establishing that the daemon is idle.
+establishing that the daemon is idle; power actions remain unavailable until
+that check or a confirmed completion resolves the uncertain outcome.
 
 Streaming checks COSI filesystem UUIDs before writing. A complete match opens
 the already-present screen with a separately confirmed Force reinstall action.

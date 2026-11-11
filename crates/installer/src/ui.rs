@@ -366,6 +366,14 @@ impl Model {
                 self.stream_from_autorun = false;
                 self.log(LogSource::Inst, LogLevel::Info, description)
             }
+            Event::IdleConfirmed => {
+                self.uncertain = false;
+                self.log(
+                    LogSource::Inst,
+                    LogLevel::Info,
+                    "Trident confirmed that no servicing is active".into(),
+                )
+            }
             Event::AlreadyPresent { details, automatic } => {
                 self.details = details.clone();
                 self.stream_from_autorun = automatic;
@@ -433,12 +441,17 @@ impl Model {
     /// Lists actions in keyboard-selection order for the current screen.
     fn choices(&self) -> Vec<&'static str> {
         match self.screen {
-            Screen::Recovery => vec![
-                "Shell",
-                "Stream COSI from URL",
-                "Install from Host Configuration URL",
-                "Shutdown",
-            ],
+            Screen::Recovery => {
+                let mut actions = vec![
+                    "Shell",
+                    "Stream COSI from URL",
+                    "Install from Host Configuration URL",
+                ];
+                if !self.uncertain {
+                    actions.push("Shutdown");
+                }
+                actions
+            }
             Screen::Success => vec!["Reboot", "Shell"],
             Screen::AlreadyPresent => vec!["Reboot", "Force reinstall", "Shell"],
             Screen::Force => vec!["Cancel", "Force reinstall and erase"],
@@ -644,7 +657,8 @@ impl Model {
                     }
                     _ => None,
                 };
-                return if worker_active && matches!(action, Some(Action::Reboot | Action::Poweroff))
+                return if (worker_active || self.uncertain)
+                    && matches!(action, Some(Action::Reboot | Action::Poweroff))
                 {
                     Some(Action::BlockedPower)
                 } else {
@@ -1078,11 +1092,13 @@ pub(super) async fn run(
                                 }
                             }
                             Action::BlockedPower => {
-                                model.screen = Screen::Menu;
+                                model.screen = if worker.is_some() {
+                                    Screen::Menu
+                                } else {
+                                    Screen::Recovery
+                                };
                                 model.selected = 0;
-                                model.activity =
-                                    "Servicing is still active; power actions are unavailable"
-                                        .into();
+                                model.activity = "Servicing may still be active; power actions are unavailable until Trident confirms it is idle".into();
                                 let warning = model.log(
                                     LogSource::Inst,
                                     LogLevel::Warn,
@@ -2274,6 +2290,39 @@ mod tests {
         model.screen = Screen::Success;
         model.selected = 0;
         assert_eq!(model.key(enter(), false, true), Some(Action::BlockedPower));
+    }
+
+    /// Losing the client stream must not make shutdown safe until Trident confirms idleness.
+    #[test]
+    fn uncertain_outcome_blocks_power_after_worker_exits() {
+        let mut model = Model::new();
+        model.event(Event::Error {
+            details: "gRPC stream disconnected; servicing may continue".into(),
+            uncertain: true,
+        });
+        model.screen = Screen::Recovery;
+        model.selected = 3;
+        assert!(!model.choices().contains(&"Shutdown"));
+        assert_eq!(model.key(enter(), false, false), Some(Action::BlockedPower));
+
+        model.event(Event::IdleConfirmed);
+        assert!(!model.uncertain);
+        assert!(model.choices().contains(&"Shutdown"));
+        assert_eq!(model.key(enter(), false, false), Some(Action::Poweroff));
+
+        model.event(Event::Error {
+            details: "Another stream disconnected".into(),
+            uncertain: true,
+        });
+        model.event(Event::Response(ServicingEvent::Completed(Ok(
+            ClientCompletion {
+                reboot: RebootDisposition::NotRequired,
+                servicing_kind: Some(ServicingKind::CleanInstall),
+                image_hash: None,
+            },
+        ))));
+        assert!(!model.uncertain);
+        assert_eq!(model.key(enter(), false, false), Some(Action::Reboot));
     }
 
     /// Standard-size result and recovery screens expose their expected actions.
