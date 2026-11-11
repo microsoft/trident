@@ -70,7 +70,8 @@ OS. Duplicate labels are rejected. Optional `installer/installer.toml` on the
 mounted media can override mode, image directory, and autorun options, but not
 bootstrap media discovery or `serialMode`. Relative HC paths are media-relative;
 absolute paths and `file://` refer to the live filesystem. HTTP(S) HC sources
-are supported.
+are supported. Remote connection and timeout failures are retried for at most
+60 seconds while networking comes up; HTTP errors fail immediately.
 
 With an HC, use Install. Otherwise stream the first regular `.cosi` file in
 the configured folder, sorted by filename, without recursing or following
@@ -124,7 +125,8 @@ originating screen. The recovery shell is a root login Bash, so it reads
 `/etc/profile` gives root a red prompt. The ISO service sets `TERM=linux`
 for tty1 so terminal tools such as `clear` work in the shell. Installation
 continues while a shell is open; automatic reboot waits. The success screen
-offers Reboot and Shell.
+offers Reboot and Shell. While servicing is active, Ctrl-C remains in the
+installation menu and power actions are blocked.
 Before each recovery attempt the baked configuration is reloaded, so shell
 edits take effect. Invalid or missing configuration never supplies implicit
 defaults for an installation.
@@ -144,7 +146,8 @@ terminals use the RGB values directly.
 `V` opens a live verbosity picker (Off,
 Error, Warn, Info, Debug, Trace) beside the operation; this only filters the
 display, not serial or stored diagnostics. The private diagnostic file retains
-all levels even when serialVerbosity filters them. PgUp/PgDn scroll.
+all levels even when serialVerbosity filters them. PgUp/PgDn scroll by wrapped
+terminal rows, keeping the latest result visible.
 TRACE output can expose low-level inputs; restrict access to BMC serial captures.
 A missing final Completed response means unknown
 outcome, not success. Another write requires a successful Trident status query
@@ -152,6 +155,9 @@ establishing that the daemon is idle.
 
 Streaming checks COSI filesystem UUIDs before writing. A complete match opens
 the already-present screen with a separately confirmed Force reinstall action.
+For media autorun, a confirmed retry keeps the original COSI and re-applies
+the media-local configuration; a manually entered stream retains its URL and
+does not apply media overrides.
 `autorun.force` defaults to false. Setting it to true skips the matching-UUID
 check on automatic COSI streams, without weakening the mounted/read-only target
 checks. It does not change HC installs or manually supplied recovery URLs.

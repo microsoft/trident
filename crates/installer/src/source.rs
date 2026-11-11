@@ -8,6 +8,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, ensure, Context, Error};
+use log::warn;
 use reqwest::blocking::Client;
 use serde::Deserialize;
 use sha2::{Digest, Sha384};
@@ -28,6 +29,8 @@ use crate::config::{self, Config};
 
 pub(super) const IMAGE_MARKER: &str = "installer://image";
 const SOURCE_TIMEOUT: Duration = Duration::from_secs(30);
+const REMOTE_RETRY_TIMEOUT: Duration = Duration::from_secs(60);
+const REMOTE_RETRY_INTERVAL: Duration = Duration::from_secs(2);
 const MEDIA_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(60);
 const MEDIA_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const MAX_HOST_CONFIGURATION_BYTES: u64 = 2 * 1024 * 1024;
@@ -40,6 +43,7 @@ pub(super) enum Request {
     Autorun,
     HostConfiguration(String),
     Stream(Url),
+    StreamMedia(Url),
 }
 
 #[derive(Debug, Clone)]
@@ -132,6 +136,18 @@ fn prepare_from_media_with_progress(
         None => settings.clone(),
     };
     settings.require_autorun()?;
+    if let Request::StreamMedia(image) = request {
+        ensure!(
+            root.is_some(),
+            "Cannot retry a media stream without installer media"
+        );
+        return Ok((
+            settings,
+            Plan::Stream {
+                image: image.clone(),
+            },
+        ));
+    }
     progress("Scanning media for COSI images")?;
     let images = match root {
         Some(root) => config::discover_images(root, &settings.media.cosi_directory)?,
@@ -315,19 +331,47 @@ fn reader(url: &Url) -> Result<Box<dyn Read>, Error> {
             })?))
         }
         "http" | "https" => {
-            let response = Client::builder()
-                .timeout(SOURCE_TIMEOUT)
-                .build()?
-                .get(url.clone())
-                .send()
-                .and_then(reqwest::blocking::Response::error_for_status)
-                .map_err(|error| {
-                    anyhow!(
-                        "Failed to fetch '{}': {}",
-                        display_url(url),
-                        error.without_url()
-                    )
-                })?;
+            let client = Client::builder().build()?;
+            let deadline = Instant::now() + REMOTE_RETRY_TIMEOUT;
+            let response = loop {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                let response = client
+                    .get(url.clone())
+                    .timeout(SOURCE_TIMEOUT.min(remaining))
+                    .send();
+                match response {
+                    Ok(response) => {
+                        break response.error_for_status().map_err(|error| {
+                            anyhow!(
+                                "Failed to fetch '{}': {}",
+                                display_url(url),
+                                error.without_url()
+                            )
+                        })?
+                    }
+                    Err(error)
+                        if (error.is_connect() || error.is_timeout())
+                            && Instant::now() < deadline =>
+                    {
+                        warn!(
+                            "Remote source '{}' unavailable ({}); retrying while network starts",
+                            display_url(url),
+                            error.without_url()
+                        );
+                        thread::sleep(
+                            REMOTE_RETRY_INTERVAL
+                                .min(deadline.saturating_duration_since(Instant::now())),
+                        );
+                    }
+                    Err(error) => {
+                        return Err(anyhow!(
+                            "Failed to fetch '{}': {}",
+                            display_url(url),
+                            error.without_url()
+                        ));
+                    }
+                }
+            };
             Ok(Box::new(response))
         }
         _ => bail!("Unsupported source scheme '{}'", url.scheme()),
@@ -507,7 +551,10 @@ fn contains_image(devices: &[BlockDevice], expected: &HashSet<String>) -> bool {
 mod tests {
     use super::*;
 
-    use std::io::Cursor;
+    use std::{
+        io::{Cursor, Write},
+        net::TcpListener,
+    };
 
     use indoc::indoc;
     use tar::Builder as TarBuilder;
@@ -525,6 +572,37 @@ mod tests {
         ] {
             remote_url(invalid).unwrap_err();
         }
+    }
+
+    #[test]
+    /// Remote sources recover when the network becomes reachable after startup.
+    fn remote_source_retries_until_listener_is_ready() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let url = Url::parse(&format!("http://{address}/host.yaml")).unwrap();
+        let initial = Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap()
+            .get(url.clone())
+            .send()
+            .unwrap_err();
+        assert!(initial.is_connect(), "{initial}");
+        let server = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            let listener = TcpListener::bind(address).unwrap();
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0; 512];
+            assert_ne!(socket.read(&mut request).unwrap(), 0);
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 16\r\nConnection: close\r\n\r\nmode = 'autorun'",
+                )
+                .unwrap();
+        });
+        assert_eq!(read_text(&url).unwrap(), "mode = 'autorun'");
+        server.join().unwrap();
     }
 
     #[test]
@@ -579,6 +657,28 @@ mod tests {
         let (_, plan) =
             prepare_with_progress(&settings, &Request::Stream(url.clone()), |_| Ok(())).unwrap();
         assert!(matches!(plan, Plan::Stream { image } if image == url));
+    }
+
+    #[test]
+    /// Force retry keeps the original COSI while reloading its media settings.
+    fn force_media_stream_reapplies_overlay_without_switching_to_install() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir(root.path().join("installer")).unwrap();
+        fs::write(
+            root.path().join(config::MEDIA_CONFIG),
+            "[autorun]\nreboot = false\nhostConfiguration = 'https://example.test/host.yaml'\n",
+        )
+        .unwrap();
+        let image = Url::parse("file:///run/trident/installer-media/cosi/image.cosi").unwrap();
+        let (settings, plan) = prepare_from_media(
+            &Config::default(),
+            &Request::StreamMedia(image.clone()),
+            Some(root.path()),
+        )
+        .unwrap();
+        assert!(!settings.autorun.reboot);
+        assert!(matches!(plan, Plan::Stream { image: selected } if selected == image));
+        prepare_from_media(&Config::default(), &Request::StreamMedia(image), None).unwrap_err();
     }
 
     #[test]

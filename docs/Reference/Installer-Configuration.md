@@ -86,7 +86,7 @@ necessarily the value written in the packaged file.
 | `media.mountPath` | Unset | Absolute path to an **already mounted** filesystem instead of label discovery. Cannot be combined with `filesystemLabel`; this path is not mounted or made read-only by the installer. |
 | `media.cosiDirectory` | `"cosi"` | Nonempty directory relative to the media root. Absolute paths and `..` are rejected. Only regular `.cosi` files directly inside it are considered, in filename order. |
 | `autorun.hostConfiguration` | Unset | Host Configuration source. When omitted, `/etc/trident/config.yaml` is used **if it exists**; otherwise autorun looks for a COSI. |
-| `autorun.reboot` | `true` | Reboot after successful servicing **only if** Trident reports that work was performed and a reboot is required. |
+| `autorun.reboot` | `true` | Reboot after successful servicing **only if** Trident reports that work was performed and a reboot is required. Confirmed Force retries of media streams re-apply the media-local value. |
 | `autorun.force` | `false` | On automatic COSI streaming, bypass the matching-filesystem-UUID repeat-install guard. Does not affect Host Configuration installs, manual recovery sources, or the mounted/read-only disk safety check. |
 
 Media discovery waits up to 60 seconds during autorun for late USB/BMC device
@@ -107,6 +107,8 @@ source does not wait for media.
 | File URL | `"file:///etc/trident/config.yaml"` | A file in the live installer OS. |
 | HTTP(S) URL | `"https://example.com/host.yaml"` | Fetched over the network. |
 
+Remote connection and timeout errors are retried for up to 60 seconds while
+networking starts; HTTP response errors fail immediately.
 Host Configuration input must be valid YAML and is limited to 2 MiB. A Host
 Configuration image URL of `installer://image` fails if no COSI is available.
 Authored disk paths and image checksums remain unchanged. Even with an

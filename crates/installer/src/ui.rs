@@ -249,6 +249,7 @@ struct Model {
     reboot: bool,
     reboot_at: Option<Instant>,
     stream_image: Option<Url>,
+    stream_from_autorun: bool,
     started: Instant,
     failed: bool,
     error_details_open: bool,
@@ -275,6 +276,7 @@ impl Model {
             reboot: true,
             reboot_at: None,
             stream_image: None,
+            stream_from_autorun: false,
             started: Instant::now(),
             failed: false,
             error_details_open: false,
@@ -361,10 +363,12 @@ impl Model {
                 self.reboot = reboot;
                 self.serial_verbosity = serial_verbosity.filter();
                 self.stream_image = stream_image;
+                self.stream_from_autorun = false;
                 self.log(LogSource::Inst, LogLevel::Info, description)
             }
-            Event::AlreadyPresent(details) => {
+            Event::AlreadyPresent { details, automatic } => {
                 self.details = details.clone();
+                self.stream_from_autorun = automatic;
                 self.reboot_at = None;
                 self.screen = Screen::AlreadyPresent;
                 self.selected = 0;
@@ -454,7 +458,7 @@ impl Model {
 
     /// Updates navigation for a key press and returns an action only when one is requested.
     /// URL entry and the verbosity picker consume keys before screen-level shortcuts.
-    fn key(&mut self, key: KeyEvent, demo: bool) -> Option<Action> {
+    fn key(&mut self, key: KeyEvent, demo: bool, worker_active: bool) -> Option<Action> {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return None;
         }
@@ -523,7 +527,7 @@ impl Model {
             return None;
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            self.screen = if self.screen == Screen::Progress {
+            self.screen = if worker_active || self.screen == Screen::Progress {
                 Screen::Menu
             } else {
                 Screen::Recovery
@@ -591,7 +595,7 @@ impl Model {
             KeyCode::Up | KeyCode::BackTab => self.selected = (self.selected + count - 1) % count,
             KeyCode::Down | KeyCode::Tab => self.selected = (self.selected + 1) % count,
             KeyCode::Enter => {
-                return match (self.screen, self.selected) {
+                let action = match (self.screen, self.selected) {
                     (Screen::Recovery, 0)
                     | (Screen::Success, 1)
                     | (Screen::AlreadyPresent, 2)
@@ -619,13 +623,16 @@ impl Model {
                         self.selected = 0;
                         None
                     }
-                    (Screen::Force, 1) => Some(Action::Start(
-                        self.stream_image
-                            .clone()
-                            .map(Request::Stream)
-                            .unwrap_or(Request::Autorun),
-                        true,
-                    )),
+                    (Screen::Force, 1) => self.stream_image.clone().map(|image| {
+                        Action::Start(
+                            if self.stream_from_autorun {
+                                Request::StreamMedia(image)
+                            } else {
+                                Request::Stream(image)
+                            },
+                            true,
+                        )
+                    }),
                     (Screen::Menu, 0) => {
                         self.screen = Screen::Progress;
                         None
@@ -636,7 +643,13 @@ impl Model {
                         None
                     }
                     _ => None,
-                }
+                };
+                return if worker_active && matches!(action, Some(Action::Reboot | Action::Poweroff))
+                {
+                    Some(Action::BlockedPower)
+                } else {
+                    action
+                };
             }
             _ => {}
         }
@@ -648,6 +661,7 @@ impl Model {
 enum Action {
     Start(Request, bool),
     Shell,
+    BlockedPower,
     Reboot,
     Poweroff,
     Quit,
@@ -888,7 +902,7 @@ pub(super) async fn run(
                 },
             };
             output.record(&event)?;
-            let already_present = matches!(event, Event::AlreadyPresent(_));
+            let already_present = matches!(event, Event::AlreadyPresent { .. });
             let entry = model.event(event);
             output.announce(&entry, model.serial_verbosity);
             if display.is_none()
@@ -1022,7 +1036,9 @@ pub(super) async fn run(
                         } else if key.code == KeyCode::Enter {
                             printed_screen = None;
                         }
-                    } else if let Some(action) = model.key(key, scenario.is_some()) {
+                    } else if let Some(action) =
+                        model.key(key, scenario.is_some(), worker.is_some())
+                    {
                         match action {
                             Action::Quit => return Ok(()),
                             Action::Shell if scenario.is_some() => {
@@ -1060,6 +1076,19 @@ pub(super) async fn run(
                                         tx.clone(),
                                     ));
                                 }
+                            }
+                            Action::BlockedPower => {
+                                model.screen = Screen::Menu;
+                                model.selected = 0;
+                                model.activity =
+                                    "Servicing is still active; power actions are unavailable"
+                                        .into();
+                                let warning = model.log(
+                                    LogSource::Inst,
+                                    LogLevel::Warn,
+                                    model.activity.clone(),
+                                );
+                                output.announce(&warning, model.serial_verbosity);
                             }
                             Action::Reboot | Action::Poweroff if scenario.is_some() => {
                                 model.reboot_at = None;
@@ -1303,16 +1332,7 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
             logs.push(result);
         }
     }
-    let visible = usize::from(area.height.saturating_sub(2 + header_lines));
-    let end = logs
-        .len()
-        .saturating_sub(usize::from(model.scroll).min(logs.len().saturating_sub(1)));
-    let start = end.saturating_sub(visible);
-    lines.extend(
-        logs[start..end]
-            .iter()
-            .map(|entry| entry.styled(model.linux_vt)),
-    );
+    lines.extend(logs.into_iter().map(|entry| entry.styled(model.linux_vt)));
     let block = Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
@@ -1322,9 +1342,15 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
             title,
             Style::default().fg(theme_color(color, model.linux_vt)),
         ));
-    Paragraph::new(lines)
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let visible_rows = usize::from(area.height.saturating_sub(2));
+    let total_rows = paragraph.line_count(area.width.saturating_sub(2).max(1));
+    let offset = total_rows
+        .saturating_sub(visible_rows)
+        .saturating_sub(usize::from(model.scroll));
+    paragraph
         .block(block)
-        .wrap(Wrap { trim: false })
+        .scroll((u16::try_from(offset).unwrap_or(u16::MAX), 0))
 }
 
 /// Draws the current screen, actions, log controls, and any pending reboot countdown.
@@ -1643,17 +1669,33 @@ mod tests {
         );
         assert_eq!(model.verbosity, LevelFilter::Debug);
         assert!(!log_visible(LogLevel::Trace, model.verbosity));
-        model.key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE), true);
+        model.key(
+            KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE),
+            true,
+            false,
+        );
         assert!(model.verbosity_open);
-        model.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), true);
-        model.key(enter(), true);
+        model.key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            true,
+            false,
+        );
+        model.key(enter(), true, false);
         assert_eq!(model.verbosity, LevelFilter::Trace);
         assert!(!model.verbosity_open);
         assert!(log_visible(LogLevel::Trace, model.verbosity));
         assert_eq!(model.logs.len(), 2);
-        model.key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE), true);
-        model.key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE), true);
-        model.key(enter(), true);
+        model.key(
+            KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE),
+            true,
+            false,
+        );
+        model.key(
+            KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE),
+            true,
+            false,
+        );
+        model.key(enter(), true, false);
         assert_eq!(model.verbosity, LevelFilter::Off);
         assert!(!log_visible(LogLevel::Error, model.verbosity));
         assert_eq!(model.logs.len(), 2);
@@ -1963,9 +2005,21 @@ mod tests {
             rows[result_row][rendered[result_row].find("SUCCESS:").unwrap()].fg,
             Color::Rgb(93, 200, 148)
         );
-        assert!(rendered
+        model.key(
+            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
+            true,
+            false,
+        );
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        let earlier = terminal
+            .backend()
+            .buffer()
+            .content
             .iter()
-            .any(|row| row.contains("Earlier disk action")));
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(earlier.contains("Earlier disk action"));
+        model.scroll = 0;
         model.verbosity = LevelFilter::Off;
         terminal.draw(|frame| render(frame, &model, true)).unwrap();
         let text = terminal
@@ -1977,6 +2031,60 @@ mod tests {
             .collect::<String>();
         assert!(text.contains("SUCCESS: Installation"));
         assert!(!text.contains("Earlier disk action"));
+    }
+
+    /// Wrapped diagnostics and activity cannot hide the latest result at 80x24.
+    #[test]
+    fn wrapped_log_rows_keep_the_result_visible_and_scrollable() {
+        let mut model = Model::new();
+        model.log(
+            LogSource::Trident,
+            LogLevel::Info,
+            "Long preceding diagnostic ".repeat(40),
+        );
+        model.event(Event::Response(ServicingEvent::Completed(Ok(
+            ClientCompletion {
+                reboot: RebootDisposition::NotRequired,
+                servicing_kind: Some(ServicingKind::CleanInstall),
+                image_hash: None,
+            },
+        ))));
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let visible_text = |terminal: &Terminal<TestBackend>| {
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+        };
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        assert!(
+            visible_text(&terminal).contains("SUCCESS: Installation"),
+            "{}",
+            visible_text(&terminal)
+        );
+        model.key(
+            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
+            true,
+            false,
+        );
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        assert!(!visible_text(&terminal).contains("SUCCESS: Installation"));
+        model.key(
+            KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
+            true,
+            false,
+        );
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        assert!(visible_text(&terminal).contains("SUCCESS: Installation"));
+
+        model.screen = Screen::Progress;
+        model.activity = "Scanning media ".repeat(60);
+        model.log(LogSource::Inst, LogLevel::Info, "Latest activity".into());
+        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        assert!(visible_text(&terminal).contains("Latest activity"));
     }
 
     /// Failures show prior logs first while still allowing full diagnostic details.
@@ -2020,7 +2128,11 @@ mod tests {
                 Color::Rgb(255, 107, 115)
             );
         }
-        model.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), true);
+        model.key(
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE),
+            true,
+            false,
+        );
         assert!(model.error_details_open);
         terminal.draw(|frame| render(frame, &model, true)).unwrap();
         let text = terminal
@@ -2031,7 +2143,7 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(text.contains("Underlying transport failure"));
-        model.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), true);
+        model.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), true, false);
         assert_eq!(model.screen, Screen::Error);
         assert!(!model.error_details_open);
     }
@@ -2088,17 +2200,17 @@ mod tests {
     fn error_continue_and_shell_keep_the_originating_screen() {
         let mut model = Model::new();
         model.fail("Complete diagnostic information".into(), false);
-        assert!(model.key(enter(), false).is_none());
+        assert!(model.key(enter(), false, false).is_none());
         assert_eq!(model.screen, Screen::Recovery);
-        assert_eq!(model.key(enter(), false), Some(Action::Shell));
+        assert_eq!(model.key(enter(), false, false), Some(Action::Shell));
         assert_eq!(model.screen, Screen::Recovery);
         assert_eq!(model.details, "Complete diagnostic information");
         model.screen = Screen::Success;
         model.selected = 1;
-        assert_eq!(model.key(enter(), false), Some(Action::Shell));
+        assert_eq!(model.key(enter(), false, false), Some(Action::Shell));
         assert_eq!(model.screen, Screen::Success);
         model.selected = 0;
-        assert_eq!(model.key(enter(), false), Some(Action::Reboot));
+        assert_eq!(model.key(enter(), false, false), Some(Action::Reboot));
     }
 
     /// Force reinstall opens with Cancel selected and needs a second confirmation.
@@ -2107,11 +2219,61 @@ mod tests {
         let mut model = Model::new();
         model.screen = Screen::AlreadyPresent;
         model.selected = 1;
-        assert!(model.key(enter(), false).is_none());
+        assert!(model.key(enter(), false, false).is_none());
         assert_eq!(model.screen, Screen::Force);
         assert_eq!(model.selected, 0);
-        assert!(model.key(enter(), false).is_none());
+        assert!(model.key(enter(), false, false).is_none());
         assert_eq!(model.screen, Screen::AlreadyPresent);
+    }
+
+    /// Retrying an automatic stream re-applies media overrides; manual streams keep their URL.
+    #[test]
+    fn force_retry_preserves_the_original_stream_source() {
+        let image = Url::parse("file:///run/trident/installer-media/cosi/image.cosi").unwrap();
+        let mut model = Model::new();
+        model.stream_image = Some(image.clone());
+        model.event(Event::AlreadyPresent {
+            details: "Image already present".into(),
+            automatic: true,
+        });
+        model.screen = Screen::Force;
+        model.selected = 1;
+        assert_eq!(
+            model.key(enter(), false, false),
+            Some(Action::Start(Request::StreamMedia(image), true))
+        );
+
+        let image = Url::parse("https://example.test/image.cosi").unwrap();
+        model.stream_image = Some(image.clone());
+        model.event(Event::AlreadyPresent {
+            details: "Remote image already present".into(),
+            automatic: false,
+        });
+        model.screen = Screen::Force;
+        model.selected = 1;
+        assert_eq!(
+            model.key(enter(), false, false),
+            Some(Action::Start(Request::Stream(image), true))
+        );
+    }
+
+    /// Repeated interrupts and power choices cannot shut down an active installation.
+    #[test]
+    fn active_worker_cannot_reach_a_power_action() {
+        let mut model = Model::new();
+        let interrupt = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        model.key(interrupt, false, true);
+        assert_eq!(model.screen, Screen::Menu);
+        model.key(interrupt, false, true);
+        assert_eq!(model.screen, Screen::Menu);
+
+        model.screen = Screen::Recovery;
+        model.selected = 3;
+        assert_eq!(model.key(enter(), false, true), Some(Action::BlockedPower));
+        assert_eq!(model.key(enter(), false, false), Some(Action::Poweroff));
+        model.screen = Screen::Success;
+        model.selected = 0;
+        assert_eq!(model.key(enter(), false, true), Some(Action::BlockedPower));
     }
 
     /// Standard-size result and recovery screens expose their expected actions.

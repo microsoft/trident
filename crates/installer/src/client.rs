@@ -39,7 +39,10 @@ pub(super) enum Event {
         details: String,
         uncertain: bool,
     },
-    AlreadyPresent(String),
+    AlreadyPresent {
+        details: String,
+        automatic: bool,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -158,7 +161,9 @@ fn request_description(settings: &Config, request: &Request) -> String {
             settings.media.cosi_directory.display()
         ),
         Request::HostConfiguration(url) => format!("Install from {}", source::display_source(url)),
-        Request::Stream(url) => format!("StreamDisk from {}", source::display_url(url)),
+        Request::Stream(url) | Request::StreamMedia(url) => {
+            format!("StreamDisk from {}", source::display_url(url))
+        }
     }
 }
 
@@ -173,7 +178,7 @@ pub(super) async fn execute(
     require_idle: bool,
     tx: Sender<Event>,
 ) -> Result<(), Error> {
-    let automatic = request == Request::Autorun;
+    let automatic = matches!(request, Request::Autorun | Request::StreamMedia(_));
     let description = request_description(&settings, &request);
     send(
         &tx,
@@ -229,9 +234,10 @@ pub(super) async fn execute(
         let image = image.clone();
         let force = stream_force_requested(automatic, settings.autorun.force, force);
         match task::spawn_blocking(move || source::stream_preflight(&image, force)).await? {
-            Ok((true, _)) => return send(&tx, Event::AlreadyPresent(
-                "Every COSI filesystem UUID was found on an attached disk.\nNo installation was started.".into()
-            )).await,
+            Ok((true, _)) => return send(&tx, Event::AlreadyPresent {
+                details: "Every COSI filesystem UUID was found on an attached disk.\nNo installation was started.".into(),
+                automatic,
+            }).await,
             Ok((false, hash)) => Some(hash),
             Err(error) => return send(&tx, Event::Error { details: format!("{error:#}"), uncertain: false }).await,
         }
@@ -357,6 +363,7 @@ mod tests {
             Request::Autorun,
             Request::HostConfiguration(url.into()),
             Request::Stream(Url::parse(url).unwrap()),
+            Request::StreamMedia(Url::parse(url).unwrap()),
         ] {
             let description = request_description(&settings, &request);
             assert!(description.contains("https://example.com/image.cosi"));
