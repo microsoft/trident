@@ -149,6 +149,8 @@ pub fn execute_rollback(
         };
         staged_rollback_type = Some(rollback_type);
 
+        // Historical rollback targets must preserve the installation's slot-owned
+        // MSHV mode, just like update requests; reject mode changes before staging.
         engine::mshv::validate_transition(&datastore.host_status().spec, &requested_rollback.spec)?;
 
         let engine_context = EngineContext::new(EngineContextParams {
