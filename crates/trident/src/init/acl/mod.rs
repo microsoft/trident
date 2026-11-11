@@ -8,6 +8,7 @@ use log::{trace, warn};
 use uuid::Uuid;
 
 use osutils::{
+    container,
     lsblk::{self, BlockDevice},
     osrelease::OsRelease,
     sfdisk::SfDisk,
@@ -19,9 +20,15 @@ use trident_api::{
         MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType,
         Storage, VerityDevice,
     },
+    constants::internal_params::MSHV_SLOT_ESP_PAYLOAD,
+    error::TridentResultExt,
     status::{AbVolumeSelection, HostStatus, ServicingState},
     BlockDeviceId,
 };
+
+use crate::subsystems::esp;
+
+const ACL_ESP_MOUNT_POINT: &str = "/boot";
 
 /// Returns whether the host is running the ACL image.
 pub fn is_acl() -> Result<bool, Error> {
@@ -72,7 +79,9 @@ pub fn initial_host_status() -> Result<HostStatus, Error> {
         root_blk_device.device_path().display()
     ))?;
 
-    inner_initial_host_status(&disk_information, &root_blk_device)
+    let esp_path = container::get_host_relative_path(PathBuf::from(ACL_ESP_MOUNT_POINT))
+        .unstructured("Failed to resolve ACL ESP path")?;
+    inner_initial_host_status(&disk_information, &root_blk_device, &esp_path)
 }
 
 /// Internal function that does much of the work of creating the
@@ -82,6 +91,7 @@ pub fn initial_host_status() -> Result<HostStatus, Error> {
 fn inner_initial_host_status(
     disk_information: &SfDisk,
     root_blk_device: &BlockDevice,
+    esp_path: &Path,
 ) -> Result<HostStatus, Error> {
     let disk_name = "disk-0".to_string();
     // Construct the HostStatus disk UUID struct
@@ -222,7 +232,7 @@ fn inner_initial_host_status(
         });
     }
 
-    Ok(HostStatus {
+    let mut host_status = HostStatus {
         spec: HostConfiguration {
             storage: Storage {
                 disks: vec![Disk {
@@ -239,7 +249,7 @@ fn inner_initial_host_status(
                     FileSystem {
                         device_id: Some("efi-system".to_string()),
                         mount_point: Some(MountPoint {
-                            path: PathBuf::from("/boot"),
+                            path: PathBuf::from(ACL_ESP_MOUNT_POINT),
                             options: MountOptions("umask=0077".to_string()),
                         }),
                         source: FileSystemSource::Image,
@@ -293,7 +303,14 @@ fn inner_initial_host_status(
         disk_uuids,
         partition_paths,
         ..Default::default()
-    })
+    };
+    if esp::has_slot_mshv_bundle(esp_path)? {
+        host_status
+            .spec
+            .internal_params
+            .set_flag(MSHV_SLOT_ESP_PAYLOAD);
+    }
+    Ok(host_status)
 }
 
 #[cfg(test)]
@@ -462,6 +479,64 @@ mod tests {
         }
     }
 
+    fn create_mshv_bundle(esp_path: &Path) {
+        for name in [
+            "bootx64.efi",
+            "grubx64.efi",
+            "second.efi",
+            "HvLoader.efi",
+            "lxhvloader.dll",
+            "Windows/System32/hvix64.exe",
+            "Windows/System32/hvax64.exe",
+            "Windows/System32/kdstub.dll",
+        ] {
+            let path = esp_path.join("EFI/BOOT").join(name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"payload").unwrap();
+        }
+    }
+
+    #[test]
+    fn initial_host_status_discovers_slot_mshv_from_image() {
+        let esp = tempfile::TempDir::new().unwrap();
+        let disk = create_sfdisk("EFI-SYSTEM", TestPartitions::Correct);
+        let device = create_blk_device();
+        let status = inner_initial_host_status(&disk, &device, esp.path()).unwrap();
+        assert!(!status.spec.internal_params.get_flag(MSHV_SLOT_ESP_PAYLOAD));
+
+        std::fs::create_dir_all(esp.path().join("EFI/BOOT")).unwrap();
+        std::fs::write(esp.path().join("EFI/BOOT/bootx64.efi"), b"shim").unwrap();
+        std::fs::write(
+            esp.path().join("EFI/HvLoader.efi"),
+            b"legacy shared payload",
+        )
+        .unwrap();
+        let status = inner_initial_host_status(&disk, &device, esp.path()).unwrap();
+        assert!(!status.spec.internal_params.get_flag(MSHV_SLOT_ESP_PAYLOAD));
+
+        create_mshv_bundle(esp.path());
+        let status = inner_initial_host_status(&disk, &device, esp.path()).unwrap();
+        assert!(status.spec.internal_params.get_flag(MSHV_SLOT_ESP_PAYLOAD));
+        assert!(!esp.path().join("EFI/AZLA").exists());
+    }
+
+    #[test]
+    fn initial_host_status_rejects_incomplete_slot_mshv_payload() {
+        let esp = tempfile::TempDir::new().unwrap();
+        create_mshv_bundle(esp.path());
+        std::fs::remove_file(esp.path().join("EFI/BOOT/HvLoader.efi")).unwrap();
+        let error = inner_initial_host_status(
+            &create_sfdisk("EFI-SYSTEM", TestPartitions::Correct),
+            &create_blk_device(),
+            esp.path(),
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("Missing MSHV payload file: HvLoader.efi"));
+        assert!(!esp.path().join("EFI/AZLA").exists());
+    }
+
     fn create_blk_device() -> BlockDevice {
         BlockDevice {
             name: "/dev/sda".into(),
@@ -478,7 +553,12 @@ mod tests {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::Correct);
         let blkdevice = create_blk_device();
         // Run
-        let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+        let init_host_status = inner_initial_host_status(
+            &sfdisk,
+            &blkdevice,
+            tempfile::TempDir::new().unwrap().path(),
+        )
+        .unwrap();
 
         init_host_status.spec.validate().unwrap();
 
@@ -520,7 +600,12 @@ mod tests {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::Correct);
         let blkdevice = create_blk_device();
 
-        let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+        let init_host_status = inner_initial_host_status(
+            &sfdisk,
+            &blkdevice,
+            tempfile::TempDir::new().unwrap().path(),
+        )
+        .unwrap();
         init_host_status.spec.validate().unwrap();
 
         let volume_pairs = &init_host_status
@@ -541,7 +626,12 @@ mod tests {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::WithHashSigPair);
         let blkdevice = create_blk_device();
 
-        let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+        let init_host_status = inner_initial_host_status(
+            &sfdisk,
+            &blkdevice,
+            tempfile::TempDir::new().unwrap().path(),
+        )
+        .unwrap();
         init_host_status.spec.validate().unwrap();
 
         let partitions = &init_host_status.spec.storage.disks[0].partitions;
@@ -576,7 +666,12 @@ mod tests {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::WithHashSigPartial);
         let blkdevice = create_blk_device();
 
-        let init_host_status = inner_initial_host_status(&sfdisk, &blkdevice).unwrap();
+        let init_host_status = inner_initial_host_status(
+            &sfdisk,
+            &blkdevice,
+            tempfile::TempDir::new().unwrap().path(),
+        )
+        .unwrap();
         init_host_status.spec.validate().unwrap();
 
         let volume_pairs = &init_host_status
@@ -596,14 +691,18 @@ mod tests {
         let unexpected_label = create_sfdisk(wrong_label, TestPartitions::Correct);
         let blkdevice = create_blk_device();
         // Run
-        assert!(inner_initial_host_status(&unexpected_label, &blkdevice)
-            .unwrap_err()
-            .root_cause()
-            .to_string()
-            .contains(&format!(
-                "Unexpected partition label '{}' found on root disk",
-                wrong_label
-            )));
+        assert!(inner_initial_host_status(
+            &unexpected_label,
+            &blkdevice,
+            tempfile::TempDir::new().unwrap().path()
+        )
+        .unwrap_err()
+        .root_cause()
+        .to_string()
+        .contains(&format!(
+            "Unexpected partition label '{}' found on root disk",
+            wrong_label
+        )));
     }
 
     #[test]
@@ -611,11 +710,15 @@ mod tests {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::MissingOne);
         let blkdevice = create_blk_device();
         // Run
-        assert!(inner_initial_host_status(&sfdisk, &blkdevice)
-            .unwrap_err()
-            .root_cause()
-            .to_string()
-            .contains("Missing partition labels found on root disk"));
+        assert!(inner_initial_host_status(
+            &sfdisk,
+            &blkdevice,
+            tempfile::TempDir::new().unwrap().path()
+        )
+        .unwrap_err()
+        .root_cause()
+        .to_string()
+        .contains("Missing partition labels found on root disk"));
     }
 
     #[test]
@@ -623,11 +726,15 @@ mod tests {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::ExtraOne);
         let blkdevice = create_blk_device();
         // Run
-        assert!(inner_initial_host_status(&sfdisk, &blkdevice)
-            .unwrap_err()
-            .root_cause()
-            .to_string()
-            .contains("Unexpected partition label 'extra-one' found on root disk"));
+        assert!(inner_initial_host_status(
+            &sfdisk,
+            &blkdevice,
+            tempfile::TempDir::new().unwrap().path()
+        )
+        .unwrap_err()
+        .root_cause()
+        .to_string()
+        .contains("Unexpected partition label 'extra-one' found on root disk"));
     }
 
     #[test]
@@ -635,10 +742,14 @@ mod tests {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::Duplicate);
         let blkdevice = create_blk_device();
         // Run
-        assert!(inner_initial_host_status(&sfdisk, &blkdevice)
-            .unwrap_err()
-            .root_cause()
-            .to_string()
-            .contains("Multiple identical partition labels found on root disk: 'usr-a'"));
+        assert!(inner_initial_host_status(
+            &sfdisk,
+            &blkdevice,
+            tempfile::TempDir::new().unwrap().path()
+        )
+        .unwrap_err()
+        .root_cause()
+        .to_string()
+        .contains("Multiple identical partition labels found on root disk: 'usr-a'"));
     }
 }

@@ -19,8 +19,8 @@ use trident_api::{
         OsImage as ConfigOsImage,
     },
     constants::internal_params::{
-        HTTP_CONNECTION_TIMEOUT_SECONDS, MSHV_SLOT_ESP_PAYLOAD,
-        ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS, WAIT_FOR_SYSTEMD_NETWORKD,
+        HTTP_CONNECTION_TIMEOUT_SECONDS, ORCHESTRATOR_CONNECTION_TIMEOUT_SECONDS,
+        WAIT_FOR_SYSTEMD_NETWORKD,
     },
     error::{
         DatastoreError, ExecutionEnvironmentMisconfigurationError, InitializationError,
@@ -632,9 +632,11 @@ impl Trident {
                 if acl::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
                     // For ACL, initialize datastore with known initial state when
                     // the datastore is not already created.
-                    let mut initial_host_status = acl::initial_host_status()
+                    let initial_host_status = acl::initial_host_status()
                         .structured(InvalidInputError::DeriveHostConfiguration)
                         .message("Failed to initialize host status for ACL")?;
+
+                    engine::mshv::validate_transition(&initial_host_status.spec, &host_config)?;
 
                     // Mirror offline-initialize's bootstrap: ACL lazy adoption derives
                     // HostStatus metadata only, it never touches the ESP. Seed EFI/AZLA from
@@ -658,14 +660,10 @@ impl Trident {
                     let esp_path = container::get_host_relative_path(esp_path.to_path_buf())
                         .message("Failed to resolve ESP path relative to host for ACL")?;
 
-                    let slot_mshv = engine::mshv::enabled(&host_config);
+                    let slot_mshv = engine::mshv::enabled(&initial_host_status.spec);
                     esp::bootstrap_azla_from_fallback(&esp_path, slot_mshv)
                         .structured(InvalidInputError::InvalidBootConfiguration)
                         .message("Failed to bootstrap AZLA ESP path for ACL")?;
-
-                    if slot_mshv {
-                        initial_host_status.spec.internal_params.set_flag(MSHV_SLOT_ESP_PAYLOAD);
-                    }
 
                     datastore
                         .with_host_status(|status| {

@@ -740,6 +740,21 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+pub(crate) fn has_slot_mshv_bundle(esp_path: &Path) -> Result<bool, Error> {
+    let bundle = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+    for marker in ["HvLoader.efi", "lxhvloader.dll", "Windows"] {
+        match fs::symlink_metadata(bundle.join(marker)) {
+            Ok(_) => {
+                mshv::slot::validate_bundle(&bundle)?;
+                return Ok(true);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context("Failed to inspect MSHV BOOT payload"),
+        }
+    }
+    Ok(false)
+}
+
 /// Ensures `EFI/AZLA` exists on the ESP, seeding it from the `EFI/BOOT`
 /// fallback loader if it's missing. Used by both offline-initialize and ACL
 /// lazy-adoption bootstrap, so a freshly-derived HostStatus is always backed

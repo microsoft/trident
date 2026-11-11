@@ -62,9 +62,10 @@ Enable the flag during installation or first-update ACL adoption, and keep it
 enabled for subsequent updates. Changing
 MSHV mode on an existing installation, combining it with
 `preserveMshvEspPayload`, raw/disk-streaming installation, and TPM/PCR-bound
-encryption are rejected. First-update ACL adoption validates the existing
-BOOT bundle and seeds the complete AZLA payload, following the normal ACL
-bootstrap. Offline-init adoption and mode conversion on an already-managed
+encryption are rejected. First-update ACL adoption discovers slot-owned mode
+from a complete existing BOOT bundle and requires the request to match it.
+It seeds the complete AZLA payload, following the normal ACL bootstrap.
+Offline-init adoption and mode conversion on an already-managed
 installation remain disabled.
 
 Staging validates the bundle and checks peak ESP allocation before clearing
