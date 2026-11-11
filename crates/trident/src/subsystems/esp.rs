@@ -51,6 +51,7 @@ impl Subsystem for EspSubsystem {
         "esp"
     }
 
+    /// Applies slot-owned MSHV support restrictions before ESP servicing.
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
         crate::engine::mshv::validate_configuration(ctx)
     }
@@ -740,6 +741,8 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Detects slot-owned MSHV in BOOT, requiring the complete bundle when markers exist.
+/// No markers means mode off; incomplete bundles and inspection errors fail discovery.
 pub(crate) fn has_slot_mshv_bundle(esp_path: &Path) -> Result<bool, Error> {
     let bundle = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
     for marker in ["HvLoader.efi", "lxhvloader.dll", "Windows"] {
