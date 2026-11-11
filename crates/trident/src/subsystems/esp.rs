@@ -753,7 +753,6 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path, slot_mshv: bool) -> Result<
         if azla_esp_path.exists() {
             return mshv::slot::validate_bundle(&azla_esp_path);
         }
-        mshv::slot::preflight_bootstrap(&boot_esp_path, esp_path)?;
     }
     trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
     if !azla_esp_path.exists() {
@@ -776,6 +775,7 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path, slot_mshv: bool) -> Result<
             ))?;
         }
         let copy_result = if slot_mshv {
+            mshv::slot::preflight_bootstrap(&boot_esp_path, esp_path)?;
             mshv::slot::copy_bundle(&boot_esp_path, &azla_tmp_path)
         } else {
             replace_boot_files(&boot_esp_path, &azla_tmp_path)
@@ -1683,6 +1683,50 @@ mod tests {
         fs::remove_file(azla.join("Windows/System32/kdstub.dll")).unwrap();
         assert!(bootstrap_azla_from_fallback(esp.path(), true).is_err());
         assert!(!azla.join("Windows/System32/kdstub.dll").exists());
+    }
+
+    #[test]
+    fn test_bootstrap_azla_cleans_stale_mshv_copy_before_capacity_check() {
+        let esp = TempDir::new().unwrap();
+        let boot = esp.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let azla = esp.path().join(ESP_EFI_DIRECTORY).join("AZLA");
+        let temporary = esp
+            .path()
+            .join(ESP_EFI_DIRECTORY)
+            .join("AZLA.bootstrap-tmp");
+        for name in [
+            "bootx64.efi",
+            "grubx64.efi",
+            "second.efi",
+            "HvLoader.efi",
+            "lxhvloader.dll",
+            "Windows/System32/hvix64.exe",
+            "Windows/System32/hvax64.exe",
+            "Windows/System32/kdstub.dll",
+        ] {
+            let path = boot.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"retained").unwrap();
+        }
+        fs::create_dir_all(&temporary).unwrap();
+        fs::write(temporary.join("stale"), b"abandoned copy").unwrap();
+
+        // Force preflight failure with a sparse file, without filling the filesystem.
+        let stats = nix::sys::statvfs::statvfs(esp.path()).unwrap();
+        let length = stats.blocks_available() * stats.fragment_size() + 1;
+        fs::OpenOptions::new()
+            .write(true)
+            .open(boot.join(BOOT_EFI))
+            .unwrap()
+            .set_len(length)
+            .unwrap();
+
+        let error = bootstrap_azla_from_fallback(esp.path(), true).unwrap_err();
+        assert!(error.to_string().contains("Insufficient ESP capacity"));
+        assert!(!temporary.exists());
+        assert!(!azla.exists());
+        assert_eq!(fs::metadata(boot.join(BOOT_EFI)).unwrap().len(), length);
+        assert_eq!(fs::read(boot.join("HvLoader.efi")).unwrap(), b"retained");
     }
 
     #[test]
