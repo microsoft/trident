@@ -535,7 +535,7 @@ pub fn execute(
             "Failed to find ESP filesystem in Host Status, validation should have failed if this was the case",
         )))?;
 
-    esp::bootstrap_azla_from_fallback(esp_path)
+    esp::bootstrap_azla_from_fallback(esp_path, false)
         .structured(InvalidInputError::InvalidBootConfiguration)
         .message("Failed to bootstrap AZLA from fallback")?;
 

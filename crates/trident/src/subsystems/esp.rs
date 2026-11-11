@@ -745,16 +745,22 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
 /// lazy-adoption bootstrap, so a freshly-derived HostStatus is always backed
 /// by a matching on-disk ESP layout before the first A/B update or manual
 /// rollback ever runs and assumes AZLA already exists.
-pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
+pub fn bootstrap_azla_from_fallback(esp_path: &Path, slot_mshv: bool) -> Result<(), Error> {
     let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
+    let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+    if slot_mshv {
+        mshv::slot::validate_bundle(&boot_esp_path)?;
+        if azla_esp_path.exists() {
+            return mshv::slot::validate_bundle(&azla_esp_path);
+        }
+        mshv::slot::preflight_bootstrap(&boot_esp_path, esp_path)?;
+    }
     trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
     if !azla_esp_path.exists() {
         trace!(
             "AZLA volume ESP path {:?} does not exist, attempting to copy from fallback location",
             azla_esp_path
         );
-        let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-
         // Stage the copy in a temporary sibling directory and publish it via
         // an atomic rename only once the copy has fully succeeded. Creating
         // azla_esp_path directly (via replace_boot_files' create_dir_all)
@@ -769,7 +775,12 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
                 azla_tmp_path.display()
             ))?;
         }
-        replace_boot_files(&boot_esp_path, &azla_tmp_path).context(format!(
+        let copy_result = if slot_mshv {
+            mshv::slot::copy_bundle(&boot_esp_path, &azla_tmp_path)
+        } else {
+            replace_boot_files(&boot_esp_path, &azla_tmp_path)
+        };
+        copy_result.context(format!(
             "Failed to copy boot files from '{}' to temporary AZLA bootstrap path '{}'",
             boot_esp_path.display(),
             azla_tmp_path.display()
@@ -1531,7 +1542,7 @@ mod tests {
             writeln!(file, "{content}").unwrap();
         }
 
-        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
+        bootstrap_azla_from_fallback(esp_dir.path(), false).unwrap();
 
         for (file_name, _content) in &file_infos {
             assert!(
@@ -1567,7 +1578,7 @@ mod tests {
         let mut sentinel_file = File::create(&sentinel_path).unwrap();
         writeln!(sentinel_file, "Pre-existing AZLA content").unwrap();
 
-        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
+        bootstrap_azla_from_fallback(esp_dir.path(), false).unwrap();
 
         // AZLA must be left untouched: bootstrap only runs when AZLA is
         // absent, so a second call must be a no-op.
@@ -1611,7 +1622,7 @@ mod tests {
         let mut stale_file = File::create(azla_tmp_dir.join("stale-leftover")).unwrap();
         writeln!(stale_file, "Leftover from a crashed bootstrap").unwrap();
 
-        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
+        bootstrap_azla_from_fallback(esp_dir.path(), false).unwrap();
 
         // The stale temp dir must be cleaned up, and bootstrapping must
         // still succeed despite it being present beforehand.
@@ -1627,6 +1638,63 @@ mod tests {
                 azla_dir.join(file_name).display()
             );
         }
+    }
+
+    #[test]
+    fn test_bootstrap_azla_from_mshv_fallback() {
+        let esp = TempDir::new().unwrap();
+        let boot = esp.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let azla = esp.path().join(ESP_EFI_DIRECTORY).join("AZLA");
+        let temporary = esp
+            .path()
+            .join(ESP_EFI_DIRECTORY)
+            .join("AZLA.bootstrap-tmp");
+        let files = [
+            "bootx64.efi",
+            "grubx64.efi",
+            "second.efi",
+            "HvLoader.efi",
+            "lxhvloader.dll",
+            "Windows/System32/hvix64.exe",
+            "Windows/System32/hvax64.exe",
+            "Windows/System32/kdstub.dll",
+        ];
+        for name in files {
+            let path = boot.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, name).unwrap();
+        }
+        fs::create_dir_all(&temporary).unwrap();
+        fs::write(temporary.join("stale"), "incomplete").unwrap();
+
+        bootstrap_azla_from_fallback(esp.path(), true).unwrap();
+        for name in files {
+            assert!(files_are_identical(&boot.join(name), &azla.join(name)));
+        }
+        assert!(!temporary.exists());
+
+        fs::write(boot.join("HvLoader.efi"), "new fallback").unwrap();
+        bootstrap_azla_from_fallback(esp.path(), true).unwrap();
+        assert_eq!(
+            fs::read_to_string(azla.join("HvLoader.efi")).unwrap(),
+            "HvLoader.efi"
+        );
+
+        fs::remove_file(azla.join("Windows/System32/kdstub.dll")).unwrap();
+        assert!(bootstrap_azla_from_fallback(esp.path(), true).is_err());
+        assert!(!azla.join("Windows/System32/kdstub.dll").exists());
+    }
+
+    #[test]
+    fn test_bootstrap_azla_rejects_incomplete_mshv_fallback() {
+        let esp = TempDir::new().unwrap();
+        let boot = esp.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let azla = esp.path().join(ESP_EFI_DIRECTORY).join("AZLA");
+        fs::create_dir_all(&boot).unwrap();
+        fs::write(boot.join(BOOT_EFI), "shim").unwrap();
+        assert!(bootstrap_azla_from_fallback(esp.path(), true).is_err());
+        assert!(!azla.exists());
+        assert_eq!(fs::read_to_string(boot.join(BOOT_EFI)).unwrap(), "shim");
     }
 
     /// Validates that copy_boot_files() correctly copies boot files from temp_mount_dir to esp_dir

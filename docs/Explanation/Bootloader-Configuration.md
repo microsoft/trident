@@ -58,11 +58,14 @@ bundle into the target slot. The bundle contains `bootx64.efi`, `grubx64.efi`,
 UKIs and addons remain in `EFI/Linux`; existing firmware and UKI selectors
 are unchanged.
 
-Use the flag for both the original install and subsequent updates. Changing
+Enable the flag during installation or first-update ACL adoption, and keep it
+enabled for subsequent updates. Changing
 MSHV mode on an existing installation, combining it with
 `preserveMshvEspPayload`, raw/disk-streaming installation, and TPM/PCR-bound
-encryption are rejected. Offline-init adoption and legacy conversion are
-not enabled by this feature.
+encryption are rejected. First-update ACL adoption validates the existing
+BOOT bundle and seeds the complete AZLA payload, following the normal ACL
+bootstrap. Offline-init adoption and mode conversion on an already-managed
+installation remain disabled.
 
 Staging validates the bundle and checks peak ESP allocation before clearing
 the inactive slot. Existing fallback modes apply to the complete nested bundle.

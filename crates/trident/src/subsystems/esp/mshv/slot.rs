@@ -29,10 +29,12 @@ fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<()> {
         let entry = entry?;
         let path = entry.path();
         let relative = path.strip_prefix(root)?;
+        let relative_name = relative.to_str().context("Non-UTF-8 MSHV payload path")?;
         let kind = entry.file_type()?;
         if kind.is_dir() {
             ensure!(
-                relative == Path::new("Windows") || relative == Path::new("Windows/System32"),
+                relative_name.eq_ignore_ascii_case("Windows")
+                    || relative_name.eq_ignore_ascii_case("Windows/System32"),
                 "Unexpected payload directory: {}",
                 relative.display()
             );
@@ -45,10 +47,10 @@ fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<()> {
             );
             ensure!(
                 FILES.iter().any(|name| {
-                    relative == Path::new(name)
+                    relative_name.eq_ignore_ascii_case(name)
                         || temporary
-                            && (relative == Path::new(&format!("{name}.new"))
-                                || relative == Path::new(&format!("{name}.old")))
+                            && (relative_name.eq_ignore_ascii_case(&format!("{name}.new"))
+                                || relative_name.eq_ignore_ascii_case(&format!("{name}.old")))
                 }),
                 "Unexpected payload file: {}",
                 relative.display()
@@ -123,6 +125,17 @@ pub(crate) fn preflight_staging(
         reclaimed += allocation(&path, cluster)? + allocation(&uki_addon_dir(&path), cluster)?;
     }
     check_space(stats.blocks_available() * cluster, reclaimed, required)
+}
+
+pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<()> {
+    let stats = statvfs(esp)?;
+    let cluster = stats.fragment_size();
+    ensure!(cluster > 0, "Invalid ESP allocation unit");
+    check_space(
+        stats.blocks_available() * cluster,
+        0,
+        allocation(from, cluster)?,
+    )
 }
 
 pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<()> {
@@ -217,6 +230,24 @@ mod tests {
             assert_eq!(fs::read(target.join(name)).unwrap(), b"new");
             assert_eq!(fs::read(active.join(name)).unwrap(), b"retained");
         }
+    }
+
+    #[test]
+    fn accepts_fat_filename_casing_but_rejects_unknown_entries() {
+        let temp = TempDir::new().unwrap();
+        for name in FILES {
+            let path = temp.path().join(name.to_ascii_uppercase());
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"payload").unwrap();
+        }
+        validate_tree(temp.path(), temp.path(), false).unwrap();
+        let pending = temp.path().join("SECOND.EFI.NEW");
+        fs::write(&pending, b"pending").unwrap();
+        assert!(validate_tree(temp.path(), temp.path(), false).is_err());
+        validate_tree(temp.path(), temp.path(), true).unwrap();
+        fs::remove_file(pending).unwrap();
+        fs::write(temp.path().join("IDENTITY.JSON"), b"unexpected").unwrap();
+        assert!(validate_tree(temp.path(), temp.path(), true).is_err());
     }
 
     #[test]
