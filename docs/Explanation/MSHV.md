@@ -142,8 +142,9 @@ during first-update ACL adoption, before an installation is already managed.
 
 ### Hypervisor Identity
 
-**Hypervisor identity validation currently assumes success.** Commit and
-rollback do not yet identify the running hypervisor
-or detect a mixed hypervisor/OS boot. Root-device validation and health checks
-still apply; passing them does not establish hypervisor/OS consistency or
-production readiness.
+**Hypervisor identity validation currently assumes success**, meaning that the
+running hypervisor matches the hypervisor payload in the active OS slot's
+`EFI/AZLA` or `EFI/AZLB` directory. Commit and rollback do not yet identify
+the running hypervisor or detect a mixed hypervisor/OS boot. Root-device
+validation and health checks still apply; passing them does not establish
+hypervisor/OS consistency or production readiness.
