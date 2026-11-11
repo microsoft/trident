@@ -58,6 +58,7 @@ impl Subsystem for EspSubsystem {
 
     #[tracing::instrument(name = "esp_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
+        // Recheck MSHV constraints here rather than relying solely on prior validation.
         crate::engine::mshv::validate_configuration(ctx)?;
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized.
