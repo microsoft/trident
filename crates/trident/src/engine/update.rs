@@ -59,6 +59,8 @@ pub(crate) fn update(
         image: Some(image),
     })?;
 
+    // Reject slot-owned MSHV mode changes before servicing selection so even
+    // requests classified as no-op updates cannot bypass the transition guard.
     engine::mshv::validate_transition(&ctx.spec_old, &ctx.spec)?;
 
     // Before starting an update servicing, need to validate that the active volume is set
