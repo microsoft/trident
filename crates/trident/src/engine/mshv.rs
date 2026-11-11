@@ -36,6 +36,8 @@ pub(crate) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
     if !enabled(&ctx.spec) {
         return Ok(());
     }
+    // x86-64 is an initial support choice while the MSHV payload definition is x64-only.
+    // Other architectures should reuse the existing architecture-aware EFI filename helpers.
     if !cfg!(target_arch = "x86_64") || !ctx.image_distro().is_acl() || !ctx.is_uki()? {
         return Err(unsupported(
             "Slot-owned MSHV requires an x86-64 ACL UKI image",
