@@ -126,7 +126,10 @@ mod tests {
         ctx.spec.internal_params.set_flag(MSHV_SLOT_ESP_PAYLOAD);
         assert!(validate_configuration(&ctx).is_err());
         ctx.is_stream_image = false;
-        assert!(validate_configuration(&ctx).is_ok());
+        assert_eq!(
+            validate_configuration(&ctx).is_ok(),
+            cfg!(target_arch = "x86_64"),
+        );
         ctx.spec.storage.encryption = Some(trident_api::config::Encryption {
             pcrs: vec![sysdefs::tpm2::Pcr::Pcr4],
             ..Default::default()
