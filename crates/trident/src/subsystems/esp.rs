@@ -88,16 +88,7 @@ pub fn set_uefi_fallback_contents(
     servicing_state: ServicingState,
     mount_point: &Path,
 ) -> Result<(), Error> {
-    let source_esp_dir_name = if crate::engine::mshv::enabled(&ctx.spec)
-        && servicing_state == ServicingState::AbUpdateFinalized
-        && ctx.spec.os.uefi_fallback == UefiFallbackMode::Conservative
-    {
-        // Commit still holds the pre-update active volume until validation finishes.
-        ctx.get_ab_update_volume()
-            .map(|volume| boot::make_esp_dir_name(ctx.install_index, volume))
-    } else {
-        find_uefi_fallback_source_dir_name(ctx, servicing_state)
-    };
+    let source_esp_dir_name = find_uefi_fallback_source_dir_name(ctx, servicing_state);
     if let Some(source_esp_dir_name) = source_esp_dir_name {
         debug!(
             "Configuring UEFI fallback for servicing state {:?} using source ESP dir '{}'",
@@ -542,13 +533,12 @@ fn find_uefi_fallback_source_dir_name(
             _ => None,
         },
         ServicingState::AbUpdateFinalized => match ctx.spec.os.uefi_fallback {
-            UefiFallbackMode::Conservative => Some(boot::make_esp_dir_name(
-                ctx.install_index,
-                match ctx.ab_active_volume {
-                    None | Some(AbVolumeSelection::VolumeA) => AbVolumeSelection::VolumeA,
-                    Some(AbVolumeSelection::VolumeB) => AbVolumeSelection::VolumeB,
-                },
-            )),
+            UefiFallbackMode::Conservative => {
+                // Commit still records the pre-update active slot. Refresh fallback
+                // from the newly validated update target, after health checks pass.
+                ctx.get_ab_update_volume()
+                    .map(|volume| boot::make_esp_dir_name(ctx.install_index, volume))
+            }
             _ => None,
         },
         ServicingState::ManualRollbackAbStaged => match ctx.spec.os.uefi_fallback {
@@ -1306,8 +1296,16 @@ mod tests {
                 UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLA".to_string()), // in finalize, with 'conservative', copy from active volume
-                "Validate AbUpdateFinalized + Conservative + active volume A ==> AZLA",
+                Some("AZLB".to_string()), // in commit, copy from the validated update target
+                "Validate AbUpdateFinalized + Conservative + active volume A ==> AZLB",
+            ),
+            (
+                ServicingState::AbUpdateFinalized,
+                UefiFallbackMode::Conservative,
+                Some(AbVolumeSelection::VolumeB),
+                ServicingType::AbUpdate,
+                Some("AZLA".to_string()),
+                "Validate AbUpdateFinalized + Conservative + active volume B ==> AZLA",
             ),
             (
                 ServicingState::AbUpdateFinalized,
@@ -1407,6 +1405,50 @@ mod tests {
         assert!(
             find_uefi_fallback_source_dir_name(&ctx, ServicingState::AbUpdateFinalized).is_none()
         );
+    }
+
+    #[test]
+    fn test_conservative_commit_copies_validated_slot() {
+        let file_names = vec![PathBuf::from(BOOT_EFI), PathBuf::from(GRUB_EFI)];
+        for (active_volume, active_name, target_name) in [
+            (AbVolumeSelection::VolumeA, "AZLA", "AZLB"),
+            (AbVolumeSelection::VolumeB, "AZLB", "AZLA"),
+        ] {
+            let mut ctx = EngineContext {
+                servicing_type: ServicingType::AbUpdate,
+                ab_active_volume: Some(active_volume),
+                ..Default::default()
+            };
+            ctx.spec.os.uefi_fallback = UefiFallbackMode::Conservative;
+            let mount_point = TempDir::new().unwrap();
+            let retained = create_and_fill_esp(&mount_point, active_name, &file_names, "retained");
+            let candidate =
+                create_and_fill_esp(&mount_point, target_name, &file_names, "candidate");
+            let fallback = create_and_fill_esp(
+                &mount_point,
+                EFI_DEFAULT_BIN_DIRECTORY,
+                &file_names,
+                "initial-fallback",
+            );
+
+            set_uefi_fallback_contents(&ctx, ServicingState::AbUpdateStaged, mount_point.path())
+                .unwrap();
+            for file in &file_names {
+                assert!(files_are_identical(
+                    &fallback.join(file),
+                    &retained.join(file)
+                ));
+            }
+
+            set_uefi_fallback_contents(&ctx, ServicingState::AbUpdateFinalized, mount_point.path())
+                .unwrap();
+            for file in &file_names {
+                assert!(
+                    files_are_identical(&fallback.join(file), &candidate.join(file)),
+                    "Commit with recorded active slot {active_volume:?} must copy {target_name}"
+                );
+            }
+        }
     }
 
     #[test]
