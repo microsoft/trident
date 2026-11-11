@@ -142,7 +142,7 @@ format:
 .PHONY: test
 test: .cargo/config
 	cargo test --all --no-fail-fast
-	cargo test -p trident-client --all-features --no-fail-fast
+	cargo test --locked -p trident-client --all-features --no-fail-fast
 
 COVERAGE_EXCLUDED_FILES_REGEX='crates/docbuilder|crates/pytest|crates/setsail|target|/mnt/vss'
 

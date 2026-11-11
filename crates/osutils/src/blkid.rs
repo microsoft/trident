@@ -48,35 +48,6 @@ pub fn get_filesystem_label(device_path: impl AsRef<Path>) -> Result<String, Err
     run(device_path, "LABEL")
 }
 
-pub fn devices_by_label(label: impl AsRef<str>) -> Result<Vec<PathBuf>, Error> {
-    let label = label.as_ref();
-    ensure!(!label.is_empty(), "Filesystem label must not be empty");
-    let output = Dependency::Blkid
-        .cmd()
-        .args([
-            "-c",
-            "/dev/null",
-            "-t",
-            &format!("LABEL={label}"),
-            "-o",
-            "device",
-        ])
-        .output()?;
-    // blkid uses status 2 when its search has no matches.
-    if output.code() == Some(2) {
-        return Ok(Vec::new());
-    }
-    output.check()?;
-    let mut devices = output
-        .output()
-        .lines()
-        .map(PathBuf::from)
-        .collect::<Vec<_>>();
-    devices.sort();
-    devices.dedup();
-    Ok(devices)
-}
-
 #[cfg(feature = "functional-test")]
 #[cfg_attr(not(test), allow(unused_imports, dead_code))]
 mod functional_test {
