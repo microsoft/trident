@@ -552,7 +552,7 @@ def main() -> None:
         get_ado_token(),
         args.build_id,
     )
-    print(provenance_path)
+    print((provenance_path.parent / config["imageFilename"]).resolve())
 
 
 if __name__ == "__main__":

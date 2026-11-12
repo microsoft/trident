@@ -13,7 +13,6 @@ from .conftest import (
     trident_runcmd,
     TRIDENT_REPO_DIR_PATH,
     VM_SSH_NODE_CACHE_KEY,
-    FT_BASE_IMAGE,
     TEST_USER,
 )
 from .ssh_node import SshNode
@@ -67,7 +66,7 @@ def wait_online(ip: str, known_hosts_path: Path, timeout: int = 60) -> None:
     raise TimeoutError(f"VM with IP {ip} did not come online within {timeout} seconds.")
 
 
-def test_create_vm(request, known_hosts_path, ssh_key_public):
+def test_create_vm(request, known_hosts_path, ssh_key_public, functional_base_image):
     """Test function to create a VM with virt-deploy"""
 
     if request.config.getoption("--reuse-environment"):
@@ -79,6 +78,9 @@ def test_create_vm(request, known_hosts_path, ssh_key_public):
     virtdeploy_namespace = request.config.getoption("--virtdeploy-namespace")
     if virtdeploy_namespace:
         create_params.extend(["--namespace", virtdeploy_namespace])
+    virtdeploy_network = request.config.getoption("--virtdeploy-network")
+    if virtdeploy_network:
+        create_params.extend(["--network", virtdeploy_network])
 
     with tempfile.TemporaryDirectory() as temp_dir:
         work_dir = Path(temp_dir)
@@ -105,7 +107,7 @@ def test_create_vm(request, known_hosts_path, ssh_key_public):
                 "-d",
                 "16,16",
                 "--os-disk",
-                FT_BASE_IMAGE,
+                functional_base_image,
                 "--ci-user",
                 cloud_init_user_data,
                 "--ci-meta",

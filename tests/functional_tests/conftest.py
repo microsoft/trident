@@ -54,6 +54,18 @@ def pytest_addoption(parser):
         help="Namespace used to create the functional-test VM.",
     )
 
+    parser.addoption(
+        "--virtdeploy-network",
+        action="store",
+        help="Network used to create the functional-test VM.",
+    )
+
+    parser.addoption(
+        "--functional-base-image",
+        action="store",
+        help="Functional-test base image passed to virtdeploy.",
+    )
+
     parser.addoption("--test-dir", action="store", help="Location to store test files.")
 
     parser.addoption(
@@ -287,6 +299,12 @@ def reuse_environment(request) -> bool:
 
 
 @pytest.fixture(scope="session")
+def functional_base_image(request) -> Path:
+    image_path = request.config.getoption("--functional-base-image")
+    return Path(image_path) if image_path else FT_BASE_IMAGE
+
+
+@pytest.fixture(scope="session")
 def test_dir_path(request, reuse_environment) -> Optional[Path]:
     test_dir_path = request.config.getoption("--test-dir", None)
     test_dir_path = Path(test_dir_path) if test_dir_path else None
@@ -369,9 +387,11 @@ def vm(request, ssh_key_path, known_hosts_path) -> SshNode:
     request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
 
     # Fixture cleanup.
-    trident_runcmd(
-        [TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy", "create", "--clean"]
-    )
+    cleanup_command = [TRIDENT_REPO_DIR_PATH / "bin" / "virtdeploy", "clean"]
+    virtdeploy_namespace = request.config.getoption("--virtdeploy-namespace")
+    if virtdeploy_namespace:
+        cleanup_command.extend(["--namespace", virtdeploy_namespace])
+    trident_runcmd(cleanup_command)
 
 
 def pytest_collection_modifyitems(session, config, items: List[pytest.Item]):

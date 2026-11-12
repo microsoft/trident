@@ -3,7 +3,6 @@
 set -euo pipefail
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-readonly TEST_DIR="/tmp/trident-test"
 readonly JUNIT_XML="target/trident_functional_tests.xml"
 build_output=""
 virtdeploy_namespace=""
@@ -64,7 +63,10 @@ enter_libvirt_group() {
 
 main() {
     local mode="${1:-smoke}"
+    local functional_image
     local marker_expression
+    local requested_namespace
+    local virtdeploy_network
     local -a test_paths
 
     case "$mode" in
@@ -106,9 +108,17 @@ main() {
     test -e /dev/kvm
     run virsh -c qemu:///system list --all
 
-    run python3 scripts/cloud-agent/download_functional_artifact.py
+    requested_namespace="${TRIDENT_FUNCTIONAL_NAMESPACE:-trident-functional-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$}"
+    virtdeploy_network="${TRIDENT_FUNCTIONAL_NETWORK:-$(
+        python3 -c \
+            'import hashlib, sys; digest = hashlib.sha256(sys.argv[1].encode()).digest(); print(f"10.{digest[0]}.{digest[1]}.0/24")' \
+            "$requested_namespace"
+    )}"
 
-    virtdeploy_namespace="${TRIDENT_FUNCTIONAL_NAMESPACE:-trident-functional-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$}"
+    printf '\n==> python3 scripts/cloud-agent/download_functional_artifact.py\n'
+    functional_image="$(python3 scripts/cloud-agent/download_functional_artifact.py)"
+    test -f "$functional_image"
+
     build_output="$(mktemp)"
     trap cleanup EXIT
 
@@ -119,6 +129,7 @@ main() {
         generate-functional-test-manifest \
         bin/virtdeploy
     chmod +x bin/virtdeploy
+    virtdeploy_namespace="$requested_namespace"
 
     pytest_args=(
         python3 -u -m pytest
@@ -130,9 +141,10 @@ main() {
         -v
         -o junit_logging=all
         --junitxml "$JUNIT_XML"
-        --test-dir "$TEST_DIR"
         --build-output "$build_output"
+        --functional-base-image "$functional_image"
         --keep-environment
+        --virtdeploy-network "$virtdeploy_network"
         --virtdeploy-namespace "$virtdeploy_namespace"
     )
     if [[ -n "$marker_expression" ]]; then
