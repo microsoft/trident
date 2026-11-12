@@ -916,7 +916,7 @@ pub(super) async fn run(
                 println!("{}", entry.plain());
             }
         }
-        if worker.as_ref().is_some_and(JoinHandle::is_finished) {
+        if rx.is_empty() && worker.as_ref().is_some_and(JoinHandle::is_finished) {
             if let Some(finished) = worker.take() {
                 let failure = match finished.await {
                     Ok(Ok(())) => None,
@@ -2343,6 +2343,44 @@ mod tests {
         ))));
         assert!(!model.uncertain);
         assert_eq!(model.key(enter(), false, false), Some(Action::Reboot));
+    }
+
+    /// An enqueued completion must be handled before the worker stops blocking power actions.
+    #[tokio::test]
+    async fn pending_completion_keeps_worker_active() {
+        let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
+        let worker = task::spawn(async move {
+            tx.send(Event::Response(ServicingEvent::Completed(Ok(
+                ClientCompletion {
+                    reboot: RebootDisposition::NotRequired,
+                    servicing_kind: Some(ServicingKind::CleanInstall),
+                    image_hash: None,
+                },
+            ))))
+            .await
+            .unwrap();
+            Ok::<(), Error>(())
+        });
+        time::timeout(Duration::from_secs(1), async {
+            while !worker.is_finished() {
+                task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let mut model = Model::new();
+        model.screen = Screen::Recovery;
+        model.selected = 3;
+        assert!(!rx.is_empty());
+        assert_eq!(
+            model.key(enter(), false, !(rx.is_empty() && worker.is_finished())),
+            Some(Action::BlockedPower)
+        );
+        model.event(rx.recv().await.unwrap());
+        assert!(rx.is_empty());
+        assert_eq!(model.screen, Screen::Success);
+        worker.await.unwrap().unwrap();
     }
 
     /// Standard-size result and recovery screens expose their expected actions.

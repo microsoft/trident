@@ -439,7 +439,8 @@ fn metadata(reader: impl Read) -> Result<(Metadata, Sha384Hash), Error> {
     let mut archive = Archive::new(reader.take(MAX_METADATA_BYTES));
     for entry in archive.entries().context("Invalid COSI archive")? {
         let mut entry = entry?;
-        if entry.path()?.as_ref() == Path::new(METADATA_PATH) {
+        let path = entry.path()?;
+        if path.strip_prefix("./").unwrap_or(&path) == Path::new(METADATA_PATH) {
             ensure!(
                 entry.header().entry_type().is_file(),
                 "COSI metadata must be a regular file"
@@ -747,23 +748,23 @@ mod tests {
     /// Hashes the original metadata bytes rather than re-serialized JSON.
     fn preflight_metadata_hash_matches_daemon_contract() {
         let raw = br#"{"version":"1.2","disk":{"size":4294967296},"images":[{}]}"#;
-        let inspect = |raw: &[u8]| {
+        let inspect = |raw: &[u8], path: &str| {
             let mut builder = TarBuilder::new(Vec::new());
             let mut header = tar::Header::new_gnu();
             header.set_size(raw.len() as u64);
             header.set_cksum();
-            builder
-                .append_data(&mut header, METADATA_PATH, raw)
-                .unwrap();
+            builder.append_data(&mut header, path, raw).unwrap();
             builder.finish().unwrap();
             metadata(Cursor::new(builder.into_inner().unwrap())).unwrap()
         };
-        let (parsed, hash) = inspect(raw);
+        let (parsed, hash) = inspect(raw, METADATA_PATH);
         assert_eq!(parsed.disk.unwrap().size, 4294967296);
         assert_eq!(hash, Sha384Hash::from(format!("{:x}", Sha384::digest(raw))));
+        let (_, prefixed_hash) = inspect(raw, "./metadata.json");
+        assert_eq!(hash, prefixed_hash);
 
         let padded = br#"{ "version":"1.2","disk":{"size":4294967296},"images":[{}]}"#;
-        let (_, padded_hash) = inspect(padded);
+        let (_, padded_hash) = inspect(padded, METADATA_PATH);
         assert_ne!(hash, padded_hash);
     }
 
