@@ -449,11 +449,11 @@ for resolving the template prefix.
 See the [proposed loader diff](#a1-efitreeloader-template-expansion).
 
 Compile one argument template into the signed efitreeloader. Efitreeloader,
-not HvLoader or the DLL, expands the designated `${{PREFIX}}` token before
+not HvLoader or the DLL, expands the designated `${{EFIDIR}}` token before
 invoking the child.
 
 Use `LoadedImageDevicePath` on efitreeloader's own image handle, as the
-loader already does for relative child executable paths. Set `${{PREFIX}}`
+loader already does for relative child executable paths. Set `${{EFIDIR}}`
 to the parent directory of the executing binary, not its filename, the
 firmware boot entry's path or the Linux ESP mount point.
 
@@ -462,7 +462,7 @@ firmware boot entry's path or the Linux ESP mount point.
   "load_entries": [
     {
       "path": "HvLoader.efi",
-      "args": "${{PREFIX}}\\lxhvloader.dll MSHV_ROOT=\\${{PREFIX}}\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
+      "args": "${{EFIDIR}}\\lxhvloader.dll MSHV_ROOT=\\${{EFIDIR}}\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
     },
     { "path": "second.efi" }
   ]
@@ -471,7 +471,7 @@ firmware boot entry's path or the Linux ESP mount point.
 
 ```text
 Executing efitreeloader = ESP device path + \EFI\AZLB\grubx64.efi
-  -> ${{PREFIX}} = \EFI\AZLB
+  -> ${{EFIDIR}} = \EFI\AZLB
   -> DLL argument = \EFI\AZLB\lxhvloader.dll
      MSHV_ROOT=\\EFI\AZLB\Windows
 ```
@@ -482,7 +482,7 @@ backslash and no trailing backslash; validate the supported path before
 starting any child. Missing, malformed or ambiguous loaded-image paths
 must fail closed.
 
-The exact `${{PREFIX}}` token in a child's compiled `args` is the opt-in;
+The exact `${{EFIDIR}}` token in a child's compiled `args` is the opt-in;
 there is no separate JSON flag. Resolve and validate the prefix only if at
 least one child needs expansion.
 
@@ -494,13 +494,13 @@ reserved; other text remains literal.
 ### Alternative B: runtime boot-entry prefix
 
 Use the same compiled argument template and token-based opt-in as Alternative
-A, but derive `${{PREFIX}}` from the firmware-selected executable instead
+A, but derive `${{EFIDIR}}` from the firmware-selected executable instead
 of efitreeloader's own location:
 
 ```text
 BootCurrent = 0008
   -> Boot0008 = ESP device path + \EFI\AZLB\bootx64.efi
-  -> ${{PREFIX}} = \EFI\AZLB
+  -> ${{EFIDIR}} = \EFI\AZLB
 ```
 
 Read `BootCurrent` as a binary 16-bit value and parse the corresponding
@@ -612,7 +612,7 @@ Baselines:
 ### A.1 Efitreeloader template expansion
 
 Related design: [executing-loader directory prefix](#alternative-a-preferred-executing-loader-directory-prefix).
-The build script derives an internal flag from the exact `${{PREFIX}}`
+The build script derives an internal flag from the exact `${{EFIDIR}}`
 token in each child's arguments; JSON does not expose that flag. Resolve
 the prefix from the existing loaded-image parent before starting any child
 only when at least one entry needs expansion.
@@ -706,7 +706,7 @@ index a80a59e..eff31aa 100644
 -        if !target.args.is_empty() {
 +        let expanded_args = if target.expand_boot_prefix {
 +            let prefix = prefix.as_ref().ok_or(Error::new(Status::INVALID_PARAMETER, ()))?;
-+            let expanded = target.args.to_string().replace("${{PREFIX}}", &prefix.to_string());
++            let expanded = target.args.to_string().replace("${{EFIDIR}}", &prefix.to_string());
 +            Some(CString16::try_from(expanded.as_str()).map_err(|_| Error::new(Status::INVALID_PARAMETER, ()))?)
 +        } else {
 +            None
@@ -738,7 +738,7 @@ index 7f0bfa7..9dacad9 100644
          write!(dest_file, "    ::efitreeloader_lib::LoadEntry{{\n").unwrap();
          write!(dest_file, "        path: ::uefi::cstr16!(\"{}\"),\n", entry.path.escape_debug()).unwrap();
          write!(dest_file, "        args: ::uefi::cstr16!(\"{}\"),\n", entry.args.escape_debug()).unwrap();
-+        writeln!(dest_file, "        expand_boot_prefix: {},", entry.args.contains("${{PREFIX}}")).unwrap();
++        writeln!(dest_file, "        expand_boot_prefix: {},", entry.args.contains("${{EFIDIR}}")).unwrap();
          write!(dest_file, "    }},\n").unwrap();
      }
      write!(dest_file, "]\n").unwrap();
@@ -804,13 +804,13 @@ index 51ee8af..3404e42 100755
 -            "path": "\\\\efi\\\\HvLoader.efi",
 -            "args": "\\\\efi\\\\lxhvloader.dll MSHV_ROOT=\\\\\\\\efi\\\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
 +            "path": "HvLoader.efi",
-+            "args": "${{PREFIX}}\\lxhvloader.dll MSHV_ROOT=\\${{PREFIX}}\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
++            "args": "${{EFIDIR}}\\lxhvloader.dll MSHV_ROOT=\\${{EFIDIR}}\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_SEV_SNP=TRUE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
          },
          {
              "path": "second.efi"
 ```
 
-The quoted heredoc preserves the literal `${{PREFIX}}` token and JSON
+The quoted heredoc preserves the literal `${{EFIDIR}}` token and JSON
 backslashes; neither shell expansion nor firmware-variable reads happen
 during the build. The same-file check accommodates case-insensitive ESP
 paths where `efi/BOOT` and `EFI/BOOT` already name the same directory.
