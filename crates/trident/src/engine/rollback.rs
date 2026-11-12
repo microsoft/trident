@@ -1,4 +1,7 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Error};
 use chrono::Utc;
@@ -8,7 +11,7 @@ use log::{debug, error, info, trace, warn};
 use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, virt};
 use trident_api::{
     constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
-    constants::ROOT_MOUNT_POINT_PATH,
+    constants::{ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH},
     error::{
         HealthChecksError, InternalError, ReportError, ServicingError, TridentError,
         TridentResultExt,
@@ -398,18 +401,42 @@ fn run_health_checks(
     Ok(BootValidationResult::ValidBootProvisioned)
 }
 
-/// Returns the current root device path, i.e., the path of the root block device that the host
-/// booted from. The path is given in its canonical form.
+/// Select /usr when its backing device is A/B-capable, as on ACL with a shared root.
+/// Boot validation has no image metadata, so select from the persisted storage graph.
+fn boot_from_usr(ctx: &EngineContext) -> bool {
+    ctx.spec
+        .storage
+        .filesystems
+        .iter()
+        .find(|fs| fs.mount_point_path() == Some(Path::new(USR_MOUNT_POINT_PATH)))
+        .and_then(|fs| fs.device_id.as_ref())
+        .and_then(|id| ctx.storage_graph.has_ab_capabilities(id))
+        .unwrap_or(false)
+}
+
+/// Returns the current OS device path in its canonical form, using /usr for usr A/B layouts.
 fn get_current_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentError> {
-    let current_root_device_path = if ctx.storage_graph.root_fs_is_verity() {
-        let root_device_id = ctx
-            .get_root_block_device_id()
-            .structured(ServicingError::GetRootBlockDeviceId)?;
+    let use_usr = boot_from_usr(ctx);
+    let (device_id, is_verity) = if use_usr {
+        (
+            ctx.get_usr_block_device_id(),
+            ctx.storage_graph.usr_fs_is_verity(),
+        )
+    } else {
+        (
+            ctx.get_root_block_device_id(),
+            ctx.storage_graph.root_fs_is_verity(),
+        )
+    };
+    let current_root_device_path = if is_verity {
+        let root_device_id = device_id.structured(ServicingError::GetRootBlockDeviceId)?;
         debug!("Root device ID: {}", root_device_id);
 
         // Fetch the actual verity data device path in the system
         get_verity_data_device_path(ctx, &root_device_id)
             .structured(ServicingError::GetRootVerityDataDevPath)?
+    } else if use_usr {
+        block_devices::get_usr_device_path()?
     } else {
         block_devices::get_root_device_path()?
     };
@@ -461,15 +488,22 @@ fn get_current_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentE
     Ok(root_path_canonical)
 }
 
-/// Returns the path of the root device that the host was expected to boot from. The path is given
-/// in its canonical form.
+/// Returns the expected OS device path in its canonical form, using /usr for usr A/B layouts.
 fn get_expected_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentError> {
-    // Get the block device ID of root
-    let root_device_id = ctx
-        .get_root_block_device_id()
-        .structured(ServicingError::GetRootBlockDeviceId)?;
+    let (device_id, is_verity) = if boot_from_usr(ctx) {
+        (
+            ctx.get_usr_block_device_id(),
+            ctx.storage_graph.usr_fs_is_verity(),
+        )
+    } else {
+        (
+            ctx.get_root_block_device_id(),
+            ctx.storage_graph.root_fs_is_verity(),
+        )
+    };
+    let root_device_id = device_id.structured(ServicingError::GetRootBlockDeviceId)?;
 
-    let expected_root_path = if ctx.storage_graph.root_fs_is_verity() {
+    let expected_root_path = if is_verity {
         // If root is on verity, fetch the block device path of the verity data device. Because
         // get_block_device_path(), which is called eventually, already has the logic for
         // determining the update volume, i.e. volume we expect to have booted from, getting the
@@ -1024,6 +1058,80 @@ mod tests {
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap(),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
+        );
+
+        // ACL keeps / shared and switches the A/B volume backing /usr instead.
+        ctx.spec.storage.verity[0].name = "usr".into();
+        ctx.spec.storage.disks[0].partitions.push(Partition {
+            id: "shared-root".into(),
+            size: 4096.into(),
+            partition_type: PartitionType::Root,
+            uuid: None,
+            label: None,
+        });
+        ctx.partition_paths
+            .insert("shared-root".into(), PathBuf::from("/dev/shared-root"));
+        ctx.spec.storage.filesystems[0]
+            .mount_point
+            .as_mut()
+            .unwrap()
+            .path = PathBuf::from("/usr");
+        ctx.spec.storage.filesystems.push(FileSystem {
+            device_id: Some("shared-root".into()),
+            mount_point: Some(MountPoint {
+                path: PathBuf::from("/"),
+                options: MountOptions::empty(),
+            }),
+            source: FileSystemSource::Image,
+            is_esp: false,
+        });
+
+        for use_verity in [true, false] {
+            if !use_verity {
+                ctx.spec.storage.filesystems[0].device_id = Some("root-data".into());
+                ctx.spec.storage.verity.clear();
+            }
+            ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
+            ctx.servicing_type = ServicingType::CleanInstall;
+            assert_eq!(
+                get_expected_root_device_path(&ctx).unwrap(),
+                PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
+            );
+
+            for servicing_type in [ServicingType::AbUpdate, ServicingType::ManualRollbackAb] {
+                ctx.servicing_type = servicing_type;
+                for (active, expected, wrong) in [
+                    (AbVolumeSelection::VolumeA, 3, 2),
+                    (AbVolumeSelection::VolumeB, 2, 3),
+                ] {
+                    ctx.ab_active_volume = Some(active);
+                    let expected_path = get_expected_root_device_path(&ctx).unwrap();
+                    assert_eq!(
+                        expected_path,
+                        PathBuf::from(format!("{TEST_DISK_DEVICE_PATH}{expected}"))
+                    );
+                    assert!(!compare_root_device_paths(
+                        PathBuf::from(format!("{TEST_DISK_DEVICE_PATH}{wrong}")),
+                        expected_path,
+                    )
+                    .unwrap());
+                }
+            }
+        }
+
+        // A separate /usr that is not A/B-capable must not replace root validation.
+        ctx.spec
+            .storage
+            .ab_update
+            .as_mut()
+            .unwrap()
+            .volume_pairs
+            .retain(|pair| pair.id != "trident-overlay");
+        ctx.spec.storage.filesystems[0].device_id = Some("trident-overlay-a".into());
+        ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
+        assert_eq!(
+            get_expected_root_device_path(&ctx).unwrap(),
+            PathBuf::from("/dev/shared-root")
         );
     }
 }
