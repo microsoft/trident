@@ -198,7 +198,7 @@ pub(crate) fn finalize_update(
     engine::persist_background_log_and_metrics(
         &state.host_status().spec.trident.datastore_path,
         None,
-        state.host_status().servicing_state,
+        &state.host_status().servicing_state,
     );
 
     if !state

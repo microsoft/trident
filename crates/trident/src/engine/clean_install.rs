@@ -87,7 +87,7 @@ pub(crate) fn clean_install(
         engine::persist_background_log_and_metrics(
             &state.host_status().spec.trident.datastore_path,
             Some(root_mount.path()),
-            state.host_status().servicing_state,
+            &state.host_status().servicing_state,
         );
 
         debug!("Unmounting '{}'", root_mount.path().display());
@@ -289,6 +289,7 @@ pub(crate) fn finalize_clean_install(
     clean_install_start_time: Option<Instant>,
     is_stream_image: bool,
 ) -> Result<ExitKind, TridentError> {
+    state.ensure_supported_servicing_state()?;
     info!("Finalizing clean install");
 
     let ctx = EngineContext::new(EngineContextParams {
@@ -358,7 +359,7 @@ pub(crate) fn finalize_clean_install(
         engine::persist_background_log_and_metrics(
             &state.host_status().spec.trident.datastore_path,
             Some(new_root.path()),
-            state.host_status().servicing_state,
+            &state.host_status().servicing_state,
         );
     }
 

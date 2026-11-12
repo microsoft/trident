@@ -45,7 +45,7 @@ pub enum BootValidationResult {
 pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
     info!("Validating whether host correctly booted from target OS image");
 
-    let current_servicing_state = datastore.host_status().servicing_state;
+    let current_servicing_state = datastore.host_status().servicing_state.clone();
     let ab_active_volume = match current_servicing_state {
         // For *Finalized, use the active volume set in Host Status
         ServicingState::AbUpdateFinalized
@@ -104,7 +104,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         compare_device_paths(current_device_path.clone(), expected_device_path.clone())
             .message("Host failed to boot from expected boot device")?;
 
-    match (booted_to_expected_device, current_servicing_state) {
+    match (booted_to_expected_device, &current_servicing_state) {
         (true, ServicingState::CleanInstallFinalized)
         | (true, ServicingState::AbUpdateFinalized)
         | (true, ServicingState::ManualRollbackAbFinalized) => {
@@ -197,7 +197,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             // No other states should happen, return error
             error!("Unexpected status: {current_servicing_state:?}");
             return Err(TridentError::new(InternalError::UnexpectedServicingState {
-                state,
+                state: state.clone(),
             }));
         }
     }
@@ -218,8 +218,12 @@ fn commit_finalized_on_expected_device(
         ServicingType::CleanInstall | ServicingType::AbUpdate | ServicingType::ManualRollbackAb
     ) {
         // Run health checks to ensure the system is in the desired state
-        let health_check_status =
-            run_health_checks(ctx, datastore, current_servicing_state, servicing_type)?;
+        let health_check_status = run_health_checks(
+            ctx,
+            datastore,
+            current_servicing_state.clone(),
+            servicing_type,
+        )?;
         if let BootValidationResult::ValidBootHealthCheckFailed(err) = health_check_status {
             if servicing_type == ServicingType::AbUpdate {
                 return Ok(BootValidationResult::ValidBootHealthCheckFailed(err));
@@ -289,7 +293,7 @@ fn commit_finalized_on_expected_device(
         }
     }
 
-    match datastore.host_status().servicing_state {
+    match &datastore.host_status().servicing_state {
         ServicingState::CleanInstallFinalized => {
             info!("Clean install of target OS succeeded");
             tracing::info!(metric_name = "clean_install_success", value = true);
@@ -307,7 +311,7 @@ fn commit_finalized_on_expected_device(
         // TODO: When/If `UpdateAndReboot` is used, this should be updated.
         state => {
             return Err(TridentError::new(InternalError::UnexpectedServicingState {
-                state,
+                state: state.clone(),
             }));
         }
     }

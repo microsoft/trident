@@ -63,7 +63,7 @@ impl StatusService for TridentServer {
                 DataStore::open(&data_store_path).message("Failed to open datastore")?;
 
             Ok(GetServicingStateResponse {
-                state: datastore::servicing_state_from_datastore(&datastore).into(),
+                state: datastore::servicing_state_from_datastore(&datastore)?.into(),
             })
         })
         .await
