@@ -2383,6 +2383,51 @@ mod tests {
         worker.await.unwrap().unwrap();
     }
 
+    /// An uncertain terminal event queued behind a full batch must block shutdown.
+    #[tokio::test]
+    async fn pending_disconnect_cannot_release_power_guard() {
+        let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
+        let worker = task::spawn(async move {
+            for _ in 0..EVENT_CAPACITY {
+                tx.send(Event::Preparing("Still writing".into()))
+                    .await
+                    .unwrap();
+            }
+            tx.send(Event::Error {
+                details: "gRPC stream disconnected".into(),
+                uncertain: true,
+            })
+            .await
+            .unwrap();
+            Ok::<(), Error>(())
+        });
+        for _ in 0..EVENT_CAPACITY {
+            rx.recv().await.unwrap();
+        }
+        time::timeout(Duration::from_secs(1), async {
+            while !worker.is_finished() {
+                task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let mut model = Model::new();
+        model.screen = Screen::Recovery;
+        model.selected = 3;
+        assert!(!rx.is_empty());
+        assert_eq!(
+            model.key(enter(), false, !(rx.is_empty() && worker.is_finished())),
+            Some(Action::BlockedPower)
+        );
+        model.event(rx.recv().await.unwrap());
+        assert!(model.uncertain);
+        model.screen = Screen::Recovery;
+        model.selected = 3;
+        assert_eq!(model.key(enter(), false, false), Some(Action::BlockedPower));
+        worker.await.unwrap().unwrap();
+    }
+
     /// Standard-size result and recovery screens expose their expected actions.
     #[test]
     fn screens_render_at_80_by_24_with_visible_actions() {
