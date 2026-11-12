@@ -8,7 +8,10 @@ use anyhow::{bail, Context, Error};
 use filesystem::FileSystemData;
 use log::{debug, trace};
 
-use osutils::osrelease::{Distro, OsRelease};
+use osutils::{
+    container,
+    osrelease::{Distro, OsRelease},
+};
 use trident_api::{
     config::{HostConfiguration, Partition, VerityDevice},
     constants::{
@@ -155,7 +158,12 @@ impl EngineContext {
                 )))?
                 .to_path_buf();
 
-        let os_release = OsRelease::read().structured(InternalError::Internal(
+        let os_release = if container::is_running_in_container()? {
+            OsRelease::read_root(container::get_host_root_path()?)
+        } else {
+            OsRelease::read()
+        }
+        .structured(InternalError::Internal(
             "Failed to read OS release information",
         ))?;
         Ok(Self {
