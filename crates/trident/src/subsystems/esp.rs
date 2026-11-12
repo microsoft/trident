@@ -473,9 +473,17 @@ fn copy_file_artifacts(
     Ok(())
 }
 
-/// Before reboot, selects A for clean install or the manual A/B rollback target.
-/// Optimistic A/B updates select the candidate before reboot; conservative mode selects
-/// the retained slot before reboot and the validated target at commit. Other cases return None.
+/// Selects the slot to copy into `EFI/BOOT`; `None` leaves fallback unchanged.
+///
+/// | Servicing state | Optimistic | Conservative |
+/// | --- | --- | --- |
+/// | CleanInstallStaged | A | A |
+/// | AbUpdateStaged | Candidate | Retained |
+/// | AbUpdateFinalized | None | Validated target |
+/// | ManualRollbackAbStaged | Rollback target | Rollback target |
+///
+/// Disabled fallback and unlisted states return `None`.
+/// A missing active slot defaults to A in the two A/B staging cases.
 fn find_uefi_fallback_source_dir_name(
     ctx: &EngineContext,
     servicing_state: ServicingState,
