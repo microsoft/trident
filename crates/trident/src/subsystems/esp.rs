@@ -72,9 +72,19 @@ impl Subsystem for EspSubsystem {
     }
 }
 
-/// Copies the selected slot to fallback; MSHV copies its complete nested bundle.
-/// Conservative A/B fallback follows the retained slot until commit; optimistic
-/// fallback follows the candidate before reboot. Disabled fallback is unchanged.
+/// Configures UEFI fallback by copying boot files to the UEFI fallback folder
+/// based on the UEFI fallback mode and servicing state.
+///
+/// UEFI fallback is handled in two stages:
+/// 1. During finalize:
+///    * Clean install copies the target OS boot files (always volume A).
+///    * A/B update copies the candidate in optimistic mode or the retained slot
+///      in conservative mode.
+///    * Manual A/B rollback copies the rollback target in either enabled mode.
+/// 2. During A/B update commit, after boot validation, conservative mode copies
+///    the target OS boot files. Optimistic mode needs no further copy.
+///
+/// Disabled fallback is unchanged. MSHV copies the complete nested bundle.
 pub fn set_uefi_fallback_contents(
     ctx: &EngineContext,
     servicing_state: ServicingState,
