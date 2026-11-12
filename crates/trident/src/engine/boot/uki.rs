@@ -233,7 +233,8 @@ fn remove_uki_and_addons(path: &Path) -> Result<(), Error> {
 /// 2. Non-trident-managed (original install) UKIs, but only when a
 ///    trident-managed UKI for the *active* slot+os-index already exists —
 ///    meaning trident has taken over boot management and the original install
-///    UKI is no longer the sole rollback.
+///    UKI is no longer the sole rollback, and only for OS index 0, which owns it.
+/// Associated addon directories are removed with each selected UKI.
 pub fn cleanup_ukis_before_staging(
     ctx: &EngineContext,
     mount_point: &Path,
@@ -247,6 +248,8 @@ pub fn cleanup_ukis_before_staging(
     Ok(())
 }
 
+/// Lists the UKIs selected by pre-staging cleanup without modifying the ESP.
+/// Capacity preflight uses the same selection to credit UKIs and their addon directories.
 pub(crate) fn find_ukis_to_remove_before_staging(
     ctx: &EngineContext,
     esp_uki_directory: &Path,
@@ -262,7 +265,7 @@ pub(crate) fn find_ukis_to_remove_before_staging(
     let active_suffix = format!("{active_slot}.efi");
     let trident_ukis = enumerate_trident_managed_ukis(esp_uki_directory)?;
 
-    // 1. Remove trident-managed UKIs for the target slot+os-index
+    // 1. Select trident-managed UKIs for the target slot+os-index
     //    (all update indices, e.g. vmlinuz-100-azla0.efi, vmlinuz-102-azla0.efi).
     for (_index, suffix, path) in &trident_ukis {
         if *suffix == target_suffix {
@@ -270,7 +273,7 @@ pub(crate) fn find_ukis_to_remove_before_staging(
         }
     }
 
-    // 2. Remove non-trident-managed UKIs only if:
+    // 2. Select non-trident-managed UKIs only if:
     //    - This is install_index 0 (the OS that placed the original UKI), AND
     //    - Trident already manages the active slot (proving the original is
     //      superseded as rollback).

@@ -1485,6 +1485,7 @@ async fn preview_status_validation_and_rollback_use_domain_types() {
     assert_eq!(captured.validation_yaml.len(), 2);
 }
 
+/// Preview decoding retains known recovery states and preserves unknown wire values.
 #[cfg(feature = "preview")]
 #[tokio::test]
 async fn preview_status_enums_preserve_known_unspecified_and_unknown_values() {

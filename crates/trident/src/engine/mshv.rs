@@ -9,6 +9,7 @@ use trident_api::{
 
 use super::{boot, EngineContext};
 
+/// Builds an input error attributed to the slot-owned MSHV mode parameter.
 fn unsupported(reason: &str) -> TridentError {
     TridentError::new(InvalidInputError::InvalidInternalParameter {
         name: MSHV_SLOT_ESP_PAYLOAD.into(),
@@ -16,10 +17,12 @@ fn unsupported(reason: &str) -> TridentError {
     })
 }
 
+/// Returns whether the configuration opts into slot-owned MSHV payloads.
 pub(crate) fn enabled(spec: &HostConfiguration) -> bool {
     spec.internal_params.get_flag(MSHV_SLOT_ESP_PAYLOAD)
 }
 
+/// Rejects enabling or disabling slot-owned MSHV on an established installation.
 pub(crate) fn validate_transition(
     previous: &HostConfiguration,
     requested: &HostConfiguration,
@@ -32,6 +35,8 @@ pub(crate) fn validate_transition(
     Ok(())
 }
 
+/// Checks image, deployment, encryption, and mode-transition restrictions when MSHV is enabled.
+/// Configurations without slot-owned MSHV are left to ordinary validation.
 pub(crate) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentError> {
     if !enabled(&ctx.spec) {
         return Ok(());
@@ -71,7 +76,8 @@ pub(crate) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
 }
 
 /// Hypervisor identity-validation hook for the expected installation and slot.
-/// Currently assumes success until runtime identity detection is implemented.
+/// Currently always succeeds; enabled configurations only log the expected slot.
+/// It does not inspect the running hypervisor or validate payload contents.
 pub(crate) fn validate_active_hypervisor(
     spec: &HostConfiguration,
     install_index: usize,
@@ -94,6 +100,7 @@ pub(crate) fn validate_active_hypervisor(
 mod tests {
     use super::*;
 
+    /// Established installations may retain their mode, but may not switch modes.
     #[test]
     fn rejects_mode_changes_but_allows_matching_installation_modes() {
         let ordinary = HostConfiguration::default();
@@ -105,6 +112,7 @@ mod tests {
         assert!(validate_transition(&mshv, &mshv).is_ok());
     }
 
+    /// MSHV restrictions apply only after opt-in and reject unsupported deployment combinations.
     #[test]
     fn rejects_unsupported_mshv_images_without_affecting_other_images() {
         let mut ctx = EngineContext {

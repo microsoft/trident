@@ -290,6 +290,8 @@ impl Trident {
         Ok(())
     }
 
+    /// Runs an operation and records errors, preserving the original validation
+    /// failure if recovery after an A/B health or hypervisor failure returns an error.
     fn execute_and_record_error<F, T>(
         &mut self,
         datastore: &mut DataStore,
@@ -298,9 +300,8 @@ impl Trident {
     where
         F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
-        // AbUpdateHealthCheckFailed is a special case where we would like
-        // to preserve the last error across any recovery. This aids in
-        // surfacing the original error.
+        // Preserve the original health/hypervisor failure if recovery returns an error,
+        // rather than replacing it with a secondary recovery error.
         debug!(
             "Execute and record error with servicing state: {:?} and last error: {:?}",
             datastore.host_status().servicing_state,
@@ -607,6 +608,8 @@ impl Trident {
         })
     }
 
+    /// Adopts an untracked ACL host when needed, then stages/finalizes the requested update.
+    /// Adoption requires matching MSHV modes and a bootstrapped AZLA before persisting status.
     pub fn update(
         &mut self,
         datastore: &mut DataStore,
@@ -636,6 +639,7 @@ impl Trident {
                         .structured(InvalidInputError::DeriveHostConfiguration)
                         .message("Failed to initialize host status for ACL")?;
 
+                    // The requested mode must match the discovered BOOT payload before adoption.
                     engine::mshv::validate_transition(&initial_host_status.spec, &host_config)?;
 
                     // Mirror offline-initialize's bootstrap: ACL lazy adoption derives
@@ -660,6 +664,7 @@ impl Trident {
                     let esp_path = container::get_host_relative_path(esp_path.to_path_buf())
                         .message("Failed to resolve ESP path relative to host for ACL")?;
 
+                    // Copy the complete nested bundle for MSHV, not just ordinary boot files.
                     let slot_mshv = engine::mshv::enabled(&initial_host_status.spec);
                     esp::bootstrap_azla_from_fallback(&esp_path, slot_mshv)
                         .structured(InvalidInputError::InvalidBootConfiguration)
@@ -810,12 +815,13 @@ impl Trident {
         self.install(datastore, Operations::all(), false, Some(image))
     }
 
+    /// Validates finalized servicing or automatic recovery and reports its reboot disposition.
+    /// Only a fully provisioned result is reported to the orchestrator as success.
     pub fn commit(
         &mut self,
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
-        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
-        // re-evaluate the current state of the host.
+        // Re-evaluate finalized boots and recovery after health or hypervisor validation failure.
         let servicing_state = datastore.host_status().servicing_state;
         if !matches!(
             servicing_state,
@@ -847,6 +853,7 @@ impl Trident {
             )
         });
 
+        // A validation result requesting rollback is not an orchestrator success.
         if matches!(
             rollback_result,
             Ok(rollback::BootValidationResult::ValidBootProvisioned)
@@ -865,6 +872,7 @@ impl Trident {
             }
             Ok(rollback::BootValidationResult::InvalidHypervisor(e))
             | Ok(rollback::BootValidationResult::ValidBootHealthCheckFailed(e)) => {
+                // The caller must reboot to complete automatic recovery.
                 debug!("Boot validation requires rollback: {e:?}");
                 Ok((ExitKind::NeedsReboot, servicing_type))
             }

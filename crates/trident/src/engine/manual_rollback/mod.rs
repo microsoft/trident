@@ -91,6 +91,8 @@ pub fn check_rollback(
 /// `(ExitKind::Done, ServicingType::NoActiveServicing)` rather than a bare
 /// `ExitKind::Done` that's indistinguishable from a real rollback at the
 /// gRPC layer (see `ServicingResponse.servicing_kind` in servicing.proto).
+///
+/// Rejects rollback targets that change the installation's slot-owned MSHV mode before staging.
 pub fn execute_rollback(
     datastore: &mut DataStore,
     requested_rollback_kind: ManualRollbackRequestKind,

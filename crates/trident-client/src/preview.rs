@@ -49,6 +49,7 @@ pub enum ServicingState {
     ManualRollbackAbFinalized,
     Provisioned,
     AbUpdateHealthCheckFailed,
+    /// The trial OS booted, but hypervisor validation failed and automatic recovery is pending.
     AbUpdateHypervisorCheckFailed,
     Unknown(i32),
 }
