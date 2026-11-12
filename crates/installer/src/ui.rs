@@ -45,6 +45,7 @@ use crate::{
 };
 
 const FRAME_INTERVAL: Duration = Duration::from_millis(100);
+const INPUT_EVENTS_PER_FRAME: usize = 256;
 const REBOOT_DELAY: Duration = Duration::from_secs(5);
 const EVENT_CAPACITY: usize = 64;
 const LOG_CAPACITY: usize = 500;
@@ -1016,7 +1017,10 @@ pub(super) async fn run(
                 }
                 printed_screen = Some((model.screen, demo_shell.is_some(), model.verbosity_open));
             }
-            if event::poll(Duration::ZERO)? {
+            for _ in 0..INPUT_EVENTS_PER_FRAME {
+                if !event::poll(Duration::ZERO)? {
+                    break;
+                }
                 let event = event::read()?;
                 if let TerminalEvent::Key(key) = event {
                     if let Some(shell) = &mut demo_shell {
@@ -1034,6 +1038,7 @@ pub(super) async fn run(
                             Action::Shell if scenario.is_some() => {
                                 demo_shell = Some(DemoShell::default());
                                 printed_screen = None;
+                                break;
                             }
                             Action::Shell => {
                                 if let Some(display) = &mut display {
@@ -1044,6 +1049,7 @@ pub(super) async fn run(
                                     OpenOptions::new().read(true).write(true).open("/dev/tty")?;
                                 shell =
                                     Some(task::spawn_blocking(move || os_terminal::shell(&tty)));
+                                break;
                             }
                             Action::Start(request) => {
                                 if worker.is_some() {
