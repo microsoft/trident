@@ -53,14 +53,14 @@ impl Subsystem for EspSubsystem {
 
     /// Applies slot-owned MSHV support restrictions before ESP servicing.
     fn validate_host_config(&self, ctx: &EngineContext) -> Result<(), TridentError> {
-        crate::engine::mshv::validate_configuration(ctx)
+        mshv::validate_configuration(ctx)
     }
 
     /// Revalidates MSHV restrictions before file-based ESP deployment.
     #[tracing::instrument(name = "esp_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
         // Recheck constraints even if prior validation was skipped.
-        crate::engine::mshv::validate_configuration(ctx)?;
+        mshv::validate_configuration(ctx)?;
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized.
 
