@@ -21,6 +21,23 @@ const FILES: &[&str] = &[
 
 const SPACE_RESERVE: u64 = 1024 * 1024;
 
+/// Detects slot-owned MSHV in BOOT, requiring the complete bundle when markers exist.
+/// No markers means mode off; incomplete bundles and inspection errors fail discovery.
+pub(crate) fn has_slot_mshv_bundle(esp_path: &Path) -> Result<bool> {
+    let bundle = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+    for marker in ["HvLoader.efi", "lxhvloader.dll", "Windows"] {
+        match fs::symlink_metadata(bundle.join(marker)) {
+            Ok(_) => {
+                validate_bundle(&bundle)?;
+                return Ok(true);
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context("Failed to inspect MSHV BOOT payload"),
+        }
+    }
+    Ok(false)
+}
+
 /// Checks allowed entries without requiring every payload file to be present.
 /// Replacement destinations may also contain known `.new` and `.old` files.
 fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<()> {

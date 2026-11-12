@@ -365,8 +365,8 @@ fn copy_file_artifacts(
     let slot_mshv = crate::engine::mshv::enabled(&ctx.spec);
     let source_bundle = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
     let boot_files = if slot_mshv {
-        mshv::slot::validate_bundle(&source_bundle)?;
-        mshv::slot::preflight_staging(
+        boot::mshv::validate_bundle(&source_bundle)?;
+        boot::mshv::preflight_staging(
             ctx,
             temp_mount_dir,
             &path::join_relative(mount_point, &ctx.esp_mount_path),
@@ -404,7 +404,7 @@ fn copy_file_artifacts(
 
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
     let grub_noprefix = if slot_mshv {
-        mshv::slot::copy_bundle(&source_bundle, &esp_dir_path)?;
+        boot::mshv::copy_bundle(&source_bundle, &esp_dir_path)?;
         false
     } else {
         copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
@@ -616,7 +616,7 @@ fn copy_boot_files_for_uefi_fallback(
         uefi_fallback_path.display()
     );
     let result = if slot_mshv {
-        mshv::slot::replace_bundle(&source_esp_dir_path, &uefi_fallback_path)
+        boot::mshv::replace_bundle(&source_esp_dir_path, &uefi_fallback_path)
     } else {
         replace_boot_files(&source_esp_dir_path, &uefi_fallback_path)
     };
@@ -732,23 +732,6 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Detects slot-owned MSHV in BOOT, requiring the complete bundle when markers exist.
-/// No markers means mode off; incomplete bundles and inspection errors fail discovery.
-pub(crate) fn has_slot_mshv_bundle(esp_path: &Path) -> Result<bool, Error> {
-    let bundle = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-    for marker in ["HvLoader.efi", "lxhvloader.dll", "Windows"] {
-        match fs::symlink_metadata(bundle.join(marker)) {
-            Ok(_) => {
-                mshv::slot::validate_bundle(&bundle)?;
-                return Ok(true);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error).context("Failed to inspect MSHV BOOT payload"),
-        }
-    }
-    Ok(false)
-}
-
 /// Ensures `EFI/AZLA` exists on the ESP, seeding it from the `EFI/BOOT`
 /// fallback loader if it's missing. Used by both offline-initialize and ACL
 /// lazy-adoption bootstrap, so a freshly-derived HostStatus is always backed
@@ -758,9 +741,9 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path, slot_mshv: bool) -> Result<
     let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
     let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
     if slot_mshv {
-        mshv::slot::validate_bundle(&boot_esp_path)?;
+        boot::mshv::validate_bundle(&boot_esp_path)?;
         if azla_esp_path.exists() {
-            return mshv::slot::validate_bundle(&azla_esp_path);
+            return boot::mshv::validate_bundle(&azla_esp_path);
         }
     }
     trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
@@ -784,8 +767,8 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path, slot_mshv: bool) -> Result<
             ))?;
         }
         let copy_result = if slot_mshv {
-            mshv::slot::preflight_bootstrap(&boot_esp_path, esp_path)?;
-            mshv::slot::copy_bundle(&boot_esp_path, &azla_tmp_path)
+            boot::mshv::preflight_bootstrap(&boot_esp_path, esp_path)?;
+            boot::mshv::copy_bundle(&boot_esp_path, &azla_tmp_path)
         } else {
             replace_boot_files(&boot_esp_path, &azla_tmp_path)
         };

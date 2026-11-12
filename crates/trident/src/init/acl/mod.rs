@@ -26,7 +26,7 @@ use trident_api::{
     BlockDeviceId,
 };
 
-use crate::subsystems::esp;
+use crate::engine::boot::mshv;
 
 const ACL_ESP_MOUNT_POINT: &str = "/boot";
 
@@ -304,7 +304,7 @@ fn inner_initial_host_status(
         partition_paths,
         ..Default::default()
     };
-    if esp::has_slot_mshv_bundle(esp_path)? {
+    if mshv::has_slot_mshv_bundle(esp_path)? {
         host_status
             .spec
             .internal_params
