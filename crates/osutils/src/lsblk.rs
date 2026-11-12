@@ -25,6 +25,10 @@ pub struct BlockDevice {
     /// Device name
     pub name: String,
 
+    /// Kernel device name from `KNAME`, possibly prefixed with `/dev/`.
+    #[serde(rename = "kname")]
+    pub kernel_name: String,
+
     /// Full device path, including the mapper directory for device-mapper nodes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<PathBuf>,
@@ -143,11 +147,7 @@ impl BlockDevice {
     ///
     /// Stops at the first holder. Inspection failures return errors, not `false`.
     pub fn has_holders_recursive(&self) -> Result<bool, Error> {
-        let path = fs::canonicalize(self.device_path())?;
-        let name = path
-            .file_name()
-            .context("Block device has no kernel name")?;
-        if SysfsBlockDevice::new(Path::new("/sys/class/block").join(name)).has_holders()? {
+        if SysfsBlockDevice::new(self.sysfs_path()).has_holders()? {
             return Ok(true);
         }
         for child in &self.children {
@@ -168,9 +168,16 @@ impl BlockDevice {
         }
     }
 
-    /// Returns this device's path under `/sys/class/block`.
+    /// Returns the reported kernel name, such as `dm-0`, without a path prefix.
+    pub fn kernel_name(&self) -> &str {
+        self.kernel_name
+            .rsplit_once('/')
+            .map_or(self.kernel_name.as_str(), |(_, name)| name)
+    }
+
+    /// Returns this device's kernel-name path under `/sys/class/block`.
     pub fn sysfs_path(&self) -> PathBuf {
-        Path::new("/sys/class/block").join(self.device_file_name())
+        Path::new("/sys/class/block").join(self.kernel_name())
     }
 }
 
@@ -940,18 +947,46 @@ mod tests {
     #[test]
     fn mapped_device_uses_the_reported_full_path() {
         let devices = parse_lsblk_output(
-            r#"{"blockdevices":[{"name":"encrypted-volume","path":"/dev/mapper/encrypted-volume","type":"crypt","size":4096}]}"#,
+            r#"{"blockdevices":[{"name":"encrypted-volume","kname":"dm-0","path":"/dev/mapper/encrypted-volume","type":"crypt","size":4096}]}"#,
         ).unwrap();
         assert_eq!(
             devices[0].device_path(),
             Path::new("/dev/mapper/encrypted-volume")
         );
+        assert_eq!(devices[0].device_file_name(), "encrypted-volume");
+        assert_eq!(devices[0].kernel_name(), "dm-0");
+        assert_eq!(devices[0].sysfs_path(), Path::new("/sys/class/block/dm-0"));
+    }
+
+    #[test]
+    fn kernel_name_and_sysfs_path_use_reported_names_without_device_reads() {
+        for (reported, expected) in [
+            ("sda", "sda"),
+            ("/dev/sda", "sda"),
+            ("nvme0n1", "nvme0n1"),
+            ("/dev/nvme0n1", "nvme0n1"),
+            ("dm-0", "dm-0"),
+            ("/dev/dm-0", "dm-0"),
+        ] {
+            let device = BlockDevice {
+                name: "friendly-alias".into(),
+                kernel_name: reported.into(),
+                path: Some("/nonexistent-device-node".into()),
+                ..Default::default()
+            };
+            assert_eq!(device.kernel_name(), expected);
+            assert_eq!(
+                device.sysfs_path(),
+                Path::new("/sys/class/block").join(expected)
+            );
+        }
     }
 
     #[test]
     fn test_parse_lsblk_output() {
         let expected_block_device_list = vec![BlockDevice {
             name: "/dev/sda".into(),
+            kernel_name: "/dev/sda".into(),
             fstype: None,
             fssize: None,
             fsuuid: None,
@@ -965,6 +1000,7 @@ mod tests {
             children: vec![
                 BlockDevice {
                     name: "/dev/sda1".into(),
+                    kernel_name: "/dev/sda1".into(),
                     fstype: Some("vfat".into()),
                     fssize: Some(ByteCount(52293632)),
                     fsuuid: Some(OsUuid::Relaxed("6AA2-09D2".to_string())),
@@ -983,6 +1019,7 @@ mod tests {
                 },
                 BlockDevice {
                     name: "/dev/sda2".into(),
+                    kernel_name: "/dev/sda2".into(),
                     fstype: Some("ext4".into()),
                     fssize: Some(ByteCount(4143841280)),
                     fsuuid: Some("f3c65403-dafc-4dbf-873a-c17d6fb98a2f".into()),
@@ -1001,6 +1038,7 @@ mod tests {
                 },
                 BlockDevice {
                     name: "/dev/sda3".into(),
+                    kernel_name: "/dev/sda3".into(),
                     fstype: None,
                     fssize: None,
                     fsuuid: None,
@@ -1019,6 +1057,7 @@ mod tests {
                 },
                 BlockDevice {
                     name: "/dev/sda4".into(),
+                    kernel_name: "/dev/sda4".into(),
                     fstype: Some("swap".into()),
                     fssize: None,
                     fsuuid: Some("91180e8c-096a-43d8-88b2-c24a5b5eaee6".into()),
@@ -1037,6 +1076,7 @@ mod tests {
                 },
                 BlockDevice {
                     name: "/dev/sda5".into(),
+                    kernel_name: "/dev/sda5".into(),
                     fstype: Some("ext4".into()),
                     fssize: Some(ByteCount(92500992)),
                     fsuuid: Some("2253b2d0-62db-4ae9-8343-4023a361a9c3".into()),

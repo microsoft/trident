@@ -803,6 +803,7 @@ mod functional_test {
         let block_device = lsblk::get(&disk_bus_path).unwrap();
         let expected_block_device = BlockDevice {
             name: TEST_DISK_DEVICE_PATH.into(),
+            kernel_name: TEST_DISK_DEVICE_PATH.into(),
             path: Some(TEST_DISK_DEVICE_PATH.into()),
             ptuuid: block_device.ptuuid.clone(),
             size: DISK_SIZE,
@@ -811,6 +812,7 @@ mod functional_test {
             children: vec![
                 BlockDevice {
                     name: format!("{TEST_DISK_DEVICE_PATH}1"),
+                    kernel_name: format!("{TEST_DISK_DEVICE_PATH}1"),
                     path: Some(format!("{TEST_DISK_DEVICE_PATH}1").into()),
                     part_uuid: Some(part1.uuid.into()),
                     partn: Some(1),
@@ -821,6 +823,7 @@ mod functional_test {
                 },
                 BlockDevice {
                     name: format!("{TEST_DISK_DEVICE_PATH}2"),
+                    kernel_name: format!("{TEST_DISK_DEVICE_PATH}2"),
                     path: Some(format!("{TEST_DISK_DEVICE_PATH}2").into()),
                     part_uuid: Some(part2.uuid.into()),
                     partn: Some(2),
