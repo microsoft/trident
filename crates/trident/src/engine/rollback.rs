@@ -39,7 +39,7 @@ pub enum BootValidationResult {
 /// Validates that the firmware did not perform a rollback, i.e. correctly booted from the updated
 /// target OS image.
 ///
-/// If the firmware did not boot from the expected root device, this function will return an error.
+/// If the firmware did not boot from the expected boot device, this function will return an error.
 /// In either case, the function will update the Host Status.
 #[tracing::instrument(skip_all)]
 pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
@@ -91,27 +91,27 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         is_uki: Some(efivar::current_var_is_uki()),
     })?;
 
-    // Get the block device path of the current root
-    let current_root_path =
-        get_current_root_device_path(&ctx).message("Failed to get root block device path")?;
+    // Get the block device path of the current boot device
+    let current_device_path =
+        get_current_device_path(&ctx).message("Failed to get boot block device path")?;
 
-    // Get expected root device path
-    let expected_root_path =
-        get_expected_root_device_path(&ctx).message("Failed to get expected root device path")?;
+    // Get expected boot device path
+    let expected_device_path =
+        get_expected_device_path(&ctx).message("Failed to get expected boot device path")?;
 
-    // Check that the machine booted from the expected root device
-    let booted_to_expected_root =
-        compare_root_device_paths(current_root_path.clone(), expected_root_path.clone())
-            .message("Host failed to boot from expected root device")?;
+    // Check that the machine booted from the expected boot device
+    let booted_to_expected_device =
+        compare_device_paths(current_device_path.clone(), expected_device_path.clone())
+            .message("Host failed to boot from expected boot device")?;
 
-    match (booted_to_expected_root, current_servicing_state) {
+    match (booted_to_expected_device, current_servicing_state) {
         (true, ServicingState::CleanInstallFinalized)
         | (true, ServicingState::AbUpdateFinalized)
         | (true, ServicingState::ManualRollbackAbFinalized) => {
             // For *Finalized states, when booting from the expected
-            // root, finish the commit process
+            // device, finish the commit process
             info!("Host successfully booted from target OS image");
-            return commit_finalized_on_expected_root(
+            return commit_finalized_on_expected_device(
                 &ctx,
                 datastore,
                 current_servicing_state,
@@ -127,12 +127,12 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             // and leave host status alone
             error!("Host failed to rollback into the servicing OS");
             return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
-                root_device_path: current_root_path.to_string_lossy().to_string(),
-                expected_device_path: expected_root_path.to_string_lossy().to_string(),
+                root_device_path: current_device_path.to_string_lossy().to_string(),
+                expected_device_path: expected_device_path.to_string_lossy().to_string(),
             }));
         }
         (false, ServicingState::CleanInstallFinalized) => {
-            // For Clean Install, when not booting from expected root, re-set
+            // For Clean Install, when not booting from expected device, re-set
             // host status state to NotProvisioned
             info!("Re-set host status from {current_servicing_state:?} to NotProvisioned");
             datastore.with_host_status(|host_status| {
@@ -141,12 +141,12 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             })?;
 
             return Err(TridentError::new(ServicingError::CleanInstallRebootCheck {
-                root_device_path: current_root_path.to_string_lossy().to_string(),
-                expected_device_path: expected_root_path.to_string_lossy().to_string(),
+                root_device_path: current_device_path.to_string_lossy().to_string(),
+                expected_device_path: expected_device_path.to_string_lossy().to_string(),
             }));
         }
         (true, ServicingState::AbUpdateHealthCheckFailed) => {
-            // AbUpdateHealthCheckFailed, when booting from expected root (the servicing OS), mark host
+            // AbUpdateHealthCheckFailed, when booting from expected device (the servicing OS), mark host
             // status state as Provisioned
             info!("Rollback to servicing OS succeeded, setting host status from {current_servicing_state:?} to Provisioned");
             datastore.with_host_status(|host_status| {
@@ -157,12 +157,12 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
 
             return Err(TridentError::new(
                 HealthChecksError::AbUpdateHealthCheckCommitCheck {
-                    expected_device_path: current_root_path.to_string_lossy().to_string(),
+                    expected_device_path: current_device_path.to_string_lossy().to_string(),
                 },
             ));
         }
         (false, ServicingState::AbUpdateFinalized) => {
-            // AbUpdateFinalize, when booting from incorrect root (the servicing OS), mark host status
+            // AbUpdateFinalize, when booting from incorrect device (the servicing OS), mark host status
             // state as Provisioned
             error!("Update host status from {current_servicing_state:?} to Provisioned");
             datastore.with_host_status(|host_status| {
@@ -172,12 +172,12 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             })?;
 
             return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
-                root_device_path: current_root_path.to_string_lossy().to_string(),
-                expected_device_path: expected_root_path.to_string_lossy().to_string(),
+                root_device_path: current_device_path.to_string_lossy().to_string(),
+                expected_device_path: expected_device_path.to_string_lossy().to_string(),
             }));
         }
         (false, ServicingState::ManualRollbackAbFinalized) => {
-            // ManualRollbackAbFinalize, when booting from incorrect root (the servicing OS), mark host status
+            // ManualRollbackAbFinalize, when booting from incorrect device (the servicing OS), mark host status
             // state as Provisioned
             error!("Update host status from {current_servicing_state:?} to Provisioned");
             datastore.with_host_status(|host_status| {
@@ -188,8 +188,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
 
             return Err(TridentError::new(
                 ServicingError::ManualRollbackRebootCheck {
-                    root_device_path: current_root_path.to_string_lossy().to_string(),
-                    expected_device_path: expected_root_path.to_string_lossy().to_string(),
+                    root_device_path: current_device_path.to_string_lossy().to_string(),
+                    expected_device_path: expected_device_path.to_string_lossy().to_string(),
                 },
             ));
         }
@@ -204,10 +204,10 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
 }
 
 /// Completes the commit for AbUpdateFinalized and CleanInstallFinalized states when
-/// the host has booted from the expected root device. This includes running health
+/// the host has booted from the expected boot device. This includes running health
 /// checks, updating boot order, updating the encryption pcrlock policy if needed, and
 /// updating the Host Status.
-fn commit_finalized_on_expected_root(
+fn commit_finalized_on_expected_device(
     ctx: &EngineContext,
     datastore: &mut DataStore,
     current_servicing_state: ServicingState,
@@ -399,7 +399,7 @@ fn run_health_checks(
 }
 
 /// Returns the current OS device path in its canonical form, using /usr on ACL.
-fn get_current_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentError> {
+fn get_current_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentError> {
     let use_usr = ctx.host_os_release.get_distro().is_acl();
     let (device_id, is_verity) = if use_usr {
         (
@@ -412,12 +412,12 @@ fn get_current_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentE
             ctx.storage_graph.root_fs_is_verity(),
         )
     };
-    let current_root_device_path = if is_verity {
-        let root_device_id = device_id.structured(ServicingError::GetRootBlockDeviceId)?;
-        debug!("Root device ID: {}", root_device_id);
+    let current_device_path = if is_verity {
+        let device_id = device_id.structured(ServicingError::GetRootBlockDeviceId)?;
+        debug!("Boot device ID: {}", device_id);
 
         // Fetch the actual verity data device path in the system
-        get_verity_data_device_path(ctx, &root_device_id)
+        get_verity_data_device_path(ctx, &device_id)
             .structured(ServicingError::GetRootVerityDataDevPath)?
     } else if use_usr {
         block_devices::get_usr_device_path()?
@@ -426,54 +426,52 @@ fn get_current_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentE
     };
 
     // Try to canonicalize the path
-    let root_path_canonical = match current_root_device_path.canonicalize() {
+    let device_path_canonical = match current_device_path.canonicalize() {
         Ok(canonical_path) => {
             // If the paths are different, log both
-            if canonical_path != current_root_device_path {
+            if canonical_path != current_device_path {
                 info!(
-                    "Current root device path: '{}' ('{}')",
+                    "Current boot device path: '{}' ('{}')",
                     canonical_path.display(),
-                    current_root_device_path.display(),
+                    current_device_path.display(),
                 );
-            } else if let Some(partuuid_path) =
-                construct_by_partuuid_path(&current_root_device_path)
-            {
+            } else if let Some(partuuid_path) = construct_by_partuuid_path(&current_device_path) {
                 // If they are the same, try to construct the by-partuuid path
                 info!(
-                    "Current root device path: '{}' ('{}')",
+                    "Current boot device path: '{}' ('{}')",
                     canonical_path.display(),
                     partuuid_path.display(),
                 );
             } else {
-                info!("Current root device path: '{}'", canonical_path.display(),);
+                info!("Current boot device path: '{}'", canonical_path.display(),);
             }
             canonical_path
         }
         Err(err) => {
             warn!(
-                "Failed to canonicalize root device path '{}': {}",
-                current_root_device_path.display(),
+                "Failed to canonicalize boot device path '{}': {}",
+                current_device_path.display(),
                 err
             );
 
             // Attempt to construct the by-partuuid path
-            if let Some(partuuid_path) = construct_by_partuuid_path(&current_root_device_path) {
+            if let Some(partuuid_path) = construct_by_partuuid_path(&current_device_path) {
                 info!(
-                    "Current root device path: '{}' ('{}')",
-                    current_root_device_path.display(),
+                    "Current boot device path: '{}' ('{}')",
+                    current_device_path.display(),
                     partuuid_path.display(),
                 );
             }
 
-            current_root_device_path.clone()
+            current_device_path.clone()
         }
     };
 
-    Ok(root_path_canonical)
+    Ok(device_path_canonical)
 }
 
 /// Returns the expected OS device path in its canonical form, using /usr on ACL.
-fn get_expected_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentError> {
+fn get_expected_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentError> {
     let (device_id, is_verity) = if ctx.host_os_release.get_distro().is_acl() {
         (
             ctx.get_usr_block_device_id(),
@@ -485,76 +483,74 @@ fn get_expected_root_device_path(ctx: &EngineContext) -> Result<PathBuf, Trident
             ctx.storage_graph.root_fs_is_verity(),
         )
     };
-    let root_device_id = device_id.structured(ServicingError::GetRootBlockDeviceId)?;
+    let device_id = device_id.structured(ServicingError::GetRootBlockDeviceId)?;
 
-    let expected_root_path = if is_verity {
-        // If root is on verity, fetch the block device path of the verity data device. Because
+    let expected_device_path = if is_verity {
+        // If the boot device is on verity, fetch the block device path of the verity data device. Because
         // get_block_device_path(), which is called eventually, already has the logic for
         // determining the update volume, i.e. volume we expect to have booted from, getting the
         // block device path of the verity data device is sufficient.
-        let root_verity_device_config = ctx.get_verity_config(&root_device_id).structured(
-            // This should never happen. At this point we know the root device
+        let verity_device_config = ctx.get_verity_config(&device_id).structured(
+            // This should never happen. At this point we know the boot device
             // is a verity device and we've already found the BlockDeviceId of
             // the verity device, so this search MUST always succeed, otherwise
             // the graph is severely corrupted.
             InternalError::Internal(
-                "Graph is invalid: verity config for root device could not be found.",
+                "Graph is invalid: verity config for boot device could not be found.",
             ),
         )?;
 
-        let (verity_data_path, _) =
-            verity::get_verity_device_paths(ctx, &root_verity_device_config)
-                .structured(ServicingError::GetRootVerityDataDevPath)?;
+        let (verity_data_path, _) = verity::get_verity_device_paths(ctx, &verity_device_config)
+            .structured(ServicingError::GetRootVerityDataDevPath)?;
 
         verity_data_path
     } else {
-        // Fetch the expected root device path
-        ctx.get_block_device_path(&root_device_id).structured(
-            ServicingError::GetBlockDevicePath {
-                device_id: root_device_id.to_string(),
-            },
-        )?
+        // Fetch the expected boot device path
+        ctx.get_block_device_path(&device_id)
+            .structured(ServicingError::GetBlockDevicePath {
+                device_id: device_id.to_string(),
+            })?
     };
 
     // Try to canonicalize the path
-    let root_path_canonical = match expected_root_path.canonicalize() {
+    let device_path_canonical = match expected_device_path.canonicalize() {
         Ok(canonical_path) => {
-            if canonical_path != expected_root_path {
+            if canonical_path != expected_device_path {
                 info!(
-                    "Expected root device path: '{}' ('{}')",
+                    "Expected boot device path: '{}' ('{}')",
                     canonical_path.display(),
-                    expected_root_path.display(),
+                    expected_device_path.display(),
                 );
-            } else if let Some(partuuid_path) = construct_by_partuuid_path(&expected_root_path) {
+            } else if let Some(partuuid_path) = construct_by_partuuid_path(&expected_device_path) {
                 info!(
-                    "Expected root device path: '{}' ('{}')",
+                    "Expected boot device path: '{}' ('{}')",
                     canonical_path.display(),
                     partuuid_path.display(),
                 );
             } else {
-                info!("Expected root device path: '{}'", canonical_path.display(),);
+                info!("Expected boot device path: '{}'", canonical_path.display(),);
             }
             canonical_path
         }
         Err(err) => {
             warn!(
-                "Failed to canonicalize root device path '{}': {}",
-                expected_root_path.display(),
+                "Failed to canonicalize boot device path '{}': {}",
+                expected_device_path.display(),
                 err
             );
 
-            if let Some(partuuid_path) = construct_by_partuuid_path(&expected_root_path) {
+            if let Some(partuuid_path) = construct_by_partuuid_path(&expected_device_path) {
                 info!(
-                    "Current root device path: '{}' ('{}')",
-                    expected_root_path.display(),
+                    "Current boot device path: '{}' ('{}')",
+                    expected_device_path.display(),
                     partuuid_path.display(),
                 );
             }
-            expected_root_path.clone()
+            expected_device_path.clone()
         }
     };
 
-    Ok(root_path_canonical)
+    Ok(device_path_canonical)
 }
 
 /// Returns the by-partuuid path of the given device path, if it exists.
@@ -568,20 +564,20 @@ fn construct_by_partuuid_path(device_path: &PathBuf) -> Option<PathBuf> {
     None
 }
 
-/// Compares the expected root device path with the current root device path that the host booted
+/// Compares the expected boot device path with the current boot device path that the host booted
 /// from. Returns true if they match; false otherwise.
-fn compare_root_device_paths(
-    root_dev_path: PathBuf,
-    expected_root_dev_path: PathBuf,
+fn compare_device_paths(
+    device_path: PathBuf,
+    expected_device_path: PathBuf,
 ) -> Result<bool, TridentError> {
-    // If current root device path is NOT the same as the expected root device path, return false.
-    if root_dev_path != expected_root_dev_path {
+    // If current boot device path is NOT the same as the expected boot device path, return false.
+    if device_path != expected_device_path {
         return Ok(false);
     }
 
     info!(
-        "Host booted from expected root device '{}'",
-        root_dev_path.display()
+        "Host booted from expected boot device '{}'",
+        device_path.display()
     );
 
     Ok(true)
@@ -805,7 +801,7 @@ mod tests {
     };
 
     #[test]
-    fn test_get_expected_root_device_path() {
+    fn test_get_expected_device_path() {
         let mut ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
             ..Default::default()
@@ -852,7 +848,7 @@ mod tests {
 
         // Test case #0: If no mount points defined, should return an error.
         assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap_err().kind(),
+            get_expected_device_path(&ctx).unwrap_err().kind(),
             &ErrorKind::Servicing(ServicingError::GetRootBlockDeviceId)
         );
 
@@ -867,13 +863,13 @@ mod tests {
             is_esp: false,
         }];
         assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap_err().kind(),
+            get_expected_device_path(&ctx).unwrap_err().kind(),
             &ErrorKind::Servicing(ServicingError::GetBlockDevicePath {
                 device_id: "root".to_string()
             })
         );
 
-        // Test case #3: When block devices are defined, should return the expected root device
+        // Test case #3: When block devices are defined, should return the expected boot device
         // path of 'root-a'.
         ctx.partition_paths = btreemap! {
             "os".to_owned() => PathBuf::from(TEST_DISK_DEVICE_PATH),
@@ -882,7 +878,7 @@ mod tests {
             "root-b".to_owned() => PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3")),
         };
         assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
+            get_expected_device_path(&ctx).unwrap(),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
         );
 
@@ -891,15 +887,15 @@ mod tests {
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         ctx.servicing_type = ServicingType::AbUpdate;
         assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
+            get_expected_device_path(&ctx).unwrap(),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
         );
     }
 
-    /// Validates that get_expected_root_device_path() returns the expected root device path when
+    /// Validates that get_expected_device_path() returns the expected boot device path when
     /// root is a verity device.
     #[test]
-    fn test_get_expected_root_device_path_verity() {
+    fn test_get_expected_device_path_verity() {
         let mut ctx = EngineContext {
             servicing_type: ServicingType::CleanInstall,
             ..Default::default()
@@ -1019,28 +1015,28 @@ mod tests {
         // Build storage graph
         ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
 
-        // Test case #1. Should correctly return the expected root device path
+        // Test case #1. Should correctly return the expected boot device path
         // of 'root-data-a', since servicing type is CleanInstall.
         assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
+            get_expected_device_path(&ctx).unwrap(),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
         );
 
         // Test case #2. Change active volume to VolumeA and servicing type to AbUpdate, and
-        // validate that the expected root device path is now the verity data device path of
+        // validate that the expected boot device path is now the verity data device path of
         // 'root-data-b'.
         ctx.servicing_type = ServicingType::AbUpdate;
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeA);
         assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
+            get_expected_device_path(&ctx).unwrap(),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
         );
 
-        // Test case #3. Change active volume to VolumeB and validate that the expected root device
+        // Test case #3. Change active volume to VolumeB and validate that the expected boot device
         // path is now the verity data device path of 'root-data-a'.
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
+            get_expected_device_path(&ctx).unwrap(),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
         );
 
@@ -1082,13 +1078,13 @@ mod tests {
                 ..OsRelease::EMPTY
             };
             assert_eq!(
-                get_expected_root_device_path(&ctx).unwrap(),
+                get_expected_device_path(&ctx).unwrap(),
                 PathBuf::from("/dev/shared-root")
             );
             ctx.host_os_release.variant_id = Some("azurecontainerlinux".into());
             ctx.servicing_type = ServicingType::CleanInstall;
             assert_eq!(
-                get_expected_root_device_path(&ctx).unwrap(),
+                get_expected_device_path(&ctx).unwrap(),
                 PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
             );
 
@@ -1099,12 +1095,12 @@ mod tests {
                     (AbVolumeSelection::VolumeB, 2, 3),
                 ] {
                     ctx.ab_active_volume = Some(active);
-                    let expected_path = get_expected_root_device_path(&ctx).unwrap();
+                    let expected_path = get_expected_device_path(&ctx).unwrap();
                     assert_eq!(
                         expected_path,
                         PathBuf::from(format!("{TEST_DISK_DEVICE_PATH}{expected}"))
                     );
-                    assert!(!compare_root_device_paths(
+                    assert!(!compare_device_paths(
                         PathBuf::from(format!("{TEST_DISK_DEVICE_PATH}{wrong}")),
                         expected_path,
                     )
@@ -1124,7 +1120,7 @@ mod tests {
         ctx.spec.storage.filesystems[0].device_id = Some("trident-overlay-a".into());
         ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
         assert_eq!(
-            get_expected_root_device_path(&ctx).unwrap(),
+            get_expected_device_path(&ctx).unwrap(),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}6"))
         );
     }
@@ -1156,18 +1152,18 @@ mod functional_test {
     };
 
     #[functional_test]
-    fn test_compare_root_device_paths() {
-        // Test case #0: If current root device path is the same as the expected root device path,
+    fn test_compare_device_paths() {
+        // Test case #0: If current boot device path is the same as the expected boot device path,
         // should return true.
-        assert!(compare_root_device_paths(
+        assert!(compare_device_paths(
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2"))
         )
         .unwrap());
 
-        // Test case #1: If current root device path is NOT the same as the expected root device
+        // Test case #1: If current boot device path is NOT the same as the expected boot device
         // path, should return false.
-        assert!(!compare_root_device_paths(
+        assert!(!compare_device_paths(
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}2")),
             PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}3"))
         )
