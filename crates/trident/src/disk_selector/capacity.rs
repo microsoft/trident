@@ -112,7 +112,7 @@ fn from_partition_sizes<'a>(
                         grow_count += 1;
                         grow_min = grow_min.max(required);
                     }
-                    CalculatedSize::GrowPartitionWithNewFilesystem => {
+                    CalculatedSize::GrowPartitionWithNewFilesystem { .. } => {
                         // TODO: Consider the strategy kind to react accordingly in this
                         // edge case.
                         //
@@ -127,7 +127,13 @@ fn from_partition_sizes<'a>(
                             part.id
                         );
                     }
-                    CalculatedSize::GrowPartitionUnformatted => grow_count += 1,
+                    CalculatedSize::GrowPartitionUnformatted { extra } => {
+                        let required = GROW_MINIMUM
+                            .checked_add(*extra)
+                            .context("Grow partition size overflow")?;
+                        grow_count += 1;
+                        grow_min = grow_min.max(required);
+                    }
                 }
             }
 
@@ -155,7 +161,7 @@ mod tests {
     use sysdefs::{osuuid::OsUuid, partition_types::DiscoverablePartitionType};
     use trident_api::config::{
         AbUpdate, AbVolumePair, Disk, EncryptedVolume, Encryption, FileSystem, FileSystemSource,
-        MountPoint, NewFileSystemType, Partition, PartitionSize, VerityDevice,
+        MountPoint, NewFileSystemType, Partition, PartitionSize, PartitionType, Swap, VerityDevice,
     };
 
     use crate::osimage::{
@@ -292,6 +298,40 @@ mod tests {
         let (mut storage, _) = fixture();
         storage.filesystems.clear();
         assert_eq!(from_filesystems(&storage, &[]).unwrap()["os"], 112 * MIB);
+    }
+
+    #[test]
+    fn encrypted_unformatted_grow_minima_include_reservations() {
+        for use_swap in [false, true] {
+            for (additional_grow, expected) in [(false, 128 * MIB), (true, 154 * MIB)] {
+                let (mut storage, _) = fixture();
+                storage.filesystems.clear();
+                storage.encryption = Some(Encryption {
+                    volumes: vec![EncryptedVolume {
+                        id: "encrypted".into(),
+                        device_id: "grow".into(),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                });
+                if use_swap {
+                    storage.disks[0].partitions[1].partition_type = PartitionType::Swap;
+                    storage.swap.push(Swap {
+                        device_id: "encrypted".into(),
+                    });
+                }
+                if additional_grow {
+                    storage.disks[0]
+                        .partitions
+                        .push(Partition::new("unused", PartitionSize::Grow));
+                }
+                assert_eq!(
+                    from_filesystems(&storage, &[]).unwrap()["os"],
+                    expected,
+                    "swap: {use_swap}, additional grow: {additional_grow}"
+                );
+            }
+        }
     }
 
     #[test]

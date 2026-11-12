@@ -22,10 +22,10 @@ pub enum CalculatedSize {
     FromFilesystem { fs: PathBuf, extra: u64 },
     /// Verity hash-image size for `fs`, plus graph-layer reservations in bytes.
     FromVerityHash { fs: PathBuf, extra: u64 },
-    /// A newly formatted filesystem on a grow partition has no image-derived size.
-    GrowPartitionWithNewFilesystem,
-    /// A grow partition without a configured filesystem, regardless of existing data.
-    GrowPartitionUnformatted,
+    /// A newly formatted grow filesystem with unknown size and reserved bytes.
+    GrowPartitionWithNewFilesystem { extra: u64 },
+    /// A grow partition without a filesystem, including graph-layer reservations.
+    GrowPartitionUnformatted { extra: u64 },
 }
 
 /// Enum for supported block device types

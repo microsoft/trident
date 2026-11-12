@@ -374,7 +374,7 @@ fn calculate_grow_partition_size(
     loop {
         let mut parents = graph.edges_directed(current, Direction::Incoming);
         let Some(edge) = parents.next() else {
-            return Ok(CalculatedSize::GrowPartitionUnformatted);
+            return Ok(CalculatedSize::GrowPartitionUnformatted { extra });
         };
         ensure!(
             parents.next().is_none(),
@@ -398,7 +398,9 @@ fn calculate_grow_partition_size(
                             CalculatedSize::FromFilesystem { fs, extra }
                         })
                     }
-                    FileSystemSource::New(_) => Ok(CalculatedSize::GrowPartitionWithNewFilesystem),
+                    FileSystemSource::New(_) => {
+                        Ok(CalculatedSize::GrowPartitionWithNewFilesystem { extra })
+                    }
                     FileSystemSource::Adopted(_) => {
                         bail!("An adopted filesystem cannot determine a new grow partition's size")
                     }
@@ -415,7 +417,9 @@ fn calculate_grow_partition_size(
                         .context("Encryption overhead size overflow")?;
                 }
             }
-            StorageGraphNode::Swap(_) => return Ok(CalculatedSize::GrowPartitionUnformatted),
+            StorageGraphNode::Swap(_) => {
+                return Ok(CalculatedSize::GrowPartitionUnformatted { extra })
+            }
         }
     }
 }
@@ -446,15 +450,15 @@ mod tests {
         config::{
             AbUpdate, AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Encryption,
             FileSystem, MountPoint, NewFileSystemType, Partition, PartitionSize, PartitionType,
-            Raid, SoftwareRaidArray, Storage, VerityDevice,
+            Raid, SoftwareRaidArray, Storage, Swap, VerityDevice,
         },
         storage_graph::{
             node::BlockDevice, references::SpecialReferenceKind, types::HostConfigBlockDevice,
         },
     };
 
-    /// Builds a validated graph with fixed and encrypted-grow partitions.
-    fn encrypted_grow_graph() -> StorageGraph {
+    /// Builds storage with fixed and encrypted-grow partitions.
+    fn encrypted_grow_storage() -> Storage {
         Storage {
             disks: vec![Disk {
                 id: "disk".into(),
@@ -481,13 +485,11 @@ mod tests {
             }],
             ..Default::default()
         }
-        .build_graph()
-        .unwrap()
     }
 
     #[test]
     fn partition_sizes_preserve_fixed_sizes_and_image_reservations() {
-        let graph = encrypted_grow_graph();
+        let graph = encrypted_grow_storage().build_graph().unwrap();
         assert_eq!(
             graph.calculate_partition_sizes().unwrap(),
             HashMap::from([
@@ -528,9 +530,56 @@ mod tests {
         assert_eq!(
             graph.calculate_partition_sizes().unwrap(),
             HashMap::from([
-                ("new".into(), CalculatedSize::GrowPartitionWithNewFilesystem),
-                ("unused".into(), CalculatedSize::GrowPartitionUnformatted),
+                (
+                    "new".into(),
+                    CalculatedSize::GrowPartitionWithNewFilesystem { extra: 0 }
+                ),
+                (
+                    "unused".into(),
+                    CalculatedSize::GrowPartitionUnformatted { extra: 0 }
+                ),
             ])
+        );
+    }
+
+    #[test]
+    fn unformatted_encrypted_grow_partitions_keep_reservations() {
+        for use_swap in [false, true] {
+            let mut storage = encrypted_grow_storage();
+            storage.filesystems.clear();
+            if use_swap {
+                storage.disks[0].partitions[1].partition_type = PartitionType::Swap;
+                storage.swap.push(Swap {
+                    device_id: "encrypted".into(),
+                });
+            }
+            assert_eq!(
+                storage
+                    .build_graph()
+                    .unwrap()
+                    .calculate_partition_sizes()
+                    .unwrap()["grow"],
+                CalculatedSize::GrowPartitionUnformatted {
+                    extra: u64::from(LUKS_HEADER_SIZE_IN_MIB) * 1024 * 1024,
+                },
+                "swap: {use_swap}"
+            );
+        }
+    }
+
+    #[test]
+    fn new_encrypted_grow_filesystems_keep_reservations() {
+        let mut storage = encrypted_grow_storage();
+        storage.filesystems[0].source = FileSystemSource::New(NewFileSystemType::Ext4);
+        assert_eq!(
+            storage
+                .build_graph()
+                .unwrap()
+                .calculate_partition_sizes()
+                .unwrap()["grow"],
+            CalculatedSize::GrowPartitionWithNewFilesystem {
+                extra: u64::from(LUKS_HEADER_SIZE_IN_MIB) * 1024 * 1024,
+            }
         );
     }
 
