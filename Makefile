@@ -96,7 +96,7 @@ ifeq ($(DISTRO),azl3)
 	$(eval DISTRO_PACKAGES := build-essential)
 	$(eval RPM_PACKAGES := )
 	$(eval RPM_DEST := /usr/src/azl)
-	$(eval RUST_PACKAGE := rust-1.86.0)
+	$(eval RUST_PACKAGE := rust-1.98.1)
 	@echo "Using Azure Linux 3 for build and runtime images."
 else ifeq ($(DISTRO),azl4)
 	$(eval BUILDER_IMAGE := azl4/trident-builder:latest)
