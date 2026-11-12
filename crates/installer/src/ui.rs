@@ -916,7 +916,8 @@ pub(super) async fn run(
                 println!("{}", entry.plain());
             }
         }
-        if rx.is_empty() && worker.as_ref().is_some_and(JoinHandle::is_finished) {
+        // A finished worker cannot enqueue a terminal event after the queue check.
+        if worker.as_ref().is_some_and(JoinHandle::is_finished) && rx.is_empty() {
             if let Some(finished) = worker.take() {
                 let failure = match finished.await {
                     Ok(Ok(())) => None,
@@ -1523,6 +1524,7 @@ mod tests {
 
     use ratatui::backend::TestBackend;
     use tempfile::TempDir;
+    use tokio::sync::oneshot;
 
     use trident_client::{
         Completion as ClientCompletion, LogRecord, RebootDisposition, RemoteError,
@@ -2418,6 +2420,48 @@ mod tests {
         assert!(!rx.is_empty());
         assert_eq!(
             model.key(enter(), false, !(rx.is_empty() && worker.is_finished())),
+            Some(Action::BlockedPower)
+        );
+        model.event(rx.recv().await.unwrap());
+        assert!(model.uncertain);
+        model.screen = Screen::Recovery;
+        model.selected = 3;
+        assert_eq!(model.key(enter(), false, false), Some(Action::BlockedPower));
+        worker.await.unwrap().unwrap();
+    }
+
+    /// Rechecking an empty queue before worker completion misses a late disconnect.
+    #[tokio::test]
+    async fn disconnect_between_worker_and_queue_checks_stays_guarded() {
+        let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
+        let (release, ready) = oneshot::channel::<()>();
+        let worker = task::spawn(async move {
+            ready.await.unwrap();
+            tx.send(Event::Error {
+                details: "gRPC stream disconnected".into(),
+                uncertain: true,
+            })
+            .await
+            .unwrap();
+            Ok::<(), Error>(())
+        });
+        let previously_empty = rx.is_empty();
+        release.send(()).unwrap();
+        time::timeout(Duration::from_secs(1), async {
+            while !worker.is_finished() {
+                task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(previously_empty && worker.is_finished());
+        assert!(!rx.is_empty());
+
+        let mut model = Model::new();
+        model.screen = Screen::Recovery;
+        model.selected = 3;
+        assert_eq!(
+            model.key(enter(), false, !(worker.is_finished() && rx.is_empty())),
             Some(Action::BlockedPower)
         );
         model.event(rx.recv().await.unwrap());
