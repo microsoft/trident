@@ -67,6 +67,7 @@ main() {
     local marker_expression
     local requested_namespace
     local virtdeploy_network
+    local -a network_args
     local -a test_paths
 
     case "$mode" in
@@ -99,7 +100,7 @@ main() {
     cd "$REPO_ROOT"
     export PATH="$HOME/.local/bin:$PATH"
 
-    for command in az virsh qemu-system-x86_64 python3; do
+    for command in az ip virsh qemu-system-x86_64 python3; do
         if ! command -v "$command" >/dev/null 2>&1; then
             echo "Missing $command. Run scripts/cloud-agent/setup-functional.sh first." >&2
             return 1
@@ -109,11 +110,14 @@ main() {
     run virsh -c qemu:///system list --all
 
     requested_namespace="${TRIDENT_FUNCTIONAL_NAMESPACE:-trident-functional-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$}"
-    virtdeploy_network="${TRIDENT_FUNCTIONAL_NETWORK:-$(
-        python3 -c \
-            'import hashlib, sys; digest = hashlib.sha256(sys.argv[1].encode()).digest(); print(f"10.{digest[0]}.{digest[1]}.0/24")' \
-            "$requested_namespace"
-    )}"
+    network_args=(
+        python3 scripts/cloud-agent/select_functional_network.py
+        "$requested_namespace"
+    )
+    if [[ -n "${TRIDENT_FUNCTIONAL_NETWORK:-}" ]]; then
+        network_args+=(--network "$TRIDENT_FUNCTIONAL_NETWORK")
+    fi
+    virtdeploy_network="$("${network_args[@]}")"
 
     printf '\n==> python3 scripts/cloud-agent/download_functional_artifact.py\n'
     functional_image="$(python3 scripts/cloud-agent/download_functional_artifact.py)"
