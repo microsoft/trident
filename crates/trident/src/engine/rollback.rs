@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::PathBuf};
 
 use anyhow::{Context, Error};
 use chrono::Utc;
@@ -11,7 +8,7 @@ use log::{debug, error, info, trace, warn};
 use osutils::{block_devices, container, efivar, lsblk, pcrlock, veritysetup, virt};
 use trident_api::{
     constants::internal_params::VIRTDEPLOY_BOOT_ORDER_WORKAROUND,
-    constants::{ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH},
+    constants::ROOT_MOUNT_POINT_PATH,
     error::{
         HealthChecksError, InternalError, ReportError, ServicingError, TridentError,
         TridentResultExt,
@@ -401,22 +398,9 @@ fn run_health_checks(
     Ok(BootValidationResult::ValidBootProvisioned)
 }
 
-/// Select /usr when its backing device is A/B-capable, as on ACL with a shared root.
-/// Boot validation has no image metadata, so select from the persisted storage graph.
-fn boot_from_usr(ctx: &EngineContext) -> bool {
-    ctx.spec
-        .storage
-        .filesystems
-        .iter()
-        .find(|fs| fs.mount_point_path() == Some(Path::new(USR_MOUNT_POINT_PATH)))
-        .and_then(|fs| fs.device_id.as_ref())
-        .and_then(|id| ctx.storage_graph.has_ab_capabilities(id))
-        .unwrap_or(false)
-}
-
-/// Returns the current OS device path in its canonical form, using /usr for usr A/B layouts.
+/// Returns the current OS device path in its canonical form, using /usr on ACL.
 fn get_current_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentError> {
-    let use_usr = boot_from_usr(ctx);
+    let use_usr = ctx.host_os_release.get_distro().is_acl();
     let (device_id, is_verity) = if use_usr {
         (
             ctx.get_usr_block_device_id(),
@@ -488,9 +472,9 @@ fn get_current_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentE
     Ok(root_path_canonical)
 }
 
-/// Returns the expected OS device path in its canonical form, using /usr for usr A/B layouts.
+/// Returns the expected OS device path in its canonical form, using /usr on ACL.
 fn get_expected_root_device_path(ctx: &EngineContext) -> Result<PathBuf, TridentError> {
-    let (device_id, is_verity) = if boot_from_usr(ctx) {
+    let (device_id, is_verity) = if ctx.host_os_release.get_distro().is_acl() {
         (
             ctx.get_usr_block_device_id(),
             ctx.storage_graph.usr_fs_is_verity(),
@@ -809,7 +793,7 @@ mod tests {
     use const_format::formatcp;
     use maplit::btreemap;
 
-    use osutils::testutils::repart::TEST_DISK_DEVICE_PATH;
+    use osutils::{osrelease::OsRelease, testutils::repart::TEST_DISK_DEVICE_PATH};
     use trident_api::{
         config::{
             AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, MountOptions, MountPoint,
@@ -1092,6 +1076,16 @@ mod tests {
                 ctx.spec.storage.verity.clear();
             }
             ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
+            ctx.host_os_release = OsRelease {
+                id: Some("azurelinux".into()),
+                version_id: Some("3.0".into()),
+                ..OsRelease::EMPTY
+            };
+            assert_eq!(
+                get_expected_root_device_path(&ctx).unwrap(),
+                PathBuf::from("/dev/shared-root")
+            );
+            ctx.host_os_release.variant_id = Some("azurecontainerlinux".into());
             ctx.servicing_type = ServicingType::CleanInstall;
             assert_eq!(
                 get_expected_root_device_path(&ctx).unwrap(),
@@ -1119,7 +1113,7 @@ mod tests {
             }
         }
 
-        // A separate /usr that is not A/B-capable must not replace root validation.
+        // ACL selection depends on the distro, not /usr A/B capabilities.
         ctx.spec
             .storage
             .ab_update
@@ -1131,7 +1125,7 @@ mod tests {
         ctx.storage_graph = ctx.spec.storage.build_graph().unwrap();
         assert_eq!(
             get_expected_root_device_path(&ctx).unwrap(),
-            PathBuf::from("/dev/shared-root")
+            PathBuf::from(formatcp!("{TEST_DISK_DEVICE_PATH}6"))
         );
     }
 }
