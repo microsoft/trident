@@ -3,7 +3,7 @@ name = "trident"
 version = "0.31.0"
 edition = "2024"
 publish = false
-rust-version = "1.85.0"
+rust-version = "1.87.0"
 license = "MIT"
 default-run = "trident"
 
