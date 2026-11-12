@@ -465,20 +465,11 @@ mod tests {
     fn create_blk_device() -> BlockDevice {
         BlockDevice {
             name: "/dev/sda".into(),
-            fstype: None,
-            fssize: None,
-            fsuuid: None,
             ptuuid: Some("5f578d9b-bc43-4778-927b-d7e019586bc5".into()),
-            part_uuid: None,
-            partn: None,
             size: 17179869184,
-            parent_kernel_name: None,
-            readonly: false,
             blkdev_type: BlockDeviceType::Disk,
-            mountpoint: None,
-            mountpoints: vec![],
             partition_table_type: Some(PartitionTableType::Gpt),
-            children: vec![],
+            ..Default::default()
         }
     }
 

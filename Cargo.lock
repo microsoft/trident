@@ -1912,6 +1912,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "linux-kernel-cmdline"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d18193117ee846e8400539a7e565ce7382bcf5913dff47395c1094bd1d918d04"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2273,6 +2282,7 @@ dependencies = [
  "hostname",
  "indoc",
  "inventory",
+ "linux-kernel-cmdline",
  "log",
  "netplan-types",
  "nix",
