@@ -439,24 +439,22 @@ impl Trident {
         prefetched_image: Option<OsImage>,
     ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
         let finalize_only = !allowed_operations.has_stage() && allowed_operations.has_finalize();
-        let mut host_config = self
-            .host_config
-            .clone()
-            .or_else(|| finalize_only.then(|| datastore.host_status().spec.clone()))
-            .structured(InternalError::Internal(
-                "install called without Host Configuration set",
-            ))?;
+        let mut host_config = if finalize_only {
+            // Resume the configuration that was actually staged.
+            datastore.host_status().spec.clone()
+        } else {
+            self.host_config
+                .clone()
+                .structured(InternalError::Internal(
+                    "install called without Host Configuration set",
+                ))?
+        };
 
         let is_stream_image = self.is_stream_image;
 
         self.execute_and_record_error(datastore, |datastore| {
             if finalize_only {
-                for disk in host_config
-                    .storage
-                    .disks
-                    .iter()
-                    .chain(&datastore.host_status().spec.storage.disks)
-                {
+                for disk in &host_config.storage.disks {
                     if disk.selector.is_some() {
                         return Err(TridentError::new(InvalidInputError::DiskSelection {
                             disk_id: disk.id.clone(),
@@ -968,7 +966,7 @@ mod tests {
     };
 
     #[test]
-    fn finalize_only_rejects_unresolved_selectors() {
+    fn finalize_only_rejects_saved_selectors() {
         let unresolved = HostConfiguration {
             storage: Storage {
                 disks: vec![
@@ -990,19 +988,17 @@ mod tests {
         let mut resolved = unresolved.clone();
         resolved.storage.disks[1].selector = None;
         resolved.storage.disks[1].device = "/dev/sdb".into();
+        let mut ignored = unresolved.clone();
+        ignored.storage.disks[1].id = "ignored".into();
 
-        for (supplied, saved) in [
-            (Some(unresolved.clone()), resolved.clone()),
-            (None, unresolved.clone()),
-            (Some(resolved), unresolved),
-        ] {
+        for supplied in [None, Some(resolved), Some(ignored)] {
             let directory = TempDir::new().unwrap();
             let mut datastore =
                 DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
             datastore
                 .with_host_status(|status| {
                     status.servicing_state = ServicingState::CleanInstallStaged;
-                    status.spec = saved;
+                    status.spec = unresolved.clone();
                 })
                 .unwrap();
             let mut trident = Trident {
@@ -1030,10 +1026,22 @@ mod tests {
 
     #[test]
     fn finalize_only_requires_a_staged_install() {
-        for state in [
-            ServicingState::NotProvisioned,
-            ServicingState::Provisioned,
-            ServicingState::CleanInstallFinalized,
+        let ignored = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "ignored".into(),
+                    selector: Some(DiskSelector::default()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for (state, supplied) in [
+            (ServicingState::NotProvisioned, None),
+            (ServicingState::Provisioned, None),
+            (ServicingState::CleanInstallFinalized, None),
+            (ServicingState::NotProvisioned, Some(ignored)),
         ] {
             let directory = TempDir::new().unwrap();
             let mut datastore =
@@ -1042,7 +1050,7 @@ mod tests {
                 .with_host_status(|status| status.servicing_state = state)
                 .unwrap();
             let mut trident = Trident {
-                host_config: None,
+                host_config: supplied,
                 orchestrator: None,
                 is_stream_image: false,
             };
