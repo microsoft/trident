@@ -71,6 +71,14 @@ fn from_partition_sizes<'a>(
 ) -> Result<HashMap<BlockDeviceId, u64>, Error> {
     disks
         .map(|disk| {
+            // Overly-paranoid reassurance that the disk has no adopted partitions.
+            // This should already be checked for selector disks during validation.
+            ensure!(
+                disk.adopted_partitions.is_empty(),
+                "Disk '{}' has adopted partitions",
+                disk.id
+            );
+
             let mut fixed = GPT_RESERVE;
             let mut grow_count = 0_u64;
             let mut grow_min = GROW_MINIMUM;
@@ -160,8 +168,9 @@ mod tests {
 
     use sysdefs::{osuuid::OsUuid, partition_types::DiscoverablePartitionType};
     use trident_api::config::{
-        AbUpdate, AbVolumePair, Disk, EncryptedVolume, Encryption, FileSystem, FileSystemSource,
-        MountPoint, NewFileSystemType, Partition, PartitionSize, PartitionType, Swap, VerityDevice,
+        AbUpdate, AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Encryption, FileSystem,
+        FileSystemSource, MountPoint, NewFileSystemType, Partition, PartitionSize, PartitionType,
+        Swap, VerityDevice,
     };
 
     use crate::osimage::{
@@ -221,6 +230,23 @@ mod tests {
                 verity: None,
             }],
         )
+    }
+
+    #[test]
+    fn adopted_partitions_are_rejected() {
+        let disks = [Disk {
+            id: "os".into(),
+            adopted_partitions: vec![AdoptedPartition {
+                id: "retained".into(),
+                match_label: Some("retained".into()),
+                match_uuid: None,
+            }],
+            ..Default::default()
+        }];
+        from_partition_sizes(disks.iter(), &HashMap::new(), |_| {
+            unreachable!("Adopted disks must be rejected before requesting image metadata")
+        })
+        .unwrap_err();
     }
 
     #[test]
