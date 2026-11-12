@@ -17,9 +17,10 @@ hex = {workspace = true}
 hostname = {workspace = true}
 indoc = {workspace = true}
 inventory = {workspace = true}
+libc = {workspace = true}
 log = {workspace = true, features = ["std"]}
 netplan-types = {workspace = true}
-nix = {workspace = true, features = ["fs", "process", "term"]}
+nix = {workspace = true, features = ["fs", "ioctl", "poll", "process", "term"]}
 once_cell = {workspace = true}
 openssl = {workspace = true}
 serde = {workspace = true}

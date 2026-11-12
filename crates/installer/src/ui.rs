@@ -16,7 +16,7 @@ use crossterm::{
         self, Clear as ClearTerminal, ClearType, EnterAlternateScreen, LeaveAlternateScreen,
     },
 };
-use log::{error, warn, Level, LevelFilter};
+use log::{debug, error, warn, Level, LevelFilter};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Layout, Rect},
@@ -33,11 +33,14 @@ use tokio::{
     time,
 };
 
-use osutils::{systemd, terminal as os_terminal};
+use osutils::{
+    installer_status::{self, InstallerStatus, ReportOutcome},
+    systemd, terminal as os_terminal,
+};
 use trident_client::{LogLevel, ServicingEvent};
 
 use crate::{
-    client::{self, Completion, Event},
+    client::{self, AttemptOutcome, Completion, Event},
     config::{Config, SerialVerbosity},
     demo::{self, Scenario},
     source::{self, Request},
@@ -788,6 +791,80 @@ impl Drop for Display {
     }
 }
 
+trait StatusReporter {
+    fn report(&mut self, status: InstallerStatus) -> Result<ReportOutcome, Error>;
+}
+
+struct LocalStatusReporter;
+
+impl StatusReporter for LocalStatusReporter {
+    fn report(&mut self, status: InstallerStatus) -> Result<ReportOutcome, Error> {
+        installer_status::report(status)
+    }
+}
+
+struct LiveAttemptReporter<R: StatusReporter> {
+    reporter: R,
+    enabled: bool,
+    active: bool,
+}
+
+impl<R: StatusReporter> LiveAttemptReporter<R> {
+    fn new(reporter: R, enabled: bool) -> Self {
+        Self {
+            reporter,
+            enabled,
+            active: false,
+        }
+    }
+
+    fn start(&mut self) {
+        if !self.enabled || self.active {
+            return;
+        }
+        self.emit(InstallerStatus::Started);
+        self.active = true;
+    }
+
+    fn finish(&mut self, outcome: AttemptOutcome) {
+        if !self.active {
+            return;
+        }
+        self.active = false;
+        self.emit(match outcome {
+            AttemptOutcome::Completed => InstallerStatus::Completed,
+            AttemptOutcome::Aborted => InstallerStatus::Aborted,
+        });
+    }
+
+    fn fail(&mut self) {
+        if !self.active {
+            return;
+        }
+        self.active = false;
+        self.emit(InstallerStatus::Failed);
+    }
+
+    fn emit(&mut self, status: InstallerStatus) {
+        match self.reporter.report(status) {
+            Ok(ReportOutcome::Sent) => {}
+            Ok(ReportOutcome::Unavailable) => {
+                debug!("Local IPMI installer status reporting is unavailable");
+            }
+            Ok(_) => {}
+            Err(error) => {
+                warn!("Failed to report installer status {status:?} through local IPMI: {error:#}");
+            }
+        }
+    }
+}
+
+impl<R: StatusReporter> Drop for LiveAttemptReporter<R> {
+    fn drop(&mut self) {
+        self.fail();
+    }
+}
+
 /// Starts a demo run or reloads live configuration for each installation attempt.
 /// Configuration read errors are reported as events rather than worker failures.
 fn spawn_operation(
@@ -796,29 +873,53 @@ fn spawn_operation(
     uncertain: bool,
     scenario: Option<Scenario>,
     tx: mpsc::Sender<Event>,
-) -> JoinHandle<Result<(), Error>> {
-    task::spawn(async move {
-        match scenario {
-            Some(scenario) => demo::run(scenario, tx).await,
-            None => {
-                let path = config_path
-                    .context("Live installation requires an explicit configuration path")?;
-                match Config::read(path) {
-                    Ok(settings) => client::execute(settings, request, uncertain, tx).await,
-                    Err(error) => {
-                        client::send(
-                            &tx,
-                            Event::Error {
-                                details: format!("{error:#}"),
-                                uncertain,
-                            },
-                        )
-                        .await
-                    }
+) -> JoinHandle<Result<Option<AttemptOutcome>, Error>> {
+    task::spawn(run_operation(
+        config_path,
+        request,
+        uncertain,
+        scenario,
+        tx,
+        LocalStatusReporter,
+    ))
+}
+
+async fn run_operation<R: StatusReporter>(
+    config_path: Option<PathBuf>,
+    request: Request,
+    uncertain: bool,
+    scenario: Option<Scenario>,
+    tx: mpsc::Sender<Event>,
+    reporter: R,
+) -> Result<Option<AttemptOutcome>, Error> {
+    let mut attempt_reporter = LiveAttemptReporter::new(reporter, scenario.is_none());
+    attempt_reporter.start();
+    match scenario {
+        Some(scenario) => demo::run(scenario, tx).await.map(|()| None),
+        None => {
+            let path =
+                config_path.context("Live installation requires an explicit configuration path")?;
+            match Config::read(path) {
+                Ok(settings) => client::execute(settings, request, uncertain, tx, |outcome| {
+                    attempt_reporter.finish(outcome);
+                })
+                .await
+                .map(Some),
+                Err(error) => {
+                    attempt_reporter.finish(AttemptOutcome::Aborted);
+                    client::send(
+                        &tx,
+                        Event::Error {
+                            details: format!("{error:#}"),
+                            uncertain,
+                        },
+                    )
+                    .await?;
+                    Ok(Some(AttemptOutcome::Aborted))
                 }
             }
         }
-    })
+    }
 }
 
 /// Reports shell failures without changing the result of an independent installation.
@@ -919,7 +1020,8 @@ pub(super) async fn run(
         if worker.as_ref().is_some_and(JoinHandle::is_finished) {
             if let Some(finished) = worker.take() {
                 let failure = match finished.await {
-                    Ok(Ok(())) => None,
+                    Ok(Ok(Some(_))) => None,
+                    Ok(Ok(None)) => None,
                     Ok(Err(error)) => {
                         Some(model.fail(format!("Installer worker failed: {error:#}"), true))
                     }
@@ -1519,7 +1621,7 @@ fn render_verbosity_picker(frame: &mut Frame, model: &Model) {
 mod tests {
     use super::*;
 
-    use std::fs;
+    use std::{cell::RefCell, fs, rc::Rc};
 
     use ratatui::backend::TestBackend;
     use tempfile::TempDir;
@@ -1528,6 +1630,108 @@ mod tests {
         Completion as ClientCompletion, LogRecord, RebootDisposition, RemoteError,
         RemoteErrorCategory, ServicingKind,
     };
+
+    #[derive(Clone, Copy)]
+    enum MockReportResult {
+        Sent,
+        Unavailable,
+        Error,
+    }
+
+    struct MockStatusReporter {
+        statuses: Rc<RefCell<Vec<InstallerStatus>>>,
+        result: MockReportResult,
+    }
+
+    impl StatusReporter for MockStatusReporter {
+        fn report(&mut self, status: InstallerStatus) -> Result<ReportOutcome, Error> {
+            self.statuses.borrow_mut().push(status);
+            match self.result {
+                MockReportResult::Sent => Ok(ReportOutcome::Sent),
+                MockReportResult::Unavailable => Ok(ReportOutcome::Unavailable),
+                MockReportResult::Error => Err(anyhow!("injected status reporting failure")),
+            }
+        }
+    }
+
+    fn mock_reporter(
+        result: MockReportResult,
+    ) -> (MockStatusReporter, Rc<RefCell<Vec<InstallerStatus>>>) {
+        let statuses = Rc::new(RefCell::new(Vec::new()));
+        (
+            MockStatusReporter {
+                statuses: Rc::clone(&statuses),
+                result,
+            },
+            statuses,
+        )
+    }
+
+    #[test]
+    fn live_attempt_reports_one_start_and_terminal_outcome() {
+        let (reporter, statuses) = mock_reporter(MockReportResult::Sent);
+        {
+            let mut attempt = LiveAttemptReporter::new(reporter, true);
+            attempt.start();
+            attempt.start();
+            attempt.finish(AttemptOutcome::Completed);
+        }
+        assert_eq!(
+            *statuses.borrow(),
+            [InstallerStatus::Started, InstallerStatus::Completed]
+        );
+
+        let (reporter, statuses) = mock_reporter(MockReportResult::Sent);
+        {
+            let mut attempt = LiveAttemptReporter::new(reporter, true);
+            attempt.start();
+            attempt.finish(AttemptOutcome::Aborted);
+        }
+        assert_eq!(
+            *statuses.borrow(),
+            [InstallerStatus::Started, InstallerStatus::Aborted]
+        );
+    }
+
+    #[test]
+    fn active_attempt_drop_reports_failed() {
+        let (reporter, statuses) = mock_reporter(MockReportResult::Sent);
+        {
+            let mut attempt = LiveAttemptReporter::new(reporter, true);
+            attempt.start();
+        }
+        assert_eq!(
+            *statuses.borrow(),
+            [InstallerStatus::Started, InstallerStatus::Failed]
+        );
+    }
+
+    #[test]
+    fn demo_attempt_never_reports_status() {
+        let (reporter, statuses) = mock_reporter(MockReportResult::Sent);
+        {
+            let mut attempt = LiveAttemptReporter::new(reporter, false);
+            attempt.start();
+            attempt.finish(AttemptOutcome::Completed);
+        }
+        assert!(statuses.borrow().is_empty());
+    }
+
+    #[test]
+    fn reporting_failures_do_not_change_attempt_outcome() {
+        for result in [MockReportResult::Unavailable, MockReportResult::Error] {
+            let (reporter, statuses) = mock_reporter(result);
+            {
+                let mut attempt = LiveAttemptReporter::new(reporter, true);
+                attempt.start();
+                attempt.finish(AttemptOutcome::Aborted);
+            }
+            assert_eq!(
+                *statuses.borrow(),
+                [InstallerStatus::Started, InstallerStatus::Aborted]
+            );
+        }
+    }
 
     /// A failed serial destination is removed without blocking healthy mirrors.
     #[test]
@@ -2270,7 +2474,10 @@ mod tests {
             };
             assert!(!uncertain);
             assert!(details.contains(diagnostic), "{details}");
-            worker.await.unwrap().unwrap();
+            assert_eq!(
+                worker.await.unwrap().unwrap(),
+                Some(AttemptOutcome::Aborted)
+            );
             rx.try_recv().unwrap_err();
         }
     }

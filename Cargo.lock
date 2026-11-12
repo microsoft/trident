@@ -2377,6 +2377,7 @@ dependencies = [
  "hostname",
  "indoc",
  "inventory",
+ "libc",
  "log",
  "netplan-types",
  "nix",
