@@ -153,7 +153,7 @@ fn finalize_or_rollback_runtime_update(
     }
 
     if !matches!(
-        state.host_status().servicing_state,
+        &state.host_status().servicing_state,
         ServicingState::RuntimeUpdateStaged | ServicingState::ManualRollbackRuntimeStaged,
     ) {
         return Err(TridentError::internal(
@@ -216,7 +216,7 @@ fn finalize_or_rollback_runtime_update(
     engine::persist_background_log_and_metrics(
         &state.host_status().spec.trident.datastore_path,
         None,
-        state.host_status().servicing_state,
+        &state.host_status().servicing_state,
     );
 
     Ok(ExitKind::Done)

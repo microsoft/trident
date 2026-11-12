@@ -245,7 +245,7 @@ impl ManualRollbackContext {
     /// * the second A/B update operation is found (indicating that both volumes
     ///   have been updated)
     /// * an operation that cannot be rolled back is found
-    /// * a HostStatus entry is None
+    /// * a HostStatus entry is None or has an unknown servicing state
     ///
     /// Once the Operations have been parsed, the ManualRollback operations (both
     /// A/B and runtime) and the operations that they undo (both A/B and runtime
@@ -353,6 +353,11 @@ impl ManualRollbackContext {
                     ServicingState::AbUpdateHealthCheckFailed => {
                         current_operation.kind = OperationKind::AbUpdateAutoRollback;
                         trace!("Detected AbUpdateAutoRollback operation, ending parsing here.");
+                        break;
+                    }
+                    ServicingState::Unknown(_) => {
+                        // Unknown states may hide slot changes or unsupported operations.
+                        trace!("Unknown servicing state, ending rollback history parsing here.");
                         break;
                     }
                     _ => {
@@ -720,6 +725,47 @@ mod tests {
             .collect::<Vec<_>>();
         ManualRollbackContext::new(&host_statuses).unwrap()
     }
+    #[test]
+    fn unknown_servicing_state_stops_rollback_history() {
+        let history = [
+            ServicingState::Provisioned,
+            ServicingState::Unknown("future-recovery-step".into()),
+            ServicingState::AbUpdateStaged,
+            ServicingState::Provisioned,
+        ]
+        .into_iter()
+        .map(|state| {
+            Some(host_status(
+                Some(AbVolumeSelection::VolumeA),
+                state,
+                "1.0.0",
+                None,
+                false,
+            ))
+        })
+        .collect::<Vec<_>>();
+        assert!(ManualRollbackContext::new(&history)
+            .unwrap()
+            .get_rollback_chain()
+            .is_empty());
+        let known_history = history
+            .into_iter()
+            .filter(|status| {
+                !matches!(
+                    status.as_ref().unwrap().servicing_state,
+                    ServicingState::Unknown(_)
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ManualRollbackContext::new(&known_history)
+                .unwrap()
+                .get_rollback_chain()
+                .len(),
+            1
+        );
+    }
+
     fn rollback_context_testing(host_status_test_list: &[HostStatusTest], test_description: &str) {
         let final_state = host_status_test_list.last().unwrap();
         rollback_context_testing_for_expected(
