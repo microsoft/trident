@@ -34,8 +34,6 @@ pub mod agentconfig;
 pub mod cli;
 mod datastore;
 mod diagnostics;
-// Activated by the Host Configuration selector API.
-#[allow(dead_code)]
 mod disk_selector;
 mod engine;
 mod grpc_client;
@@ -440,9 +438,11 @@ impl Trident {
         multiboot: bool,
         prefetched_image: Option<OsImage>,
     ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
+        let finalize_only = !allowed_operations.has_stage() && allowed_operations.has_finalize();
         let mut host_config = self
             .host_config
             .clone()
+            .or_else(|| finalize_only.then(|| datastore.host_status().spec.clone()))
             .structured(InternalError::Internal(
                 "install called without Host Configuration set",
             ))?;
@@ -450,8 +450,37 @@ impl Trident {
         let is_stream_image = self.is_stream_image;
 
         self.execute_and_record_error(datastore, |datastore| {
-            host_config
-                .validate()
+            if finalize_only {
+                for disk in host_config
+                    .storage
+                    .disks
+                    .iter()
+                    .chain(&datastore.host_status().spec.storage.disks)
+                {
+                    if disk.selector.is_some() {
+                        return Err(TridentError::new(InvalidInputError::DiskSelection {
+                            disk_id: disk.id.clone(),
+                        }))
+                        .message(
+                            "Disk selectors require staging; finalize requires resolved device paths",
+                        );
+                    }
+                }
+
+                if datastore.host_status().servicing_state != ServicingState::CleanInstallStaged {
+                    return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                        state: datastore.host_status().servicing_state,
+                    }))
+                    .message("No staged clean install to finalize");
+                }
+
+                return engine::finalize_clean_install(datastore, None, None, is_stream_image)
+                    .message("Failed to finalize clean install")
+                    .map(|ek| (ek, None, ServicingType::CleanInstall));
+            }
+
+            let storage_graph = host_config
+                .validate_with_storage_graph()
                 .map_err(Into::into)
                 .message("Invalid Host Configuration provided")?;
 
@@ -500,6 +529,10 @@ impl Trident {
             };
             let image_hash = Some(image.metadata_sha384());
 
+            if allowed_operations.has_stage() {
+                disk_selector::resolve_install(&mut host_config, &image, &storage_graph)?;
+            }
+
             if datastore.host_status().spec != host_config {
                 debug!("Host Configuration has been updated");
 
@@ -544,6 +577,7 @@ impl Trident {
                             Ok((ExitKind::Done, None, ServicingType::NoActiveServicing))
                         }
                     }
+
                     ServicingState::NotProvisioned => {
                         // Otherwise, if servicing state is NotProvisioned, need to either re-execute the
                         // failed clean install OR inform the user that no update is needed.
@@ -919,5 +953,107 @@ impl Trident {
     pub fn diagnose(output_path: &Path, full: bool, selinux: bool) -> Result<(), TridentError> {
         diagnostics::generate_and_bundle(output_path, full, selinux)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tempfile::TempDir;
+
+    use trident_api::{
+        config::{Disk, DiskSelector, Operation, Storage},
+        error::ErrorKind,
+    };
+
+    #[test]
+    fn finalize_only_rejects_unresolved_selectors() {
+        let unresolved = HostConfiguration {
+            storage: Storage {
+                disks: vec![
+                    Disk {
+                        id: "resolved".into(),
+                        device: "/dev/sda".into(),
+                        ..Default::default()
+                    },
+                    Disk {
+                        id: "unresolved".into(),
+                        selector: Some(DiskSelector::default()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut resolved = unresolved.clone();
+        resolved.storage.disks[1].selector = None;
+        resolved.storage.disks[1].device = "/dev/sdb".into();
+
+        for (supplied, saved) in [
+            (Some(unresolved.clone()), resolved.clone()),
+            (None, unresolved.clone()),
+            (Some(resolved), unresolved),
+        ] {
+            let directory = TempDir::new().unwrap();
+            let mut datastore =
+                DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
+            datastore
+                .with_host_status(|status| {
+                    status.servicing_state = ServicingState::CleanInstallStaged;
+                    status.spec = saved;
+                })
+                .unwrap();
+            let mut trident = Trident {
+                host_config: supplied,
+                orchestrator: None,
+                is_stream_image: false,
+            };
+
+            let error = trident
+                .install(&mut datastore, Operation::Finalize.into(), false, None)
+                .unwrap_err();
+            assert_eq!(
+                error.kind(),
+                &ErrorKind::InvalidInput(InvalidInputError::DiskSelection {
+                    disk_id: "unresolved".into(),
+                })
+            );
+            assert!(format!("{error:?}").contains("Disk selectors require staging"));
+            assert_eq!(
+                datastore.host_status().servicing_state,
+                ServicingState::CleanInstallStaged
+            );
+        }
+    }
+
+    #[test]
+    fn finalize_only_requires_a_staged_install() {
+        for state in [
+            ServicingState::NotProvisioned,
+            ServicingState::Provisioned,
+            ServicingState::CleanInstallFinalized,
+        ] {
+            let directory = TempDir::new().unwrap();
+            let mut datastore =
+                DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
+            datastore
+                .with_host_status(|status| status.servicing_state = state)
+                .unwrap();
+            let mut trident = Trident {
+                host_config: None,
+                orchestrator: None,
+                is_stream_image: false,
+            };
+
+            let error = trident
+                .install(&mut datastore, Operation::Finalize.into(), false, None)
+                .unwrap_err();
+            assert_eq!(
+                error.kind(),
+                &ErrorKind::Internal(InternalError::UnexpectedServicingState { state })
+            );
+        }
     }
 }
