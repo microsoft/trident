@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -9,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sysdefs::osuuid::OsUuid;
 use trident_api::primitives::bytes::ByteCount;
 
-use crate::dependencies::Dependency;
+use crate::{dependencies::Dependency, sysfs::SysfsBlockDevice};
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
 pub struct LsBlkOutput {
@@ -23,6 +24,10 @@ pub struct LsBlkOutput {
 pub struct BlockDevice {
     /// Device name
     pub name: String,
+
+    /// Full device path, including the mapper directory for device-mapper nodes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<PathBuf>,
 
     /// Filesystem type
     pub fstype: Option<String>,
@@ -80,10 +85,17 @@ pub struct BlockDevice {
 }
 
 impl BlockDevice {
-    /// Gets a list of all mountpoints for this device and its children.
+    /// Collects mountpoints from both lsblk fields for this device and its children.
+    ///
+    /// Includes `mountpoint` only when it is absent from `mountpoints`.
     pub fn get_all_mountpoints_recursive(&self) -> Vec<&Path> {
         self.mountpoints
             .iter()
+            .chain(
+                self.mountpoint
+                    .iter()
+                    .filter(|mountpoint| !self.mountpoints.contains(*mountpoint)),
+            )
             .map(|p| p.as_path())
             .chain(
                 self.children
@@ -93,11 +105,72 @@ impl BlockDevice {
             .collect()
     }
 
-    /// Returns the `/dev/` path of this block device.
+    /// Returns lsblk's reported device path, including `/dev/mapper` paths.
+    ///
+    /// Without `PATH`, uses an absolute `name` unchanged or resolves a relative
+    /// name under `/dev`.
     pub fn device_path(&self) -> PathBuf {
-        let mut out = PathBuf::from("/dev/");
-        out.push(&self.name);
-        out
+        self.path
+            .clone()
+            .unwrap_or_else(|| Path::new("/dev").join(&self.name))
+    }
+
+    /// Returns canonical paths for this device and all its descendants.
+    ///
+    /// Deduplicates aliases and returns an error if any path cannot be resolved.
+    pub fn device_paths_recursive(&self) -> Result<HashSet<PathBuf>, Error> {
+        let path = self.device_path();
+        let mut paths = HashSet::from([fs::canonicalize(&path).with_context(|| {
+            format!(
+                "Cannot resolve block-device descendant '{}'",
+                path.display()
+            )
+        })?]);
+        for child in &self.children {
+            paths.extend(child.device_paths_recursive()?);
+        }
+        Ok(paths)
+    }
+
+    /// Checks whether this device or a descendant has a mountpoint or active swap.
+    pub fn is_mounted_recursive(&self) -> bool {
+        self.mountpoint.is_some()
+            || !self.mountpoints.is_empty()
+            || self.children.iter().any(Self::is_mounted_recursive)
+    }
+
+    /// Checks this device and its descendants for kernel block-device holders.
+    ///
+    /// Stops at the first holder. Inspection failures return errors, not `false`.
+    pub fn has_holders_recursive(&self) -> Result<bool, Error> {
+        let path = fs::canonicalize(self.device_path())?;
+        let name = path
+            .file_name()
+            .context("Block device has no kernel name")?;
+        if SysfsBlockDevice::new(Path::new("/sys/class/block").join(name)).has_holders()? {
+            return Ok(true);
+        }
+        for child in &self.children {
+            if child.has_holders_recursive()? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Returns the pure device file name, such as `sda` or `nvme0n1`. Without
+    /// any path components.
+    pub fn device_file_name(&self) -> &str {
+        // self.name may have /dev/ prefix, so we strip it if present.
+        match self.name.rfind('/') {
+            Some(pos) => &self.name[pos + 1..],
+            None => &self.name,
+        }
+    }
+
+    /// Returns this device's path under `/sys/class/block`.
+    pub fn sysfs_path(&self) -> PathBuf {
+        Path::new("/sys/class/block").join(self.device_file_name())
     }
 }
 
@@ -865,6 +938,17 @@ mod tests {
     }
 
     #[test]
+    fn mapped_device_uses_the_reported_full_path() {
+        let devices = parse_lsblk_output(
+            r#"{"blockdevices":[{"name":"encrypted-volume","path":"/dev/mapper/encrypted-volume","type":"crypt","size":4096}]}"#,
+        ).unwrap();
+        assert_eq!(
+            devices[0].device_path(),
+            Path::new("/dev/mapper/encrypted-volume")
+        );
+    }
+
+    #[test]
     fn test_parse_lsblk_output() {
         let expected_block_device_list = vec![BlockDevice {
             name: "/dev/sda".into(),
@@ -895,6 +979,7 @@ mod tests {
                     partition_table_type: None,
                     readonly: false,
                     blkdev_type: BlockDeviceType::Partition,
+                    path: Some("/dev/sda1".into()),
                 },
                 BlockDevice {
                     name: "/dev/sda2".into(),
@@ -912,6 +997,7 @@ mod tests {
                     partition_table_type: None,
                     readonly: false,
                     blkdev_type: BlockDeviceType::Partition,
+                    path: Some("/dev/sda2".into()),
                 },
                 BlockDevice {
                     name: "/dev/sda3".into(),
@@ -929,6 +1015,7 @@ mod tests {
                     partition_table_type: None,
                     readonly: false,
                     blkdev_type: BlockDeviceType::Partition,
+                    path: Some("/dev/sda3".into()),
                 },
                 BlockDevice {
                     name: "/dev/sda4".into(),
@@ -946,6 +1033,7 @@ mod tests {
                     partition_table_type: None,
                     readonly: false,
                     blkdev_type: BlockDeviceType::Partition,
+                    path: Some("/dev/sda4".into()),
                 },
                 BlockDevice {
                     name: "/dev/sda5".into(),
@@ -963,11 +1051,13 @@ mod tests {
                     partition_table_type: None,
                     readonly: false,
                     blkdev_type: BlockDeviceType::Partition,
+                    path: Some("/dev/sda5".into()),
                 },
             ],
             mountpoint: None,
             mountpoints: vec![],
             partition_table_type: Some(PartitionTableType::Gpt),
+            path: Some("/dev/sda".into()),
         }];
 
         let block_device_list = parse_lsblk_output(SAMPLE_LSBLK_OUTPUT).unwrap();
@@ -990,6 +1080,112 @@ mod tests {
         assert!(mount_point_list.contains(&Path::new("/")));
         assert!(mount_point_list.contains(&Path::new("[SWAP]")));
         assert!(mount_point_list.contains(&Path::new("/var/lib/trident")));
+    }
+
+    #[test]
+    fn test_get_all_mountpoints_recursive_merges_fields_without_duplicates() {
+        let device = BlockDevice {
+            mountpoint: Some("/".into()),
+            mountpoints: vec!["/".into()],
+            children: vec![
+                BlockDevice {
+                    mountpoint: Some("/var".into()),
+                    ..Default::default()
+                },
+                BlockDevice {
+                    mountpoint: Some("[SWAP]".into()),
+                    mountpoints: vec!["[SWAP]".into()],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            device.get_all_mountpoints_recursive(),
+            vec![Path::new("/"), Path::new("/var"), Path::new("[SWAP]")]
+        );
+    }
+
+    #[test]
+    fn direct_and_descendant_mounts_are_protected() {
+        let mut disk = BlockDevice::default();
+        assert!(!disk.is_mounted_recursive());
+        disk.mountpoint = Some("/mnt".into());
+        assert!(disk.is_mounted_recursive());
+        disk.mountpoint = None;
+        disk.children.push(BlockDevice {
+            mountpoints: vec!["/".into()],
+            ..Default::default()
+        });
+        assert!(disk.is_mounted_recursive());
+    }
+
+    #[test]
+    fn active_swap_is_protected_but_inactive_swap_signatures_are_not() {
+        for swap in [
+            BlockDevice {
+                mountpoint: Some("[SWAP]".into()),
+                ..Default::default()
+            },
+            BlockDevice {
+                mountpoints: vec!["[SWAP]".into()],
+                ..Default::default()
+            },
+        ] {
+            assert!(swap.is_mounted_recursive());
+            assert!(BlockDevice {
+                children: vec![swap],
+                ..Default::default()
+            }
+            .is_mounted_recursive());
+        }
+        assert!(!BlockDevice {
+            fstype: Some("swap".into()),
+            ..Default::default()
+        }
+        .is_mounted_recursive());
+    }
+
+    #[test]
+    fn test_device_paths_recursive_resolves_descendants_and_deduplicates_aliases() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let disk = root.join("disk");
+        let partition = root.join("partition");
+        let mapped = root.join("mapped");
+        for path in [&disk, &partition, &mapped] {
+            fs::write(path, []).unwrap();
+        }
+        let alias = root.join("partition-alias");
+        std::os::unix::fs::symlink(&partition, &alias).unwrap();
+        let mut device = BlockDevice {
+            path: Some(disk.clone()),
+            children: vec![
+                BlockDevice {
+                    path: Some(partition.clone()),
+                    children: vec![BlockDevice {
+                        path: Some(mapped.clone()),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                BlockDevice {
+                    path: Some(alias),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            device.device_paths_recursive().unwrap(),
+            HashSet::from([disk, partition, mapped])
+        );
+        device.children.push(BlockDevice {
+            path: Some(root.join("missing")),
+            ..Default::default()
+        });
+        let error = device.device_paths_recursive().unwrap_err();
+        assert!(error.is::<std::io::Error>());
     }
 
     #[test]
