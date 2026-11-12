@@ -155,6 +155,7 @@ mod tests {
                     id: "disk0".to_string(),
                     partition_table_type: Default::default(),
                     adopted_partitions: Default::default(),
+                    selector: None,
                 }],
                 ..Default::default()
             },

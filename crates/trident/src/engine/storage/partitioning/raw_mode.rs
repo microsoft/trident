@@ -495,6 +495,7 @@ mod tests {
                 partition_table_type: PartitionTableType::Gpt,
                 partitions,
                 adopted_partitions: vec![],
+                selector: None,
             },
             dev_path: PathBuf::from("/dev/sda"),
         }
@@ -604,6 +605,7 @@ mod tests {
                     p
                 }],
                 adopted_partitions: vec![],
+                selector: None,
             },
             dev_path: PathBuf::from("/dev/sda"),
         };
@@ -629,6 +631,7 @@ mod tests {
                 partition_table_type: PartitionTableType::Gpt,
                 partitions: vec![],
                 adopted_partitions: vec![],
+                selector: None,
             },
             dev_path: PathBuf::from("/dev/sda"),
         };

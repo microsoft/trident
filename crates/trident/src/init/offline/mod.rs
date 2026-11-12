@@ -184,6 +184,7 @@ fn generate_host_status(
         partition_table_type: PartitionTableType::Gpt,
         partitions,
         adopted_partitions: Vec::new(),
+        selector: None,
     });
 
     let mut ab_volumes = Vec::new();

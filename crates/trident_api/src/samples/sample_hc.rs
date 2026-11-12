@@ -55,6 +55,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             },
                         ],
                         adopted_partitions: vec![],
+                        selector: None,
                     }],
                     filesystems: vec![
                     FileSystem {
@@ -110,6 +111,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             },
                         ],
                         adopted_partitions: vec![],
+                        selector: None,
                     }],
                     filesystems: vec![
                         FileSystem {
@@ -290,6 +292,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             },
                         ],
                         adopted_partitions: vec![],
+                        selector: None,
                     }],
                     encryption: Some(Encryption {
                         recovery_key_url: Some(Url::parse("file:///recovery.key").unwrap()),
@@ -525,6 +528,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             },
                         ],
                         adopted_partitions: vec![],
+                        selector: None,
                     }],
                     filesystems: vec![
                         FileSystem {
@@ -1167,6 +1171,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 },
                             ],
                             adopted_partitions: vec![],
+                            selector: None,
                         },
                         Disk {
                             id: "disk2".to_string(),
@@ -1196,6 +1201,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 },
                             ],
                             adopted_partitions: vec![],
+                            selector: None,
                         },
                     ],
                     raid: Raid {
@@ -1340,6 +1346,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 },
                             ],
                             adopted_partitions: vec![],
+                            selector: None,
                         },
                         Disk {
                             id: "disk2".to_string(),
@@ -1347,6 +1354,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                             partition_table_type: PartitionTableType::Gpt,
                             partitions: vec![],
                             adopted_partitions: vec![],
+                            selector: None,
                         },
                     ],
                     raid: Raid { software: vec![], sync_timeout: None },
@@ -1492,6 +1500,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 },
                             ],
                             adopted_partitions: vec![],
+                            selector: None,
                         },
                         Disk {
                             id: "disk2".to_string(),
@@ -1521,6 +1530,7 @@ pub fn sample_host_configuration(name: &str) -> Result<(&'static str, HostConfig
                                 },
                             ],
                             adopted_partitions: vec![],
+                            selector: None,
                         },
                     ],
                     raid: Raid {

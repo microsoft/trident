@@ -489,6 +489,7 @@ mod tests {
                     },
                 ],
                 adopted_partitions: vec![],
+                selector: None,
             }],
             filesystems: vec![
                 FileSystem {
@@ -573,6 +574,7 @@ mod tests {
                     },
                 ],
                 adopted_partitions: vec![],
+                selector: None,
             }],
             filesystems: vec![
                 FileSystem {
@@ -803,6 +805,7 @@ mod tests {
                         },
                     ],
                     adopted_partitions: vec![],
+                    selector: None,
                 }],
                 verity: vec![VerityDevice {
                     id: "root".into(),

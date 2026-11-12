@@ -1467,6 +1467,7 @@ mod functional_test {
                     label: None,
                 },
             ],
+            selector: None,
         }];
         ctx.partition_paths.insert(
             "root-data-a".to_string(),
