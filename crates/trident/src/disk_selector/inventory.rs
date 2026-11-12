@@ -18,7 +18,7 @@ use trident_api::primitives::bytes::ByteCount;
 /// NVMe, sd, vd, mmcblk, and hd names.
 ///
 /// Skips read-only, removable, or USB-backed disks; mounted devices, active swap,
-/// or block-device holders on the disk or its descendants; resolved boot-source
+/// or block-device holders on the disk or its descendants; local root-device
 /// matches; non-eMMC MMC media; and logical sectors other than 512 or 4096 bytes.
 /// Each snapshot passes through [`candidate_funnel`]. Probe failures are logged
 /// immediately; rejections and candidates are summarized at debug level.
@@ -27,14 +27,14 @@ use trident_api::primitives::bytes::ByteCount;
 /// Does not select or reserve disks. Callers enforce layout capacity and
 /// reservations. Probe failures are distinct from known rejections and do not
 /// prevent other viable disks from being returned.
-/// Enumeration and boot-source failures abort discovery.
+/// Enumeration and root-device resolution failures abort discovery.
 pub(super) fn discover() -> Result<Vec<Candidate>, Error> {
     udevadm::settle().context("Failed to settle disk inventory")?;
     let disks = lsblk::find(|device| device.blkdev_type == BlockDeviceType::Disk)
         .context("Failed to enumerate disks")?;
 
-    // Resolve kernel root devices for comparison with each disk's descendant paths.
-    let boot_sources = cmdline::boot_sources()?;
+    // Protect the boot root's storage by matching its devices against disk descendants.
+    let root_devices = cmdline::local_root_devices()?;
 
     // Prepare containers for viable and rejected disks.
     let mut candidates = Vec::new();
@@ -52,7 +52,7 @@ pub(super) fn discover() -> Result<Vec<Candidate>, Error> {
             }
         };
 
-        match candidate_funnel(precandidate, &boot_sources) {
+        match candidate_funnel(precandidate, &root_devices) {
             Ok(candidate) => candidates.push(candidate),
             Err(reason) => {
                 rejected.push((path, reason));
@@ -288,10 +288,10 @@ enum RefusalReason {
 
 /// Narrows a snapshot through eligibility checks, stopping at the first rejection.
 ///
-/// Uses only in-memory data. Boot-source paths must already be canonical.
+/// Uses only in-memory data. Local root-device paths must already be canonical.
 fn candidate_funnel(
     disk: PreCandidate,
-    boot_sources: &HashSet<PathBuf>,
+    root_devices: &HashSet<PathBuf>,
 ) -> Result<Candidate, RefusalReason> {
     let order = DeviceOrder::parse(&disk.name).ok_or(RefusalReason::UnsupportedDeviceName)?;
 
@@ -328,7 +328,7 @@ fn candidate_funnel(
         return Err(RefusalReason::ActiveBlockDeviceHolder);
     }
 
-    if !disk.device_paths.is_disjoint(boot_sources) {
+    if !disk.device_paths.is_disjoint(root_devices) {
         return Err(RefusalReason::InstallationMediaBackingDevice);
     }
 
@@ -512,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn boot_sources_exclude_whole_disks_and_descendants() {
+    fn local_root_devices_exclude_whole_disks_and_descendants() {
         let mut disk = precandidate("sda");
         disk.device_paths.insert("/dev/sda1".into());
         for source in ["/dev/sda", "/dev/sda1"] {
