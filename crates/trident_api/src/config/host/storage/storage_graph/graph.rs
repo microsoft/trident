@@ -1,6 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
-use anyhow::{Context, Error};
+use anyhow::{bail, ensure, Context, Error};
 use petgraph::{
     csr::DefaultIx,
     graph::NodeIndex as PetgraphNodeIndex,
@@ -18,7 +21,7 @@ use crate::{
 use super::{
     node::{BlockDevice, StorageGraphNode},
     references::ReferenceKind,
-    types::{BlkDevKind, HostConfigBlockDevice},
+    types::{BlkDevKind, CalculatedSize, HostConfigBlockDevice},
 };
 
 /// The type of the node index used in the StorageGraph.
@@ -188,6 +191,31 @@ impl StorageGraph {
         block_device_size(&self.inner, idx)
     }
 
+    /// Describes every authored partition's size without consulting image metadata.
+    ///
+    /// Fixed sizes come directly from the HC. Image-backed grow partitions carry
+    /// their filesystem mount point and accumulated storage-layer reservations;
+    /// new filesystems and filesystem-free grow partitions remain distinct cases.
+    pub fn calculate_partition_sizes(
+        &self,
+    ) -> Result<HashMap<BlockDeviceId, CalculatedSize>, Error> {
+        let mut sizes = HashMap::new();
+        for (idx, node) in self.inner.node_references() {
+            let Some(device) = node.as_block_device() else {
+                continue;
+            };
+            let HostConfigBlockDevice::Partition(partition) = &device.host_config_ref else {
+                continue;
+            };
+            let size = match partition.size.to_bytes() {
+                Some(bytes) => CalculatedSize::Fixed(bytes),
+                None => calculate_grow_partition_size(&self.inner, idx)?,
+            };
+            sizes.insert(device.id.clone(), size);
+        }
+        Ok(sizes)
+    }
+
     /// Returns the filesystem places on this block device, if any.
     pub fn filesystem_on_device(&self, node_id: &BlockDeviceId) -> Option<&FileSystem> {
         let (idx, _) = self.node_by_id(node_id)?;
@@ -332,6 +360,66 @@ fn block_device_size(graph: &StoragePetgraph, idx: NodeIndex) -> Option<u64> {
     }
 }
 
+/// Finds a grow partition's filesystem source and intervening reservations.
+///
+/// Graph validation forbids device sharing, so incoming edges form one containing
+/// storage chain. Reservations above a verity hash edge belong to the data side.
+fn calculate_grow_partition_size(
+    graph: &StoragePetgraph,
+    idx: NodeIndex,
+) -> Result<CalculatedSize, Error> {
+    let mut current = idx;
+    let mut extra = 0_u64;
+    let mut is_verity_hash = false;
+    loop {
+        let mut parents = graph.edges_directed(current, Direction::Incoming);
+        let Some(edge) = parents.next() else {
+            return Ok(CalculatedSize::GrowPartitionUnformatted);
+        };
+        ensure!(
+            parents.next().is_none(),
+            "Grow partition has multiple storage consumers"
+        );
+        is_verity_hash |= edge
+            .weight()
+            .is_special_and(|kind| kind == SpecialReferenceKind::VerityHashDevice);
+        current = edge.source();
+        match &graph[current] {
+            StorageGraphNode::FileSystem(filesystem) => {
+                return match filesystem.source {
+                    FileSystemSource::Image => {
+                        let fs = filesystem
+                            .mount_point_path()
+                            .context("Image filesystem has no mount point")?
+                            .to_path_buf();
+                        Ok(if is_verity_hash {
+                            CalculatedSize::FromVerityHash { fs, extra }
+                        } else {
+                            CalculatedSize::FromFilesystem { fs, extra }
+                        })
+                    }
+                    FileSystemSource::New(_) => Ok(CalculatedSize::GrowPartitionWithNewFilesystem),
+                    FileSystemSource::Adopted(_) => {
+                        bail!("An adopted filesystem cannot determine a new grow partition's size")
+                    }
+                };
+            }
+            StorageGraphNode::BlockDevice(device) => {
+                if matches!(
+                    device.host_config_ref,
+                    HostConfigBlockDevice::EncryptedVolume(_)
+                ) && !is_verity_hash
+                {
+                    extra = extra
+                        .checked_add(u64::from(LUKS_HEADER_SIZE_IN_MIB) * 1024 * 1024)
+                        .context("Encryption overhead size overflow")?;
+                }
+            }
+            StorageGraphNode::Swap(_) => return Ok(CalculatedSize::GrowPartitionUnformatted),
+        }
+    }
+}
+
 /// Helper enum to report the status of volumes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum VolumeStatus {
@@ -364,6 +452,172 @@ mod tests {
             node::BlockDevice, references::SpecialReferenceKind, types::HostConfigBlockDevice,
         },
     };
+
+    /// Builds a validated graph with fixed and encrypted-grow partitions.
+    fn encrypted_grow_graph() -> StorageGraph {
+        Storage {
+            disks: vec![Disk {
+                id: "disk".into(),
+                device: "/dev/sda".into(),
+                partitions: vec![
+                    Partition::new("fixed", 64 * 1024 * 1024),
+                    Partition::new("grow", PartitionSize::Grow),
+                ],
+                ..Default::default()
+            }],
+            encryption: Some(Encryption {
+                volumes: vec![EncryptedVolume {
+                    id: "encrypted".into(),
+                    device_id: "grow".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }),
+            filesystems: vec![FileSystem {
+                device_id: Some("encrypted".into()),
+                source: FileSystemSource::Image,
+                mount_point: Some(MountPoint::from_str("/").unwrap()),
+                is_esp: false,
+            }],
+            ..Default::default()
+        }
+        .build_graph()
+        .unwrap()
+    }
+
+    #[test]
+    fn partition_sizes_preserve_fixed_sizes_and_image_reservations() {
+        let graph = encrypted_grow_graph();
+        assert_eq!(
+            graph.calculate_partition_sizes().unwrap(),
+            HashMap::from([
+                ("fixed".into(), CalculatedSize::Fixed(64 * 1024 * 1024)),
+                (
+                    "grow".into(),
+                    CalculatedSize::FromFilesystem {
+                        fs: "/".into(),
+                        extra: u64::from(LUKS_HEADER_SIZE_IN_MIB) * 1024 * 1024,
+                    }
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn new_and_filesystem_free_grow_partitions_are_distinct() {
+        let graph = Storage {
+            disks: vec![Disk {
+                id: "disk".into(),
+                device: "/dev/sda".into(),
+                partitions: vec![
+                    Partition::new("new", PartitionSize::Grow),
+                    Partition::new("unused", PartitionSize::Grow),
+                ],
+                ..Default::default()
+            }],
+            filesystems: vec![FileSystem {
+                device_id: Some("new".into()),
+                source: FileSystemSource::New(NewFileSystemType::Ext4),
+                mount_point: Some(MountPoint::from_str("/var").unwrap()),
+                is_esp: false,
+            }],
+            ..Default::default()
+        }
+        .build_graph()
+        .unwrap();
+        assert_eq!(
+            graph.calculate_partition_sizes().unwrap(),
+            HashMap::from([
+                ("new".into(), CalculatedSize::GrowPartitionWithNewFilesystem),
+                ("unused".into(), CalculatedSize::GrowPartitionUnformatted),
+            ])
+        );
+    }
+
+    #[test]
+    fn verity_data_and_hash_sizes_use_distinct_metadata_sources() {
+        let graph = Storage {
+            disks: vec![Disk {
+                id: "disk".into(),
+                device: "/dev/sda".into(),
+                partitions: vec![
+                    Partition::new("data", PartitionSize::Grow),
+                    Partition::new("hash", PartitionSize::Grow),
+                ],
+                ..Default::default()
+            }],
+            verity: vec![VerityDevice {
+                id: "verity".into(),
+                name: "root".into(),
+                data_device_id: "data".into(),
+                hash_device_id: "hash".into(),
+                ..Default::default()
+            }],
+            filesystems: vec![FileSystem {
+                device_id: Some("verity".into()),
+                source: FileSystemSource::Image,
+                mount_point: Some(MountPoint::from_str("/").unwrap()),
+                is_esp: false,
+            }],
+            ..Default::default()
+        }
+        .build_graph()
+        .unwrap();
+        assert_eq!(
+            graph.calculate_partition_sizes().unwrap(),
+            HashMap::from([
+                (
+                    "data".into(),
+                    CalculatedSize::FromFilesystem {
+                        fs: "/".into(),
+                        extra: 0
+                    }
+                ),
+                (
+                    "hash".into(),
+                    CalculatedSize::FromVerityHash {
+                        fs: "/".into(),
+                        extra: 0
+                    }
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn fixed_raid_members_do_not_receive_grow_requirements() {
+        let member_size = (u64::MAX / 4096) * 4096;
+        let graph = Storage {
+            disks: vec![Disk {
+                id: "disk".into(),
+                device: "/dev/sda".into(),
+                partitions: vec![
+                    Partition::new("a", member_size),
+                    Partition::new("b", member_size),
+                ],
+                ..Default::default()
+            }],
+            raid: Raid {
+                software: vec![SoftwareRaidArray {
+                    id: "raid".into(),
+                    level: RaidLevel::Raid0,
+                    name: "raid".into(),
+                    devices: vec!["a".into(), "b".into()],
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .build_graph()
+        .unwrap();
+        assert_eq!(
+            graph.calculate_partition_sizes().unwrap(),
+            HashMap::from([
+                ("a".into(), CalculatedSize::Fixed(member_size)),
+                ("b".into(), CalculatedSize::Fixed(member_size)),
+            ])
+        );
+    }
 
     #[test]
     fn test_filesystems_on_verity() {

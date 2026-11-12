@@ -3,7 +3,7 @@
 #[cfg(feature = "documentation")]
 use documented::{Documented, DocumentedVariants};
 
-use std::fmt::Display;
+use std::{fmt::Display, path::PathBuf};
 
 use anyhow::{bail, Error};
 use serde::{Deserialize, Serialize};
@@ -12,6 +12,21 @@ use crate::config::{
     AbVolumePair, AdoptedPartition, Disk, EncryptedVolume, Partition, SoftwareRaidArray,
     VerityDevice,
 };
+
+/// A partition's authored size or the source needed to determine its grow minimum.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CalculatedSize {
+    /// Fixed partition size in bytes, taken directly from the HC.
+    Fixed(u64),
+    /// Image filesystem size at `fs`, plus graph-layer reservations in bytes.
+    FromFilesystem { fs: PathBuf, extra: u64 },
+    /// Verity hash-image size for `fs`, plus graph-layer reservations in bytes.
+    FromVerityHash { fs: PathBuf, extra: u64 },
+    /// A newly formatted filesystem on a grow partition has no image-derived size.
+    GrowPartitionWithNewFilesystem,
+    /// A grow partition without a configured filesystem, regardless of existing data.
+    GrowPartitionUnformatted,
+}
 
 /// Enum for supported block device types
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

@@ -80,7 +80,17 @@ pub struct HostConfiguration {
 }
 
 impl HostConfiguration {
+    /// Validates the HC without retaining its storage graph.
     pub fn validate(&self) -> Result<(), HostConfigurationStaticValidationError> {
+        self.validate_with_storage_graph().map(|_| ())
+    }
+
+    /// Validates all HC sections and returns the validated storage graph.
+    ///
+    /// The graph describes this configuration; rebuild it after changing storage.
+    pub fn validate_with_storage_graph(
+        &self,
+    ) -> Result<StorageGraph, HostConfigurationStaticValidationError> {
         let require_root_mount_point = self.trident != Trident::default()
             || self.scripts != Scripts::default()
             || self.os != Os::default()
@@ -97,7 +107,7 @@ impl HostConfiguration {
 
         self.validate_extension_images_locations(&graph)?;
 
-        Ok(())
+        Ok(graph)
     }
 
     /// Returns whether this Host Configuration has adopted partitions install.
