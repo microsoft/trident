@@ -247,8 +247,7 @@ impl ManualRollbackContext {
     /// * an operation that cannot be rolled back is found
     /// * a HostStatus entry is None
     ///
-    /// Automatic rollback after health or hypervisor validation failure ends parsing,
-    /// so the rejected candidate is not offered as a manual rollback target.
+    /// Health/hypervisor automatic rollback ends parsing, excluding the rejected candidate.
     ///
     /// Once the Operations have been parsed, the ManualRollback operations (both
     /// A/B and runtime) and the operations that they undo (both A/B and runtime
@@ -355,7 +354,7 @@ impl ManualRollbackContext {
                     }
                     ServicingState::AbUpdateHealthCheckFailed
                     | ServicingState::AbUpdateHypervisorCheckFailed => {
-                        // Automatic recovery ends rollback history at the failed candidate.
+                        // Do not offer the rejected candidate as a rollback target.
                         current_operation.kind = OperationKind::AbUpdateAutoRollback;
                         trace!("Detected AbUpdateAutoRollback operation, ending parsing here.");
                         break;
@@ -1029,7 +1028,7 @@ mod tests {
         rollback_context_testing(&host_status_list, "Validate A/B update health check failed");
     }
 
-    /// Hypervisor-triggered recovery must bound manual rollback history like health failure.
+    /// Hypervisor recovery bounds history like health-check recovery.
     #[test]
     fn test_ab_update_hypervisor_check_failed() {
         let host_status_list = vec![

@@ -20,7 +20,7 @@ use crate::{
     ExitKind,
 };
 
-/// Selects and executes update servicing while preserving the installation's MSHV mode.
+/// Selects and executes update servicing without changing MSHV mode.
 #[tracing::instrument(skip_all)]
 pub(crate) fn update(
     host_config: &HostConfiguration,
@@ -60,8 +60,7 @@ pub(crate) fn update(
         image: Some(image),
     })?;
 
-    // Reject slot-owned MSHV mode changes before servicing selection so even
-    // requests classified as no-op updates cannot bypass the transition guard.
+    // Reject MSHV mode changes before selection, including for no-op updates.
     engine::mshv::validate_transition(&ctx.spec_old, &ctx.spec)?;
 
     // Before starting an update servicing, need to validate that the active volume is set

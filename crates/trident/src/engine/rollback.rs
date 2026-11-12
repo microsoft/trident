@@ -38,10 +38,9 @@ pub enum BootValidationResult {
     InvalidHypervisor(TridentError),
 }
 
-/// Validates the expected boot device and invokes the MSHV identity hook (currently a success stub).
-/// Commits finalized servicing on success, or reconciles status after firmware/automatic rollback.
-/// Trial A/B validation failures can request recovery; recovery failures return an error
-/// without requesting another rollback. Errors may leave Host Status unchanged.
+/// Validates the boot device and calls the MSHV identity hook (currently a success stub).
+/// Commits a valid target or reconciles rollback status. Trial A/B validation failures
+/// can request recovery; recovery failures return errors without another rollback.
 #[tracing::instrument(skip_all)]
 pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
     info!("Validating whether host correctly booted from target OS image");
@@ -52,8 +51,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         ServicingState::AbUpdateFinalized
         | ServicingState::CleanInstallFinalized
         | ServicingState::ManualRollbackAbFinalized => datastore.host_status().ab_active_volume,
-        // After health or hypervisor validation fails, invert the recorded volume
-        // so the context's update target resolves to the retained servicing OS.
+        // Invert the context volume so recovery targets the retained servicing OS.
         ServicingState::AbUpdateHealthCheckFailed
         | ServicingState::AbUpdateHypervisorCheckFailed => {
             match datastore.host_status().ab_active_volume {
@@ -79,16 +77,14 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         _ => ServicingType::NoActiveServicing,
     };
 
-    // Commit and recovery must preserve the installation's slot-owned MSHV mode.
-    // CleanInstallFinalized has no previous installed mode, so there is no transition to validate.
+    // Preserve MSHV mode except on clean install, which has no previous mode.
     if current_servicing_state != ServicingState::CleanInstallFinalized {
         super::mshv::validate_transition(
             &datastore.host_status().spec_old,
             &datastore.host_status().spec,
         )?;
     }
-    // After candidate validation fails, recovery must validate the retained OS
-    // using spec_old rather than the failed candidate's configuration.
+    // Recovery validates the retained OS, not the failed candidate.
     let recovering = matches!(
         current_servicing_state,
         ServicingState::AbUpdateHealthCheckFailed | ServicingState::AbUpdateHypervisorCheckFailed
@@ -125,8 +121,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         compare_device_paths(current_device_path.clone(), expected_device_path.clone())
             .message("Host failed to boot from expected boot device")?;
 
-    // Invoke the identity hook for the expected slot; it currently assumes success.
-    // A trial-update failure enters recovery; recovery failures must not request another rollback.
+    // Route trial identity failures to recovery; propagate recovery failures.
     if booted_to_expected_device {
         if let Err(error) = super::mshv::validate_active_hypervisor(
             &ctx.spec,
@@ -139,8 +134,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         current_servicing_state,
         ServicingState::AbUpdateFinalized | ServicingState::ManualRollbackAbFinalized
     ) {
-        // The requested device did not boot. Pass the retained OS's configuration
-        // to the identity hook before handling the firmware rollback.
+        // Firmware rolled back; validate against the retained OS's configuration.
         let host_status = datastore.host_status();
         super::mshv::validate_active_hypervisor(
             &host_status.spec_old,
@@ -168,8 +162,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         //
         (false, ServicingState::AbUpdateHealthCheckFailed)
         | (false, ServicingState::AbUpdateHypervisorCheckFailed) => {
-            // Recovery after health or hypervisor validation failed to boot the
-            // servicing OS. Report the failure without changing Host Status.
+            // Failed recovery leaves Host Status unchanged.
             error!("Host failed to rollback into the servicing OS");
             return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
                 root_device_path: current_device_path.to_string_lossy().to_string(),
@@ -268,8 +261,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     }
 }
 
-/// Persists trial A/B hypervisor failure before returning a rollback request.
-/// Other states propagate the error unchanged, preventing a repeated recovery loop.
+/// Persists trial A/B identity failure before requesting rollback; other states only error.
 fn record_hypervisor_failure(
     datastore: &mut DataStore,
     state: ServicingState,
@@ -884,7 +876,7 @@ mod tests {
         status::AbVolumeSelection,
     };
 
-    /// Recovery must remain identifiable after reopening the datastore.
+    /// The recovery state and original error survive reopening the datastore.
     #[test]
     fn hypervisor_failure_is_persisted_before_requesting_rollback() {
         let temp = tempfile::TempDir::new().unwrap();
@@ -919,7 +911,7 @@ mod tests {
         );
     }
 
-    /// A second identity failure must not restart automatic rollback.
+    /// A recovery identity failure must not request another rollback.
     #[test]
     fn recovery_identity_failure_does_not_request_another_rollback() {
         let temp = tempfile::TempDir::new().unwrap();

@@ -9,7 +9,7 @@ use trident_api::{
 
 use super::{boot, EngineContext};
 
-/// Builds an input error attributed to the slot-owned MSHV mode parameter.
+/// Attributes unsupported configurations to the MSHV mode parameter.
 fn unsupported(reason: &str) -> TridentError {
     TridentError::new(InvalidInputError::InvalidInternalParameter {
         name: MSHV_SLOT_ESP_PAYLOAD.into(),
@@ -17,12 +17,12 @@ fn unsupported(reason: &str) -> TridentError {
     })
 }
 
-/// Returns whether the configuration opts into slot-owned MSHV payloads.
+/// Checks the slot-owned MSHV opt-in.
 pub(crate) fn enabled(spec: &HostConfiguration) -> bool {
     spec.internal_params.get_flag(MSHV_SLOT_ESP_PAYLOAD)
 }
 
-/// Rejects enabling or disabling slot-owned MSHV on an established installation.
+/// Rejects MSHV mode changes on an existing installation.
 pub(crate) fn validate_transition(
     previous: &HostConfiguration,
     requested: &HostConfiguration,
@@ -35,14 +35,12 @@ pub(crate) fn validate_transition(
     Ok(())
 }
 
-/// Checks image, deployment, encryption, and mode-transition restrictions when MSHV is enabled.
-/// Configurations without slot-owned MSHV are left to ordinary validation.
+/// Enforces support and mode-transition restrictions when slot-owned MSHV is enabled.
 pub(crate) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentError> {
     if !enabled(&ctx.spec) {
         return Ok(());
     }
-    // x86-64 is an initial support choice while the MSHV payload definition is x64-only.
-    // Other architectures should reuse the existing architecture-aware EFI filename helpers.
+    // The current payload allowlist supports only x86-64.
     if !cfg!(target_arch = "x86_64") || !ctx.image_distro().is_acl() || !ctx.is_uki()? {
         return Err(unsupported(
             "Slot-owned MSHV requires an x86-64 ACL UKI image",
@@ -75,9 +73,8 @@ pub(crate) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
     Ok(())
 }
 
-/// Hypervisor identity-validation hook for the expected installation and slot.
-/// Currently always succeeds; enabled configurations only log the expected slot.
-/// It does not inspect the running hypervisor or validate payload contents.
+/// Success stub: logs the expected slot only when MSHV is enabled.
+/// Does not inspect hypervisor identity.
 pub(crate) fn validate_active_hypervisor(
     spec: &HostConfiguration,
     install_index: usize,
@@ -87,7 +84,6 @@ pub(crate) fn validate_active_hypervisor(
         let expected_directory =
             expected_volume.map(|volume| boot::make_esp_dir_name(install_index, volume));
         // TODO: Identify the running hypervisor and compare it with the expected OS payload.
-        // Deliberately assume success until the identity mechanism is implemented.
         warn!(
             "MSHV hypervisor identity validation is not implemented; assuming success for {:?}",
             expected_directory
@@ -100,7 +96,7 @@ pub(crate) fn validate_active_hypervisor(
 mod tests {
     use super::*;
 
-    /// Established installations may retain their mode, but may not switch modes.
+    /// Matching modes pass; transitions fail in either direction.
     #[test]
     fn rejects_mode_changes_but_allows_matching_installation_modes() {
         let ordinary = HostConfiguration::default();
@@ -112,7 +108,7 @@ mod tests {
         assert!(validate_transition(&mshv, &mshv).is_ok());
     }
 
-    /// MSHV restrictions apply only after opt-in and reject unsupported deployment combinations.
+    /// Unsupported MSHV combinations fail only after opt-in.
     #[test]
     fn rejects_unsupported_mshv_images_without_affecting_other_images() {
         let mut ctx = EngineContext {

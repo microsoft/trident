@@ -457,7 +457,7 @@ fn parse_lazy_partitions(
 
 /// Given a path to a Host Status file, initializes the datastore with the Host Status.
 /// This command can be executed offline in a chroot environment as part of MIC image customization.
-/// Explicit slot-owned MSHV mode is rejected; this path does not discover MSHV bundles.
+/// Rejects explicit MSHV mode; does not discover MSHV payloads.
 pub fn execute(
     hs_path: Option<&Path>,
     lazy_partitions: &[String],
@@ -511,8 +511,7 @@ pub fn execute(
         generate_host_status(&history, lsblk_output, lazy_partitions, disk)?
     };
 
-    // Reject explicit slot-owned mode before writing the datastore or bootstrapping AZLA.
-    // Unflagged MSHV payloads are not detected by this path.
+    // Reject explicit MSHV mode before persistence/bootstrap; unflagged payloads go undetected.
     crate::engine::mshv::validate_transition(&Default::default(), &host_status.spec)?;
 
     debug!(

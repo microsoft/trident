@@ -92,7 +92,7 @@ pub fn check_rollback(
 /// `ExitKind::Done` that's indistinguishable from a real rollback at the
 /// gRPC layer (see `ServicingResponse.servicing_kind` in servicing.proto).
 ///
-/// Rejects rollback targets that change the installation's slot-owned MSHV mode before staging.
+/// Rejects MSHV mode changes before staging a rollback target.
 pub fn execute_rollback(
     datastore: &mut DataStore,
     requested_rollback_kind: ManualRollbackRequestKind,
@@ -151,8 +151,7 @@ pub fn execute_rollback(
         };
         staged_rollback_type = Some(rollback_type);
 
-        // Historical rollback targets must preserve the installation's slot-owned
-        // MSHV mode, just like update requests; reject mode changes before staging.
+        // Historical targets must preserve the installation's MSHV mode.
         engine::mshv::validate_transition(&datastore.host_status().spec, &requested_rollback.spec)?;
 
         let engine_context = EngineContext::new(EngineContextParams {

@@ -62,7 +62,7 @@ impl<'a> ExpectedPartition<'a> {
 /// the expectations of the ACL image layout, and returns a HostStatus
 /// representing the current state of the host. This will be used to
 /// initialize the Trident datastore if it has not been created yet.
-/// Discovers slot-owned MSHV from the host ESP without modifying its contents.
+/// Also discovers MSHV mode without modifying the ESP.
 pub fn initial_host_status() -> Result<HostStatus, Error> {
     let blk_devices = lsblk::list().context("Failed to run lsblk")?;
     let root_blk_device = blk_devices
@@ -89,7 +89,7 @@ pub fn initial_host_status() -> Result<HostStatus, Error> {
 /// initial ACL HostStatus, separated from the code that gets the
 /// Host's current disk information. This allows for easier testing
 /// of the HostStatus creation logic.
-/// A complete MSHV BOOT bundle enables slot-owned mode; incomplete marked bundles fail.
+/// Complete MSHV bundles enable slot-owned mode; incomplete marked bundles fail.
 fn inner_initial_host_status(
     disk_information: &SfDisk,
     root_blk_device: &BlockDevice,
@@ -306,7 +306,7 @@ fn inner_initial_host_status(
         partition_paths,
         ..Default::default()
     };
-    // Record the discovered mode only; the update path bootstraps AZLA before persisting it.
+    // Adoption bootstraps AZLA before persisting this discovered mode.
     if mshv::has_slot_mshv_bundle(esp_path)? {
         host_status
             .spec
@@ -482,7 +482,7 @@ mod tests {
         }
     }
 
-    /// Creates a complete BOOT bundle for read-only ACL discovery tests.
+    /// Creates a complete BOOT bundle for discovery tests.
     fn create_mshv_bundle(esp_path: &Path) {
         for name in [
             "bootx64.efi",
@@ -500,7 +500,7 @@ mod tests {
         }
     }
 
-    /// Only a complete BOOT bundle enables MSHV; discovery must not create AZLA.
+    /// Only complete BOOT bundles enable MSHV; discovery leaves AZLA untouched.
     #[test]
     fn initial_host_status_discovers_slot_mshv_from_image() {
         let esp = tempfile::TempDir::new().unwrap();
@@ -525,7 +525,7 @@ mod tests {
         assert!(!esp.path().join("EFI/AZLA").exists());
     }
 
-    /// A marked but incomplete BOOT bundle must fail adoption without creating AZLA.
+    /// Incomplete marked bundles fail discovery without creating AZLA.
     #[test]
     fn initial_host_status_rejects_incomplete_slot_mshv_payload() {
         let esp = tempfile::TempDir::new().unwrap();
@@ -554,7 +554,7 @@ mod tests {
         }
     }
 
-    /// Ordinary ACL partition discovery remains valid without MSHV ESP contents.
+    /// Ordinary ACL discovery needs no MSHV payload.
     #[test]
     fn test_inner_initial_host_status_success() {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::Correct);
@@ -692,7 +692,7 @@ mod tests {
         assert!(volume_pairs.iter().all(|p| p.id != "usr-hash-sig"));
     }
 
-    /// An unexpected ESP partition label must still fail with an empty test ESP.
+    /// Unexpected ESP labels fail before payload discovery.
     #[test]
     fn test_inner_initial_host_status_unexpected_part_name() {
         let wrong_label = "wrong-label";
@@ -747,7 +747,7 @@ mod tests {
         .contains("Unexpected partition label 'extra-one' found on root disk"));
     }
 
-    /// Duplicate partition labels must not produce an ambiguous HostStatus.
+    /// Duplicate labels cannot produce an ambiguous HostStatus.
     #[test]
     fn test_inner_initial_host_status_duplicate_part() {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::Duplicate);

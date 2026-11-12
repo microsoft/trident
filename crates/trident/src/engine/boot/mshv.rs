@@ -38,8 +38,8 @@ pub(crate) fn has_slot_mshv_bundle(esp_path: &Path) -> Result<bool> {
     Ok(false)
 }
 
-/// Checks the case-insensitive allowlist, rejecting symlinks and special files.
-/// Does not require completeness; `temporary` also permits known `.new` and `.old` files.
+/// Checks allowed entries without requiring completeness or following symlinks.
+/// Matching ignores case; `temporary` also permits known `.new` and `.old` files.
 fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<()> {
     ensure!(
         fs::symlink_metadata(directory)?.is_dir(),
@@ -80,9 +80,8 @@ fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<()> {
     Ok(())
 }
 
-/// Requires the complete supported payload and rejects unexpected entries.
-/// Validates layout, not executable contents or the running hypervisor.
-/// Required-path lookups rely on FAT's case-insensitive filename resolution.
+/// Requires the complete allowlisted layout, relying on FAT's case-insensitive lookups.
+/// Does not validate executable contents or hypervisor identity.
 pub(crate) fn validate_bundle(root: &Path) -> Result<()> {
     validate_tree(root, root, false)?;
     for name in FILES {
@@ -129,8 +128,7 @@ fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<()> {
     Ok(())
 }
 
-/// Estimates staging space for the slot bundle, UKIs, addons, and an enabled fallback copy.
-/// Credits inactive-slot contents and UKIs/addons scheduled for removal before staging.
+/// Budgets bundles, UKIs, addons, and fallback, crediting planned pre-staging cleanup.
 pub(crate) fn preflight_staging(
     ctx: &EngineContext,
     source_esp: &Path,
@@ -169,9 +167,8 @@ pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<()> {
     )
 }
 
-/// Copies a complete validated bundle into an allowlisted destination.
-/// Overwrites matching files non-atomically; callers needing atomic publication
-/// must stage in a temporary directory and rename it into place.
+/// Copies a validated bundle non-atomically into an allowlisted destination.
+/// For atomic publication, copy to a temporary directory and rename it.
 pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<()> {
     validate_bundle(from)?;
     fs::create_dir_all(to)?;
@@ -184,9 +181,8 @@ pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Publishes the fallback bundle using per-file `.new` and `.old` names.
-/// Restores missing live files from `.old`, discards stale backups, and stages
-/// every `.new` file before renaming live files. Whole-bundle replacement is not atomic.
+/// Reconciles `.old` backups and stages all `.new` files before replacing fallback.
+/// Whole-bundle replacement is not atomic.
 pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<()> {
     validate_bundle(from)?;
     match fs::symlink_metadata(to) {
@@ -246,7 +242,7 @@ mod tests {
     use std::os::unix::fs::symlink;
     use tempfile::TempDir;
 
-    /// Creates all allowlisted payload files with deterministic test contents.
+    /// Creates a complete test bundle.
     fn bundle(root: &Path, contents: &[u8]) {
         for name in FILES {
             let path = root.join(name);
@@ -255,7 +251,7 @@ mod tests {
         }
     }
 
-    /// Copying the candidate bundle must not modify the retained slot.
+    /// Candidate copying preserves the retained slot.
     #[test]
     fn copies_complete_bundle_without_touching_other_slots() {
         let temp = TempDir::new().unwrap();
@@ -271,7 +267,7 @@ mod tests {
         }
     }
 
-    /// Allowlist matching ignores case, but temporary names require explicit permission.
+    /// Allowlist matching ignores case; temporary names require opt-in.
     #[test]
     fn accepts_fat_filename_casing_but_rejects_unknown_entries() {
         let temp = TempDir::new().unwrap();
@@ -290,7 +286,7 @@ mod tests {
         assert!(validate_tree(temp.path(), temp.path(), true).is_err());
     }
 
-    /// Invalid sources must fail before creating the destination.
+    /// Invalid sources fail before destination creation.
     #[test]
     fn rejects_incomplete_and_unexpected_payload_before_copy() {
         let temp = TempDir::new().unwrap();
@@ -306,7 +302,7 @@ mod tests {
         assert!(!target.exists());
     }
 
-    /// Payload validation must not follow symlinks into an unrelated directory.
+    /// Validation rejects source and destination symlinks.
     #[test]
     fn rejects_source_and_destination_symlinks() {
         let temp = TempDir::new().unwrap();
@@ -324,7 +320,7 @@ mod tests {
         assert!(fs::read_dir(&outside).unwrap().next().is_none());
     }
 
-    /// Retrying interrupted fallback publication replaces stale files and removes backups.
+    /// Retrying publication replaces stale files and removes backups.
     #[test]
     fn retries_partial_publication_and_removes_only_known_temporary_files() {
         let temp = TempDir::new().unwrap();
@@ -350,7 +346,7 @@ mod tests {
         assert!(replace_bundle(&source, &source).is_err());
     }
 
-    /// Capacity checks include cluster rounding, reclaimable space, and the reserve.
+    /// Capacity includes cluster rounding, reclamation, and a reserve.
     #[test]
     fn capacity_accounts_for_clusters_and_preserves_a_reserve() {
         let temp = TempDir::new().unwrap();
@@ -360,7 +356,7 @@ mod tests {
         assert!(check_space(SPACE_RESERVE, 4096, 4096).is_ok());
     }
 
-    /// An oversized staged UKI must fail preflight without changing either slot's payload.
+    /// Failed preflight leaves both slots untouched.
     #[test]
     fn preflight_rejects_peak_allocation_before_mutating_inactive_or_retained_files() {
         let temp = TempDir::new().unwrap();
@@ -389,7 +385,7 @@ mod tests {
         }
     }
 
-    /// Fallback policy selects a complete bundle without overwriting the retained slot.
+    /// Each fallback policy copies whole bundles and preserves the retained slot.
     #[test]
     fn fallback_modes_use_the_full_selected_bundle_during_trial_commit_and_rollback() {
         use trident_api::{
