@@ -6,6 +6,7 @@ readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly TEST_DIR="/tmp/trident-test"
 readonly JUNIT_XML="target/trident_functional_tests.xml"
 build_output=""
+virtdeploy_namespace=""
 
 usage() {
     cat <<'EOF'
@@ -23,14 +24,19 @@ run() {
 
 cleanup() {
     local exit_code=$?
+    local cleanup_code=0
 
     trap - EXIT
     set +e
     if [[ -n "$build_output" ]]; then
         rm -f -- "$build_output"
     fi
-    if [[ -x "$REPO_ROOT/bin/virtdeploy" ]]; then
-        "$REPO_ROOT/bin/virtdeploy" clean
+    if [[ -n "$virtdeploy_namespace" && -x "$REPO_ROOT/bin/virtdeploy" ]]; then
+        "$REPO_ROOT/bin/virtdeploy" clean \
+            --namespace "$virtdeploy_namespace" || cleanup_code=$?
+    fi
+    if [[ "$exit_code" -eq 0 && "$cleanup_code" -ne 0 ]]; then
+        exit_code=$cleanup_code
     fi
     exit "$exit_code"
 }
@@ -102,9 +108,11 @@ main() {
 
     run python3 scripts/cloud-agent/download_functional_artifact.py
 
+    virtdeploy_namespace="${TRIDENT_FUNCTIONAL_NAMESPACE:-trident-functional-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$}"
     build_output="$(mktemp)"
     trap cleanup EXIT
 
+    run bash -c "cd tools && go generate pkg/tridentgrpc/grpc.go"
     run make \
         "BUILD_OUTPUT=$build_output" \
         build-functional-test-cc \
@@ -124,6 +132,8 @@ main() {
         --junitxml "$JUNIT_XML"
         --test-dir "$TEST_DIR"
         --build-output "$build_output"
+        --keep-environment
+        --virtdeploy-namespace "$virtdeploy_namespace"
     )
     if [[ -n "$marker_expression" ]]; then
         pytest_args+=(-m "$marker_expression")

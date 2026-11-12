@@ -48,6 +48,12 @@ def pytest_addoption(parser):
         help="Reuse VM environment from previous tests.",
     )
 
+    parser.addoption(
+        "--virtdeploy-namespace",
+        action="store",
+        help="Namespace used to create the functional-test VM.",
+    )
+
     parser.addoption("--test-dir", action="store", help="Location to store test files.")
 
     parser.addoption(

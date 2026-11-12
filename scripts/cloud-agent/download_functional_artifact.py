@@ -477,7 +477,6 @@ def prepare_artifact(
     if image_metadata is None:
         raise ArtifactError("Functional-test image metadata was not resolved")
     image_size, image_sha256 = image_metadata
-    ensure_link(image_path, link_path)
     write_provenance(
         config,
         build,
@@ -488,6 +487,7 @@ def prepare_artifact(
         image_size,
         image_sha256,
     )
+    ensure_link(image_path, link_path)
     return provenance_path
 
 

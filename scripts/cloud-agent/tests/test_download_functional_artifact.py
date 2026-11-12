@@ -202,6 +202,61 @@ class FunctionalArtifactTests(unittest.TestCase):
             self.assertEqual(download_count, 1)
             self.assertTrue(second_provenance["cacheHit"])
 
+    def test_prepare_artifact_keeps_cache_reusable_when_link_fails(self):
+        image = b"fresh functional image"
+        build = self.build(7654321)
+        artifact = self.artifact()
+        download_count = 0
+
+        def request_json(url, token):
+            if "/artifacts?" in url:
+                return artifact
+            return build
+
+        def download_file(url, token, destination):
+            nonlocal download_count
+            download_count += 1
+            with zipfile.ZipFile(destination, "w") as archive:
+                archive.writestr("trident-functest/trident-functest.qcow2", image)
+
+        original_request_json = MODULE.request_json
+        original_download_file = MODULE.download_file
+        MODULE.request_json = request_json
+        MODULE.download_file = download_file
+        self.addCleanup(setattr, MODULE, "request_json", original_request_json)
+        self.addCleanup(setattr, MODULE, "download_file", original_download_file)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            output_root = temp_path / "cache"
+            link_path = temp_path / "artifacts" / "trident-functest.qcow2"
+            link_path.parent.mkdir(parents=True)
+            link_path.write_bytes(b"existing file")
+
+            with self.assertRaisesRegex(MODULE.ArtifactError, "existing path"):
+                MODULE.prepare_artifact(
+                    self.config,
+                    output_root,
+                    link_path,
+                    "token",
+                    build_id=7654321,
+                )
+
+            provenance_path = output_root / "build-7654321" / "provenance.json"
+            self.assertTrue(provenance_path.is_file())
+
+            link_path.unlink()
+            MODULE.prepare_artifact(
+                self.config,
+                output_root,
+                link_path,
+                "token",
+                build_id=7654321,
+            )
+
+            self.assertEqual(download_count, 1)
+            self.assertTrue(link_path.is_symlink())
+
     def test_temporary_paths_are_unique(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

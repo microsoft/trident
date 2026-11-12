@@ -75,6 +75,10 @@ def test_create_vm(request, known_hosts_path, ssh_key_public):
         return
 
     request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
+    create_params = []
+    virtdeploy_namespace = request.config.getoption("--virtdeploy-namespace")
+    if virtdeploy_namespace:
+        create_params.extend(["--namespace", virtdeploy_namespace])
 
     with tempfile.TemporaryDirectory() as temp_dir:
         work_dir = Path(temp_dir)
@@ -96,7 +100,7 @@ def test_create_vm(request, known_hosts_path, ssh_key_public):
         # Create one VM with default flags, cpus, memory, but with two 16GiB
         # disks. Pass the base Image as the OS disk. And Pass cloud init-params
         # to set up a user and ssh access.
-        vm_data = create_vm(
+        create_params.extend(
             [
                 "-d",
                 "16,16",
@@ -108,6 +112,7 @@ def test_create_vm(request, known_hosts_path, ssh_key_public):
                 cloud_init_meta,
             ]
         )
+        vm_data = create_vm(create_params)
 
     vm_name = vm_data["name"]
     vm_ip = vm_data["ip"]
