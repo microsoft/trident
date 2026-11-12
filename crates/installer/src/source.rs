@@ -2,12 +2,14 @@ use std::{
     fs::{self, File},
     io::{ErrorKind, Read},
     path::{Path, PathBuf},
+    sync::OnceLock,
     thread,
     time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, bail, ensure, Context, Error};
 use log::warn;
+use regex::{Captures, Regex};
 use reqwest::blocking::Client;
 use serde::{de::IgnoredAny, Deserialize};
 use sha2::{Digest, Sha384};
@@ -85,6 +87,27 @@ pub(super) fn display_source(source: &str) -> String {
         Err(_) if source.contains("://") => "<invalid URL>".into(),
         Err(_) => source.to_owned(),
     }
+}
+
+/// Removes credentials and signed query data from URLs embedded in diagnostics.
+pub(super) fn redact_message_urls(message: &str) -> String {
+    static URLS: OnceLock<Regex> = OnceLock::new();
+    let urls = URLS.get_or_init(|| {
+        Regex::new(r#"(?i)https?://[^\s"<>]+"#).expect("invariant: diagnostic URL pattern is valid")
+    });
+    urls.replace_all(message, |capture: &Captures<'_>| {
+        let matched = capture
+            .get(0)
+            .expect("invariant: entire URL match")
+            .as_str();
+        let url = matched.trim_end_matches(['.', ',', ')', ']', ';', '\'']);
+        let suffix = &matched[url.len()..];
+        let description = Url::parse(url)
+            .map(|url| display_url(&url))
+            .unwrap_or_else(|_| "<redacted URL>".into());
+        format!("{description}{suffix}")
+    })
+    .into_owned()
 }
 
 /// Resolves installation media and returns an install or stream plan with progress callbacks.
@@ -595,6 +618,12 @@ mod tests {
         assert_eq!(
             display_source("https://bad URL?token=secret"),
             "<invalid URL>"
+        );
+        assert_eq!(
+            redact_message_urls(
+                "Loaded 'https://u:p@example.test/image.cosi?sig=sec'ret#fragment', done"
+            ),
+            "Loaded 'https://example.test/image.cosi', done"
         );
     }
 

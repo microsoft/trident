@@ -835,6 +835,30 @@ fn shell_result_event(result: Result<Result<(), Error>, JoinError>) -> Option<Ev
     }
 }
 
+/// Sanitizes received diagnostics before persistence, display, or serial mirroring.
+fn redact_event(mut event: Event) -> Event {
+    match &mut event {
+        Event::InstallerLog { message, .. } | Event::Preparing(message) => {
+            *message = source::redact_message_urls(message);
+        }
+        Event::Prepared { description, .. } => {
+            *description = source::redact_message_urls(description);
+        }
+        Event::Error { details, .. } => {
+            *details = source::redact_message_urls(details);
+        }
+        Event::Response(ServicingEvent::Log(record)) => {
+            record.message = source::redact_message_urls(&record.message);
+        }
+        Event::Response(ServicingEvent::Completed(Err(error))) => {
+            error.message = source::redact_message_urls(&error.message);
+            error.error_message = source::redact_message_urls(&error.error_message);
+        }
+        _ => {}
+    }
+    event
+}
+
 /// Runs the installer event loop, starting autorun and offering recovery on a terminal.
 /// Noninteractive runs return after work completes and fail if recovery needs user input;
 /// `plain` selects text output instead of the full-screen display.
@@ -879,6 +903,7 @@ pub(super) async fn run(
                     Err(_) => break,
                 },
             };
+            let event = redact_event(event);
             output.record(&event)?;
             let entry = model.event(event);
             output.announce(&entry, model.serial_verbosity);
@@ -909,6 +934,7 @@ pub(super) async fn run(
         if shell.as_ref().is_some_and(JoinHandle::is_finished) {
             if let Some(finished) = shell.take() {
                 if let Some(event) = shell_result_event(finished.await) {
+                    let event = redact_event(event);
                     output.record(&event)?;
                     let warning = model.event(event);
                     output.announce(&warning, model.serial_verbosity);
@@ -1493,7 +1519,8 @@ mod tests {
     use tempfile::TempDir;
 
     use trident_client::{
-        Completion as ClientCompletion, LogRecord, RebootDisposition, ServicingKind,
+        Completion as ClientCompletion, LogRecord, RebootDisposition, RemoteError,
+        RemoteErrorCategory, ServicingKind,
     };
 
     /// A failed serial destination is removed without blocking healthy mirrors.
@@ -1850,6 +1877,69 @@ mod tests {
         assert_eq!(entry.source, LogSource::Trident);
         assert_eq!(model.activity, "Preparing storage");
         assert_eq!(entry.plain(), "00:00 [TRIDENT:INFO] Preparing storage");
+    }
+
+    /// Trident's COSI-loading messages must not expose signed URLs on any installer output.
+    #[test]
+    fn daemon_image_urls_are_redacted_before_recording_or_mirroring() {
+        let root = TempDir::new().unwrap();
+        let diagnostic = root.path().join("installer.log");
+        let serial = root.path().join("serial.log");
+        let mut output = Output {
+            log: Some(File::create(&diagnostic).unwrap()),
+            mirrors: vec![(serial.clone(), File::create(&serial).unwrap())],
+        };
+        let mut model = Model::new();
+        for message in [
+            "Attempting to load COSI file from 'https://user:password@example.test/image.cosi?sig=secret#fragment'",
+            "Loaded COSI file from 'https://user:password@example.test/image.cosi?sig=secret#fragment' with hash 'abc'",
+        ] {
+            let event = redact_event(Event::Response(ServicingEvent::Log(LogRecord {
+                timestamp: None,
+                level: LogLevel::Info,
+                message: message.into(),
+                module: String::new(),
+                target: String::new(),
+                location: None,
+            })));
+            output.record(&event).unwrap();
+            let entry = model.event(event);
+            output.announce(&entry, model.serial_verbosity);
+            assert!(entry.message.contains("https://example.test/image.cosi"));
+            for secret in ["user", "password", "sig=secret", "fragment"] {
+                assert!(!entry.message.contains(secret), "{entry:?}");
+            }
+        }
+        for text in [
+            fs::read_to_string(diagnostic).unwrap(),
+            fs::read_to_string(serial).unwrap(),
+        ] {
+            assert!(text.contains("https://example.test/image.cosi"), "{text}");
+            for secret in ["user", "password", "sig=secret", "fragment"] {
+                assert!(!text.contains(secret), "{text}");
+            }
+        }
+    }
+
+    /// Daemon failures cannot reintroduce a signed URL through structured error details.
+    #[test]
+    fn daemon_image_errors_redact_signed_urls() {
+        let event = redact_event(Event::Response(ServicingEvent::Completed(Err(
+            RemoteError {
+                category: RemoteErrorCategory::Servicing,
+                message: "Failed to load 'https://user:password@example.test/image.cosi?sig=secret#fragment'".into(),
+                error_message: "HTTP failure at https://user:password@example.test/image.cosi?sig=secret#fragment".into(),
+                subkind: "image-load-failed".into(),
+                location: None,
+            },
+        ))));
+        let mut model = Model::new();
+        let entry = model.event(event);
+        assert!(model.details.contains("https://example.test/image.cosi"));
+        for secret in ["user", "password", "sig=secret", "fragment"] {
+            assert!(!model.details.contains(secret), "{}", model.details);
+            assert!(!entry.plain().contains(secret));
+        }
     }
 
     /// Unknown daemon severities remain identifiable in serial output and visible as warnings.

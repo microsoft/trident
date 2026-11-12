@@ -131,8 +131,11 @@ edits take effect. Invalid or missing configuration never supplies implicit
 defaults for an installation.
 
 Display filtering never removes daemon log records. All received responses are
-also appended to the private `/var/log/trident-installer.log`. Installer events
-and daemon records use `MM:SS [INST:LEVEL] message` and
+also appended to the private `/var/log/trident-installer.log`. HTTP(S) URLs in
+received diagnostics have credentials, queries and fragments removed before
+display, serial mirroring or installer-log persistence; Trident's own journal
+is separate. Installer events and daemon records use
+`MM:SS [INST:LEVEL] message` and
 `MM:SS [TRIDENT:LEVEL] message`, respectively. `serialVerbosity` controls the
 serial stream independently of TUI verbosity; each line of a multiline message
 gets its own `MM:SS [SOURCE:LEVEL]` prefix. The TUI defaults to Debug: errors red, warnings

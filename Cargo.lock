@@ -1730,6 +1730,7 @@ dependencies = [
  "log",
  "osutils",
  "ratatui",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

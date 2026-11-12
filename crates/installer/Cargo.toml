@@ -17,6 +17,7 @@ crossterm = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
+regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
