@@ -81,6 +81,8 @@ pub enum Commands {
     /// Initiate an install of Azure Linux
     Install {
         /// The new configuration to apply
+        ///
+        /// Ignored during finalize-only operations.
         #[clap(index = 1, default_value = DEFAULT_HOST_CONFIG_PATH)]
         config: PathBuf,
 
