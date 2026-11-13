@@ -25,6 +25,7 @@ use trident_api::{
     primitives::hash::Sha384Hash,
 };
 
+pub(crate) mod bootloader;
 mod cosi;
 
 /// Os Image mocking module. This module contains the mock implementation of an
@@ -37,6 +38,7 @@ mod cosi;
 #[allow(dead_code)]
 pub(crate) mod mock;
 
+use bootloader::BootloaderMetadata;
 use cosi::{Cosi, CosiMetadataParseError};
 
 #[cfg(test)]
@@ -113,6 +115,14 @@ impl OsImage {
             OsImageInner::Cosi(cosi) => cosi.metadata.is_uki(),
             #[cfg(test)]
             OsImageInner::Mock(mock) => mock.is_uki,
+        }
+    }
+
+    pub(crate) fn bootloader(&self) -> Option<BootloaderMetadata> {
+        match &self.0 {
+            OsImageInner::Cosi(cosi) => cosi.metadata.bootloader(),
+            #[cfg(test)]
+            OsImageInner::Mock(mock) => mock.bootloader.clone(),
         }
     }
 
@@ -495,6 +505,7 @@ mod tests {
             os_arch: arch,
             os_release: os_release.clone(),
             is_uki: false,
+            bootloader: None,
             partitioning_info: None,
             images: vec![
                 MockImage::new(

@@ -18,8 +18,8 @@ use sysdefs::{
 use trident_api::{error::TridentError, primitives::hash::Sha384Hash};
 
 use super::{
-    GptPartitionInfo, OsImageFile, OsImageFileSystem, OsImageFileSystemType, OsImagePartition,
-    OsImageVerityHash,
+    bootloader::BootloaderMetadata, GptPartitionInfo, OsImageFile, OsImageFileSystem,
+    OsImageFileSystemType, OsImagePartition, OsImageVerityHash,
 };
 
 /// Content returned by the reader of a mock OS image file.
@@ -41,6 +41,9 @@ pub struct MockOsImage {
     pub images: Vec<MockImage>,
 
     pub is_uki: bool,
+
+    #[serde(skip)]
+    pub bootloader: Option<BootloaderMetadata>,
 
     #[serde(skip)]
     pub partitioning_info: Option<MockPartitioningInfo>,
@@ -126,6 +129,7 @@ impl MockOsImage {
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             is_uki: false,
+            bootloader: None,
             images: vec![],
             partitioning_info: None,
         }
@@ -134,6 +138,11 @@ impl MockOsImage {
     /// Adds an image to the mock OS image.
     pub fn with_image(mut self, image: MockImage) -> Self {
         self.images.push(image);
+        self
+    }
+
+    pub(crate) fn with_bootloader(mut self, bootloader: BootloaderMetadata) -> Self {
+        self.bootloader = Some(bootloader);
         self
     }
 

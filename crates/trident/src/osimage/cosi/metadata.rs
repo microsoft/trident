@@ -14,7 +14,13 @@ use sysdefs::{
 };
 use trident_api::primitives::hash::Sha384Hash;
 
-use crate::osimage::OsImageFileSystemType;
+use crate::osimage::{
+    bootloader::{
+        BootloaderMetadata, BootloaderMetadataType, SystemdBootEntryMetadata,
+        SystemdBootEntryMetadataType, SystemdBootMetadata,
+    },
+    OsImageFileSystemType,
+};
 
 /// Enum of known COSI metadata versions up to the current implementation.
 #[derive(Debug, Eq, PartialEq)]
@@ -135,6 +141,10 @@ impl CosiMetadata {
         };
 
         first_entry.boot_type == SystemdBootloaderType::UkiStandalone
+    }
+
+    pub(crate) fn bootloader(&self) -> Option<BootloaderMetadata> {
+        self.bootloader.as_ref().map(BootloaderMetadata::from)
     }
 
     /// Returns the ESP filesystem image.
@@ -393,6 +403,63 @@ pub(crate) enum SystemdBootloaderType {
     Unknown(String),
 }
 
+impl From<&Bootloader> for BootloaderMetadata {
+    fn from(bootloader: &Bootloader) -> Self {
+        Self {
+            bootloader_type: BootloaderMetadataType::from(&bootloader.bootloader_type),
+            systemd_boot: bootloader
+                .systemd_boot
+                .as_ref()
+                .map(SystemdBootMetadata::from),
+        }
+    }
+}
+
+impl From<&BootloaderType> for BootloaderMetadataType {
+    fn from(bootloader_type: &BootloaderType) -> Self {
+        match bootloader_type {
+            BootloaderType::SystemdBoot => Self::SystemdBoot,
+            BootloaderType::Grub => Self::Grub,
+            BootloaderType::EfitreeloaderMshvSystemdBoot => Self::EfitreeloaderMshvSystemdBoot,
+            BootloaderType::Unknown(value) => Self::Unknown(value.clone()),
+        }
+    }
+}
+
+impl From<&SystemdBoot> for SystemdBootMetadata {
+    fn from(systemd_boot: &SystemdBoot) -> Self {
+        Self {
+            entries: systemd_boot
+                .entries
+                .iter()
+                .map(SystemdBootEntryMetadata::from)
+                .collect(),
+        }
+    }
+}
+
+impl From<&BootloaderEntry> for SystemdBootEntryMetadata {
+    fn from(entry: &BootloaderEntry) -> Self {
+        Self {
+            entry_type: SystemdBootEntryMetadataType::from(&entry.boot_type),
+            kernel: entry.kernel.clone(),
+            path: entry.path.clone(),
+            cmdline: entry.cmdline.clone(),
+        }
+    }
+}
+
+impl From<&SystemdBootloaderType> for SystemdBootEntryMetadataType {
+    fn from(entry_type: &SystemdBootloaderType) -> Self {
+        match entry_type {
+            SystemdBootloaderType::UkiStandalone => Self::UkiStandalone,
+            SystemdBootloaderType::UkiConfig => Self::UkiConfig,
+            SystemdBootloaderType::Config => Self::Config,
+            SystemdBootloaderType::Unknown(value) => Self::Unknown(value.clone()),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DiskInfo {
@@ -487,14 +554,29 @@ mod tests {
         let bootloader: Bootloader = serde_json::from_value(json!({
             "type": "efitreeloader-mshv-systemd-boot",
             "systemdBoot": {
-                "entries": []
+                "entries": [{
+                    "type": "uki-standalone",
+                    "kernel": "vmlinuz",
+                    "path": "EFI/Linux/image.efi",
+                    "cmdline": "quiet"
+                }]
             }
         }))
         .unwrap();
 
         assert_eq!(
-            bootloader.bootloader_type,
-            BootloaderType::EfitreeloaderMshvSystemdBoot
+            BootloaderMetadata::from(&bootloader),
+            BootloaderMetadata {
+                bootloader_type: BootloaderMetadataType::EfitreeloaderMshvSystemdBoot,
+                systemd_boot: Some(SystemdBootMetadata {
+                    entries: vec![SystemdBootEntryMetadata {
+                        entry_type: SystemdBootEntryMetadataType::UkiStandalone,
+                        kernel: "vmlinuz".to_string(),
+                        path: "EFI/Linux/image.efi".to_string(),
+                        cmdline: "quiet".to_string(),
+                    }],
+                }),
+            }
         );
     }
 

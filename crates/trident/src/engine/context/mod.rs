@@ -29,11 +29,15 @@ use crate::{
     STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS_DEFAULT,
 };
 
+pub(crate) mod bootloader;
+
 #[allow(dead_code)]
 pub mod filesystem;
 pub(crate) mod image;
 #[cfg(test)]
 mod test_utils;
+
+use bootloader::Bootloader;
 
 /// Helper struct to consolidate the info on the A/B volume pair. Contains the paths and block
 /// device IDs for both volumes.
@@ -99,6 +103,10 @@ pub struct EngineContext {
     /// The OS image that Trident is using to service the host.
     pub image: Option<OsImage>,
 
+    /// Bootloader metadata exposed by the OS image.
+    #[allow(dead_code)]
+    pub(crate) bootloader: Option<Bootloader>,
+
     /// The storage graph representing the storage configuration of the host.
     pub storage_graph: StorageGraph,
 
@@ -130,6 +138,7 @@ impl Default for EngineContext {
             disk_uuids: Default::default(),
             install_index: Default::default(),
             image: Default::default(),
+            bootloader: Default::default(),
             storage_graph: Default::default(),
             filesystems: Default::default(),
             is_uki: Default::default(),
@@ -158,6 +167,7 @@ impl EngineContext {
         let os_release = OsRelease::read().structured(InternalError::Internal(
             "Failed to read OS release information",
         ))?;
+        let bootloader = params.image.as_ref().and_then(Bootloader::from_image);
         Ok(Self {
             spec: params.spec,
             spec_old: params.spec_old,
@@ -168,6 +178,7 @@ impl EngineContext {
             disk_uuids: params.disk_uuids,
             install_index: params.install_index,
             image: params.image,
+            bootloader,
             storage_graph: graph,
             filesystems: Vec::new(),
             is_uki: params.is_uki,
