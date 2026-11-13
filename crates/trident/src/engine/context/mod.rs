@@ -25,19 +25,16 @@ use trident_api::{
 };
 
 use crate::{
-    osimage::OsImage, STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT,
+    osimage::{bootloader::Bootloader, OsImage},
+    STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT,
     STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS_DEFAULT,
 };
-
-pub(crate) mod bootloader;
 
 #[allow(dead_code)]
 pub mod filesystem;
 pub(crate) mod image;
 #[cfg(test)]
 mod test_utils;
-
-use bootloader::Bootloader;
 
 /// Helper struct to consolidate the info on the A/B volume pair. Contains the paths and block
 /// device IDs for both volumes.
@@ -104,7 +101,6 @@ pub struct EngineContext {
     pub image: Option<OsImage>,
 
     /// Bootloader metadata exposed by the OS image.
-    #[allow(dead_code)]
     pub(crate) bootloader: Option<Bootloader>,
 
     /// The storage graph representing the storage configuration of the host.
@@ -167,7 +163,7 @@ impl EngineContext {
         let os_release = OsRelease::read().structured(InternalError::Internal(
             "Failed to read OS release information",
         ))?;
-        let bootloader = params.image.as_ref().and_then(Bootloader::from_image);
+        let bootloader = params.image.as_ref().and_then(OsImage::bootloader);
         Ok(Self {
             spec: params.spec,
             spec_old: params.spec_old,
@@ -185,6 +181,11 @@ impl EngineContext {
             esp_mount_path,
             host_os_release: os_release,
         })
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn bootloader(&self) -> Option<&Bootloader> {
+        self.bootloader.as_ref()
     }
 
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one

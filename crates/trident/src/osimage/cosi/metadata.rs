@@ -16,8 +16,9 @@ use trident_api::primitives::hash::Sha384Hash;
 
 use crate::osimage::{
     bootloader::{
-        BootloaderMetadata, BootloaderMetadataType, SystemdBootEntryMetadata,
-        SystemdBootEntryMetadataType, SystemdBootMetadata,
+        Bootloader as OsImageBootloader, BootloaderType as OsImageBootloaderType,
+        SystemdBoot as OsImageSystemdBoot, SystemdBootEntry as OsImageSystemdBootEntry,
+        SystemdBootEntryType as OsImageSystemdBootEntryType,
     },
     OsImageFileSystemType,
 };
@@ -143,8 +144,8 @@ impl CosiMetadata {
         first_entry.boot_type == SystemdBootloaderType::UkiStandalone
     }
 
-    pub(crate) fn bootloader(&self) -> Option<BootloaderMetadata> {
-        self.bootloader.as_ref().map(BootloaderMetadata::from)
+    pub(crate) fn bootloader(&self) -> Option<OsImageBootloader> {
+        self.bootloader.as_ref().map(OsImageBootloader::from)
     }
 
     /// Returns the ESP filesystem image.
@@ -403,19 +404,19 @@ pub(crate) enum SystemdBootloaderType {
     Unknown(String),
 }
 
-impl From<&Bootloader> for BootloaderMetadata {
+impl From<&Bootloader> for OsImageBootloader {
     fn from(bootloader: &Bootloader) -> Self {
-        Self {
-            bootloader_type: BootloaderMetadataType::from(&bootloader.bootloader_type),
-            systemd_boot: bootloader
+        Self::new(
+            OsImageBootloaderType::from(&bootloader.bootloader_type),
+            bootloader
                 .systemd_boot
                 .as_ref()
-                .map(SystemdBootMetadata::from),
-        }
+                .map(OsImageSystemdBoot::from),
+        )
     }
 }
 
-impl From<&BootloaderType> for BootloaderMetadataType {
+impl From<&BootloaderType> for OsImageBootloaderType {
     fn from(bootloader_type: &BootloaderType) -> Self {
         match bootloader_type {
             BootloaderType::SystemdBoot => Self::SystemdBoot,
@@ -426,30 +427,30 @@ impl From<&BootloaderType> for BootloaderMetadataType {
     }
 }
 
-impl From<&SystemdBoot> for SystemdBootMetadata {
+impl From<&SystemdBoot> for OsImageSystemdBoot {
     fn from(systemd_boot: &SystemdBoot) -> Self {
-        Self {
-            entries: systemd_boot
+        Self::new(
+            systemd_boot
                 .entries
                 .iter()
-                .map(SystemdBootEntryMetadata::from)
+                .map(OsImageSystemdBootEntry::from)
                 .collect(),
-        }
+        )
     }
 }
 
-impl From<&BootloaderEntry> for SystemdBootEntryMetadata {
+impl From<&BootloaderEntry> for OsImageSystemdBootEntry {
     fn from(entry: &BootloaderEntry) -> Self {
-        Self {
-            entry_type: SystemdBootEntryMetadataType::from(&entry.boot_type),
-            kernel: entry.kernel.clone(),
-            path: PathBuf::from(&entry.path),
-            cmdline: entry.cmdline.clone(),
-        }
+        Self::new(
+            OsImageSystemdBootEntryType::from(&entry.boot_type),
+            entry.kernel.clone(),
+            PathBuf::from(&entry.path),
+            entry.cmdline.clone(),
+        )
     }
 }
 
-impl From<&SystemdBootloaderType> for SystemdBootEntryMetadataType {
+impl From<&SystemdBootloaderType> for OsImageSystemdBootEntryType {
     fn from(entry_type: &SystemdBootloaderType) -> Self {
         match entry_type {
             SystemdBootloaderType::UkiStandalone => Self::UkiStandalone,
@@ -530,6 +531,9 @@ pub(crate) struct CompressionInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::path::Path;
+
     use serde_json::{json, Value};
 
     const SAMPLE_SHA384: &str = "1d0f284efe3edea4b9ca3bd514fa134b17eae361ccc7a1eefeff801b9bd6604e01f21f6bf249ef030599f0c218f2ba8c";
@@ -564,19 +568,44 @@ mod tests {
         }))
         .unwrap();
 
+        let exposed = OsImageBootloader::from(&bootloader);
         assert_eq!(
-            BootloaderMetadata::from(&bootloader),
-            BootloaderMetadata {
-                bootloader_type: BootloaderMetadataType::EfitreeloaderMshvSystemdBoot,
-                systemd_boot: Some(SystemdBootMetadata {
-                    entries: vec![SystemdBootEntryMetadata {
-                        entry_type: SystemdBootEntryMetadataType::UkiStandalone,
-                        kernel: "vmlinuz".to_string(),
-                        path: PathBuf::from("EFI/Linux/image.efi"),
-                        cmdline: "quiet".to_string(),
-                    }],
-                }),
+            exposed.bootloader_type(),
+            &OsImageBootloaderType::EfitreeloaderMshvSystemdBoot
+        );
+        let entry = &exposed.systemd_boot().unwrap().entries()[0];
+        assert_eq!(
+            entry.entry_type(),
+            &OsImageSystemdBootEntryType::UkiStandalone
+        );
+        assert_eq!(entry.kernel(), "vmlinuz");
+        assert_eq!(entry.path(), Path::new("EFI/Linux/image.efi"));
+        assert_eq!(entry.cmdline(), "quiet");
+    }
+
+    #[test]
+    fn test_unknown_bootloader_values_are_preserved() {
+        let bootloader: Bootloader = serde_json::from_value(json!({
+            "type": "future-bootloader",
+            "systemdBoot": {
+                "entries": [{
+                    "type": "future-entry",
+                    "kernel": "vmlinuz",
+                    "path": "loader/entries/future.conf",
+                    "cmdline": "quiet"
+                }]
             }
+        }))
+        .unwrap();
+
+        let exposed = OsImageBootloader::from(&bootloader);
+        assert_eq!(
+            exposed.bootloader_type(),
+            &OsImageBootloaderType::Unknown("future-bootloader".to_string())
+        );
+        assert_eq!(
+            exposed.systemd_boot().unwrap().entries()[0].entry_type(),
+            &OsImageSystemdBootEntryType::Unknown("future-entry".to_string())
         );
     }
 

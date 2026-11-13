@@ -811,7 +811,6 @@ mod tests {
                 },
             ],
             is_uki: false,
-            bootloader: None,
             partitioning_info: None,
         };
         let os_image = OsImage::mock(mock_image.clone());
@@ -863,7 +862,6 @@ mod tests {
                     },
                 ],
                 is_uki: false,
-                bootloader: None,
                 partitioning_info: None,
             })
             .with_spec(HostConfiguration {
@@ -922,7 +920,6 @@ mod tests {
                 },
             ],
             is_uki: false,
-            bootloader: None,
             partitioning_info: None,
         });
 
@@ -957,7 +954,6 @@ mod tests {
                 },
             ],
             is_uki: false,
-            bootloader: None,
             partitioning_info: None,
         };
 
@@ -1009,7 +1005,6 @@ mod tests {
                 verity: None,
             }],
             is_uki: false,
-            bootloader: None,
             partitioning_info: None,
         };
 
@@ -1473,7 +1468,6 @@ mod tests {
                 }),
             }],
             is_uki: false,
-            bootloader: None,
             partitioning_info: None,
         }
     }

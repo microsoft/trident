@@ -23,7 +23,7 @@ impl EngineContext {
     /// Sets the mock image for the context.
     pub(crate) fn with_image(mut self, img: MockOsImage) -> Self {
         let image = OsImage::mock(img);
-        self.bootloader = super::bootloader::Bootloader::from_image(&image);
+        self.bootloader = image.bootloader();
         self.image = Some(image);
         self
     }
