@@ -14,6 +14,19 @@ mod capacity;
 mod inventory;
 mod select;
 
+/// Rejects selectors that staging should already have resolved.
+pub(crate) fn check_no_selectors(spec: &HostConfiguration) -> Result<(), TridentError> {
+    for disk in &spec.storage.disks {
+        if disk.selector.is_some() {
+            return Err(TridentError::new(InvalidInputError::DiskSelection {
+                disk_id: disk.id.clone(),
+            }))
+            .message("Saved disk selectors must be resolved before finalization");
+        }
+    }
+    Ok(())
+}
+
 /// Resolves install selectors to current device paths in the input configuration.
 ///
 /// Uses COSI metadata to size targets, reserves explicit disks, then applies

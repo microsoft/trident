@@ -7,7 +7,7 @@ use anyhow::{anyhow, Context};
 use log::info;
 use trident_api::{
     config::{DiskSelectionStrategy, HostConfiguration},
-    error::{InvalidInputError, ReportError, TridentError},
+    error::{InvalidInputError, ReportError, TridentError, TridentResultExt},
     BlockDeviceId,
 };
 
@@ -86,6 +86,21 @@ pub(super) fn select(
             disk.id,
             candidate.size
         );
+    }
+
+    if let Some(disk) = spec
+        .storage
+        .disks
+        .iter()
+        .find(|disk| disk.selector.is_some() || disk.device.as_os_str().is_empty())
+    {
+        return Err(TridentError::internal(
+            "Disk selection left an unresolved disk",
+        ))
+        .message(format!(
+            "Disk '{}' must have a device and no selector",
+            disk.id
+        ));
     }
     Ok(())
 }
@@ -376,5 +391,34 @@ mod tests {
             })
         );
         assert_eq!(input.storage.disks[0].device, disks[0].path);
+    }
+
+    #[test]
+    fn selection_rejects_empty_device_paths() {
+        for (missing_candidate_path, disk_id) in [(true, "os"), (false, "explicit")] {
+            let mut disks = [candidate("sda", 100)];
+            let mut input = spec(DiskSelectionStrategy::SmallestFit);
+            if missing_candidate_path {
+                disks[0].path = PathBuf::new();
+            } else {
+                input.storage.disks.push(Disk {
+                    id: disk_id.into(),
+                    ..Default::default()
+                });
+            }
+
+            let error = select(
+                &mut input,
+                &HashMap::from([("os".into(), 50)]),
+                &disks,
+                HashSet::new(),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error.kind(), ErrorKind::Internal(_)),
+                "got {error:?}"
+            );
+            assert!(format!("{error:?}").contains(&format!("Disk '{disk_id}'")));
+        }
     }
 }

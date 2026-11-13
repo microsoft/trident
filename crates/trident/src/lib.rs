@@ -474,15 +474,7 @@ impl Trident {
 
         self.execute_and_record_error(datastore, |datastore| {
             if finalize_only {
-                // Staging should already have resolved every saved selector.
-                for disk in &host_config.storage.disks {
-                    if disk.selector.is_some() {
-                        return Err(TridentError::new(InvalidInputError::DiskSelection {
-                            disk_id: disk.id.clone(),
-                        }))
-                        .message("Saved disk selectors must be resolved before finalization");
-                    }
-                }
+                disk_selector::check_no_selectors(&host_config)?;
             }
 
             let storage_graph = host_config
@@ -1055,6 +1047,20 @@ mod tests {
         assert_eq!(datastore.host_status(), &original);
         assert!(datastore.is_persistent());
         datastore.get_host_statuses().unwrap();
+        assert!(!missing_path.exists());
+
+        let mut staged = DataStore::open_or_create(&missing_path).unwrap();
+        staged
+            .with_host_status(|status| status.servicing_state = ServicingState::CleanInstallStaged)
+            .unwrap();
+        staged.close();
+        assert_eq!(
+            DataStore::open(&missing_path)
+                .unwrap()
+                .host_status()
+                .servicing_state,
+            ServicingState::CleanInstallStaged
+        );
     }
 
     #[test]
