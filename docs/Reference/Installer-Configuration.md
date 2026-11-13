@@ -8,8 +8,8 @@ title: Installer Configuration
 `trident-installer` reads `/etc/trident/installer.toml` by default. Pass
 `--config PATH` to use another file. This TOML file controls the **installer**;
 the [Host Configuration](./Host-Configuration/Host-Configuration.md) is a
-separate YAML document describing what Trident installs. A live installation
-requires a readable TOML file. `--demo` does not read it.
+separate YAML document describing what Trident installs. Installation requires
+a readable TOML file.
 
 The packaged `/etc/trident/installer.toml` explicitly sets:
 

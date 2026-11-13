@@ -39,7 +39,6 @@ use trident_client::{LogLevel, ServicingEvent};
 use crate::{
     client::{self, Completion, Event},
     config::{Config, SerialVerbosity},
-    demo::{self, Scenario},
     source::{self, Request},
     APPLICATION_NAME, INSTALLER_LOG_TX,
 };
@@ -50,7 +49,6 @@ const REBOOT_DELAY: Duration = Duration::from_secs(5);
 const EVENT_CAPACITY: usize = 64;
 const LOG_CAPACITY: usize = 500;
 const DISPLAY_LOG_CHARACTERS: usize = 4096;
-const DEMO_SHELL_HISTORY: usize = 8;
 const COLOR_BACKGROUND: Color = Color::Rgb(11, 17, 24);
 const COLOR_FRAME: Color = Color::Rgb(53, 69, 83);
 const COLOR_BRAND: Color = Color::Rgb(75, 216, 220);
@@ -124,7 +122,6 @@ const TRIDENT_WORDMARK: [&str; 8] = [
     r#"    888  888     888 Y88b 888 Y8b.     888  888 Y88b."#,
     r#"    888  888     888  "Y88888  "Y8888  888  888  "Y888"#,
 ];
-const DEMO_SHELL_NOTICE: &str = "This shell is simulated. Commands are never executed.\nNo network, disk or power operations are performed.\nType exit or press Esc to return to the installer.";
 const ASCII_BORDER: BorderSet = BorderSet {
     top_left: "+",
     top_right: "+",
@@ -448,7 +445,7 @@ impl Model {
 
     /// Updates navigation for a key press and returns an action only when one is requested.
     /// URL entry and the verbosity picker consume keys before screen-level shortcuts.
-    fn key(&mut self, key: KeyEvent, demo: bool, worker_active: bool) -> Option<Action> {
+    fn key(&mut self, key: KeyEvent, worker_active: bool) -> Option<Action> {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return None;
         }
@@ -531,7 +528,6 @@ impl Model {
                     }
                 }
             }
-            KeyCode::Char('q') if demo => return Some(Action::Quit),
             KeyCode::Char('s') => return Some(Action::Shell),
             KeyCode::Char('v' | 'V') => {
                 self.verbosity_selected = VERBOSITY_LEVELS
@@ -630,59 +626,6 @@ enum Action {
     BlockedPower,
     Reboot,
     Poweroff,
-    Quit,
-}
-
-#[derive(Default)]
-struct DemoShell {
-    command: String,
-    responses: VecDeque<String>,
-}
-
-impl DemoShell {
-    /// Edits simulated input without executing it; returns true on exit or Escape.
-    fn key(&mut self, key: KeyEvent) -> bool {
-        if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
-            return false;
-        }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-            self.command.clear();
-            return false;
-        }
-        match key.code {
-            KeyCode::Esc => return true,
-            KeyCode::Backspace => {
-                self.command.pop();
-            }
-            KeyCode::Char(c) if !c.is_control() => self.command.push(c),
-            KeyCode::Enter => {
-                if self.command.trim() == "exit" {
-                    return true;
-                }
-                if self.responses.len() == DEMO_SHELL_HISTORY {
-                    self.responses.pop_front();
-                }
-                self.responses
-                    .push_back("DEMO: Command not executed".into());
-                self.command.clear();
-            }
-            _ => {}
-        }
-        false
-    }
-
-    /// Includes the simulation warning, recent responses, and sanitized prompt input.
-    fn text(&self) -> String {
-        format!(
-            "{DEMO_SHELL_NOTICE}\n\n{}\n\ndemo$ {}",
-            self.responses
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("\n"),
-            display_text(&self.command)
-        )
-    }
 }
 
 pub(super) struct Output {
@@ -788,34 +731,26 @@ impl Drop for Display {
     }
 }
 
-/// Starts a demo run or reloads live configuration for each installation attempt.
+/// Reloads live configuration for each installation attempt.
 /// Configuration read errors are reported as events rather than worker failures.
 fn spawn_operation(
-    config_path: Option<PathBuf>,
+    config_path: PathBuf,
     request: Request,
     uncertain: bool,
-    scenario: Option<Scenario>,
     tx: mpsc::Sender<Event>,
 ) -> JoinHandle<Result<(), Error>> {
     task::spawn(async move {
-        match scenario {
-            Some(scenario) => demo::run(scenario, tx).await,
-            None => {
-                let path = config_path
-                    .context("Live installation requires an explicit configuration path")?;
-                match Config::read(path) {
-                    Ok(settings) => client::execute(settings, request, uncertain, tx).await,
-                    Err(error) => {
-                        client::send(
-                            &tx,
-                            Event::Error {
-                                details: format!("{error:#}"),
-                                uncertain,
-                            },
-                        )
-                        .await
-                    }
-                }
+        match Config::read(config_path) {
+            Ok(settings) => client::execute(settings, request, uncertain, tx).await,
+            Err(error) => {
+                client::send(
+                    &tx,
+                    Event::Error {
+                        details: format!("{error:#}"),
+                        uncertain,
+                    },
+                )
+                .await
             }
         }
     })
@@ -864,8 +799,7 @@ fn redact_event(mut event: Event) -> Event {
 /// Noninteractive runs return after work completes and fail if recovery needs user input;
 /// `plain` selects text output instead of the full-screen display.
 pub(super) async fn run(
-    config_path: Option<PathBuf>,
-    scenario: Option<Scenario>,
+    config_path: PathBuf,
     plain: bool,
     linux_vt: bool,
     mut output: Output,
@@ -883,7 +817,6 @@ pub(super) async fn run(
         config_path.clone(),
         Request::Autorun,
         false,
-        scenario,
         tx.clone(),
     ));
     let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
@@ -893,7 +826,6 @@ pub(super) async fn run(
         None
     };
     let mut shell: Option<JoinHandle<Result<(), Error>>> = None;
-    let mut demo_shell: Option<DemoShell> = None;
     let mut printed_screen = None;
     loop {
         for _ in 0..EVENT_CAPACITY {
@@ -908,11 +840,7 @@ pub(super) async fn run(
             output.record(&event)?;
             let entry = model.event(event);
             output.announce(&entry, model.serial_verbosity);
-            if display.is_none()
-                && shell.is_none()
-                && demo_shell.is_none()
-                && log_visible(entry.level, model.verbosity)
-            {
+            if display.is_none() && shell.is_none() && log_visible(entry.level, model.verbosity) {
                 println!("{}", entry.plain());
             }
         }
@@ -959,19 +887,17 @@ pub(super) async fn run(
             .is_some_and(|deadline| Instant::now() >= deadline)
         {
             model.reboot_at = None;
-            if scenario.is_none() {
-                let reboot = model.log(
-                    LogSource::Inst,
-                    LogLevel::Info,
-                    "Rebooting after successful installation".into(),
-                );
-                output.announce(&reboot, model.serial_verbosity);
-                match systemd::reboot() {
-                    Ok(()) => return Ok(()),
-                    Err(error) => {
-                        let failure = model.fail(format!("Failed to reboot: {error:#}"), false);
-                        output.announce(&failure, model.serial_verbosity);
-                    }
+            let reboot = model.log(
+                LogSource::Inst,
+                LogLevel::Info,
+                "Rebooting after successful installation".into(),
+            );
+            output.announce(&reboot, model.serial_verbosity);
+            match systemd::reboot() {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    let failure = model.fail(format!("Failed to reboot: {error:#}"), false);
+                    output.announce(&failure, model.serial_verbosity);
                 }
             }
         }
@@ -987,16 +913,9 @@ pub(super) async fn run(
             }
         } else {
             if let Some(display) = &mut display {
-                display.terminal.draw(|frame| match &demo_shell {
-                    Some(shell) => render_demo_shell(frame, shell),
-                    None => render(frame, &model, scenario.is_some()),
-                })?;
-            } else if printed_screen
-                != Some((model.screen, demo_shell.is_some(), model.verbosity_open))
-            {
-                if let Some(shell) = &demo_shell {
-                    println!("\nSIMULATED SHELL\n{}", shell.text());
-                } else if model.verbosity_open {
+                display.terminal.draw(|frame| render(frame, &model))?;
+            } else if printed_screen != Some((model.screen, model.verbosity_open)) {
+                if model.verbosity_open {
                     println!("\nLOG VERBOSITY (display only)");
                     for (index, level) in VERBOSITY_LEVELS.iter().enumerate() {
                         println!("{}: {level}", index + 1);
@@ -1016,7 +935,7 @@ pub(super) async fn run(
                     }
                     println!("Number + Enter: select; S + Enter: shell; Esc: menu; V: verbosity");
                 }
-                printed_screen = Some((model.screen, demo_shell.is_some(), model.verbosity_open));
+                printed_screen = Some((model.screen, model.verbosity_open));
             }
             for _ in 0..INPUT_EVENTS_PER_FRAME {
                 if !event::poll(Duration::ZERO)? {
@@ -1024,23 +943,8 @@ pub(super) async fn run(
                 }
                 let event = event::read()?;
                 if let TerminalEvent::Key(key) = event {
-                    if let Some(shell) = &mut demo_shell {
-                        if shell.key(key) {
-                            demo_shell = None;
-                            printed_screen = None;
-                        } else if key.code == KeyCode::Enter {
-                            printed_screen = None;
-                        }
-                    } else if let Some(action) =
-                        model.key(key, scenario.is_some(), worker.is_some())
-                    {
+                    if let Some(action) = model.key(key, worker.is_some()) {
                         match action {
-                            Action::Quit => return Ok(()),
-                            Action::Shell if scenario.is_some() => {
-                                demo_shell = Some(DemoShell::default());
-                                printed_screen = None;
-                                break;
-                            }
                             Action::Shell => {
                                 if let Some(display) = &mut display {
                                     display.suspend()?;
@@ -1063,12 +967,10 @@ pub(super) async fn run(
                                     model.reboot_at = None;
                                     model.scroll = 0;
                                     model.selected = 0;
-                                    let recovery_demo = scenario.map(|_| Scenario::Success);
                                     worker = Some(spawn_operation(
                                         config_path.clone(),
                                         request,
                                         model.uncertain,
-                                        recovery_demo,
                                         tx.clone(),
                                     ));
                                 }
@@ -1087,12 +989,6 @@ pub(super) async fn run(
                                     model.activity.clone(),
                                 );
                                 output.announce(&warning, model.serial_verbosity);
-                            }
-                            Action::Reboot | Action::Poweroff if scenario.is_some() => {
-                                model.reboot_at = None;
-                                model.details = "DEMO: Machine power action suppressed".into();
-                                model.screen = Screen::Success;
-                                model.selected = 0;
                             }
                             Action::Reboot => {
                                 let action = model.log(
@@ -1135,12 +1031,8 @@ pub(super) async fn run(
                 if signal.is_none() {
                     return Err(anyhow!("Installer interrupt handler closed"));
                 }
-                if let Some(shell) = &mut demo_shell {
-                    shell.command.clear();
-                } else {
-                    model.screen = if worker.is_some() { Screen::Menu } else { Screen::Recovery };
-                    model.selected = 0;
-                }
+                model.screen = if worker.is_some() { Screen::Menu } else { Screen::Recovery };
+                model.selected = 0;
             }
             _ = termination.recv() => return Err(anyhow!("Installer stopped; servicing may continue in Trident")),
         }
@@ -1235,15 +1127,8 @@ fn header_height(viewport: Rect) -> u16 {
     }
 }
 
-/// Draws the wordmark when space permits, plus status and the demo warning.
-fn render_header(
-    frame: &mut Frame,
-    area: Rect,
-    state: &str,
-    demo: bool,
-    state_color: Color,
-    linux_vt: bool,
-) {
+/// Draws the wordmark when space permits, plus the installer status.
+fn render_header(frame: &mut Frame, area: Rect, state: &str, state_color: Color, linux_vt: bool) {
     let brand = Style::default()
         .fg(theme_color(COLOR_BRAND, linux_vt))
         .add_modifier(Modifier::BOLD);
@@ -1259,38 +1144,11 @@ fn render_header(
         lines.push(Line::default());
     }
     lines.push(Line::from(Span::styled(APPLICATION_NAME, brand)));
-    let mut status = vec![Span::styled(
+    lines.push(Line::from(Span::styled(
         state,
         Style::default().fg(theme_color(state_color, linux_vt)),
-    )];
-    if demo {
-        status.push(Span::styled(
-            " / DEMO: ALL ACTIONS SIMULATED",
-            Style::default().fg(theme_color(COLOR_BRAND, linux_vt)),
-        ));
-    }
-    lines.push(Line::from(status));
+    )));
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
-}
-
-/// Draws a visibly simulated shell without presenting it as a real terminal.
-fn render_demo_shell(frame: &mut Frame, shell: &DemoShell) {
-    frame.render_widget(
-        Block::default().style(Style::default().bg(COLOR_BACKGROUND)),
-        frame.area(),
-    );
-    let areas = Layout::vertical([
-        Constraint::Length(header_height(frame.area())),
-        Constraint::Min(4),
-    ])
-    .split(frame.area());
-    render_header(frame, areas[0], "SIMULATED SHELL", true, COLOR_BRAND, false);
-    frame.render_widget(
-        Paragraph::new(shell.text())
-            .block(block("No commands are executed", false))
-            .wrap(Wrap { trim: false }),
-        areas[1],
-    );
 }
 
 /// Filters and scrolls retained logs, moving the latest result to the end on result screens.
@@ -1346,7 +1204,7 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
 }
 
 /// Draws the current screen, actions, log controls, and any pending reboot countdown.
-fn render(frame: &mut Frame, model: &Model, demo: bool) {
+fn render(frame: &mut Frame, model: &Model) {
     frame.render_widget(
         Block::default().style(Style::default().bg(theme_color(COLOR_BACKGROUND, model.linux_vt))),
         frame.area(),
@@ -1374,7 +1232,6 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         frame,
         areas[0],
         title(model.screen),
-        demo,
         match model.screen {
             Screen::Error => COLOR_ERROR,
             Screen::Success => COLOR_SUCCESS,
@@ -1455,13 +1312,12 @@ fn render(frame: &mut Frame, model: &Model, demo: bool) {
         "Enter: start   Esc: return to recovery".to_owned()
     } else {
         format!(
-            "Arrows: choose  Enter: select  S: shell  V: logs{}  Esc: back{}",
+            "Arrows: choose  Enter: select  S: shell  V: logs{}  Esc: back",
             if model.screen == Screen::Error {
                 "  D: details"
             } else {
                 ""
             },
-            if demo { "  Q: quit" } else { "" }
         )
     };
     frame.render_widget(
@@ -1581,49 +1437,11 @@ mod tests {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
     }
 
-    /// Demo commands never reach the host, and `exit` closes the simulation.
-    #[test]
-    fn demo_shell_never_executes_commands_and_exit_returns() {
-        let root = TempDir::new().unwrap();
-        let marker = root.path().join("must-not-exist");
-        let mut shell = DemoShell::default();
-        for c in format!("touch {}", marker.display()).chars() {
-            assert!(!shell.key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)));
-        }
-        assert!(!shell.key(enter()));
-        assert!(!marker.exists());
-        assert!(shell.text().contains("DEMO: Command not executed"));
-        for c in "exit".chars() {
-            assert!(!shell.key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)));
-        }
-        assert!(shell.key(enter()));
-    }
-
-    /// The demo shell advertises that it cannot execute commands.
-    #[test]
-    fn demo_shell_is_visibly_simulated() {
-        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal
-            .draw(|frame| render_demo_shell(frame, &DemoShell::default()))
-            .unwrap();
-        let text = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
-        assert!(text.contains("SIMULATED SHELL"), "{text}");
-        assert!(text.contains("Commands are never executed"), "{text}");
-    }
-
     /// The full-size header and background keep their intended colors and spacing.
     #[test]
     fn wordmark_and_background_use_clear_neutrals_palette_at_80_by_24() {
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal
-            .draw(|frame| render(frame, &Model::new(), true))
-            .unwrap();
+        terminal.draw(|frame| render(frame, &Model::new())).unwrap();
         let buffer = terminal.backend().buffer();
         assert_eq!(buffer.content[0].bg, Color::Rgb(11, 17, 24));
         assert_eq!(buffer.content[14 * 80].fg, Color::Rgb(53, 69, 83));
@@ -1652,7 +1470,7 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(text.contains(APPLICATION_NAME), "{text}");
-        assert!(text.contains("ALL ACTIONS SIMULATED"), "{text}");
+        assert!(text.contains("INSTALLING"), "{text}");
     }
 
     /// Changing display verbosity hides entries without deleting retained logs.
@@ -1667,33 +1485,17 @@ mod tests {
         );
         assert_eq!(model.verbosity, LevelFilter::Debug);
         assert!(!log_visible(LogLevel::Trace, model.verbosity));
-        model.key(
-            KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE),
-            true,
-            false,
-        );
+        model.key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE), false);
         assert!(model.verbosity_open);
-        model.key(
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-            true,
-            false,
-        );
-        model.key(enter(), true, false);
+        model.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), false);
+        model.key(enter(), false);
         assert_eq!(model.verbosity, LevelFilter::Trace);
         assert!(!model.verbosity_open);
         assert!(log_visible(LogLevel::Trace, model.verbosity));
         assert_eq!(model.logs.len(), 2);
-        model.key(
-            KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE),
-            true,
-            false,
-        );
-        model.key(
-            KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE),
-            true,
-            false,
-        );
-        model.key(enter(), true, false);
+        model.key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE), false);
+        model.key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE), false);
+        model.key(enter(), false);
         assert_eq!(model.verbosity, LevelFilter::Off);
         assert!(!log_visible(LogLevel::Error, model.verbosity));
         assert_eq!(model.logs.len(), 2);
@@ -1726,7 +1528,7 @@ mod tests {
             model.log(LogSource::Trident, level, text.into());
         }
         let mut terminal = Terminal::new(TestBackend::new(80, 32)).unwrap();
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         let buffer = terminal.backend().buffer();
         for (_, message, expected) in records {
             let row = buffer
@@ -1770,7 +1572,7 @@ mod tests {
             model.log(LogSource::Trident, level, message.into());
         }
         let mut terminal = Terminal::new(TestBackend::new(80, 32)).unwrap();
-        terminal.draw(|frame| render(frame, &model, false)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         let buffer = terminal.backend().buffer();
         for (message, expected) in [
             ("info-vt", Color::White),
@@ -1798,7 +1600,7 @@ mod tests {
         let mut model = Model::new();
         model.source = "StreamDisk from file:///media/cosi/payload.cosi".into();
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         let row = terminal.backend().buffer().content[12 * 80..13 * 80]
             .iter()
             .map(|cell| cell.symbol())
@@ -2061,7 +1863,7 @@ mod tests {
              00:00 [INST:INFO] Remove the installation media before booting the installed OS."
         );
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         let rows = terminal
             .backend()
             .buffer()
@@ -2088,12 +1890,8 @@ mod tests {
             rows[result_row][rendered[result_row].find("SUCCESS:").unwrap()].fg,
             Color::Rgb(93, 200, 148)
         );
-        model.key(
-            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
-            true,
-            false,
-        );
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         let earlier = terminal
             .backend()
             .buffer()
@@ -2104,7 +1902,7 @@ mod tests {
         assert!(earlier.contains("Earlier disk action"));
         model.scroll = 0;
         model.verbosity = LevelFilter::Off;
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         let text = terminal
             .backend()
             .buffer()
@@ -2142,31 +1940,23 @@ mod tests {
                 .map(|cell| cell.symbol())
                 .collect::<String>()
         };
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         assert!(
             visible_text(&terminal).contains("SUCCESS: Installation"),
             "{}",
             visible_text(&terminal)
         );
-        model.key(
-            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
-            true,
-            false,
-        );
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         assert!(!visible_text(&terminal).contains("SUCCESS: Installation"));
-        model.key(
-            KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
-            true,
-            false,
-        );
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        model.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE), false);
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         assert!(visible_text(&terminal).contains("SUCCESS: Installation"));
 
         model.screen = Screen::Progress;
         model.activity = "Scanning media ".repeat(60);
         model.log(LogSource::Inst, LogLevel::Info, "Latest activity".into());
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         assert!(visible_text(&terminal).contains("Latest activity"));
     }
 
@@ -2181,7 +1971,7 @@ mod tests {
         });
         assert_eq!(result.result_color, Some(Color::Rgb(255, 107, 115)));
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         let text = terminal
             .backend()
             .buffer()
@@ -2211,13 +2001,9 @@ mod tests {
                 Color::Rgb(255, 107, 115)
             );
         }
-        model.key(
-            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE),
-            true,
-            false,
-        );
+        model.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), false);
         assert!(model.error_details_open);
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         let text = terminal
             .backend()
             .buffer()
@@ -2226,7 +2012,7 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<String>();
         assert!(text.contains("Underlying transport failure"));
-        model.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), true, false);
+        model.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), false);
         assert_eq!(model.screen, Screen::Error);
         assert!(!model.error_details_open);
     }
@@ -2245,7 +2031,7 @@ mod tests {
         let mut model = Model::new();
         model.screen = Screen::Success;
         let mut terminal = Terminal::new(TestBackend::new(40, 16)).unwrap();
-        terminal.draw(|frame| render(frame, &model, true)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
         let text = terminal
             .backend()
             .buffer()
@@ -2266,7 +2052,7 @@ mod tests {
         for (text, diagnostic) in [("", "mode"), ("mode = 'not-a-mode'", "not-a-mode")] {
             fs::write(&path, text).unwrap();
             let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
-            let worker = spawn_operation(Some(path.clone()), Request::Autorun, false, None, tx);
+            let worker = spawn_operation(path.clone(), Request::Autorun, false, tx);
             let Event::Error { details, uncertain } = rx.recv().await.unwrap() else {
                 panic!("Invalid settings must fail before preparing a source");
             };
@@ -2282,17 +2068,17 @@ mod tests {
     fn error_continue_and_shell_keep_the_originating_screen() {
         let mut model = Model::new();
         model.fail("Complete diagnostic information".into(), false);
-        assert!(model.key(enter(), false, false).is_none());
+        assert!(model.key(enter(), false).is_none());
         assert_eq!(model.screen, Screen::Recovery);
-        assert_eq!(model.key(enter(), false, false), Some(Action::Shell));
+        assert_eq!(model.key(enter(), false), Some(Action::Shell));
         assert_eq!(model.screen, Screen::Recovery);
         assert_eq!(model.details, "Complete diagnostic information");
         model.screen = Screen::Success;
         model.selected = 1;
-        assert_eq!(model.key(enter(), false, false), Some(Action::Shell));
+        assert_eq!(model.key(enter(), false), Some(Action::Shell));
         assert_eq!(model.screen, Screen::Success);
         model.selected = 0;
-        assert_eq!(model.key(enter(), false, false), Some(Action::Reboot));
+        assert_eq!(model.key(enter(), false), Some(Action::Reboot));
     }
 
     /// Repeated interrupts and power choices cannot shut down an active installation.
@@ -2300,18 +2086,18 @@ mod tests {
     fn active_worker_cannot_reach_a_power_action() {
         let mut model = Model::new();
         let interrupt = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        model.key(interrupt, false, true);
+        model.key(interrupt, true);
         assert_eq!(model.screen, Screen::Menu);
-        model.key(interrupt, false, true);
+        model.key(interrupt, true);
         assert_eq!(model.screen, Screen::Menu);
 
         model.screen = Screen::Recovery;
         model.selected = 3;
-        assert_eq!(model.key(enter(), false, true), Some(Action::BlockedPower));
-        assert_eq!(model.key(enter(), false, false), Some(Action::Poweroff));
+        assert_eq!(model.key(enter(), true), Some(Action::BlockedPower));
+        assert_eq!(model.key(enter(), false), Some(Action::Poweroff));
         model.screen = Screen::Success;
         model.selected = 0;
-        assert_eq!(model.key(enter(), false, true), Some(Action::BlockedPower));
+        assert_eq!(model.key(enter(), true), Some(Action::BlockedPower));
     }
 
     /// Losing the client stream must not make shutdown safe until Trident confirms idleness.
@@ -2325,12 +2111,12 @@ mod tests {
         model.screen = Screen::Recovery;
         model.selected = 3;
         assert!(!model.choices().contains(&"Shutdown"));
-        assert_eq!(model.key(enter(), false, false), Some(Action::BlockedPower));
+        assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
 
         model.event(Event::IdleConfirmed);
         assert!(!model.uncertain);
         assert!(model.choices().contains(&"Shutdown"));
-        assert_eq!(model.key(enter(), false, false), Some(Action::Poweroff));
+        assert_eq!(model.key(enter(), false), Some(Action::Poweroff));
 
         model.event(Event::Error {
             details: "Another stream disconnected".into(),
@@ -2344,7 +2130,7 @@ mod tests {
             },
         ))));
         assert!(!model.uncertain);
-        assert_eq!(model.key(enter(), false, false), Some(Action::Reboot));
+        assert_eq!(model.key(enter(), false), Some(Action::Reboot));
     }
 
     /// An enqueued completion must be handled before the worker stops blocking power actions.
@@ -2376,7 +2162,7 @@ mod tests {
         model.selected = 3;
         assert!(!rx.is_empty());
         assert_eq!(
-            model.key(enter(), false, !(rx.is_empty() && worker.is_finished())),
+            model.key(enter(), !(rx.is_empty() && worker.is_finished())),
             Some(Action::BlockedPower)
         );
         model.event(rx.recv().await.unwrap());
@@ -2419,14 +2205,14 @@ mod tests {
         model.selected = 3;
         assert!(!rx.is_empty());
         assert_eq!(
-            model.key(enter(), false, !(rx.is_empty() && worker.is_finished())),
+            model.key(enter(), !(rx.is_empty() && worker.is_finished())),
             Some(Action::BlockedPower)
         );
         model.event(rx.recv().await.unwrap());
         assert!(model.uncertain);
         model.screen = Screen::Recovery;
         model.selected = 3;
-        assert_eq!(model.key(enter(), false, false), Some(Action::BlockedPower));
+        assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
         worker.await.unwrap().unwrap();
     }
 
@@ -2461,14 +2247,14 @@ mod tests {
         model.screen = Screen::Recovery;
         model.selected = 3;
         assert_eq!(
-            model.key(enter(), false, !(worker.is_finished() && rx.is_empty())),
+            model.key(enter(), !(worker.is_finished() && rx.is_empty())),
             Some(Action::BlockedPower)
         );
         model.event(rx.recv().await.unwrap());
         assert!(model.uncertain);
         model.screen = Screen::Recovery;
         model.selected = 3;
-        assert_eq!(model.key(enter(), false, false), Some(Action::BlockedPower));
+        assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
         worker.await.unwrap().unwrap();
     }
 
@@ -2480,7 +2266,7 @@ mod tests {
             model.screen = screen;
             model.details = "Diagnostic or result details".into();
             let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-            terminal.draw(|frame| render(frame, &model, true)).unwrap();
+            terminal.draw(|frame| render(frame, &model)).unwrap();
             let text = terminal
                 .backend()
                 .buffer()

@@ -15,11 +15,10 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use osutils::{systemd, terminal};
 
-use crate::{client::Event, config::DEFAULT_CONFIG, demo::Scenario, ui::Output};
+use crate::{client::Event, config::DEFAULT_CONFIG, ui::Output};
 
 mod client;
 mod config;
-mod demo;
 mod source;
 mod ui;
 
@@ -38,11 +37,9 @@ static INSTALLER_LOG_TX: OnceLock<UnboundedSender<Event>> = OnceLock::new();
 struct Args {
     #[arg(long, default_value = DEFAULT_CONFIG)]
     config: PathBuf,
-    #[arg(long, num_args = 0..=1, default_missing_value = "success", value_enum)]
-    demo: Option<Scenario>,
     #[arg(long)]
     plain: bool,
-    #[arg(long, conflicts_with = "demo")]
+    #[arg(long)]
     system_console: bool,
 }
 
@@ -94,33 +91,30 @@ async fn run(args: Args) -> Result<(), Error> {
         log: None,
         mirrors: Vec::new(),
     };
-    if args.demo.is_none() {
-        output.log = Some(
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .mode(PRIVATE_FILE_MODE)
-                .open(LOG_PATH)
-                .context("Failed to open private installer diagnostic log; run as root")?,
-        );
-        fs::set_permissions(LOG_PATH, Permissions::from_mode(PRIVATE_FILE_MODE))?;
-        if args.system_console {
-            systemd::start_unit("tridentd.socket")?;
-            systemd::start_unit("systemd-udev-settle.service")?;
-            let consoles = terminal::active_consoles()?;
-            if let Some(graphical) = consoles.iter().find(|path| path.ends_with("tty1")) {
-                systemd::stop_unit("getty@tty1.service")?;
-                let _terminal = terminal::attach(graphical)?;
-                linux_vt = true;
-            }
-            for path in consoles.iter().filter(|path| !path.ends_with("tty1")) {
-                match terminal::open_nonblocking_console(path) {
-                    Ok(terminal) => output.mirrors.push((path.clone(), terminal)),
-                    Err(error) => warn!("Could not mirror status to '{}': {error}", path.display()),
-                }
+    output.log = Some(
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .mode(PRIVATE_FILE_MODE)
+            .open(LOG_PATH)
+            .context("Failed to open private installer diagnostic log; run as root")?,
+    );
+    fs::set_permissions(LOG_PATH, Permissions::from_mode(PRIVATE_FILE_MODE))?;
+    if args.system_console {
+        systemd::start_unit("tridentd.socket")?;
+        systemd::start_unit("systemd-udev-settle.service")?;
+        let consoles = terminal::active_consoles()?;
+        if let Some(graphical) = consoles.iter().find(|path| path.ends_with("tty1")) {
+            systemd::stop_unit("getty@tty1.service")?;
+            let _terminal = terminal::attach(graphical)?;
+            linux_vt = true;
+        }
+        for path in consoles.iter().filter(|path| !path.ends_with("tty1")) {
+            match terminal::open_nonblocking_console(path) {
+                Ok(terminal) => output.mirrors.push((path.clone(), terminal)),
+                Err(error) => warn!("Could not mirror status to '{}': {error}", path.display()),
             }
         }
     }
-    let config_path = args.demo.is_none().then_some(args.config);
-    ui::run(config_path, args.demo, args.plain, linux_vt, output).await
+    ui::run(args.config, args.plain, linux_vt, output).await
 }

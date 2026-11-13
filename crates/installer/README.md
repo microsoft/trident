@@ -4,21 +4,6 @@
 autorun wrapper around Trident's gRPC API through the shared `trident-client`
 crate, not a partitioning engine.
 
-## Local demo
-
-```console
-cargo run -p installer -- --demo
-cargo run -p installer -- --demo failure
-cargo run -p installer -- --demo no-images
-cargo run -p installer -- --demo disconnect
-```
-
-The demo never mounts media, inspects disks, contacts Trident, or changes machine
-power state. Reboot, Shutdown and Shell are all simulated; no real shell or
-command is launched. Press `Q` to quit. Use `--plain`
-for line-oriented output; without a terminal the demo prints its events and
-exits when complete.
-
 ## Configuration
 
 Read `/etc/trident/installer.toml` or the path supplied with `--config`.
@@ -143,8 +128,8 @@ amber, INFO pale neutral, DEBUG steel gray and TRACE slate gray; INST labels
 are muted slate and TRIDENT labels seafoam. The wordmark remains cyan and
 success is green. On the graphical Linux virtual terminal, the installer
 programs its 16 ANSI palette slots to A1 RGB values, then restores the
-original palette when opening a shell or leaving the UI. Workstation demo
-terminals use the RGB values directly.
+original palette when opening a shell or leaving the UI. Non-VT terminals use
+the RGB values directly.
 `V` opens a live verbosity picker (Off,
 Error, Warn, Info, Debug, Trace) beside the operation; this only filters the
 display, not serial or stored diagnostics. The private diagnostic file retains
