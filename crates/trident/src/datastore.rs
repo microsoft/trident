@@ -6,10 +6,9 @@ use sqlite::State;
 
 use trident_api::{
     error::{
-        DatastoreError, InternalError, InvalidInputError, ReportError, ServicingError,
-        TridentError, TridentResultExt,
+        DatastoreError, InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
     },
-    status::{decode_host_status, HostStatus, ServicingState, TridentVersion},
+    status::{decode_host_status, HostStatus, TridentVersion},
 };
 
 use crate::TRIDENT_SEMVER_VERSION;
@@ -206,7 +205,6 @@ impl DataStore {
     }
 
     pub(crate) fn persist(&mut self, path: &Path) -> Result<(), TridentError> {
-        self.ensure_supported_servicing_state()?;
         if self.temporary {
             // Read every generic key-value entry (e.g. an installation ID)
             // out of the temporary datastore before starting any
@@ -401,17 +399,6 @@ impl DataStore {
         Ok(())
     }
 
-    pub(crate) fn ensure_supported_servicing_state(&self) -> Result<(), TridentError> {
-        if let ServicingState::Unknown(state) = &self.host_status.servicing_state {
-            return Err(TridentError::new(
-                InvalidInputError::UnsupportedServicingState {
-                    state: state.clone(),
-                },
-            ));
-        }
-        Ok(())
-    }
-
     pub(crate) fn host_status(&self) -> &HostStatus {
         &self.host_status
     }
@@ -427,7 +414,6 @@ impl DataStore {
         &mut self,
         f: F,
     ) -> Result<T, TridentError> {
-        self.ensure_supported_servicing_state()?;
         let mut updated = self.host_status().clone();
 
         // Call the provided method and return early if the Host Status was not modified.

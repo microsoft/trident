@@ -298,7 +298,6 @@ impl Trident {
     where
         F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
-        datastore.ensure_supported_servicing_state()?;
         // AbUpdateHealthCheckFailed is a special case where we would like
         // to preserve the last error across any recovery. This aids in
         // surfacing the original error.
@@ -376,7 +375,6 @@ impl Trident {
 
     /// Rebuilds RAID devices on replaced disks on the host
     pub fn rebuild_raid(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
-        datastore.ensure_supported_servicing_state()?;
         info!("Rebuilding RAID devices");
         let mut host_config = Default::default();
         let mut disks_to_rebuild = Vec::new();
@@ -522,7 +520,6 @@ impl Trident {
                     datastore.close();
                     *datastore = DataStore::open_or_create(Path::new(TEMPORARY_DATASTORE_PATH))
                         .message("Failed to create temporary datastore for multiboot install")?;
-                    datastore.ensure_supported_servicing_state()?;
                 }
             }
 
@@ -769,7 +766,6 @@ impl Trident {
         image_url: &Url,
         hash: &str,
     ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
-        datastore.ensure_supported_servicing_state()?;
         tracing::info!(metric_name = events::STREAM_IMAGE_START, value = true,);
         let mut image_source = ConfigOsImage {
             url: image_url.clone(),
@@ -813,7 +809,6 @@ impl Trident {
         &mut self,
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
-        datastore.ensure_supported_servicing_state()?;
         // If host's servicing state is *Finalized or *HealthCheckFailed, need to
         // re-evaluate the current state of the host.
         let servicing_state = &datastore.host_status().servicing_state;
@@ -917,7 +912,6 @@ impl Trident {
         invoke_available_ab: bool,
         allowed_operations: Operations,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
-        datastore.ensure_supported_servicing_state()?;
         // If host's servicing state is not in Provisioned or ManualRollback*, cannot
         // execute a rollback.
         if !matches!(
@@ -1088,7 +1082,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_servicing_state_is_readable_but_cannot_be_modified() {
+    fn unknown_servicing_state_is_readable_and_preserves_commit_and_rollback_noops() {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("datastore.sqlite");
         let mut datastore = DataStore::open_or_create(&path).unwrap();
@@ -1129,81 +1123,95 @@ mod tests {
             orchestrator: None,
             is_stream_image: false,
         };
-        type Operation = fn(&mut Trident, &mut DataStore) -> Result<(), TridentError>;
-        let operations: [(&str, Operation); 8] = [
-            ("install", |trident, datastore| {
-                trident
-                    .install(datastore, Operations::all(), false, None)
-                    .map(|_| ())
-            }),
-            ("update", |trident, datastore| {
-                trident.update(datastore, Operations::all()).map(|_| ())
-            }),
-            ("commit", |trident, datastore| {
-                trident.commit(datastore).map(|_| ())
-            }),
-            ("rollback", |trident, datastore| {
-                trident
-                    .rollback(datastore, false, false, Operations::all())
-                    .map(|_| ())
-            }),
-            ("rebuild_raid", |trident, datastore| {
-                trident.rebuild_raid(datastore)
-            }),
-            ("stream_image", |trident, datastore| {
-                trident
-                    .stream_image(
-                        datastore,
-                        &Url::parse("https://example.invalid/image.cosi").unwrap(),
-                        "invalid-hash",
-                    )
-                    .map(|_| ())
-            }),
-            ("execute_and_record_error", |trident, datastore| {
-                trident.execute_and_record_error(datastore, |_| {
-                    panic!("Unknown servicing state must not execute a servicing operation")
-                })
-            }),
-            ("with_host_status", |_, datastore| {
-                datastore.with_host_status(|_| {
-                    panic!("Unknown servicing state must not invoke a mutation closure")
-                })
-            }),
-        ];
-        for (name, operation) in operations {
-            let error = operation(&mut trident, &mut datastore).unwrap_err();
-            assert_eq!(
-                error.kind(),
-                &ErrorKind::InvalidInput(InvalidInputError::UnsupportedServicingState {
-                    state: "future-recovery-step".into(),
-                },),
-                "{name}"
-            );
-            assert_eq!(
-                serde_yaml::to_value(datastore.host_status()).unwrap(),
-                original,
-                "{name}"
-            );
-            let persisted = DataStore::open(&path).unwrap();
-            assert_eq!(
-                serde_yaml::to_value(persisted.host_status()).unwrap(),
-                original,
-                "{name}"
-            );
-            assert_eq!(
-                persisted.get_host_statuses().unwrap().len(),
-                history.len(),
-                "{name}"
-            );
-        }
+        assert_eq!(
+            trident.commit(&mut datastore).unwrap(),
+            (ExitKind::Done, ServicingType::NoActiveServicing),
+        );
+        assert_eq!(
+            trident
+                .rollback(&mut datastore, false, false, Operations::all())
+                .unwrap(),
+            (ExitKind::Done, ServicingType::NoActiveServicing),
+        );
+        assert_eq!(
+            serde_yaml::to_value(datastore.host_status()).unwrap(),
+            original
+        );
+        let persisted = DataStore::open(&path).unwrap();
+        assert_eq!(
+            serde_yaml::to_value(persisted.host_status()).unwrap(),
+            original
+        );
+        assert_eq!(persisted.get_host_statuses().unwrap().len(), history.len());
+    }
+
+    #[test]
+    fn unknown_servicing_state_can_be_modified_and_persisted() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("datastore.sqlite");
+        let mut datastore = DataStore::open_or_create(&path).unwrap();
+        let unknown = ServicingState::Unknown("future-recovery-step".into());
+        datastore
+            .with_host_status(|status| status.servicing_state = unknown.clone())
+            .unwrap();
+        let last_error = Some(serde_yaml::Value::String("updated failure".into()));
+        datastore
+            .with_host_status(|status| status.last_error = last_error.clone())
+            .unwrap();
         let destination = temp.path().join("new-datastore.sqlite");
-        let error = datastore.persist(&destination).unwrap_err();
+        datastore.persist(&destination).unwrap();
+        let persisted = DataStore::open(&destination).unwrap();
+        assert_eq!(persisted.host_status().servicing_state, unknown);
+        assert_eq!(persisted.host_status().last_error, last_error);
+        drop(persisted);
+
+        datastore
+            .with_host_status(|status| status.servicing_state = ServicingState::NotProvisioned)
+            .unwrap();
+        assert_eq!(
+            DataStore::open(&destination)
+                .unwrap()
+                .host_status()
+                .servicing_state,
+            ServicingState::NotProvisioned,
+        );
+    }
+
+    #[test]
+    fn unknown_servicing_state_uses_normal_error_recording() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("datastore.sqlite");
+        let mut datastore = DataStore::open_or_create(&path).unwrap();
+        let unknown = ServicingState::Unknown("future-recovery-step".into());
+        datastore
+            .with_host_status(|status| {
+                status.servicing_state = unknown.clone();
+                status.last_error = Some(serde_yaml::Value::String("original failure".into()));
+            })
+            .unwrap();
+        let mut trident = Trident {
+            host_config: None,
+            orchestrator: None,
+            is_stream_image: false,
+        };
+        let error = trident
+            .execute_and_record_error::<_, ()>(&mut datastore, |datastore| {
+                assert!(datastore.host_status().last_error.is_none());
+                assert_eq!(datastore.host_status().servicing_state, unknown);
+                Err(TridentError::new(InternalError::Internal(
+                    "test servicing failure",
+                )))
+            })
+            .unwrap_err();
         assert_eq!(
             error.kind(),
-            &ErrorKind::InvalidInput(InvalidInputError::UnsupportedServicingState {
-                state: "future-recovery-step".into(),
-            },)
+            &ErrorKind::Internal(InternalError::Internal("test servicing failure"),)
         );
-        assert!(!destination.exists());
+        let persisted = DataStore::open(&path).unwrap();
+        assert_eq!(persisted.host_status().servicing_state, unknown);
+        assert_eq!(
+            persisted.host_status().last_error,
+            Some(serde_yaml::to_value(&error).unwrap()),
+        );
     }
 }

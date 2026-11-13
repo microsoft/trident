@@ -510,14 +510,6 @@ pub fn execute(
         generate_host_status(&history, lsblk_output, lazy_partitions, disk)?
     };
 
-    if let ServicingState::Unknown(state) = &host_status.servicing_state {
-        return Err(TridentError::new(
-            InvalidInputError::UnsupportedServicingState {
-                state: state.clone(),
-            },
-        ));
-    }
-
     debug!(
         "host_status:\n{}",
         serde_yaml::to_string(&host_status).unwrap_or("Failed to serialize Host Status".into())
@@ -541,15 +533,14 @@ pub fn execute(
             "Failed to find ESP filesystem in Host Status, validation should have failed if this was the case",
         )))?;
 
-    let datastore_path = host_status.spec.trident.datastore_path.clone();
-    let mut datastore =
-        DataStore::open_or_create(&datastore_path).message("Failed to open temporary datastore")?;
-    datastore.ensure_supported_servicing_state()?;
-
     esp::bootstrap_azla_from_fallback(esp_path)
         .structured(InvalidInputError::InvalidBootConfiguration)
         .message("Failed to bootstrap AZLA from fallback")?;
 
+    let datastore_path = host_status.spec.trident.datastore_path.clone();
+
+    let mut datastore =
+        DataStore::open_or_create(&datastore_path).message("Failed to open temporary datastore")?;
     datastore
         .with_host_status(|hs| *hs = host_status)
         .message("Failed to set new Host Status")?;
@@ -600,26 +591,6 @@ mod tests {
     use super::*;
     use osutils::lsblk::LsBlkOutput;
     use tempfile::NamedTempFile;
-
-    #[test]
-    fn offline_init_rejects_unknown_servicing_state() {
-        let input = NamedTempFile::new().unwrap();
-        let status = HostStatus {
-            servicing_state: ServicingState::Unknown("future-recovery-step".into()),
-            ..Default::default()
-        };
-        fs::write(input.path(), serde_yaml::to_string(&status).unwrap()).unwrap();
-
-        let error = execute(Some(input.path()), &[], &String::new(), None).unwrap_err();
-        assert_eq!(
-            error.kind(),
-            &trident_api::error::ErrorKind::InvalidInput(
-                InvalidInputError::UnsupportedServicingState {
-                    state: "future-recovery-step".into(),
-                },
-            ),
-        );
-    }
 
     // lsblk.json was adding a postCustomization step to the
     // usr-verity configuration in test-images
