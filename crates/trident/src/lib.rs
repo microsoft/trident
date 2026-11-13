@@ -449,13 +449,14 @@ impl Trident {
             // datastore left around by the staging process.
             if multiboot && datastore.is_persistent() {
                 // Reject a missing staged datastore before the existing loader can create it.
-                let staged_datastore = fs::metadata(TEMPORARY_DATASTORE_PATH)
+                let staged_datastore_path = temporary_datastore_path()?;
+                let staged_datastore = fs::metadata(&staged_datastore_path)
                     .structured(ServicingError::Datastore {
                         inner: DatastoreError::LoadDatastore {
-                            path: TEMPORARY_DATASTORE_PATH.into(),
+                            path: staged_datastore_path.display().to_string(),
                         },
                     })
-                    .and_then(|_| DataStore::open(Path::new(TEMPORARY_DATASTORE_PATH)))
+                    .and_then(|_| DataStore::open(&staged_datastore_path))
                     .message("Failed to open staged multiboot datastore")?;
 
                 // Close the current persistent datastore and replace it with the staged one.
@@ -517,8 +518,9 @@ impl Trident {
                         multiboot install"
                     );
 
+                    let staged_datastore_path = temporary_datastore_path()?;
                     datastore.close();
-                    *datastore = DataStore::open_or_create(Path::new(TEMPORARY_DATASTORE_PATH))
+                    *datastore = DataStore::open_or_create(&staged_datastore_path)
                         .message("Failed to create temporary datastore for multiboot install")?;
                 }
             }
@@ -956,6 +958,11 @@ impl Trident {
         diagnostics::generate_and_bundle(output_path, full, selinux)?;
         Ok(())
     }
+}
+
+/// Keeps multiboot state reachable across separate container invocations.
+pub(crate) fn temporary_datastore_path() -> Result<PathBuf, TridentError> {
+    container::get_host_relative_path(TEMPORARY_DATASTORE_PATH.into())
 }
 
 #[cfg(test)]
