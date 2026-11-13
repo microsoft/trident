@@ -259,6 +259,11 @@ pub enum InvalidInputError {
     #[error("Failed to load COSI file from '{url}'")]
     LoadCosi { url: Url },
 
+    #[error(
+        "Failed to parse COSI metadata version '{version}'; it may contain features unsupported by this version of Trident"
+    )]
+    UnsupportedCosiFeatures { version: String },
+
     #[error("Failed to derive Host Configuration from OS image")]
     DeriveHostConfiguration,
 

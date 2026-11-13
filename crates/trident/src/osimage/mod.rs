@@ -21,7 +21,7 @@ use sysdefs::{
 use trident_api::{
     config::{self, HostConfiguration, ImageSha384},
     constants::ROOT_MOUNT_POINT_PATH,
-    error::{InvalidInputError, ReportError, TridentError},
+    error::{InvalidInputError, TridentError},
     primitives::hash::Sha384Hash,
 };
 
@@ -37,7 +37,7 @@ mod cosi;
 #[allow(dead_code)]
 pub(crate) mod mock;
 
-use cosi::Cosi;
+use cosi::{Cosi, CosiMetadataParseError};
 
 #[cfg(test)]
 use mock::MockOsImage;
@@ -74,10 +74,8 @@ impl OsImage {
         timeout: Duration,
     ) -> Result<Self, TridentError> {
         debug!("Attempting to load COSI file from '{}'", image_source.url);
-        let os_image =
-            OsImage::cosi(image_source, timeout).structured(InvalidInputError::LoadCosi {
-                url: image_source.url.clone(),
-            })?;
+        let os_image = OsImage::cosi(image_source, timeout)
+            .map_err(|error| cosi_load_error(error, &image_source.url))?;
         if image_source.sha384 == ImageSha384::Ignored {
             image_source.sha384 = ImageSha384::Checksum(os_image.metadata_sha384());
         }
@@ -427,16 +425,57 @@ pub(crate) struct ZstdDecompressionParameters {
     pub max_window_log: Option<u32>,
 }
 
+/// Classifies full metadata parse failures as potentially unsupported COSI
+/// features and preserves the original error chain in the structured error.
+fn cosi_load_error(error: Error, url: &Url) -> TridentError {
+    let kind = match error.downcast_ref::<CosiMetadataParseError>() {
+        Some(error) => InvalidInputError::UnsupportedCosiFeatures {
+            version: error.version().to_string(),
+        },
+        None => InvalidInputError::LoadCosi { url: url.clone() },
+    };
+
+    TridentError::with_source(kind, error)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use std::collections::HashSet;
 
+    use anyhow::Context as _;
+    use uuid::Uuid;
+
     use osutils::osrelease::OsRelease;
+    use trident_api::error::ErrorKind;
 
     use mock::MockImage;
-    use uuid::Uuid;
+
+    #[test]
+    fn test_cosi_load_error() {
+        let url = Url::parse("https://example.com/image.cosi").unwrap();
+        let source = serde_json::from_str::<String>("{}").unwrap_err();
+        let error = Result::<(), _>::Err(CosiMetadataParseError::new("1.4", source))
+            .context("Failed to read COSI file metadata")
+            .unwrap_err();
+
+        let structured = cosi_load_error(error, &url);
+        assert_eq!(
+            structured.kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::UnsupportedCosiFeatures {
+                version: "1.4".to_string()
+            })
+        );
+        let rendered = format!("{structured:?}");
+        assert!(rendered.contains("Failed to parse COSI metadata v1.4"));
+        assert!(rendered.contains("invalid type: map, expected a string"));
+
+        assert_eq!(
+            cosi_load_error(Error::msg("other error"), &url).kind(),
+            &ErrorKind::InvalidInput(InvalidInputError::LoadCosi { url })
+        );
+    }
 
     #[test]
     fn test_basic_properties() {

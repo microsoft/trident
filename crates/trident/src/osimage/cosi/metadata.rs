@@ -32,7 +32,15 @@ pub(super) enum KnownMetadataVersion {
     ///
     /// Introduces partition metadata.
     V1_2,
+
+    /// COSI metadata specification version 1.3.
+    ///
+    /// Introduces the efitreeloader/MSHV/systemd-boot bootloader type.
+    V1_3,
 }
+
+pub(super) const LATEST_RECOGNIZED_METADATA_VERSION: KnownMetadataVersion =
+    KnownMetadataVersion::V1_3;
 
 impl KnownMetadataVersion {
     pub(super) fn as_version(&self) -> MetadataVersion {
@@ -40,6 +48,7 @@ impl KnownMetadataVersion {
             Self::V1_0 => MetadataVersion { major: 1, minor: 0 },
             Self::V1_1 => MetadataVersion { major: 1, minor: 1 },
             Self::V1_2 => MetadataVersion { major: 1, minor: 2 },
+            Self::V1_3 => MetadataVersion { major: 1, minor: 3 },
         }
     }
 }
@@ -334,6 +343,9 @@ pub(crate) enum BootloaderType {
     #[serde(rename = "grub")]
     Grub,
 
+    #[serde(rename = "efitreeloader-mshv-systemd-boot")]
+    EfitreeloaderMshvSystemdBoot,
+
     #[serde(untagged)]
     Unknown(String),
 }
@@ -465,8 +477,25 @@ mod tests {
 
         parse_version(r#""1.0""#, 1, 0);
         parse_version(r#""1.1""#, 1, 1);
+        parse_version(r#""1.3""#, 1, 3);
         parse_version(r#""2.0""#, 2, 0);
         parse_version(r#""2.1""#, 2, 1);
+    }
+
+    #[test]
+    fn test_efitreeloader_mshv_systemd_boot_deserialization() {
+        let bootloader: Bootloader = serde_json::from_value(json!({
+            "type": "efitreeloader-mshv-systemd-boot",
+            "systemdBoot": {
+                "entries": []
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(
+            bootloader.bootloader_type,
+            BootloaderType::EfitreeloaderMshvSystemdBoot
+        );
     }
 
     #[test]

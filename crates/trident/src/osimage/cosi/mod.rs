@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{bail, ensure, Context, Error};
 use gpt::{disk::LogicalBlockSize, GptConfig, GptDisk};
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use tar::Archive;
 use url::Url;
 use zstd::Decoder;
@@ -36,9 +36,10 @@ mod metadata;
 mod validation;
 
 use entries::{CosiEntries, CosiEntry};
+pub(super) use error::CosiMetadataParseError;
 use metadata::{
     CosiMetadata, CosiMetadataVersion, DiskInfo, GptRegionType, ImageFile, KnownMetadataVersion,
-    MetadataVersion,
+    MetadataVersion, LATEST_RECOGNIZED_METADATA_VERSION,
 };
 
 /// Path to the COSI metadata file. Part of the COSI specification.
@@ -651,16 +652,17 @@ fn read_cosi_metadata(
     }
     trace!("Raw COSI metadata:\n{}", raw_metadata);
 
-    // First, attempt to ONLY parse the metadata version to ensure we can read the rest.
-    validate_cosi_metadata_version(
-        &serde_json::from_str::<CosiMetadataVersion>(&raw_metadata)
-            .context("Failed to parse COSI metadata version")?
-            .version,
-    )?;
+    // Parse the version first so unsupported major versions remain distinguishable
+    // from newer features that this build cannot deserialize.
+    let version = serde_json::from_str::<CosiMetadataVersion>(&raw_metadata)
+        .context("Failed to parse COSI metadata version")?
+        .version;
+    validate_cosi_metadata_version(&version)?;
 
-    // Now, parse the full metadata.
-    let metadata: CosiMetadata =
-        serde_json::from_str(&raw_metadata).context("Failed to parse COSI metadata")?;
+    // Keep the serde error as the source so callers receive both the structured
+    // unsupported-features error and the exact field or variant that failed.
+    let metadata: CosiMetadata = serde_json::from_str(&raw_metadata)
+        .map_err(|source| CosiMetadataParseError::new(version, source))?;
 
     // Validate the metadata.
     metadata.validate()?;
@@ -688,6 +690,14 @@ fn validate_cosi_metadata_version(version: &MetadataVersion) -> Result<(), Error
             version.minor
         );
     }
+
+    let latest_recognized = LATEST_RECOGNIZED_METADATA_VERSION.as_version();
+    if *version > latest_recognized {
+        warn!(
+            "COSI metadata version {version} is newer than the latest version recognized by this Trident build ({latest_recognized}); it may contain features not enabled in this version of Trident"
+        );
+    }
+
     Ok(())
 }
 
@@ -858,7 +868,7 @@ mod tests {
     /// Tests the [`validate_cosi_metadata_version`] function for version validation.
     ///
     /// Verifies that:
-    /// - All COSI 1.x versions (1.0, 1.1, 1.2) are accepted as valid.
+    /// - All COSI 1.x versions, including newer minor versions, are accepted.
     /// - Major version 0.x and 2.x are rejected as unsupported.
     #[test]
     fn test_validate_cosi_metadata_version() {
@@ -866,6 +876,8 @@ mod tests {
         super::validate_cosi_metadata_version(&MetadataVersion { major: 1, minor: 0 }).unwrap();
         super::validate_cosi_metadata_version(&MetadataVersion { major: 1, minor: 1 }).unwrap();
         super::validate_cosi_metadata_version(&MetadataVersion { major: 1, minor: 2 }).unwrap();
+        super::validate_cosi_metadata_version(&KnownMetadataVersion::V1_3.as_version()).unwrap();
+        super::validate_cosi_metadata_version(&MetadataVersion { major: 1, minor: 4 }).unwrap();
 
         // Test unsupported versions
         super::validate_cosi_metadata_version(&MetadataVersion { major: 0, minor: 0 }).unwrap_err();
@@ -962,6 +974,40 @@ mod tests {
         for (image, (path, _offset, _size)) in metadata.images.iter().zip(image_paths.iter()) {
             assert_eq!(image.file.path, Path::new(path), "Incorrect image path",);
         }
+    }
+
+    #[test]
+    fn test_read_cosi_metadata_with_unsupported_features() {
+        let sample_metadata = r#"{
+            "version": "1.4",
+            "osArch": "x86_64",
+            "images": "future-image-layout"
+        }"#;
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(sample_metadata.as_bytes()).unwrap();
+
+        let cosi_reader = FileReader::new(
+            &Url::from_file_path(temp_file.path()).unwrap(),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let entries = [(
+            PathBuf::from(COSI_METADATA_PATH),
+            CosiEntry {
+                offset: 0,
+                size: sample_metadata.len() as u64,
+            },
+        )]
+        .into_iter()
+        .collect();
+
+        let error = read_cosi_metadata(&cosi_reader, &entries, ImageSha384::Ignored).unwrap_err();
+        let parse_error = error.downcast_ref::<CosiMetadataParseError>().unwrap();
+
+        assert_eq!(parse_error.version(), "1.4");
+        assert!(error
+            .to_string()
+            .contains("Failed to parse COSI metadata v1.4"));
     }
 
     /// Tests the [`Cosi::new`] constructor for creating a COSI instance.

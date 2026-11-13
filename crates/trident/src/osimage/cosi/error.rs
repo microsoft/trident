@@ -1,5 +1,34 @@
 use super::metadata::MetadataVersion;
 
+/// Marks a full metadata deserialization failure after the COSI version was
+/// parsed successfully. This lets callers distinguish unsupported 1.x features
+/// from malformed metadata whose version cannot be read, while preserving the
+/// original serde error as the source.
+#[derive(thiserror::Error, Debug)]
+#[error("Failed to parse COSI metadata v{version}")]
+pub(in crate::osimage) struct CosiMetadataParseError {
+    version: String,
+
+    #[source]
+    source: serde_json::Error,
+}
+
+impl CosiMetadataParseError {
+    pub(in crate::osimage) fn new(
+        version: impl std::fmt::Display,
+        source: serde_json::Error,
+    ) -> Self {
+        Self {
+            version: version.to_string(),
+            source,
+        }
+    }
+
+    pub(in crate::osimage) fn version(&self) -> &str {
+        &self.version
+    }
+}
+
 #[derive(thiserror::Error, Debug, Clone, Eq, PartialEq)]
 #[error("Invalid COSI metadata v{version}: {kind}")]
 pub struct CosiMetadataError {
@@ -18,10 +47,10 @@ pub enum CosiMetadataErrorKind {
     #[error("Bootloader type 'grub' cannot have systemd-boot entries")]
     V1_1GrubWithSystemdBootEntries,
 
-    #[error("Bootloader type 'systemd-boot' requires systemd-boot entries")]
+    #[error("A bootloader using systemd-boot requires systemd-boot entries")]
     V1_1SystemdBootMissingEntries,
 
-    #[error("Bootloader type 'systemd-boot' must not be empty")]
+    #[error("Systemd-boot entries must not be empty")]
     V1_1SystemdBootEmptyEntries,
 
     #[error("OS packages metadata is required for COSI version >= 1.1, but not provided")]
