@@ -9,8 +9,8 @@ readonly PROTOC_GEN_GO_GRPC_VERSION="v1.6.2"
 readonly DATA_DISK_MOUNT="/mnt/storage"
 readonly CARGO_TARGET_PATH="$DATA_DISK_MOUNT/trident-cloud-agent/cargo-target"
 readonly CARGO_CREDENTIAL_PROVIDER_PATH="$HOME/.local/bin/trident-ado-cargo-token"
-
-: "${ADO_UMI_CLIENT_ID:?ADO_UMI_CLIENT_ID must identify the runner managed identity}"
+readonly DEFAULT_ADO_UMI_CLIENT_ID="e2fd61e6-b160-4f02-a5ac-3d949a4fe01d"
+readonly ADO_UMI_CLIENT_ID="${ADO_UMI_CLIENT_ID:-$DEFAULT_ADO_UMI_CLIENT_ID}"
 
 sudo mkdir -p /etc/apt/apt.conf.d
 echo 'DPkg::Lock::Timeout "600";' | sudo tee /etc/apt/apt.conf.d/99lock-timeout

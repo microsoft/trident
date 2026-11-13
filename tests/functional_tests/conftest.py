@@ -30,6 +30,7 @@ TEST_USER = "testuser"
 KNOWN_HOSTS_FILENAME = "known_hosts"
 
 VM_SSH_NODE_CACHE_KEY = "vm_ssh_node"
+VM_NAMESPACE_CACHE_KEY = "vm_virtdeploy_namespace"
 
 FT_BASE_IMAGE = TRIDENT_REPO_DIR_PATH / "artifacts" / "trident-functest.qcow2"
 
@@ -46,6 +47,24 @@ def pytest_addoption(parser):
         "--reuse-environment",
         action="store_true",
         help="Reuse VM environment from previous tests.",
+    )
+
+    parser.addoption(
+        "--virtdeploy-namespace",
+        action="store",
+        help="Namespace used to create the functional-test VM.",
+    )
+
+    parser.addoption(
+        "--virtdeploy-network",
+        action="store",
+        help="Network used to create the functional-test VM.",
+    )
+
+    parser.addoption(
+        "--functional-base-image",
+        action="store",
+        help="Functional-test base image passed to virtdeploy.",
     )
 
     parser.addoption("--test-dir", action="store", help="Location to store test files.")
@@ -204,17 +223,15 @@ def assert_disk_has_no_mounts(vm: SshNode, kernel_name: str):
 
 def fetch_code_coverage(ssh_node):
     """Downloads all code coverage files from the VM."""
+    coverage_dir = TRIDENT_REPO_DIR_PATH / "target" / "coverage" / "profraw"
+    coverage_dir.mkdir(parents=True, exist_ok=True)
     ssh_node.execute("sudo chown -R {} .".format(TEST_USER))
     with ssh_node.ssh_client.open_sftp() as sftp:
         for filename in sftp.listdir("."):
             if fnmatch.fnmatch(filename, "*.profraw"):
                 ssh_node.copy_back(
                     filename,
-                    TRIDENT_REPO_DIR_PATH
-                    / "target"
-                    / "coverage"
-                    / "profraw"
-                    / filename,
+                    coverage_dir / filename,
                 )
     ssh_node.execute("find . -name '*.profraw' -delete")
 
@@ -281,6 +298,27 @@ def reuse_environment(request) -> bool:
 
 
 @pytest.fixture(scope="session")
+def functional_base_image(request) -> Path:
+    image_path = request.config.getoption("--functional-base-image")
+    return Path(image_path).expanduser().resolve() if image_path else FT_BASE_IMAGE
+
+
+@pytest.fixture(scope="session")
+def virtdeploy_namespace(request, reuse_environment) -> str:
+    namespace = request.config.getoption("--virtdeploy-namespace")
+    if reuse_environment:
+        cached_namespace = request.config.cache.get(VM_NAMESPACE_CACHE_KEY, None)
+        if cached_namespace is None:
+            pytest.fail("No cached VM namespace found. Recreate the test environment.")
+        if namespace is not None and namespace != cached_namespace:
+            pytest.fail(
+                "The supplied namespace does not match the cached VM namespace."
+            )
+        return cached_namespace
+    return namespace or "virtdeploy"
+
+
+@pytest.fixture(scope="session")
 def test_dir_path(request, reuse_environment) -> Optional[Path]:
     test_dir_path = request.config.getoption("--test-dir", None)
     test_dir_path = Path(test_dir_path) if test_dir_path else None
@@ -321,7 +359,7 @@ def known_hosts_path(test_dir_path, reuse_environment) -> Path:
 
 
 @pytest.fixture(scope="session")
-def vm(request, ssh_key_path, known_hosts_path) -> SshNode:
+def vm(request, ssh_key_path, known_hosts_path, virtdeploy_namespace) -> SshNode:
     """Define the VirtDeploy based LibVirt VM as a resource the tests can use."""
     build_output = request.config.getoption("--build-output")
     force_upload = request.config.getoption("--force-upload")
@@ -360,12 +398,16 @@ def vm(request, ssh_key_path, known_hosts_path) -> SshNode:
         # Skip fixture cleanup.
         return
 
-    request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
-
     # Fixture cleanup.
-    trident_runcmd(
-        [TRIDENT_REPO_DIR_PATH / "tools" / "virt-deploy", "create", "--clean"]
-    )
+    cleanup_command = [
+        TRIDENT_REPO_DIR_PATH / "bin" / "virtdeploy",
+        "clean",
+        "--namespace",
+        virtdeploy_namespace,
+    ]
+    trident_runcmd(cleanup_command)
+    request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
+    request.config.cache.set(VM_NAMESPACE_CACHE_KEY, None)
 
 
 def pytest_collection_modifyitems(session, config, items: List[pytest.Item]):

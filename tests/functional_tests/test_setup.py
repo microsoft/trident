@@ -13,7 +13,7 @@ from .conftest import (
     trident_runcmd,
     TRIDENT_REPO_DIR_PATH,
     VM_SSH_NODE_CACHE_KEY,
-    FT_BASE_IMAGE,
+    VM_NAMESPACE_CACHE_KEY,
     TEST_USER,
 )
 from .ssh_node import SshNode
@@ -67,7 +67,13 @@ def wait_online(ip: str, known_hosts_path: Path, timeout: int = 60) -> None:
     raise TimeoutError(f"VM with IP {ip} did not come online within {timeout} seconds.")
 
 
-def test_create_vm(request, known_hosts_path, ssh_key_public):
+def test_create_vm(
+    request,
+    known_hosts_path,
+    ssh_key_public,
+    functional_base_image,
+    virtdeploy_namespace,
+):
     """Test function to create a VM with virt-deploy"""
 
     if request.config.getoption("--reuse-environment"):
@@ -75,6 +81,11 @@ def test_create_vm(request, known_hosts_path, ssh_key_public):
         return
 
     request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
+    request.config.cache.set(VM_NAMESPACE_CACHE_KEY, None)
+    create_params = ["--namespace", virtdeploy_namespace]
+    virtdeploy_network = request.config.getoption("--virtdeploy-network")
+    if virtdeploy_network:
+        create_params.extend(["--network", virtdeploy_network])
 
     with tempfile.TemporaryDirectory() as temp_dir:
         work_dir = Path(temp_dir)
@@ -96,18 +107,19 @@ def test_create_vm(request, known_hosts_path, ssh_key_public):
         # Create one VM with default flags, cpus, memory, but with two 16GiB
         # disks. Pass the base Image as the OS disk. And Pass cloud init-params
         # to set up a user and ssh access.
-        vm_data = create_vm(
+        create_params.extend(
             [
                 "-d",
                 "16,16",
                 "--os-disk",
-                FT_BASE_IMAGE,
+                functional_base_image,
                 "--ci-user",
                 cloud_init_user_data,
                 "--ci-meta",
                 cloud_init_meta,
             ]
         )
+        vm_data = create_vm(create_params)
 
     vm_name = vm_data["name"]
     vm_ip = vm_data["ip"]
@@ -119,6 +131,7 @@ def test_create_vm(request, known_hosts_path, ssh_key_public):
 
     wait_online(vm_ip, known_hosts_path, timeout=60)
 
+    request.config.cache.set(VM_NAMESPACE_CACHE_KEY, virtdeploy_namespace)
     request.config.cache.set(VM_SSH_NODE_CACHE_KEY, vm_ip)
 
 

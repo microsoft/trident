@@ -99,6 +99,60 @@ To run a subset of tests, use the `FILTER` variable:
 make functional-test FILTER="custom/test_trident_e2e.py -k test_name"
 ```
 
+### GitHub cloud agent
+
+The GitHub cloud agent uses an existing functional-test image rather than
+building one during the task. By default, the downloader resolves the latest
+successful completed `trident-ci` build from `main`, then records the resolved
+build, source commit, artifact metadata, image size, and SHA-256 in
+`provenance.json`.
+
+On the 1ES runner, install the optional libvirt/QEMU dependencies once:
+
+```bash
+bash scripts/cloud-agent/setup-functional.sh
+```
+
+Run the bounded smoke suite:
+
+```bash
+scripts/cloud-agent/validate.sh functional
+```
+
+The smoke suite verifies the selected ADO build and artifact, creates the VM,
+proves SSH connectivity, and runs the positive `helpers` functional tests. It
+stores each image under a cache directory named for its immutable build ID and
+passes that immutable path directly to pytest. Cache preparation is locked per
+build, and an interrupted image/provenance publication is recovered on retry.
+An existing local `artifacts/trident-functest.qcow2` is left untouched. To
+explicitly publish a compatibility symlink, pass `--link-path` to
+`scripts/cloud-agent/download_functional_artifact.py`.
+
+Each cloud run reserves its namespace for the duration of the run and rejects
+existing or prefix-colliding libvirt resources before provisioning or enabling
+cleanup. `TRIDENT_FUNCTIONAL_NAMESPACE` must contain only letters, digits,
+underscores, or hyphens, starting with a letter or digit.
+
+When reusing a functional-test VM, its namespace is restored from pytest's
+cache. A conflicting `--virtdeploy-namespace`, or a legacy cached environment
+without namespace metadata, is rejected; recreate that environment first.
+
+Run the complete functional suite when the changed behavior requires it:
+
+```bash
+bash scripts/cloud-agent/run-functional.sh full
+```
+
+The generated `provenance.json` beside the cached image records the exact build
+and artifact used. Include its build ID, source commit, and image SHA-256 in the
+pull request validation evidence.
+
+To reproduce a run with the same image, select the recorded build explicitly:
+
+```bash
+TRIDENT_FUNCTIONAL_BUILD_ID=<build-id> scripts/cloud-agent/validate.sh functional
+```
+
 ## Architecture
 
 This section explains the architecture of how functional tests work and
