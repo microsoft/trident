@@ -231,9 +231,18 @@ impl GrubConfig {
     }
 
     /// Update the search command in the GRUB config.
+    ///
+    /// Three variants of the GRUB stub `search` line exist in practice:
+    ///
+    /// 1. The upstream legacy form: `search -n -u <UUID> -s`
+    /// 2. AZL3 / standard form: `search --no-floppy --fs-uuid --set=root <UUID>`
+    /// 3. AZL4 / Fedora-based form: `search --fs-uuid --set=root <UUID>`
+    ///    (`--no-floppy` is a Mariner-specific convention; Fedora's grub2
+    ///    scripts don't emit it, and it's redundant on EFI machines.)
     pub fn update_search(&mut self, uuid: &Uuid) -> Result<(), Error> {
         let re = Regex::new(r"(?m)^(\s*)search -n -u [\w-]+ -s$").unwrap();
         let re2 = Regex::new(r"(?m)^(\s*)search --no-floppy --fs-uuid --set=root [\w-]+$").unwrap();
+        let re3 = Regex::new(r"(?m)^(\s*)search --fs-uuid --set=root [\w-]+$").unwrap();
 
         if re.is_match(&self.contents) {
             self.contents = re
@@ -244,6 +253,13 @@ impl GrubConfig {
                 .replace(
                     &self.contents,
                     &format!("${{1}}search --no-floppy --fs-uuid --set=root {uuid}"),
+                )
+                .to_string();
+        } else if re3.is_match(&self.contents) {
+            self.contents = re3
+                .replace(
+                    &self.contents,
+                    &format!("${{1}}search --fs-uuid --set=root {uuid}"),
                 )
                 .to_string();
         } else {
@@ -951,6 +967,52 @@ mod tests {
         grub_config
             .update_search(&Uuid::parse_str("c380c8e5-88ec-4c3e-85bb-aa1e4d667dff").unwrap())
             .unwrap();
+    }
+
+    #[test]
+    fn test_update_search_azl3_form() {
+        // AZL3 stubs use `search --no-floppy --fs-uuid --set=root <UUID>`.
+        let mut grub_config = GrubConfig {
+            path: PathBuf::new(),
+            contents: indoc::indoc! { r#"
+                set timeout=0
+                search --no-floppy --fs-uuid --set=root deadbeef-cafe-babe-0000-111122223333
+            "# }
+            .to_owned(),
+            linux_command_line: None,
+        };
+
+        let new_uuid = Uuid::parse_str("9e6a9d2c-b7fe-4359-ac45-18b505e29d8c").unwrap();
+        grub_config.update_search(&new_uuid).unwrap();
+
+        assert!(grub_config.contents.contains(&format!(
+            "search --no-floppy --fs-uuid --set=root {new_uuid}"
+        )));
+        assert!(!grub_config.contents.contains("deadbeef"));
+    }
+
+    #[test]
+    fn test_update_search_azl4_form() {
+        // AZL4 (Fedora-based) stubs omit --no-floppy.
+        let mut grub_config = GrubConfig {
+            path: PathBuf::new(),
+            contents: indoc::indoc! { r#"
+                set timeout=0
+                search --fs-uuid --set=root deadbeef-cafe-babe-0000-111122223333
+            "# }
+            .to_owned(),
+            linux_command_line: None,
+        };
+
+        let new_uuid = Uuid::parse_str("9e6a9d2c-b7fe-4359-ac45-18b505e29d8c").unwrap();
+        grub_config.update_search(&new_uuid).unwrap();
+
+        assert!(grub_config
+            .contents
+            .contains(&format!("search --fs-uuid --set=root {new_uuid}")));
+        assert!(!grub_config.contents.contains("deadbeef"));
+        // Must not accidentally insert --no-floppy.
+        assert!(!grub_config.contents.contains("--no-floppy"));
     }
 
     #[test]
