@@ -425,9 +425,9 @@ pub(crate) struct ZstdDecompressionParameters {
     pub max_window_log: Option<u32>,
 }
 
+/// Classifies full metadata parse failures as potentially unsupported COSI
+/// features and preserves the original error chain in the structured error.
 fn cosi_load_error(error: Error, url: &Url) -> TridentError {
-    // A supported 1.x version may still contain features newer than this build.
-    // Classify it without discarding the parse-error chain.
     let kind = match error.downcast_ref::<CosiMetadataParseError>() {
         Some(error) => InvalidInputError::UnsupportedCosiFeatures {
             version: error.version().to_string(),

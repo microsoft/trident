@@ -1,5 +1,9 @@
 use super::metadata::MetadataVersion;
 
+/// Marks a full metadata deserialization failure after the COSI version was
+/// parsed successfully. This lets callers distinguish unsupported 1.x features
+/// from malformed metadata whose version cannot be read, while preserving the
+/// original serde error as the source.
 #[derive(thiserror::Error, Debug)]
 #[error("Failed to parse COSI metadata v{version}")]
 pub(in crate::osimage) struct CosiMetadataParseError {
