@@ -636,9 +636,6 @@ impl Trident {
                         .structured(InvalidInputError::DeriveHostConfiguration)
                         .message("Failed to initialize host status for ACL")?;
 
-                    // Adoption requires matching requested and discovered MSHV modes.
-                    engine::mshv::validate_transition(&initial_host_status.spec, &host_config)?;
-
                     // Mirror offline-initialize's bootstrap: ACL lazy adoption derives
                     // HostStatus metadata only, it never touches the ESP. Seed EFI/AZLA from
                     // EFI/BOOT now so manual rollback's "AZLA must already exist" invariant
@@ -661,9 +658,7 @@ impl Trident {
                     let esp_path = container::get_host_relative_path(esp_path.to_path_buf())
                         .message("Failed to resolve ESP path relative to host for ACL")?;
 
-                    // MSHV adoption copies the full nested bundle.
-                    let slot_mshv = engine::mshv::enabled(&initial_host_status.spec);
-                    esp::bootstrap_azla_from_fallback(&esp_path, slot_mshv)
+                    esp::bootstrap_azla_from_fallback(&esp_path)
                         .structured(InvalidInputError::InvalidBootConfiguration)
                         .message("Failed to bootstrap AZLA ESP path for ACL")?;
 

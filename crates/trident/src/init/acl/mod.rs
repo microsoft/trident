@@ -20,7 +20,7 @@ use trident_api::{
         MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType,
         Storage, VerityDevice,
     },
-    constants::internal_params::MSHV_SLOT_ESP_PAYLOAD,
+    constants::EFI_DEFAULT_BIN_RELATIVE_PATH,
     error::TridentResultExt,
     status::{AbVolumeSelection, HostStatus, ServicingState},
     BlockDeviceId,
@@ -89,7 +89,7 @@ pub fn initial_host_status() -> Result<HostStatus, Error> {
 /// initial ACL HostStatus, separated from the code that gets the
 /// Host's current disk information. This allows for easier testing
 /// of the HostStatus creation logic.
-/// Complete MSHV bundles enable slot-owned mode; incomplete marked bundles fail.
+/// Rejects incomplete MSHV bundles without modifying the ESP.
 fn inner_initial_host_status(
     disk_information: &SfDisk,
     root_blk_device: &BlockDevice,
@@ -234,7 +234,7 @@ fn inner_initial_host_status(
         });
     }
 
-    let mut host_status = HostStatus {
+    let host_status = HostStatus {
         spec: HostConfiguration {
             storage: Storage {
                 disks: vec![Disk {
@@ -306,13 +306,7 @@ fn inner_initial_host_status(
         partition_paths,
         ..Default::default()
     };
-    // Adoption bootstraps AZLA before persisting this discovered mode.
-    if mshv::has_slot_mshv_bundle(esp_path)? {
-        host_status
-            .spec
-            .internal_params
-            .set_flag(MSHV_SLOT_ESP_PAYLOAD);
-    }
+    mshv::has_slot_mshv_bundle(&esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH))?;
     Ok(host_status)
 }
 
@@ -500,14 +494,13 @@ mod tests {
         }
     }
 
-    /// Only complete BOOT bundles enable MSHV; discovery leaves AZLA untouched.
+    /// MSHV discovery needs no configuration flag and leaves AZLA untouched.
     #[test]
-    fn initial_host_status_discovers_slot_mshv_from_image() {
+    fn initial_host_status_accepts_slot_mshv_without_opt_in() {
         let esp = tempfile::TempDir::new().unwrap();
         let disk = create_sfdisk("EFI-SYSTEM", TestPartitions::Correct);
         let device = create_blk_device();
-        let status = inner_initial_host_status(&disk, &device, esp.path()).unwrap();
-        assert!(!status.spec.internal_params.get_flag(MSHV_SLOT_ESP_PAYLOAD));
+        let ordinary = inner_initial_host_status(&disk, &device, esp.path()).unwrap();
 
         std::fs::create_dir_all(esp.path().join("EFI/BOOT")).unwrap();
         std::fs::write(esp.path().join("EFI/BOOT/bootx64.efi"), b"shim").unwrap();
@@ -517,11 +510,11 @@ mod tests {
         )
         .unwrap();
         let status = inner_initial_host_status(&disk, &device, esp.path()).unwrap();
-        assert!(!status.spec.internal_params.get_flag(MSHV_SLOT_ESP_PAYLOAD));
+        assert_eq!(status.spec, ordinary.spec);
 
         create_mshv_bundle(esp.path());
         let status = inner_initial_host_status(&disk, &device, esp.path()).unwrap();
-        assert!(status.spec.internal_params.get_flag(MSHV_SLOT_ESP_PAYLOAD));
+        assert_eq!(status.spec, ordinary.spec);
         assert!(!esp.path().join("EFI/AZLA").exists());
     }
 

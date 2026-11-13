@@ -58,24 +58,22 @@ impl CosiMetadata {
                     Some(systemd_boot),
                 ) => {
                     match systemd_boot.entries.as_slice() {
-                        // No entries is invalid
                         [] => {
-                            return mk_err(
-                                CosiMetadataErrorKind::V1_1SystemdBootEmptyEntries,
-                            );
+                            return mk_err(CosiMetadataErrorKind::V1_1SystemdBootEmptyEntries);
                         }
 
-                        // First entry MUST be of type 'uki-standalone'
-                        [entry, ..] if !entry.boot_type.eq(&SystemdBootloaderType::UkiStandalone) => warn!(
-                            "First entry of bootloader type 'systemd-boot' is not of type 'uki-standalone'"
+                        // Non-UKI entries only warn here.
+                        [entry, ..]
+                            if !entry.boot_type.eq(&SystemdBootloaderType::UkiStandalone) =>
+                        {
+                            warn!("First systemd-boot entry is not of type 'uki-standalone'")
+                        }
+
+                        // Additional entries are ignored.
+                        [_, rest @ ..] if !rest.is_empty() => warn!(
+                            "Multiple systemd-boot entries found; only the first entry will be used"
                         ),
 
-                        // Having more than one entry is warned about, only the first is used in this version of Trident.
-                        [_, rest @..] if !rest.is_empty() => warn!(
-                            "Bootloader type 'systemd-boot' has more than one entry, only the first entry will be used"
-                        ),
-
-                        // Everything else is OK
                         _ => {}
                     }
                 }
@@ -386,23 +384,24 @@ mod tests {
             CosiMetadataErrorKind::V1_1GrubWithSystemdBootEntries,
         );
 
-        // systemd-boot without systemd-boot entries is invalid.
-        let mut sdb_missing_entries = base.clone();
-        if let Some(obj) = sdb_missing_entries["bootloader"].as_object_mut() {
-            obj.remove("systemdBoot");
-        }
-        assert_validate_err_kind(
-            sdb_missing_entries,
-            CosiMetadataErrorKind::V1_1SystemdBootMissingEntries,
-        );
+        for bootloader_type in ["systemd-boot", "efitreeloader-mshv-systemd-boot"] {
+            let mut metadata = base.clone();
+            metadata["bootloader"]["type"] = json!(bootloader_type);
+            parse_and_validate(metadata.clone()).unwrap();
 
-        // systemd-boot with empty entries is invalid.
-        let mut sdb_empty_entries = base.clone();
-        sdb_empty_entries["bootloader"]["systemdBoot"]["entries"] = json!([]);
-        assert_validate_err_kind(
-            sdb_empty_entries,
-            CosiMetadataErrorKind::V1_1SystemdBootEmptyEntries,
-        );
+            let mut missing_entries = metadata.clone();
+            missing_entries["bootloader"]
+                .as_object_mut()
+                .unwrap()
+                .remove("systemdBoot");
+            assert_validate_err_kind(
+                missing_entries,
+                CosiMetadataErrorKind::V1_1SystemdBootMissingEntries,
+            );
+
+            metadata["bootloader"]["systemdBoot"]["entries"] = json!([]);
+            assert_validate_err_kind(metadata, CosiMetadataErrorKind::V1_1SystemdBootEmptyEntries);
+        }
 
         // efitreeloader/MSHV uses the same systemd-boot configuration.
         let mut mshv_sdb = base.clone();

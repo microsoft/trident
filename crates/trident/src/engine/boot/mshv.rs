@@ -21,18 +21,16 @@ const FILES: &[&str] = &[
 
 const SPACE_RESERVE: u64 = 1024 * 1024;
 
-/// Detects slot-owned MSHV in BOOT, requiring the complete bundle when markers exist.
-/// No markers means mode off; incomplete bundles and inspection errors fail discovery.
-pub(crate) fn has_slot_mshv_bundle(esp_path: &Path) -> Result<bool> {
-    let bundle = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+/// Detects MSHV in an installed bootloader directory; marked bundles must be complete.
+pub(crate) fn has_slot_mshv_bundle(bundle: &Path) -> Result<bool> {
     for marker in ["HvLoader.efi", "lxhvloader.dll", "Windows"] {
         match fs::symlink_metadata(bundle.join(marker)) {
             Ok(_) => {
-                validate_bundle(&bundle)?;
+                validate_bundle(bundle)?;
                 return Ok(true);
             }
             Err(error) if error.kind() == ErrorKind::NotFound => {}
-            Err(error) => return Err(error).context("Failed to inspect MSHV BOOT payload"),
+            Err(error) => return Err(error).context("Failed to inspect MSHV boot payload"),
         }
     }
     Ok(false)
@@ -388,10 +386,7 @@ mod tests {
     /// Each fallback policy copies whole bundles and preserves the retained slot.
     #[test]
     fn fallback_modes_use_the_full_selected_bundle_during_trial_commit_and_rollback() {
-        use trident_api::{
-            constants::internal_params::MSHV_SLOT_ESP_PAYLOAD,
-            status::{AbVolumeSelection, ServicingState, ServicingType},
-        };
+        use trident_api::status::{AbVolumeSelection, ServicingState, ServicingType};
         for mode in [
             UefiFallbackMode::Conservative,
             UefiFallbackMode::Optimistic,
@@ -412,7 +407,6 @@ mod tests {
                 esp_mount_path: ".".into(),
                 ..Default::default()
             };
-            ctx.spec.internal_params.set_flag(MSHV_SLOT_ESP_PAYLOAD);
             ctx.spec.os.uefi_fallback = mode;
             crate::subsystems::esp::set_uefi_fallback_contents(
                 &ctx,

@@ -19,7 +19,9 @@ use trident_api::{
         MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType,
         VerityCorruptionOption, VerityDevice,
     },
-    constants::{internal_params::ENABLE_UKI_SUPPORT, ROOT_MOUNT_POINT_PATH},
+    constants::{
+        internal_params::ENABLE_UKI_SUPPORT, EFI_DEFAULT_BIN_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH,
+    },
     error::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
         InvalidInputError, ReportError, TridentError, TridentResultExt,
@@ -511,9 +513,6 @@ pub fn execute(
         generate_host_status(&history, lsblk_output, lazy_partitions, disk)?
     };
 
-    // Reject explicit MSHV mode before persistence/bootstrap; unflagged payloads go undetected.
-    crate::engine::mshv::validate_transition(&Default::default(), &host_status.spec)?;
-
     debug!(
         "host_status:\n{}",
         serde_yaml::to_string(&host_status).unwrap_or("Failed to serialize Host Status".into())
@@ -537,7 +536,18 @@ pub fn execute(
             "Failed to find ESP filesystem in Host Status, validation should have failed if this was the case",
         )))?;
 
-    esp::bootstrap_azla_from_fallback(esp_path, false)
+    // Offline initialization has no source COSI; inspect the installed BOOT bundle.
+    if crate::engine::boot::mshv::has_slot_mshv_bundle(
+        &esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH),
+    )
+    .structured(InvalidInputError::InvalidBootConfiguration)?
+    {
+        return Err(TridentError::new(
+            InvalidInputError::InvalidBootConfiguration,
+        ))
+        .message("Offline initialization of slot-owned MSHV images is not supported");
+    }
+    esp::bootstrap_azla_from_fallback(esp_path)
         .structured(InvalidInputError::InvalidBootConfiguration)
         .message("Failed to bootstrap AZLA from fallback")?;
 

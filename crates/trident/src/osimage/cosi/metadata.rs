@@ -148,6 +148,13 @@ impl CosiMetadata {
         self.bootloader.as_ref().map(OsImageBootloader::from)
     }
 
+    /// Returns whether the image declares an efitreeloader/MSHV/systemd-boot chain.
+    pub(crate) fn is_mshv(&self) -> bool {
+        self.bootloader.as_ref().is_some_and(|bootloader| {
+            bootloader.bootloader_type == BootloaderType::EfitreeloaderMshvSystemdBoot
+        })
+    }
+
     /// Returns the ESP filesystem image.
     pub(super) fn get_esp_filesystem(&self) -> Result<&Image, Error> {
         let matches = self
@@ -350,6 +357,9 @@ pub(crate) struct Bootloader {
 pub(crate) enum BootloaderType {
     #[serde(rename = "systemd-boot")]
     SystemdBoot,
+
+    #[serde(rename = "efitreeloader-mshv-systemd-boot")]
+    EfitreeloaderMshvSystemdBoot,
 
     #[serde(rename = "grub")]
     Grub,
@@ -895,7 +905,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_uki() {
+    fn test_bootloader_detection() {
         fn parse(value: Value) -> CosiMetadata {
             serde_json::from_value(value).unwrap()
         }
@@ -930,11 +940,26 @@ mod tests {
         });
 
         assert!(parse(base.clone()).is_uki());
+        assert!(!parse(base.clone()).is_mshv());
+
+        let mut mshv = base.clone();
+        mshv["bootloader"]["type"] = json!("efitreeloader-mshv-systemd-boot");
+        let metadata = parse(mshv);
+        assert!(metadata.is_mshv());
+        assert!(metadata.is_uki());
+
+        for bootloader_type in ["grub", "unknown"] {
+            let mut other = base.clone();
+            other["bootloader"]["type"] = json!(bootloader_type);
+            assert!(!parse(other).is_mshv());
+        }
 
         // No bootloader => false.
         let mut no_bootloader = base.clone();
         no_bootloader.as_object_mut().unwrap().remove("bootloader");
-        assert!(!parse(no_bootloader).is_uki());
+        let metadata = parse(no_bootloader);
+        assert!(!metadata.is_uki());
+        assert!(!metadata.is_mshv());
 
         // No systemdBoot section => false.
         let mut no_systemd_boot = base.clone();

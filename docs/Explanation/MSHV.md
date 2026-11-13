@@ -78,20 +78,16 @@ for UKI naming and managed boot-directory conventions.
 ## Enabling Slot-Owned Servicing
 
 Use an x86-64 ACL UKI COSI containing the complete BOOT bundle and built with
-the matching efitreeloader prefix resolver. Include this flag in the
-[Host Configuration](../Reference/Host-Configuration/API-Reference/HostConfiguration.md):
+the matching efitreeloader prefix resolver. Its COSI metadata must set
+`bootloader.type` to `efitreeloader-mshv-systemd-boot`, with a `systemdBoot`
+section describing the standalone UKI entry.
 
-```yaml
-internalParams:
-  mshvSlotEspPayload: true
-```
+Trident selects MSHV servicing from this bootloader type, without a Host
+Configuration opt-in.
 
-Enable the flag during clean installation or first-update ACL adoption, and
-keep it enabled for subsequent updates.
-
-For first-update adoption, Trident discovers the mode from the installed
-image's BOOT bundle and requires the request to match. It seeds the complete
-AZLA bundle before persisting the discovered HostStatus. Incomplete MSHV
+For first-update adoption, no source COSI describes the installed image.
+Trident detects its BOOT bundle and seeds the complete AZLA bundle before
+persisting the discovered HostStatus. Incomplete marked MSHV
 bundles fail discovery; legacy shared files outside BOOT do not establish
 slot-owned mode.
 
@@ -120,25 +116,15 @@ The current implementation is limited to x86-64 ACL UKI images because the
 payload definition hardcodes x64 filenames. TPM/PCR-bound encryption is
 rejected.
 
+Slot-owned MSHV requires file-based ESP deployment, not image streaming.
 Offline initialization of MSHV-enabled ACL images is not currently supported.
 
-### Changing the Recorded Mode
+### Changing the Boot Layout
 
-Here, "mode" means the `internalParams.mshvSlotEspPayload` flag, not whether
-the kernel supports MSHV. An installation is already managed once Trident has
-persisted its HostStatus. Subsequent update requests and historical
-configurations selected for manual rollback must retain the recorded flag:
-
-* If recorded as enabled, keep `mshvSlotEspPayload: true`. Setting it to false
-  or omitting it from an update request is rejected.
-* If recorded as disabled, setting `mshvSlotEspPayload: true` is rejected,
-  even if the new COSI contains an MSHV bundle.
-
-Trident does not convert an existing shared/non-MSHV payload layout into
-slot-owned management, or convert a slot-owned installation back out of it.
-Normal A/B updates and rollbacks that retain the same flag remain supported.
-The initial mode is established during clean installation or discovered
-during first-update ACL adoption, before an installation is already managed.
+A/B staging compares the source COSI's bootloader type with the retained
+slot's actual bundle. Converting between MSHV and ordinary boot layouts is
+not supported. Manual rollback and fallback use the selected slot's files,
+not a recorded configuration flag.
 
 ### Hypervisor Identity
 

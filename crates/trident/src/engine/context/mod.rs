@@ -432,6 +432,11 @@ impl EngineContext {
         ))
     }
 
+    /// Returns whether the source image declares an MSHV boot chain.
+    pub(crate) fn is_mshv(&self) -> bool {
+        self.image.as_ref().is_some_and(OsImage::is_mshv)
+    }
+
     /// Returns the zstd max window log required for decompression of files
     /// coming from the OS image, if available.
     pub(crate) fn image_zstd_max_window_log(&self) -> Option<u32> {

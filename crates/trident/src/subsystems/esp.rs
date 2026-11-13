@@ -102,7 +102,6 @@ pub fn set_uefi_fallback_contents(
             &source_esp_dir_name,
             &ctx.servicing_type,
             ctx.install_index,
-            crate::engine::mshv::enabled(&ctx.spec),
         )?;
     } else {
         debug!(
@@ -364,8 +363,10 @@ fn copy_file_artifacts(
     debug!("Writing boot files to directory {}", esp_dir_path.display());
 
     // MSHV uses a complete bundle, not the ordinary boot-file list.
-    let slot_mshv = crate::engine::mshv::enabled(&ctx.spec);
+    let slot_mshv = ctx.is_mshv();
     let source_bundle = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+    // Compare source metadata with the retained slot before any ESP writes.
+    mshv::validate_transition(ctx, &path::join_relative(mount_point, &ctx.esp_mount_path))?;
     let boot_files = if slot_mshv {
         // Validate and budget space before deleting target-slot files.
         boot::mshv::validate_bundle(&source_bundle)?;
@@ -381,7 +382,7 @@ fn copy_file_artifacts(
         // Ordinary copying would omit required MSHV payload files.
         ensure!(
             !source_bundle.join("HvLoader.efi").try_exists()?,
-            "A slot-owned MSHV image requires internalParams.mshvSlotEspPayload"
+            "An MSHV image must declare COSI bootloader type 'efitreeloader-mshv-systemd-boot'"
         );
         generate_boot_filepaths(
             temp_mount_dir,
@@ -579,7 +580,6 @@ fn copy_boot_files_for_uefi_fallback(
     source_esp_name: &str,
     servicing_type: &ServicingType,
     install_index: usize,
-    slot_mshv: bool,
 ) -> Result<(), Error> {
     let esp_dir_path = path::join_relative(mount_point, esp_mount_path).join(ESP_EFI_DIRECTORY);
     if skip_uefi_fallback_copy(
@@ -603,7 +603,8 @@ fn copy_boot_files_for_uefi_fallback(
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     );
-    let result = if slot_mshv {
+    // Fallback also runs without an image, so detect the selected slot's bundle.
+    let result = if boot::mshv::has_slot_mshv_bundle(&source_esp_dir_path)? {
         boot::mshv::replace_bundle(&source_esp_dir_path, &uefi_fallback_path)
     } else {
         replace_boot_files(&source_esp_dir_path, &uefi_fallback_path)
@@ -721,16 +722,14 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
 }
 
 /// Seeds missing `EFI/AZLA` from `EFI/BOOT` via a staged directory rename.
-/// MSHV validates both bundles when present and preflights space before copying.
-/// Existing AZLA contents are never refreshed.
-pub fn bootstrap_azla_from_fallback(esp_path: &Path, slot_mshv: bool) -> Result<(), Error> {
+/// Detects MSHV from BOOT and preflights capacity before copying.
+/// Existing AZLA is validated for MSHV, never refreshed.
+pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
     let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
     let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-    if slot_mshv {
-        boot::mshv::validate_bundle(&boot_esp_path)?;
-        if azla_esp_path.exists() {
-            return boot::mshv::validate_bundle(&azla_esp_path);
-        }
+    let slot_mshv = boot::mshv::has_slot_mshv_bundle(&boot_esp_path)?;
+    if slot_mshv && azla_esp_path.exists() {
+        return boot::mshv::validate_bundle(&azla_esp_path);
     }
     trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
     if !azla_esp_path.exists() {
@@ -1569,7 +1568,7 @@ mod tests {
             writeln!(file, "{content}").unwrap();
         }
 
-        bootstrap_azla_from_fallback(esp_dir.path(), false).unwrap();
+        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
 
         for (file_name, _content) in &file_infos {
             assert!(
@@ -1606,7 +1605,7 @@ mod tests {
         let mut sentinel_file = File::create(&sentinel_path).unwrap();
         writeln!(sentinel_file, "Pre-existing AZLA content").unwrap();
 
-        bootstrap_azla_from_fallback(esp_dir.path(), false).unwrap();
+        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
 
         // Ordinary mode neither validates nor refreshes existing AZLA.
         let contents = fs::read_to_string(&sentinel_path).unwrap();
@@ -1650,7 +1649,7 @@ mod tests {
         let mut stale_file = File::create(azla_tmp_dir.join("stale-leftover")).unwrap();
         writeln!(stale_file, "Leftover from a crashed bootstrap").unwrap();
 
-        bootstrap_azla_from_fallback(esp_dir.path(), false).unwrap();
+        bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
 
         // The stale temp dir must be cleaned up, and bootstrapping must
         // still succeed despite it being present beforehand.
@@ -1696,21 +1695,21 @@ mod tests {
         fs::create_dir_all(&temporary).unwrap();
         fs::write(temporary.join("stale"), "incomplete").unwrap();
 
-        bootstrap_azla_from_fallback(esp.path(), true).unwrap();
+        bootstrap_azla_from_fallback(esp.path()).unwrap();
         for name in files {
             assert!(files_are_identical(&boot.join(name), &azla.join(name)));
         }
         assert!(!temporary.exists());
 
         fs::write(boot.join("HvLoader.efi"), "new fallback").unwrap();
-        bootstrap_azla_from_fallback(esp.path(), true).unwrap();
+        bootstrap_azla_from_fallback(esp.path()).unwrap();
         assert_eq!(
             fs::read_to_string(azla.join("HvLoader.efi")).unwrap(),
             "HvLoader.efi"
         );
 
         fs::remove_file(azla.join("Windows/System32/kdstub.dll")).unwrap();
-        assert!(bootstrap_azla_from_fallback(esp.path(), true).is_err());
+        assert!(bootstrap_azla_from_fallback(esp.path()).is_err());
         assert!(!azla.join("Windows/System32/kdstub.dll").exists());
     }
 
@@ -1751,7 +1750,7 @@ mod tests {
             .set_len(length)
             .unwrap();
 
-        let error = bootstrap_azla_from_fallback(esp.path(), true).unwrap_err();
+        let error = bootstrap_azla_from_fallback(esp.path()).unwrap_err();
         assert!(error.to_string().contains("Insufficient ESP capacity"));
         assert!(!temporary.exists());
         assert!(!azla.exists());
@@ -1759,7 +1758,7 @@ mod tests {
         assert_eq!(fs::read(boot.join("HvLoader.efi")).unwrap(), b"retained");
     }
 
-    /// Incomplete MSHV fallback cannot publish AZLA.
+    /// Incomplete marked fallback cannot publish AZLA.
     #[test]
     fn test_bootstrap_azla_rejects_incomplete_mshv_fallback() {
         let esp = TempDir::new().unwrap();
@@ -1767,7 +1766,8 @@ mod tests {
         let azla = esp.path().join(ESP_EFI_DIRECTORY).join("AZLA");
         fs::create_dir_all(&boot).unwrap();
         fs::write(boot.join(BOOT_EFI), "shim").unwrap();
-        assert!(bootstrap_azla_from_fallback(esp.path(), true).is_err());
+        fs::write(boot.join("HvLoader.efi"), "loader").unwrap();
+        assert!(bootstrap_azla_from_fallback(esp.path()).is_err());
         assert!(!azla.exists());
         assert_eq!(fs::read_to_string(boot.join(BOOT_EFI)).unwrap(), "shim");
     }

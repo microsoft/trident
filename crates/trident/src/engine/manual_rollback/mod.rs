@@ -151,9 +151,6 @@ pub fn execute_rollback(
         };
         staged_rollback_type = Some(rollback_type);
 
-        // Historical targets must preserve the installation's MSHV mode.
-        engine::mshv::validate_transition(&datastore.host_status().spec, &requested_rollback.spec)?;
-
         let engine_context = EngineContext::new(EngineContextParams {
             spec: requested_rollback.spec.clone(),
             spec_old: datastore.host_status().spec.clone(),

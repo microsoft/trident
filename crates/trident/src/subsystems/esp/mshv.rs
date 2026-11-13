@@ -1,19 +1,23 @@
 //! Slot-owned MSHV validation and efitreeloader (ETL) ESP definitions.
 
-use sysdefs::arch::SystemArchitecture;
-use trident_api::{error::TridentError, status::ServicingType};
+use std::path::Path;
 
-use crate::engine::{
-    mshv::{enabled, unsupported, validate_transition},
-    EngineContext,
+use anyhow::{anyhow, ensure, Context, Error};
+use sysdefs::arch::SystemArchitecture;
+use trident_api::{
+    constants::ESP_EFI_DIRECTORY,
+    error::{InvalidInputError, TridentError},
+    status::ServicingType,
 };
+
+use crate::engine::{boot, EngineContext};
 
 /// Filename of the second-stage EFI executable for efitreeloader (ETL).
 pub(super) const ETL_SECOND_STAGE_EFI_FILENAME: &str = "second.efi";
 
-/// Enforces support and mode-transition restrictions when slot-owned MSHV is enabled.
+/// Enforces support restrictions for images declaring the MSHV bootloader type.
 pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentError> {
-    if !enabled(&ctx.spec) {
+    if !ctx.is_mshv() {
         return Ok(());
     }
     // The current payload allowlist supports only x86-64.
@@ -38,38 +42,63 @@ pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
             "Slot-owned MSHV TPM/PCR-bound encryption is not validated",
         ));
     }
-    if ctx.servicing_type != ServicingType::CleanInstall {
-        validate_transition(&ctx.spec_old, &ctx.spec)?;
-    }
     Ok(())
+}
+
+/// Rejects A/B updates that change the retained slot's MSHV layout.
+pub(super) fn validate_transition(ctx: &EngineContext, esp_path: &Path) -> Result<(), Error> {
+    if ctx.servicing_type != ServicingType::AbUpdate {
+        return Ok(());
+    }
+    let active_volume = ctx
+        .ab_active_volume
+        .context("A/B active volume is not set")?;
+    let active_bundle = esp_path
+        .join(ESP_EFI_DIRECTORY)
+        .join(boot::make_esp_dir_name(ctx.install_index, active_volume));
+    ensure!(
+        boot::mshv::has_slot_mshv_bundle(&active_bundle)? == ctx.is_mshv(),
+        "Changing slot-owned MSHV mode on an existing installation is not supported"
+    );
+    Ok(())
+}
+
+/// Reports unsupported MSHV boot configurations.
+fn unsupported(reason: &str) -> TridentError {
+    TridentError::with_source(
+        InvalidInputError::InvalidBootConfiguration,
+        anyhow!("{reason}"),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use trident_api::constants::internal_params::MSHV_SLOT_ESP_PAYLOAD;
+    use crate::osimage::{mock::MockOsImage, OsImage};
 
-    /// Unsupported MSHV combinations fail only after opt-in.
+    /// Only metadata-declared MSHV images receive these restrictions.
     #[test]
     fn rejects_unsupported_mshv_images_without_affecting_other_images() {
-        let mut ctx = EngineContext {
-            is_stream_image: true,
-            is_uki: Some(true),
-            servicing_type: ServicingType::CleanInstall,
-            ..Default::default()
-        }
-        .with_image(crate::osimage::mock::MockOsImage {
+        let mut image = MockOsImage {
             os_release: osutils::osrelease::OsRelease {
                 id: Some(osutils::osrelease::AZURE_LINUX_DISTRO_ID.into()),
                 variant_id: Some(osutils::osrelease::AZURE_CONTAINER_LINUX_VARIANT_ID.into()),
                 ..Default::default()
             },
             is_uki: true,
-            ..crate::osimage::mock::MockOsImage::new()
-        });
+            ..MockOsImage::new()
+        };
+        let mut ctx = EngineContext {
+            is_stream_image: true,
+            is_uki: Some(true),
+            servicing_type: ServicingType::CleanInstall,
+            ..Default::default()
+        }
+        .with_image(image.clone());
         assert!(validate_configuration(&ctx).is_ok());
-        ctx.spec.internal_params.set_flag(MSHV_SLOT_ESP_PAYLOAD);
+        image.is_mshv = true;
+        ctx.image = Some(OsImage::mock(image));
         assert!(validate_configuration(&ctx).is_err());
         ctx.is_stream_image = false;
         assert_eq!(
@@ -81,5 +110,47 @@ mod tests {
             ..Default::default()
         });
         assert!(validate_configuration(&ctx).is_err());
+    }
+
+    /// Source metadata must match the retained slot, including non-default slots.
+    #[test]
+    fn rejects_mshv_layout_changes() {
+        use trident_api::status::AbVolumeSelection;
+
+        for retained_mshv in [false, true] {
+            let esp = tempfile::TempDir::new().unwrap();
+            if retained_mshv {
+                for name in [
+                    "bootx64.efi",
+                    "grubx64.efi",
+                    "second.efi",
+                    "HvLoader.efi",
+                    "lxhvloader.dll",
+                    "Windows/System32/hvix64.exe",
+                    "Windows/System32/hvax64.exe",
+                    "Windows/System32/kdstub.dll",
+                ] {
+                    let path = esp.path().join("EFI/AZL2B").join(name);
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(path, b"payload").unwrap();
+                }
+            }
+            let mut ctx = EngineContext {
+                servicing_type: ServicingType::AbUpdate,
+                install_index: 1,
+                ab_active_volume: Some(AbVolumeSelection::VolumeB),
+                ..Default::default()
+            };
+            for requested_mshv in [false, true] {
+                ctx.image = Some(OsImage::mock(MockOsImage {
+                    is_mshv: requested_mshv,
+                    ..MockOsImage::new()
+                }));
+                assert_eq!(
+                    validate_transition(&ctx, esp.path()).is_ok(),
+                    retained_mshv == requested_mshv
+                );
+            }
+        }
     }
 }

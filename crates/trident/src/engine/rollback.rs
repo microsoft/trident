@@ -77,13 +77,6 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         _ => ServicingType::NoActiveServicing,
     };
 
-    // Preserve MSHV mode except on clean install, which has no previous mode.
-    if current_servicing_state != ServicingState::CleanInstallFinalized {
-        super::mshv::validate_transition(
-            &datastore.host_status().spec_old,
-            &datastore.host_status().spec,
-        )?;
-    }
     // Recovery validates the retained OS, not the failed candidate.
     let recovering = matches!(
         current_servicing_state,
