@@ -858,7 +858,7 @@ mod tests {
     /// Tests the [`validate_cosi_metadata_version`] function for version validation.
     ///
     /// Verifies that:
-    /// - All COSI 1.x versions (1.0, 1.1, 1.2) are accepted as valid.
+    /// - All COSI 1.x versions (1.0, 1.1, 1.2, 1.3) are accepted as valid.
     /// - Major version 0.x and 2.x are rejected as unsupported.
     #[test]
     fn test_validate_cosi_metadata_version() {
@@ -866,6 +866,7 @@ mod tests {
         super::validate_cosi_metadata_version(&MetadataVersion { major: 1, minor: 0 }).unwrap();
         super::validate_cosi_metadata_version(&MetadataVersion { major: 1, minor: 1 }).unwrap();
         super::validate_cosi_metadata_version(&MetadataVersion { major: 1, minor: 2 }).unwrap();
+        super::validate_cosi_metadata_version(&KnownMetadataVersion::V1_3.as_version()).unwrap();
 
         // Test unsupported versions
         super::validate_cosi_metadata_version(&MetadataVersion { major: 0, minor: 0 }).unwrap_err();

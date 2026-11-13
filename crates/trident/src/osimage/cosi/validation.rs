@@ -44,13 +44,19 @@ impl CosiMetadata {
                     return mk_err(CosiMetadataErrorKind::V1_1GrubWithSystemdBootEntries);
                 }
 
-                // Systemd-boot without entries is invalid
-                (BootloaderType::SystemdBoot, None) => {
+                // Bootloaders using systemd-boot require its configuration.
+                (
+                    BootloaderType::SystemdBoot | BootloaderType::EfitreeloaderMshvSystemdBoot,
+                    None,
+                ) => {
                     return mk_err(CosiMetadataErrorKind::V1_1SystemdBootMissingEntries);
                 }
 
                 // Systemd-boot with not exactly 1 UKI entry is invalid for this version of Trident
-                (BootloaderType::SystemdBoot, Some(systemd_boot)) => {
+                (
+                    BootloaderType::SystemdBoot | BootloaderType::EfitreeloaderMshvSystemdBoot,
+                    Some(systemd_boot),
+                ) => {
                     match systemd_boot.entries.as_slice() {
                         // No entries is invalid
                         [] => {
@@ -396,6 +402,19 @@ mod tests {
         assert_validate_err_kind(
             sdb_empty_entries,
             CosiMetadataErrorKind::V1_1SystemdBootEmptyEntries,
+        );
+
+        // efitreeloader/MSHV uses the same systemd-boot configuration.
+        let mut mshv_sdb = base.clone();
+        mshv_sdb["bootloader"]["type"] = json!("efitreeloader-mshv-systemd-boot");
+        parse_and_validate(mshv_sdb.clone()).unwrap();
+
+        if let Some(obj) = mshv_sdb["bootloader"].as_object_mut() {
+            obj.remove("systemdBoot");
+        }
+        assert_validate_err_kind(
+            mshv_sdb,
+            CosiMetadataErrorKind::V1_1SystemdBootMissingEntries,
         );
 
         // systemd-boot with first entry NOT uki-standalone only warns.

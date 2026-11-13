@@ -18,10 +18,10 @@ pub enum CosiMetadataErrorKind {
     #[error("Bootloader type 'grub' cannot have systemd-boot entries")]
     V1_1GrubWithSystemdBootEntries,
 
-    #[error("Bootloader type 'systemd-boot' requires systemd-boot entries")]
+    #[error("A bootloader using systemd-boot requires systemd-boot entries")]
     V1_1SystemdBootMissingEntries,
 
-    #[error("Bootloader type 'systemd-boot' must not be empty")]
+    #[error("Systemd-boot entries must not be empty")]
     V1_1SystemdBootEmptyEntries,
 
     #[error("OS packages metadata is required for COSI version >= 1.1, but not provided")]

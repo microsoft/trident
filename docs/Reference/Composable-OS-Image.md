@@ -9,6 +9,7 @@ title: COSI Spec
 
 | Revision            | Spec Date  |
 | ------------------- | ---------- |
+| [1.3](#revision-13) | TBD        |
 | [1.2](#revision-12) | 2026-01-30 |
 | [1.1](#revision-11) | 2025-05-08 |
 | [1.0](#revision-10) | 2024-10-09 |
@@ -223,6 +224,7 @@ compatibility.
 
 Machine-readable JSON Schema:
 
+- [1.3](https://raw.githubusercontent.com/microsoft/trident/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.3.schema.json)
 - [1.2](https://raw.githubusercontent.com/microsoft/trident/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json)
 
 ##### Root Object
@@ -385,26 +387,27 @@ rpm -qa --queryformat "%{NAME} %{VERSION} %{RELEASE} %{ARCH}\n"
 
 ##### `Bootloader` Object
 
-| Field         | Type                                     | Added in | Required                         | Description                 |
-| ------------- | ---------------------------------------- | -------- | -------------------------------- | --------------------------- |
-| `type`        | [`BootloaderType`](#bootloadertype-enum) | 1.1      | Yes (since 1.1)                  | The type of the bootloader. |
-| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` == `systemd-boot`[1] | systemd-boot configuration. |
+| Field         | Type                                     | Added in | Required                                                                   | Description                 |
+| ------------- | ---------------------------------------- | -------- | -------------------------------------------------------------------------- | --------------------------- |
+| `type`        | [`BootloaderType`](#bootloadertype-enum) | 1.1      | Yes (since 1.1)                                                            | The type of the bootloader. |
+| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` is `systemd-boot` or `efitreeloader-mshv-systemd-boot`[1]       | systemd-boot configuration. |
 
 _Notes:_
 
-- **[1]** The `systemd-boot` field is required if the `type` field is set to
-    `systemd-boot`. It MUST be omitted OR set to `null` if the `type`
-    field is set to any other value.
+- **[1]** The `systemdBoot` field is required if the `type` field is set to
+    `systemd-boot` or `efitreeloader-mshv-systemd-boot`. It MUST be omitted OR
+    set to `null` if the `type` field is set to any other value.
 
 ##### `BootloaderType` Enum
 
 A string that represents the primary bootloader used in the contained OS. These
 are the valid values for the `type` field in the `bootloader` object:
 
-| Value          | Description                                         |
-| -------------- | --------------------------------------------------- |
-| `systemd-boot` | The system is using systemd-boot as the bootloader. |
-| `grub`         | The system is using GRUB as the bootloader.         |
+| Value                                  | Added in | Description                                                        |
+| -------------------------------------- | -------- | ------------------------------------------------------------------ |
+| `systemd-boot`                         | 1.1      | The system is using systemd-boot as the bootloader.                |
+| `grub`                                 | 1.1      | The system is using GRUB as the bootloader.                        |
+| `efitreeloader-mshv-systemd-boot`      | 1.3      | The system boots through efitreeloader and MSHV before systemd-boot. |
 
 ##### `SystemDBoot` Object
 
@@ -629,6 +632,10 @@ making them invalid JSON. They are provided for illustration purposes only.
 ```
 
 ## Changelog
+
+### Revision 1.3
+
+- Added the `efitreeloader-mshv-systemd-boot` bootloader type.
 
 ### Revision 1.2
 
