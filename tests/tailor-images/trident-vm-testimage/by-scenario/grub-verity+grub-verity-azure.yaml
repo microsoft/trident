@@ -1,0 +1,6 @@
+config:
+  os:
+    $include: ./include/grub-verity-os-common.yaml
+  scripts:
+    postCustomization:
+      - $include: ./include/grub-verity-scripts.yaml
