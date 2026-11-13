@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use log::{debug, warn};
 use serde::{de::DeserializeOwned, Serialize};
-use sqlite::{Connection, OpenFlags, State};
+use sqlite::State;
 
 use trident_api::{
     error::{
@@ -38,12 +38,11 @@ impl DataStore {
 
     pub(crate) fn open(path: &Path) -> Result<Self, TridentError> {
         debug!("Loading datastore from {}", path.display());
-        let mut db = Connection::open_with_flags(path, OpenFlags::new().with_read_write())
-            .structured(ServicingError::Datastore {
-                inner: DatastoreError::LoadDatastore {
-                    path: path.to_string_lossy().into(),
-                },
-            })?;
+        let mut db = sqlite::open(path).structured(ServicingError::Datastore {
+            inner: DatastoreError::LoadDatastore {
+                path: path.to_string_lossy().into(),
+            },
+        })?;
         // Multiple connections to the same datastore file (e.g. concurrent
         // daemon RPC handlers) can briefly contend for the write lock; wait
         // for it rather than failing immediately with "database is locked".

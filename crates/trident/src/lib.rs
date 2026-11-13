@@ -23,8 +23,9 @@ use trident_api::{
         WAIT_FOR_SYSTEMD_NETWORKD,
     },
     error::{
-        ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
-        InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
+        DatastoreError, ExecutionEnvironmentMisconfigurationError, InitializationError,
+        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
+        TridentResultExt,
     },
     primitives::hash::Sha384Hash,
     status::{ServicingState, ServicingType},
@@ -437,8 +438,14 @@ impl Trident {
         multiboot_datastore_path: &Path,
     ) -> Result<HostConfiguration, TridentError> {
         if multiboot && datastore.is_persistent() {
-            // Multiboot stages into a separate datastore from the existing OS.
-            let staged_datastore = DataStore::open(multiboot_datastore_path)
+            // Reject a missing staged datastore before the existing loader can create it.
+            let staged_datastore = fs::metadata(multiboot_datastore_path)
+                .structured(ServicingError::Datastore {
+                    inner: DatastoreError::LoadDatastore {
+                        path: multiboot_datastore_path.to_string_lossy().into(),
+                    },
+                })
+                .and_then(|_| DataStore::open(multiboot_datastore_path))
                 .message("Failed to open staged multiboot datastore")?;
             datastore.close();
             *datastore = staged_datastore;
