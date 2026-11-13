@@ -246,6 +246,9 @@ pub(crate) fn find_ukis_to_remove_before_staging(
         return Ok(removals);
     }
 
+    // Reclaim interrupted staging, including orphaned addons.
+    removals.push(esp_uki_directory.join(TMP_UKI_NAME));
+
     let target_slot = target_slot_os_id(ctx);
     let target_suffix = format!("{target_slot}.efi");
     let active_slot = active_slot_os_id(ctx);
@@ -1582,6 +1585,40 @@ mod tests {
             File::create(esp_uki_dir.join(name)).unwrap();
         }
         (mount, esp_uki_dir)
+    }
+
+    #[test]
+    fn test_cleanup_ukis_reclaims_interrupted_staging() {
+        for staged_uki_exists in [true, false] {
+            let ctx = make_ctx(Some(AbVolumeSelection::VolumeA), 0);
+            let (mount, uki_dir) = setup_esp_for_cleanup(&["vmlinuz-101-azla0.efi"]);
+            let staged_uki = uki_dir.join(TMP_UKI_NAME);
+            if staged_uki_exists {
+                fs::write(&staged_uki, b"partial-uki").unwrap();
+            }
+            let staged_addons = uki::uki_addon_dir(&staged_uki);
+            fs::create_dir_all(&staged_addons).unwrap();
+            fs::write(staged_addons.join("cmdline.addon.efi"), b"partial-addon").unwrap();
+            let active_uki = uki_dir.join("vmlinuz-101-azla0.efi");
+            let active_addons = uki::uki_addon_dir(&active_uki);
+            fs::create_dir_all(&active_addons).unwrap();
+            fs::write(active_addons.join("cmdline.addon.efi"), b"retained").unwrap();
+
+            cleanup_ukis_before_staging(
+                &ctx,
+                mount.path(),
+                Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            )
+            .unwrap();
+
+            assert!(!staged_uki.exists());
+            assert!(!staged_addons.exists());
+            assert!(active_uki.exists());
+            assert_eq!(
+                fs::read(active_addons.join("cmdline.addon.efi")).unwrap(),
+                b"retained",
+            );
+        }
     }
 
     /// Validates that cleanup removes only UKIs matching the target slot+os-index
