@@ -453,30 +453,6 @@ impl Trident {
         let is_stream_image = self.is_stream_image;
 
         self.execute_and_record_error(datastore, |datastore| {
-            if finalize_only {
-                for disk in &host_config.storage.disks {
-                    if disk.selector.is_some() {
-                        return Err(TridentError::new(InvalidInputError::DiskSelection {
-                            disk_id: disk.id.clone(),
-                        }))
-                        .message(
-                            "Disk selectors require staging; finalize requires resolved device paths",
-                        );
-                    }
-                }
-
-                if datastore.host_status().servicing_state != ServicingState::CleanInstallStaged {
-                    return Err(TridentError::new(InternalError::UnexpectedServicingState {
-                        state: datastore.host_status().servicing_state,
-                    }))
-                    .message("No staged clean install to finalize");
-                }
-
-                return engine::finalize_clean_install(datastore, None, None, is_stream_image)
-                    .message("Failed to finalize clean install")
-                    .map(|ek| (ek, None, ServicingType::CleanInstall));
-            }
-
             let storage_graph = host_config
                 .validate_with_storage_graph()
                 .map_err(Into::into)
@@ -961,71 +937,23 @@ mod tests {
     use tempfile::TempDir;
 
     use trident_api::{
-        config::{Disk, DiskSelector, Operation, Storage},
+        config::{Disk, DiskSelector, HostConfigurationStaticValidationError, Operation, Storage},
         error::ErrorKind,
     };
 
     #[test]
-    fn finalize_only_rejects_saved_selectors() {
-        let unresolved = HostConfiguration {
+    fn finalize_only_uses_saved_host_configuration() {
+        // Fail validation before image loading or disk I/O.
+        let saved = HostConfiguration {
             storage: Storage {
-                disks: vec![
-                    Disk {
-                        id: "resolved".into(),
-                        device: "/dev/sda".into(),
-                        ..Default::default()
-                    },
-                    Disk {
-                        id: "unresolved".into(),
-                        selector: Some(DiskSelector::default()),
-                        ..Default::default()
-                    },
-                ],
+                disks: vec![Disk {
+                    id: "saved".into(),
+                    ..Default::default()
+                }],
                 ..Default::default()
             },
             ..Default::default()
         };
-        let mut resolved = unresolved.clone();
-        resolved.storage.disks[1].selector = None;
-        resolved.storage.disks[1].device = "/dev/sdb".into();
-        let mut ignored = unresolved.clone();
-        ignored.storage.disks[1].id = "ignored".into();
-
-        for supplied in [None, Some(resolved), Some(ignored)] {
-            let directory = TempDir::new().unwrap();
-            let mut datastore =
-                DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
-            datastore
-                .with_host_status(|status| {
-                    status.servicing_state = ServicingState::CleanInstallStaged;
-                    status.spec = unresolved.clone();
-                })
-                .unwrap();
-            let mut trident = Trident {
-                host_config: supplied,
-                orchestrator: None,
-                is_stream_image: false,
-            };
-
-            let error = trident
-                .install(&mut datastore, Operation::Finalize.into(), false, None)
-                .unwrap_err();
-            assert_eq!(
-                error.kind(),
-                &ErrorKind::InvalidInput(InvalidInputError::DiskSelection {
-                    disk_id: "unresolved".into(),
-                })
-            );
-            assert!(format!("{error:?}").contains("Disk selectors require staging"));
-            assert_eq!(
-                datastore.host_status().servicing_state,
-                ServicingState::CleanInstallStaged
-            );
-        }
-    }
-
-    #[test]
-    fn finalize_only_requires_a_staged_install() {
         let ignored = HostConfiguration {
             storage: Storage {
                 disks: vec![Disk {
@@ -1037,17 +965,15 @@ mod tests {
             },
             ..Default::default()
         };
-        for (state, supplied) in [
-            (ServicingState::NotProvisioned, None),
-            (ServicingState::Provisioned, None),
-            (ServicingState::CleanInstallFinalized, None),
-            (ServicingState::NotProvisioned, Some(ignored)),
-        ] {
+        for supplied in [None, Some(ignored)] {
             let directory = TempDir::new().unwrap();
             let mut datastore =
                 DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
             datastore
-                .with_host_status(|status| status.servicing_state = state)
+                .with_host_status(|status| {
+                    status.servicing_state = ServicingState::CleanInstallStaged;
+                    status.spec = saved.clone();
+                })
                 .unwrap();
             let mut trident = Trident {
                 host_config: supplied,
@@ -1060,7 +986,15 @@ mod tests {
                 .unwrap_err();
             assert_eq!(
                 error.kind(),
-                &ErrorKind::Internal(InternalError::UnexpectedServicingState { state })
+                &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationStatic {
+                    inner: HostConfigurationStaticValidationError::InvalidDiskTarget {
+                        disk_id: "saved".into(),
+                    },
+                })
+            );
+            assert_eq!(
+                datastore.host_status().servicing_state,
+                ServicingState::CleanInstallStaged
             );
         }
     }
