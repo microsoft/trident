@@ -36,9 +36,11 @@ pub(super) enum KnownMetadataVersion {
     /// COSI metadata specification version 1.3.
     ///
     /// Introduces the efitreeloader/MSHV/systemd-boot bootloader type.
-    #[allow(dead_code)]
     V1_3,
 }
+
+pub(super) const LATEST_RECOGNIZED_METADATA_VERSION: KnownMetadataVersion =
+    KnownMetadataVersion::V1_3;
 
 impl KnownMetadataVersion {
     pub(super) fn as_version(&self) -> MetadataVersion {
