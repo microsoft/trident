@@ -431,6 +431,22 @@ impl Trident {
         )
     }
 
+    fn staged_install_host_config(
+        datastore: &mut DataStore,
+        multiboot: bool,
+        multiboot_datastore_path: &Path,
+    ) -> Result<HostConfiguration, TridentError> {
+        if multiboot && datastore.is_persistent() {
+            // Multiboot stages into a separate datastore from the existing OS.
+            let staged_datastore = DataStore::open(multiboot_datastore_path)
+                .message("Failed to open staged multiboot datastore")?;
+            datastore.close();
+            *datastore = staged_datastore;
+        }
+
+        Ok(datastore.host_status().spec.clone())
+    }
+
     pub fn install(
         &mut self,
         datastore: &mut DataStore,
@@ -441,7 +457,11 @@ impl Trident {
         let finalize_only = !allowed_operations.has_stage() && allowed_operations.has_finalize();
         let mut host_config = if finalize_only {
             // Resume the configuration that was actually staged.
-            datastore.host_status().spec.clone()
+            Self::staged_install_host_config(
+                datastore,
+                multiboot,
+                Path::new(TEMPORARY_DATASTORE_PATH),
+            )?
         } else {
             self.host_config
                 .clone()
@@ -952,6 +972,90 @@ mod tests {
         config::{Disk, DiskSelector, HostConfigurationStaticValidationError, Operation, Storage},
         error::ErrorKind,
     };
+
+    #[test]
+    fn finalize_only_multiboot_selects_staged_datastore() {
+        let directory = TempDir::new().unwrap();
+        let primary_path = directory.path().join("primary.sqlite");
+        let staged_path = directory.path().join("staged.sqlite");
+        let mut primary = DataStore::open_or_create(&primary_path).unwrap();
+        primary
+            .with_host_status(|status| {
+                status.is_management_os = false;
+                status.servicing_state = ServicingState::Provisioned;
+                status.spec.storage.disks = vec![Disk {
+                    id: "original".into(),
+                    device: "/dev/sda".into(),
+                    ..Default::default()
+                }];
+            })
+            .unwrap();
+        primary.close();
+        let mut datastore = DataStore::open(&primary_path).unwrap();
+        let original = datastore.host_status().clone();
+        assert!(datastore.is_persistent());
+
+        let mut staged = DataStore::open_or_create(&staged_path).unwrap();
+        staged
+            .with_host_status(|status| {
+                status.servicing_state = ServicingState::CleanInstallStaged;
+                status.spec.storage.disks = vec![Disk {
+                    id: "staged".into(),
+                    device: "/dev/sdb".into(),
+                    ..Default::default()
+                }];
+            })
+            .unwrap();
+        staged.close();
+        let expected = DataStore::open(&staged_path).unwrap().host_status().clone();
+
+        assert_eq!(
+            Trident::staged_install_host_config(&mut datastore, false, &staged_path).unwrap(),
+            original.spec
+        );
+        assert_eq!(datastore.host_status(), &original);
+        assert_eq!(
+            Trident::staged_install_host_config(&mut datastore, true, &staged_path).unwrap(),
+            expected.spec
+        );
+        assert_eq!(datastore.host_status(), &expected);
+        assert!(!datastore.is_persistent());
+        assert_eq!(
+            DataStore::open(&primary_path).unwrap().host_status(),
+            &original
+        );
+
+        let unused_path = directory.path().join("unused.sqlite");
+        assert_eq!(
+            Trident::staged_install_host_config(&mut datastore, true, &unused_path).unwrap(),
+            expected.spec
+        );
+        assert!(!unused_path.exists());
+    }
+
+    #[test]
+    fn finalize_only_multiboot_missing_datastore_preserves_original() {
+        let directory = TempDir::new().unwrap();
+        let primary_path = directory.path().join("primary.sqlite");
+        let missing_path = directory.path().join("missing.sqlite");
+        let mut primary = DataStore::open_or_create(&primary_path).unwrap();
+        primary
+            .with_host_status(|status| {
+                status.is_management_os = false;
+                status.servicing_state = ServicingState::Provisioned;
+            })
+            .unwrap();
+        primary.close();
+        let mut datastore = DataStore::open(&primary_path).unwrap();
+        let original = datastore.host_status().clone();
+
+        let error =
+            Trident::staged_install_host_config(&mut datastore, true, &missing_path).unwrap_err();
+        assert!(format!("{error:?}").contains("Failed to open staged multiboot datastore"));
+        assert_eq!(datastore.host_status(), &original);
+        assert!(datastore.is_persistent());
+        datastore.get_host_statuses().unwrap();
+    }
 
     #[test]
     fn finalize_only_rejects_saved_selectors() {
