@@ -26,15 +26,7 @@
             "fsType": "ext4",
             "fsUuid": "88d2fa9b-7a32-450a-a9f8-aa9c3de79298",
             "partType": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709",
-            "verity": {
-                "image": {
-                    "path": "images/root-verity.rawzst",
-                    "compressedSize": 26214400,
-                    "uncompressedSize": 524288000,
-                    "sha384": "51356c53fbdd5c196395ccd389116f2e7769443cb4e945bc9b6bc3c805cf857c375df010469f8f45ef0c5b07456b023d"
-                },
-                "roothash": "646c82fa4c3f97e6cddc3996315c7f04b2beb721fb24fa38835136492a84eb19"
-            }
+            "verity": null
         }
     ],
     "osRelease": "NAME=\"Microsoft Azure Linux\"\nVERSION=\"3.0.20240824\"\nID=azurelinux\nVERSION_ID=\"3.0\"\nPRETTY_NAME=\"Microsoft Azure Linux 3.0\"\nANSI_COLOR=\"1;34\"\nHOME_URL=\"https://aka.ms/azurelinux\"\nBUG_REPORT_URL=\"https://aka.ms/azurelinux\"\nSUPPORT_URL=\"https://aka.ms/azurelinux\"\n",

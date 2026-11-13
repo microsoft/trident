@@ -280,6 +280,16 @@ mod tests {
     }
 
     #[test]
+    fn test_efitreeloader_mshv_systemd_boot_sample() {
+        let sample = include_str!(
+            "../../../../../tests/cosi/metadata_samples/v1.3/valid/efitreeloader-mshv-systemd-boot.json"
+        );
+        let value = serde_json::from_str(sample).unwrap();
+
+        parse_and_validate(value).unwrap();
+    }
+
+    #[test]
     fn test_cosi_1_0_validation() {
         // Base COSI metadata (v1.0) that is valid for this version of Trident.
         let base = json!({
