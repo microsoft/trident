@@ -453,6 +453,18 @@ impl Trident {
         let is_stream_image = self.is_stream_image;
 
         self.execute_and_record_error(datastore, |datastore| {
+            if finalize_only {
+                // Staging should already have resolved every saved selector.
+                for disk in &host_config.storage.disks {
+                    if disk.selector.is_some() {
+                        return Err(TridentError::new(InvalidInputError::DiskSelection {
+                            disk_id: disk.id.clone(),
+                        }))
+                        .message("Saved disk selectors must be resolved before finalization");
+                    }
+                }
+            }
+
             let storage_graph = host_config
                 .validate_with_storage_graph()
                 .map_err(Into::into)
@@ -940,6 +952,59 @@ mod tests {
         config::{Disk, DiskSelector, HostConfigurationStaticValidationError, Operation, Storage},
         error::ErrorKind,
     };
+
+    #[test]
+    fn finalize_only_rejects_saved_selectors() {
+        let saved = HostConfiguration {
+            storage: Storage {
+                disks: vec![
+                    Disk {
+                        id: "resolved".into(),
+                        device: "/dev/sda".into(),
+                        ..Default::default()
+                    },
+                    Disk {
+                        id: "saved-selector".into(),
+                        selector: Some(DiskSelector::default()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for supplied in [None, Some(HostConfiguration::default())] {
+            let directory = TempDir::new().unwrap();
+            let mut datastore =
+                DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
+            datastore
+                .with_host_status(|status| {
+                    status.servicing_state = ServicingState::CleanInstallStaged;
+                    status.spec = saved.clone();
+                })
+                .unwrap();
+            let mut trident = Trident {
+                host_config: supplied,
+                orchestrator: None,
+                is_stream_image: false,
+            };
+
+            let error = trident
+                .install(&mut datastore, Operation::Finalize.into(), false, None)
+                .unwrap_err();
+            assert_eq!(
+                error.kind(),
+                &ErrorKind::InvalidInput(InvalidInputError::DiskSelection {
+                    disk_id: "saved-selector".into(),
+                })
+            );
+            assert_eq!(&datastore.host_status().spec, &saved);
+            assert_eq!(
+                datastore.host_status().servicing_state,
+                ServicingState::CleanInstallStaged
+            );
+        }
+    }
 
     #[test]
     fn finalize_only_uses_saved_host_configuration() {
