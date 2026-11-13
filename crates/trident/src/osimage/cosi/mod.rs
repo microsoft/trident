@@ -652,13 +652,15 @@ fn read_cosi_metadata(
     }
     trace!("Raw COSI metadata:\n{}", raw_metadata);
 
-    // First, attempt to ONLY parse the metadata version to ensure we can read the rest.
+    // Parse the version first so unsupported major versions remain distinguishable
+    // from newer features that this build cannot deserialize.
     let version = serde_json::from_str::<CosiMetadataVersion>(&raw_metadata)
         .context("Failed to parse COSI metadata version")?
         .version;
     validate_cosi_metadata_version(&version)?;
 
-    // Now, parse the full metadata.
+    // Keep the serde error as the source so callers receive both the structured
+    // unsupported-features error and the exact field or variant that failed.
     let metadata: CosiMetadata = serde_json::from_str(&raw_metadata)
         .map_err(|source| CosiMetadataParseError::new(version, source))?;
 

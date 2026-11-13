@@ -77,6 +77,8 @@ impl OsImage {
         let os_image = match OsImage::cosi(image_source, timeout) {
             Ok(os_image) => os_image,
             Err(error) => {
+                // A supported 1.x version may still contain features newer than
+                // this build. Classify it without discarding the parse-error chain.
                 let kind = cosi_load_error_kind(&error, &image_source.url);
                 return Result::<Self, Error>::Err(error).structured(kind);
             }
@@ -466,6 +468,15 @@ mod tests {
                 version: "1.4".to_string()
             }
         );
+
+        let kind = cosi_load_error_kind(&error, &url);
+        let structured = Result::<(), Error>::Err(error)
+            .structured(kind)
+            .unwrap_err();
+        let rendered = format!("{structured:?}");
+        assert!(rendered.contains("Failed to parse COSI metadata v1.4"));
+        assert!(rendered.contains("invalid type: map, expected a string"));
+
         assert_eq!(
             cosi_load_error_kind(&Error::msg("other error"), &url),
             InvalidInputError::LoadCosi { url }
