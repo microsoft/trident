@@ -21,6 +21,26 @@ impl Bootloader {
     pub(crate) fn systemd_boot(&self) -> Option<&SystemdBoot> {
         self.systemd_boot.as_ref()
     }
+
+    pub(crate) fn uses_mshv(&self) -> bool {
+        self.bootloader_type == BootloaderType::EfitreeloaderMshvSystemdBoot
+    }
+
+    /// Includes both direct systemd-boot and the efitreeloader/MSHV chain.
+    pub(crate) fn uses_systemd_boot(&self) -> bool {
+        matches!(
+            &self.bootloader_type,
+            BootloaderType::SystemdBoot | BootloaderType::EfitreeloaderMshvSystemdBoot
+        )
+    }
+
+    pub(crate) fn uses_grub(&self) -> bool {
+        self.bootloader_type == BootloaderType::Grub
+    }
+
+    pub(crate) fn uses_efitreeloader(&self) -> bool {
+        self.bootloader_type == BootloaderType::EfitreeloaderMshvSystemdBoot
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -92,4 +112,36 @@ pub(crate) enum SystemdBootEntryType {
     UkiConfig,
     Config,
     Unknown(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bootloader_components() {
+        let systemd_boot = Bootloader::new(BootloaderType::SystemdBoot, None);
+        assert!(systemd_boot.uses_systemd_boot());
+        assert!(!systemd_boot.uses_mshv());
+        assert!(!systemd_boot.uses_grub());
+        assert!(!systemd_boot.uses_efitreeloader());
+
+        let grub = Bootloader::new(BootloaderType::Grub, None);
+        assert!(grub.uses_grub());
+        assert!(!grub.uses_mshv());
+        assert!(!grub.uses_systemd_boot());
+        assert!(!grub.uses_efitreeloader());
+
+        let mshv = Bootloader::new(BootloaderType::EfitreeloaderMshvSystemdBoot, None);
+        assert!(mshv.uses_mshv());
+        assert!(mshv.uses_systemd_boot());
+        assert!(mshv.uses_efitreeloader());
+        assert!(!mshv.uses_grub());
+
+        let unknown = Bootloader::new(BootloaderType::Unknown("future".to_string()), None);
+        assert!(!unknown.uses_mshv());
+        assert!(!unknown.uses_systemd_boot());
+        assert!(!unknown.uses_grub());
+        assert!(!unknown.uses_efitreeloader());
+    }
 }
