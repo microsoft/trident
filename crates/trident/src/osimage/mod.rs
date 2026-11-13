@@ -37,7 +37,7 @@ mod cosi;
 #[allow(dead_code)]
 pub(crate) mod mock;
 
-use cosi::Cosi;
+use cosi::{Cosi, CosiMetadataParseError};
 
 #[cfg(test)]
 use mock::MockOsImage;
@@ -74,10 +74,13 @@ impl OsImage {
         timeout: Duration,
     ) -> Result<Self, TridentError> {
         debug!("Attempting to load COSI file from '{}'", image_source.url);
-        let os_image =
-            OsImage::cosi(image_source, timeout).structured(InvalidInputError::LoadCosi {
-                url: image_source.url.clone(),
-            })?;
+        let os_image = match OsImage::cosi(image_source, timeout) {
+            Ok(os_image) => os_image,
+            Err(error) => {
+                let kind = cosi_load_error_kind(&error, &image_source.url);
+                return Result::<Self, Error>::Err(error).structured(kind);
+            }
+        };
         if image_source.sha384 == ImageSha384::Ignored {
             image_source.sha384 = ImageSha384::Checksum(os_image.metadata_sha384());
         }
@@ -427,16 +430,47 @@ pub(crate) struct ZstdDecompressionParameters {
     pub max_window_log: Option<u32>,
 }
 
+fn cosi_load_error_kind(error: &Error, url: &Url) -> InvalidInputError {
+    match error.downcast_ref::<CosiMetadataParseError>() {
+        Some(error) => InvalidInputError::UnsupportedCosiFeatures {
+            version: error.version().to_string(),
+        },
+        None => InvalidInputError::LoadCosi { url: url.clone() },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use std::collections::HashSet;
 
+    use anyhow::Context as _;
+    use uuid::Uuid;
+
     use osutils::osrelease::OsRelease;
 
     use mock::MockImage;
-    use uuid::Uuid;
+
+    #[test]
+    fn test_cosi_load_error_kind() {
+        let url = Url::parse("https://example.com/image.cosi").unwrap();
+        let source = serde_json::from_str::<String>("{}").unwrap_err();
+        let error = Result::<(), _>::Err(CosiMetadataParseError::new("1.4", source))
+            .context("Failed to read COSI file metadata")
+            .unwrap_err();
+
+        assert_eq!(
+            cosi_load_error_kind(&error, &url),
+            InvalidInputError::UnsupportedCosiFeatures {
+                version: "1.4".to_string()
+            }
+        );
+        assert_eq!(
+            cosi_load_error_kind(&Error::msg("other error"), &url),
+            InvalidInputError::LoadCosi { url }
+        );
+    }
 
     #[test]
     fn test_basic_properties() {

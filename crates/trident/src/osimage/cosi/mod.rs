@@ -36,6 +36,7 @@ mod metadata;
 mod validation;
 
 use entries::{CosiEntries, CosiEntry};
+pub(super) use error::CosiMetadataParseError;
 use metadata::{
     CosiMetadata, CosiMetadataVersion, DiskInfo, GptRegionType, ImageFile, KnownMetadataVersion,
     MetadataVersion, LATEST_RECOGNIZED_METADATA_VERSION,
@@ -652,15 +653,14 @@ fn read_cosi_metadata(
     trace!("Raw COSI metadata:\n{}", raw_metadata);
 
     // First, attempt to ONLY parse the metadata version to ensure we can read the rest.
-    validate_cosi_metadata_version(
-        &serde_json::from_str::<CosiMetadataVersion>(&raw_metadata)
-            .context("Failed to parse COSI metadata version")?
-            .version,
-    )?;
+    let version = serde_json::from_str::<CosiMetadataVersion>(&raw_metadata)
+        .context("Failed to parse COSI metadata version")?
+        .version;
+    validate_cosi_metadata_version(&version)?;
 
     // Now, parse the full metadata.
-    let metadata: CosiMetadata =
-        serde_json::from_str(&raw_metadata).context("Failed to parse COSI metadata")?;
+    let metadata: CosiMetadata = serde_json::from_str(&raw_metadata)
+        .map_err(|source| CosiMetadataParseError::new(version, source))?;
 
     // Validate the metadata.
     metadata.validate()?;
@@ -972,6 +972,40 @@ mod tests {
         for (image, (path, _offset, _size)) in metadata.images.iter().zip(image_paths.iter()) {
             assert_eq!(image.file.path, Path::new(path), "Incorrect image path",);
         }
+    }
+
+    #[test]
+    fn test_read_cosi_metadata_with_unsupported_features() {
+        let sample_metadata = r#"{
+            "version": "1.4",
+            "osArch": "x86_64",
+            "images": "future-image-layout"
+        }"#;
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(sample_metadata.as_bytes()).unwrap();
+
+        let cosi_reader = FileReader::new(
+            &Url::from_file_path(temp_file.path()).unwrap(),
+            Duration::from_secs(5),
+        )
+        .unwrap();
+        let entries = [(
+            PathBuf::from(COSI_METADATA_PATH),
+            CosiEntry {
+                offset: 0,
+                size: sample_metadata.len() as u64,
+            },
+        )]
+        .into_iter()
+        .collect();
+
+        let error = read_cosi_metadata(&cosi_reader, &entries, ImageSha384::Ignored).unwrap_err();
+        let parse_error = error.downcast_ref::<CosiMetadataParseError>().unwrap();
+
+        assert_eq!(parse_error.version(), "1.4");
+        assert!(error
+            .to_string()
+            .contains("Failed to parse COSI metadata v1.4"));
     }
 
     /// Tests the [`Cosi::new`] constructor for creating a COSI instance.
