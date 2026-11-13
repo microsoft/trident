@@ -9,7 +9,7 @@ use log::{debug, info};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
-use strum_macros::EnumIter;
+use strum_macros::{AsRefStr, EnumIter, EnumString};
 use trident_proto::v1::ServicingKind;
 use uuid::Uuid;
 
@@ -103,8 +103,8 @@ impl From<ServicingType> for trident_proto::v1::ServicingKind {
 /// Servicing state describes the progress of the servicing that the Trident agent is executing on
 /// the host. The host will transition through a different sequence of servicing states while
 /// servicing the host.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, EnumIter)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Clone, Debug, Default, Eq, PartialEq, EnumIter, EnumString, AsRefStr)]
+#[strum(serialize_all = "kebab-case")]
 pub enum ServicingState {
     /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
     #[default]
@@ -133,6 +133,39 @@ pub enum ServicingState {
     Provisioned,
     /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
+    /// A state written by another Trident version, preserved for inspection only.
+    #[strum(default)]
+    Unknown(String),
+}
+
+impl Serialize for ServicingState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let name = match self {
+            Self::Unknown(name) => name.as_str(),
+            known => known.as_ref(),
+        };
+        serializer.serialize_str(name)
+    }
+}
+
+impl<'de> Deserialize<'de> for ServicingState {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct StateVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for StateVisitor {
+            type Value = ServicingState;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a servicing state string")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, name: &str) -> Result<Self::Value, E> {
+                name.parse().map_err(E::custom)
+            }
+        }
+
+        deserializer.deserialize_any(StateVisitor)
+    }
 }
 
 /// A/B volume selection. Determines which set of volumes are currently
@@ -316,6 +349,60 @@ pub fn decode_host_status(mut yaml: Value) -> Result<HostStatus, serde_yaml::Err
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn servicing_state_preserves_known_and_unknown_names() {
+        let cases = [
+            ("not-provisioned", ServicingState::NotProvisioned),
+            ("clean-install-staged", ServicingState::CleanInstallStaged),
+            ("ab-update-staged", ServicingState::AbUpdateStaged),
+            (
+                "manual-rollback-ab-staged",
+                ServicingState::ManualRollbackAbStaged,
+            ),
+            (
+                "manual-rollback-runtime-staged",
+                ServicingState::ManualRollbackRuntimeStaged,
+            ),
+            ("runtime-update-staged", ServicingState::RuntimeUpdateStaged),
+            (
+                "clean-install-finalized",
+                ServicingState::CleanInstallFinalized,
+            ),
+            ("ab-update-finalized", ServicingState::AbUpdateFinalized),
+            (
+                "manual-rollback-ab-finalized",
+                ServicingState::ManualRollbackAbFinalized,
+            ),
+            ("provisioned", ServicingState::Provisioned),
+            (
+                "ab-update-health-check-failed",
+                ServicingState::AbUpdateHealthCheckFailed,
+            ),
+            (
+                "future-recovery-step",
+                ServicingState::Unknown("future-recovery-step".into()),
+            ),
+            ("Provisioned", ServicingState::Unknown("Provisioned".into())),
+            ("", ServicingState::Unknown(String::new())),
+        ];
+        for (name, expected) in cases {
+            let yaml = serde_yaml::to_string(name).unwrap();
+            let decoded: ServicingState = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(decoded, expected);
+            assert_eq!(
+                serde_yaml::to_value(&decoded).unwrap(),
+                Value::String(name.into())
+            );
+        }
+    }
+
+    #[test]
+    fn servicing_state_rejects_non_string_values() {
+        for yaml in ["42", "true", "null", "[]", "{}"] {
+            serde_yaml::from_str::<ServicingState>(yaml).unwrap_err();
+        }
+    }
 
     #[test]
     fn load_old_format() {

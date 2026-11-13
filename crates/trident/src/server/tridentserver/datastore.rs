@@ -32,7 +32,7 @@ mod preview {
     pub(in crate::server::tridentserver) fn servicing_state_from_datastore(
         datastore: &DataStore,
     ) -> ProtoServicingState {
-        match datastore.host_status().servicing_state {
+        match &datastore.host_status().servicing_state {
             ServicingState::NotProvisioned => ProtoServicingState::NotProvisioned,
             ServicingState::CleanInstallStaged => ProtoServicingState::InstallStaged,
             ServicingState::AbUpdateStaged => ProtoServicingState::UpdateAbStaged,
@@ -50,6 +50,7 @@ mod preview {
             ServicingState::AbUpdateHealthCheckFailed => {
                 ProtoServicingState::UpdateAbHealthCheckFailed
             }
+            ServicingState::Unknown(_) => ProtoServicingState::Unspecified,
         }
     }
 
@@ -59,6 +60,22 @@ mod preview {
 
         use strum::IntoEnumIterator;
         use tempfile::TempDir;
+
+        #[test]
+        fn unknown_servicing_state_is_reported_as_unspecified() {
+            let temp = TempDir::new().unwrap();
+            let mut datastore =
+                DataStore::open_or_create(&temp.path().join("datastore.sqlite")).unwrap();
+            datastore
+                .with_host_status(|status| {
+                    status.servicing_state = ServicingState::Unknown("future-recovery-step".into());
+                })
+                .unwrap();
+            assert_eq!(
+                servicing_state_from_datastore(&datastore),
+                ProtoServicingState::Unspecified,
+            );
+        }
 
         /// An overly-paranoid test to ensure that all variants of ServicingState
         /// are covered in servicing_state_from_datastore function and that the
@@ -115,7 +132,9 @@ mod preview {
             ];
 
             // Track which ServicingState variants have been tested for coverage.
-            let mut coverage_assertions = ServicingState::iter().collect::<Vec<_>>();
+            let mut coverage_assertions = ServicingState::iter()
+                .filter(|state| !matches!(state, ServicingState::Unknown(_)))
+                .collect::<Vec<_>>();
 
             for (input, expected) in test_cases {
                 // Remove input from coverage assertions
@@ -125,7 +144,7 @@ mod preview {
                 let mut datastore =
                     DataStore::open_or_create(&temp_dir.path().join("datastore.sqlite")).unwrap();
                 datastore
-                    .with_host_status(|hs| hs.servicing_state = input)
+                    .with_host_status(|hs| hs.servicing_state = input.clone())
                     .unwrap();
 
                 let result = servicing_state_from_datastore(&datastore);

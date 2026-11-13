@@ -81,7 +81,7 @@ pub fn set_uefi_fallback_contents(
     servicing_state: ServicingState,
     mount_point: &Path,
 ) -> Result<(), Error> {
-    let source_esp_dir_name = find_uefi_fallback_source_dir_name(ctx, servicing_state);
+    let source_esp_dir_name = find_uefi_fallback_source_dir_name(ctx, &servicing_state);
     if let Some(source_esp_dir_name) = source_esp_dir_name {
         debug!(
             "Configuring UEFI fallback for servicing state {:?} using source ESP dir '{}'",
@@ -469,7 +469,7 @@ fn copy_file_artifacts(
 ///    - 'conservative': use the newly active volume
 fn find_uefi_fallback_source_dir_name(
     ctx: &EngineContext,
-    servicing_state: ServicingState,
+    servicing_state: &ServicingState,
 ) -> Option<String> {
     trace!(
         "Finding UEFI fallback source dir name for servicing state {:?} and UEFI fallback mode {:?}",
@@ -1280,7 +1280,7 @@ mod tests {
             ctx.ab_active_volume = test_case.2;
             ctx.servicing_type = test_case.3;
             assert_eq!(
-                find_uefi_fallback_source_dir_name(&ctx, test_case.0),
+                find_uefi_fallback_source_dir_name(&ctx, &test_case.0),
                 test_case.4,
                 "{}",
                 test_case.5
@@ -1306,7 +1306,7 @@ mod tests {
                         ctx.ab_active_volume = Some(ab_volume);
                         ctx.servicing_type = servicing_type;
                         assert!(
-                            find_uefi_fallback_source_dir_name(&ctx, stage).is_none(),
+                            find_uefi_fallback_source_dir_name(&ctx, &stage).is_none(),
                             "Unsupported combo should always result in None: {stage:?} + {mode:?} + {ab_volume:?} + {servicing_type:?}"
                         );
                     }
@@ -1322,7 +1322,7 @@ mod tests {
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         ctx.servicing_type = ServicingType::CleanInstall;
         assert!(
-            find_uefi_fallback_source_dir_name(&ctx, ServicingState::CleanInstallFinalized)
+            find_uefi_fallback_source_dir_name(&ctx, &ServicingState::CleanInstallFinalized)
                 .is_none()
         );
         // Validate AbUpdateFinalized + Optimistic + active volume B ==> None
@@ -1330,7 +1330,7 @@ mod tests {
         ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
         ctx.servicing_type = ServicingType::AbUpdate;
         assert!(
-            find_uefi_fallback_source_dir_name(&ctx, ServicingState::AbUpdateFinalized).is_none()
+            find_uefi_fallback_source_dir_name(&ctx, &ServicingState::AbUpdateFinalized).is_none()
         );
     }
 

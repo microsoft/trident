@@ -106,7 +106,7 @@ pub fn execute_rollback(
 
     // Perform staging if operation is allowed
     if allowed_operations.has_stage() {
-        match datastore.host_status().servicing_state {
+        match &datastore.host_status().servicing_state {
             ServicingState::ManualRollbackAbStaged
             | ServicingState::ManualRollbackRuntimeStaged
             | ServicingState::Provisioned => {
@@ -176,14 +176,14 @@ pub fn execute_rollback(
             engine::persist_background_log_and_metrics(
                 &datastore.host_status().spec.trident.datastore_path,
                 None,
-                datastore.host_status().servicing_state,
+                &datastore.host_status().servicing_state,
             );
         }
     }
 
     // Perform finalize if operation is allowed
     if allowed_operations.has_finalize() {
-        let current_servicing_type = match datastore.host_status().servicing_state {
+        let current_servicing_type = match &datastore.host_status().servicing_state {
             ServicingState::ManualRollbackAbStaged => ServicingType::ManualRollbackAb,
             ServicingState::ManualRollbackRuntimeStaged => ServicingType::ManualRollbackRuntime,
             state => {
@@ -207,7 +207,7 @@ pub fn execute_rollback(
         let finalize_result = finalize_rollback(
             datastore,
             &engine_context,
-            datastore.host_status().servicing_state,
+            datastore.host_status().servicing_state.clone(),
         )
         .message("Failed to finalize manual rollback");
         // Persist the Trident background log and metrics file. Otherwise, the
@@ -215,7 +215,7 @@ pub fn execute_rollback(
         engine::persist_background_log_and_metrics(
             &datastore.host_status().spec.trident.datastore_path,
             None,
-            datastore.host_status().servicing_state,
+            &datastore.host_status().servicing_state,
         );
 
         return finalize_result.map(|exit_kind| (exit_kind, current_servicing_type));
