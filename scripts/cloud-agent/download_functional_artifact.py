@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.error
 import urllib.parse
@@ -319,7 +321,11 @@ def cached_image_metadata(
     if not image_path.exists() and not provenance_path.exists():
         return None
     if not image_path.is_file() or not provenance_path.is_file():
-        raise ArtifactError(f"Incomplete cached artifact in {image_path.parent}")
+        print(
+            f"Recovering incomplete cached artifact in {image_path.parent}",
+            file=sys.stderr,
+        )
+        return None
 
     try:
         with provenance_path.open(encoding="utf-8") as provenance_file:
@@ -429,12 +435,12 @@ def write_provenance(
 def prepare_artifact(
     config: Dict[str, Any],
     output_root: Path,
-    link_path: Path,
+    link_path: Optional[Path],
     token: str,
     build_id: Optional[int] = None,
 ) -> Path:
     output_root = output_root.expanduser().resolve()
-    link_path = link_path.expanduser().absolute()
+    link_path = link_path.expanduser().absolute() if link_path is not None else None
     build = resolve_build(config, token, build_id)
     resolved_build_id = build["id"]
     artifact_query = urllib.parse.urlencode(
@@ -454,40 +460,43 @@ def prepare_artifact(
     output_dir.mkdir(parents=True, exist_ok=True)
     image_path = output_dir / config["imageFilename"]
     provenance_path = output_dir / "provenance.json"
-    image_metadata = cached_image_metadata(
-        config,
-        build,
-        artifact,
-        image_path,
-        provenance_path,
-    )
-    cache_hit = image_metadata is not None
+    with (output_dir / ".prepare.lock").open("a") as cache_lock:
+        fcntl.flock(cache_lock, fcntl.LOCK_EX)
+        image_metadata = cached_image_metadata(
+            config,
+            build,
+            artifact,
+            image_path,
+            provenance_path,
+        )
+        cache_hit = image_metadata is not None
 
-    if not cache_hit:
-        with tempfile.NamedTemporaryFile(
-            dir=output_dir, prefix="artifact-", suffix=".zip", delete=False
-        ) as temporary_file:
-            archive_path = Path(temporary_file.name)
-        try:
-            download_file(download_url, token, archive_path)
-            image_metadata = extract_image(config, archive_path, image_path)
-        finally:
-            archive_path.unlink(missing_ok=True)
+        if not cache_hit:
+            with tempfile.NamedTemporaryFile(
+                dir=output_dir, prefix="artifact-", suffix=".zip", delete=False
+            ) as temporary_file:
+                archive_path = Path(temporary_file.name)
+            try:
+                download_file(download_url, token, archive_path)
+                image_metadata = extract_image(config, archive_path, image_path)
+            finally:
+                archive_path.unlink(missing_ok=True)
 
-    if image_metadata is None:
-        raise ArtifactError("Functional-test image metadata was not resolved")
-    image_size, image_sha256 = image_metadata
-    write_provenance(
-        config,
-        build,
-        artifact,
-        image_path,
-        provenance_path,
-        cache_hit,
-        image_size,
-        image_sha256,
-    )
-    ensure_link(image_path, link_path)
+        if image_metadata is None:
+            raise ArtifactError("Functional-test image metadata was not resolved")
+        image_size, image_sha256 = image_metadata
+        write_provenance(
+            config,
+            build,
+            artifact,
+            image_path,
+            provenance_path,
+            cache_hit,
+            image_size,
+            image_sha256,
+        )
+    if link_path is not None:
+        ensure_link(image_path, link_path)
     return provenance_path
 
 
@@ -527,7 +536,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--link-path",
         type=Path,
-        default=script_dir.parent.parent / "artifacts" / "trident-functest.qcow2",
+        help="Optionally publish a compatibility symlink at this path.",
     )
     build_id = os.environ.get("TRIDENT_FUNCTIONAL_BUILD_ID")
     parser.add_argument(

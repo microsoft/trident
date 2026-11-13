@@ -1,11 +1,15 @@
 import importlib.util
 import json
 import tempfile
+import threading
+import time
 import unittest
 import urllib.parse
 import zipfile
 
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "download_functional_artifact.py"
 SPEC = importlib.util.spec_from_file_location(
@@ -256,6 +260,89 @@ class FunctionalArtifactTests(unittest.TestCase):
 
             self.assertEqual(download_count, 1)
             self.assertTrue(link_path.is_symlink())
+
+    def test_prepare_artifact_recovers_interrupted_provenance_without_touching_local_image(
+        self,
+    ):
+        image = b"functional image"
+        build = self.build()
+        artifact = self.artifact()
+
+        def request_json(url, token):
+            return artifact if "/artifacts?" in url else build
+
+        def download_file(url, token, destination):
+            with zipfile.ZipFile(destination, "w") as archive:
+                archive.writestr(self.config["imageFilename"], image)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            local_image = root / "artifacts" / self.config["imageFilename"]
+            local_image.parent.mkdir()
+            local_image.write_bytes(b"developer-built image")
+            with patch.object(
+                MODULE, "request_json", side_effect=request_json
+            ), patch.object(
+                MODULE, "download_file", side_effect=download_file
+            ) as download:
+                with patch.object(
+                    MODULE, "write_provenance", side_effect=OSError("interrupted")
+                ):
+                    with self.assertRaisesRegex(OSError, "interrupted"):
+                        MODULE.prepare_artifact(
+                            self.config,
+                            root / "cache",
+                            None,
+                            "token",
+                            build_id=build["id"],
+                        )
+                provenance_path = MODULE.prepare_artifact(
+                    self.config, root / "cache", None, "token", build_id=build["id"]
+                )
+                self.assertEqual(download.call_count, 2)
+            self.assertEqual(local_image.read_bytes(), b"developer-built image")
+            self.assertEqual(
+                json.loads(provenance_path.read_text())["image"]["sha256"],
+                MODULE.hashlib.sha256(image).hexdigest(),
+            )
+
+    def test_prepare_artifact_serializes_concurrent_preparation(self):
+        ready = threading.Barrier(2)
+        artifact = self.artifact()
+        build = self.build()
+
+        def request_json(url, token):
+            if "/artifacts?" in url:
+                ready.wait(timeout=5)
+                return artifact
+            return build
+
+        def download_file(url, token, destination):
+            time.sleep(0.1)
+            with zipfile.ZipFile(destination, "w") as archive:
+                archive.writestr(self.config["imageFilename"], b"functional image")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(
+                MODULE, "request_json", side_effect=request_json
+            ), patch.object(
+                MODULE, "download_file", side_effect=download_file
+            ) as download:
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    results = list(
+                        executor.map(
+                            lambda _: MODULE.prepare_artifact(
+                                self.config,
+                                Path(temp_dir),
+                                None,
+                                "token",
+                                build_id=build["id"],
+                            ),
+                            range(2),
+                        )
+                    )
+                self.assertEqual(results[0], results[1])
+                self.assertEqual(download.call_count, 1)
 
     def test_temporary_paths_are_unique(self):
         with tempfile.TemporaryDirectory() as temp_dir:
