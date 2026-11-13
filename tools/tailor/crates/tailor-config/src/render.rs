@@ -203,7 +203,7 @@ fn render_cell(
     interpolate::interpolate_tree(&mut ic_config, &context)?;
 
     let base = resolve_base(image, image_dir, &tuple, &matched, &context)?;
-    let outputs = resolve_outputs(image, &tuple, &matched)?;
+    let outputs = resolve_outputs(image, &tuple, &matched, &context)?;
     for output in &outputs {
         validate_output_compression(image, &tuple, output)?;
     }
@@ -328,6 +328,7 @@ fn resolve_outputs(
     image: &ImageDefinition,
     tuple: &AxisTuple,
     matched: &[&LoadedFragment],
+    context: &interpolate::Context,
 ) -> Result<Vec<OutputSpec>, ConfigError> {
     let mut outputs: Option<Value> = None;
     for fragment in matched {
@@ -341,7 +342,10 @@ fn resolve_outputs(
         }
     }
     match outputs {
-        Some(value) => deserialize_field(value, image, tuple, OUTPUTS_FIELD),
+        Some(mut value) => {
+            interpolate::interpolate_tree(&mut value, context)?;
+            deserialize_field(value, image, tuple, OUTPUTS_FIELD)
+        }
         None => Ok(Vec::new()),
     }
 }
@@ -387,7 +391,6 @@ fn validate_output_compression(
     }
     Ok(())
 }
-
 fn deserialize_field<T: DeserializeOwned>(
     value: Value,
     image: &ImageDefinition,

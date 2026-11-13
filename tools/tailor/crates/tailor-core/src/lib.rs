@@ -30,9 +30,9 @@ pub use hashcache::{FileHash, hash_file_cached};
 pub use lockfile::{LockedBase, LockedContainer, LockedRuntime, Lockfile};
 pub use orchestrator::{
     BuildOptions, BuildProgress, BuildSelection, Orchestrator, ResolvedToolchain,
-    ResolvedToolsDirSource, artifact_name, cells, cells_selected, output_slug,
-    published_artifact_name, runtime_config, select_node_cells, toolchain_for, toolchain_key,
-    tools_dir_key,
+    ResolvedToolsDirSource, artifact_name, ca_cert_name, cells, cells_selected,
+    intermediate_artifact_name, output_slug, published_artifact_name, runtime_config,
+    select_node_cells, toolchain_for, toolchain_key, tools_dir_key,
 };
 pub use ports::{
     BaseImageFetcher, BaseResolver, ContainerConfig, ContainerResult, ContainerRuntime, DaemonInfo,

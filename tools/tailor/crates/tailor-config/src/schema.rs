@@ -799,7 +799,10 @@ pub struct AzureLinuxBase {
     pub variant: String,
 }
 
-/// One output: a format plus optional knobs.
+/// One output: a format plus optional knobs. The published artifact basename is always the cell's
+/// slug (`<slug>.<ext>`, clones suffixed `_cloneN`) -- there is no per-output name override
+/// (`meta/docs/2026-06-22-image-definitions.md` §10 settled on slug-only publishing to avoid a
+/// second, effectively per-cell naming scheme that complicates dependencies, caching, and clean).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OutputSpec {
