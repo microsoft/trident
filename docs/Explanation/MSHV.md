@@ -117,8 +117,8 @@ without classifying an identity failure as a user health-check failure.
 ## Current Limitations
 
 The current implementation is limited to x86-64 ACL UKI images because the
-payload definition hardcodes x64 filenames. TPM/PCR-bound encryption and
-combining this mode with `preserveMshvEspPayload` are rejected.
+payload definition hardcodes x64 filenames. TPM/PCR-bound encryption is
+rejected.
 
 Offline initialization of MSHV-enabled ACL images is not currently supported.
 
