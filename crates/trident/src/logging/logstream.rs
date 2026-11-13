@@ -15,6 +15,7 @@ use osutils::logging::filter::LogFilter;
 
 use super::{
     background_uploader::{BackgroundUploadHandle, BACKGROUND_LOG_MODULE},
+    upload_core::BACKGROUND_LOG_MODULE as UPLOAD_LOG_MODULE,
     LogEntry,
 };
 
@@ -117,6 +118,7 @@ impl Logstream {
         .with_global_filter("reqwest", LevelFilter::Error)
         .with_global_filter(module_path!(), LevelFilter::Error)
         .with_global_filter(BACKGROUND_LOG_MODULE, LevelFilter::Off)
+        .with_global_filter(UPLOAD_LOG_MODULE, LevelFilter::Off)
         .into_logger()
     }
 }
@@ -177,7 +179,10 @@ impl Log for LogSender {
             // Send logs with a reasonably low timeout. The uploader will drop
             // logs if the server is unreachable or slow, or if it has been
             // closed.
-            if let Err(e) = self.uploader.upload(&target, body, Duration::from_secs(5)) {
+            if let Err(e) = self
+                .uploader
+                .upload(&target, body, Duration::from_secs(5), None)
+            {
                 if !self.send_failed.swap(true, Ordering::Relaxed) {
                     eprintln!("Failed to send log entry: {e}");
                 }
@@ -191,6 +196,27 @@ impl Log for LogSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_upload_modules_are_not_forwarded() {
+        let logstream = Logstream::create(BackgroundUploadHandle::new_mock());
+        logstream
+            .set_server("http://localhost:8080".to_string())
+            .unwrap();
+        let logger = logstream.make_logger_inner(LevelFilter::Trace);
+
+        for target in [BACKGROUND_LOG_MODULE, UPLOAD_LOG_MODULE] {
+            for level in [log::Level::Error, log::Level::Debug] {
+                assert!(!logger.enabled(&Metadata::builder().target(target).level(level).build()));
+            }
+        }
+        assert!(logger.enabled(
+            &Metadata::builder()
+                .target("trident::engine")
+                .level(log::Level::Debug)
+                .build()
+        ));
+    }
 
     #[test]
     fn test_logstream() {
