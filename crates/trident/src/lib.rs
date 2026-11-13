@@ -34,6 +34,9 @@ pub mod agentconfig;
 pub mod cli;
 mod datastore;
 mod diagnostics;
+// Activated by the Host Configuration selector API.
+#[allow(dead_code)]
+mod disk_selector;
 mod engine;
 mod grpc_client;
 mod health;
