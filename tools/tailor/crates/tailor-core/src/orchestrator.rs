@@ -172,6 +172,15 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     hash_cache_dir,
                     target.name(),
                 )?;
+                let resolved_signing_profile =
+                    tailor_config::resolve_signing(cell.signing.as_ref(), tool.signing.as_ref())?;
+                let signing_profile_descriptor_value = resolved_signing_profile
+                    .as_ref()
+                    .map(|(id, profile)| signing_profile_descriptor(id, profile));
+                let (signing_key_hash, signing_cert_hash) = match &resolved_signing_profile {
+                    Some((_, profile)) => signing_key_hashes(profile, &target.root, target.name())?,
+                    None => (None, None),
+                };
                 let print = fingerprint(&FingerprintInputs {
                     slug: cell.slug.as_ref(),
                     toolchain_digest: &resolved_toolchain.ic_image_ref,
@@ -185,6 +194,23 @@ impl<E: Executor, R: BaseResolver> Orchestrator<E, R> {
                     extra_params: &cell.extra_params,
                     compression: cell.output.compression,
                     cosi_compression_level: cell.output.cosi_compression_level,
+                    signing_profile_id: signing_profile_descriptor_value
+                        .as_ref()
+                        .map(|d| d.id.as_str()),
+                    signing_backend: signing_profile_descriptor_value
+                        .as_ref()
+                        .map(|d| d.backend.as_str()),
+                    signing_vault: signing_profile_descriptor_value
+                        .as_ref()
+                        .map(|d| d.vault.as_str()),
+                    signing_certificate: signing_profile_descriptor_value
+                        .as_ref()
+                        .map(|d| d.certificate.as_str()),
+                    signing_publish_ca_cert: signing_profile_descriptor_value
+                        .as_ref()
+                        .map(|d| d.publish_ca_cert.as_str()),
+                    signing_key_hash,
+                    signing_cert_hash,
                 });
                 let artifact = output_dir.join(published_artifact_name(
                     cell.slug.as_ref(),
@@ -388,6 +414,82 @@ fn resolved_tools_dir<'a>(
         .get(&key)
         .map(Some)
         .ok_or(CoreError::MissingResolvedToolsDir { reference: key })
+}
+
+/// Deterministic, domain-separated descriptors of a signing profile's build-affecting *reference*
+/// settings -- everything except local key/cert file contents, which are content-hashed separately
+/// (`signing_key_hashes`) since a path alone doesn't change when the file it names is edited in
+/// place. Returned as separate owned fields -- each hashed under its own domain-separated tag in
+/// `fingerprint()` -- rather than one concatenated string: joining fields with a plain `:` is not
+/// collision-free (e.g. `certificate: "ignored"` + `publishCaCert: "a:b"` produces the same string
+/// as `certificate: "ignored:a"` + `publishCaCert: "b"`).
+struct SigningProfileDescriptor {
+    id: String,
+    backend: String,
+    vault: String,
+    certificate: String,
+    publish_ca_cert: String,
+}
+
+fn signing_profile_descriptor(
+    id: &str,
+    profile: &tailor_config::SigningProfile,
+) -> SigningProfileDescriptor {
+    SigningProfileDescriptor {
+        id: id.to_owned(),
+        backend: profile.backend.as_str().to_owned(),
+        vault: profile.vault.clone().unwrap_or_default(),
+        certificate: profile.certificate.clone().unwrap_or_default(),
+        publish_ca_cert: profile
+            .publish_ca_cert
+            .as_deref()
+            .map(Path::to_string_lossy)
+            .unwrap_or_default()
+            .into_owned(),
+    }
+}
+
+/// Separate `(key_hash, cert_hash)` -- not a single merged-and-sorted set -- so the fingerprint
+/// never confuses which file is the key and which is the certificate (see `signing_key_hashes`).
+type SigningKeyHashes = (Option<[u8; 16]>, Option<[u8; 16]>);
+
+/// Content-hash a signing profile's local key and certificate files, keeping their roles distinct
+/// (`keypair` backend only -- other backends ignore `key`/`cert` in `tailor_sign::build_signer`,
+/// so stray values on a non-`keypair` profile are intentionally not hashed, and never required to
+/// exist). Returned as `(key_hash, cert_hash)` rather than a single merged-and-sorted set: folding
+/// both into one sorted set would make swapping the two files produce an identical fingerprint.
+/// Uses [`deps::hash_one_uncached`] (not [`deps::hash_one`] or [`deps::hash_dependencies`]) so a
+/// symlinked key/cert is both (a) hashed by its resolved target content -- the same file
+/// `tailor_sign::build_signer` actually reads -- instead of being silently skipped the way a
+/// directory-walk dependency would be, and (b) never served a stale cached hash: the `(size, mtime)`
+/// cache's key is the symlink's own path plus the *resolved target's* size/mtime, so rotating the
+/// symlink to a different target with a coincidentally equal size and mtime would otherwise return
+/// the previous target's cached hash.
+fn signing_key_hashes(
+    profile: &tailor_config::SigningProfile,
+    workspace_root: &Path,
+    image: &str,
+) -> Result<SigningKeyHashes, CoreError> {
+    if profile.backend != tailor_config::SigningBackend::Keypair {
+        return Ok((None, None));
+    }
+    let hash_one = |path: Option<&Path>| -> Result<Option<[u8; 16]>, CoreError> {
+        let Some(path) = path else {
+            return Ok(None);
+        };
+        let absolute = tailor_config::absolutize(path, workspace_root);
+        if !absolute.exists() {
+            return Err(CoreError::MissingDependency {
+                image: image.to_owned(),
+                path: path.to_owned(),
+            });
+        }
+        Ok(Some(deps::hash_one_uncached(&absolute, workspace_root)?))
+    };
+    Ok((
+        hash_one(profile.key.as_deref())?,
+        hash_one(profile.cert.as_deref())?,
+    ))
 }
 
 fn resolve_tools_dir(target: &Target) -> Result<Option<CellToolsDir>, CoreError> {
@@ -942,7 +1044,7 @@ pub fn published_artifact_name(
 mod tests {
     use super::*;
 
-    use std::fs;
+    use std::{fs, path::PathBuf};
 
     use indoc::indoc;
     use tempfile::TempDir;
@@ -1754,6 +1856,158 @@ mod tests {
             plan.cells[0].base_ref.as_deref(),
             Some("oci:registry.example/base@sha256:lockedbase"),
             "the locked base digest must win over the re-resolved tag"
+        );
+    }
+
+    #[test]
+    fn signing_key_hashes_follows_a_rotated_symlink() {
+        // Regression: a symlinked key/cert (e.g. a `current` symlink repointed at a rotated
+        // credential) must change the hash -- `hash_dependencies`'s directory-walk dispatch skips
+        // symlinks entirely (to avoid cycles), but `tailor_sign::build_signer` reads straight
+        // through them via `fs::read`, so skipping here would let a rotated credential silently
+        // reuse a stale signed artifact.
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new().unwrap();
+        let key_a = dir.path().join("key-a.pem");
+        let key_b = dir.path().join("key-b.pem");
+        fs::write(&key_a, b"key-version-a").unwrap();
+        fs::write(&key_b, b"key-version-b").unwrap();
+        let link = dir.path().join("current.key");
+        symlink(&key_a, &link).unwrap();
+
+        let profile = tailor_config::SigningProfile {
+            backend: tailor_config::SigningBackend::Keypair,
+            key: Some(PathBuf::from("current.key")),
+            cert: None,
+            publish_ca_cert: None,
+            vault: None,
+            certificate: None,
+        };
+
+        let (before_key, _) = signing_key_hashes(&profile, dir.path(), "img").unwrap();
+        assert!(before_key.is_some(), "a symlinked key must still be hashed");
+
+        // Rotate: repoint the symlink at the other key file, as a credential rotation would.
+        fs::remove_file(&link).unwrap();
+        symlink(&key_b, &link).unwrap();
+
+        let (after_key, _) = signing_key_hashes(&profile, dir.path(), "img").unwrap();
+        assert_ne!(
+            before_key, after_key,
+            "rotating the symlink target must change the hash"
+        );
+    }
+
+    #[test]
+    fn signing_key_hashes_detects_a_symlink_rotation_between_equal_size_and_mtime_targets() {
+        // Regression: the shared (size, mtime) hash cache's key for a single-file hash is the
+        // *declared path* plus the *resolved target's* size/mtime -- so if signing_key_hashes used
+        // the cache, rotating a symlink between two targets with an equal size and the same mtime
+        // would return the first target's stale cached hash. signing_key_hashes must always hash
+        // the resolved content fresh (never through the cache) so this can't happen.
+        use std::{
+            os::unix::fs::symlink,
+            time::{Duration, SystemTime},
+        };
+
+        let dir = TempDir::new().unwrap();
+        let key_a = dir.path().join("key-a.pem");
+        let key_b = dir.path().join("key-b.pem");
+        fs::write(&key_a, b"AAAAAAAAAA").unwrap();
+        fs::write(&key_b, b"BBBBBBBBBB").unwrap();
+        assert_eq!(
+            fs::metadata(&key_a).unwrap().len(),
+            fs::metadata(&key_b).unwrap().len(),
+            "test fixture requires equal-size targets"
+        );
+        let shared_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        for path in [&key_a, &key_b] {
+            let file = fs::File::options().write(true).open(path).unwrap();
+            file.set_modified(shared_mtime).unwrap();
+        }
+
+        let link = dir.path().join("current.key");
+        symlink(&key_a, &link).unwrap();
+
+        let profile = tailor_config::SigningProfile {
+            backend: tailor_config::SigningBackend::Keypair,
+            key: Some(PathBuf::from("current.key")),
+            cert: None,
+            publish_ca_cert: None,
+            vault: None,
+            certificate: None,
+        };
+
+        let (before_key, _) = signing_key_hashes(&profile, dir.path(), "img").unwrap();
+
+        fs::remove_file(&link).unwrap();
+        symlink(&key_b, &link).unwrap();
+        let file = fs::File::options().write(true).open(&link).unwrap();
+        file.set_modified(shared_mtime).unwrap();
+
+        let (after_key, _) = signing_key_hashes(&profile, dir.path(), "img").unwrap();
+        assert_ne!(
+            before_key, after_key,
+            "a symlink rotation between equal-size/equal-mtime targets must still change the hash"
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_errors_on_an_unknown_signing_profile_instead_of_building_unsigned() {
+        // Regression: `resolve_signing`'s `ConfigError` (unknown profile, missing default,
+        // malformed profile) must propagate, not be swallowed into `None` -- otherwise a typo'd
+        // signing reference silently produces an apparently-valid *unsigned* plan.
+        let (_tmp, target) = target_with(indoc! {"
+                name: solo
+                base:
+                  oci:
+                    uri: registry.example/base:edge
+                    platform: linux/amd64
+                signing: nope
+                config:
+                  os:
+                    hostname: solo
+            "});
+        let tool: ToolConfig = serde_yaml_ng::from_str(indoc! {"
+            schemaVersion: 1
+            toolchains:
+              default: ic
+              entries:
+                - name: ic
+                  container: registry.example/imagecustomizer
+                  version: 1.0.0
+            signing:
+              default: release
+              profiles:
+                release:
+                  backend: local-test-ca
+        "})
+        .unwrap();
+        let toolchains = resolved_toolchains(&tool);
+        let out = TempDir::new().unwrap();
+
+        let err = Orchestrator::new(FakeExecutor::default(), FakeResolver)
+            .plan(
+                &[target],
+                &[],
+                &tool,
+                &Lockfile::default(),
+                &toolchains,
+                &BTreeMap::new(),
+                &BuildSelection::from_selector(&Selector::default()),
+                out.path(),
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(
+                err,
+                CoreError::Config(tailor_config::ConfigError::UnknownSigningProfile { .. })
+            ),
+            "an unknown signing profile must be a config error, not a silently-unsigned plan: {err:?}"
         );
     }
 }
