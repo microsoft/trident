@@ -25,7 +25,8 @@ use trident_api::{
 };
 
 use crate::{
-    osimage::OsImage, STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT,
+    osimage::{bootloader::Bootloader, OsImage},
+    STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT,
     STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS_DEFAULT,
 };
 
@@ -99,6 +100,9 @@ pub struct EngineContext {
     /// The OS image that Trident is using to service the host.
     pub image: Option<OsImage>,
 
+    /// Bootloader metadata exposed by the OS image.
+    pub(crate) bootloader: Option<Bootloader>,
+
     /// The storage graph representing the storage configuration of the host.
     pub storage_graph: StorageGraph,
 
@@ -130,6 +134,7 @@ impl Default for EngineContext {
             disk_uuids: Default::default(),
             install_index: Default::default(),
             image: Default::default(),
+            bootloader: Default::default(),
             storage_graph: Default::default(),
             filesystems: Default::default(),
             is_uki: Default::default(),
@@ -158,6 +163,7 @@ impl EngineContext {
         let os_release = OsRelease::read().structured(InternalError::Internal(
             "Failed to read OS release information",
         ))?;
+        let bootloader = params.image.as_ref().and_then(OsImage::bootloader);
         Ok(Self {
             spec: params.spec,
             spec_old: params.spec_old,
@@ -168,12 +174,18 @@ impl EngineContext {
             disk_uuids: params.disk_uuids,
             install_index: params.install_index,
             image: params.image,
+            bootloader,
             storage_graph: graph,
             filesystems: Vec::new(),
             is_uki: params.is_uki,
             esp_mount_path,
             host_os_release: os_release,
         })
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn bootloader(&self) -> Option<&Bootloader> {
+        self.bootloader.as_ref()
     }
 
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one
