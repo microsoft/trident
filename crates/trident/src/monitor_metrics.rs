@@ -200,6 +200,11 @@ impl MonitorMetrics {
     /// It ensures that the thread is stopped gracefully.
     pub fn stop(&mut self) -> Result<(), Error> {
         self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(handle) = self.join_handle.take() {
+            handle
+                .join()
+                .map_err(|_| Error::msg("Metrics monitoring thread panicked"))?;
+        }
         Ok(())
     }
 
@@ -504,6 +509,65 @@ mod stat_tests {
                 .load(std::sync::atomic::Ordering::SeqCst),
             0
         );
+    }
+
+    #[test]
+    fn test_stop_waits_for_monitor_completion() {
+        let stop = Arc::new(AtomicBool::new(false));
+        let completed = Arc::new(AtomicBool::new(false));
+        let thread_stop = stop.clone();
+        let thread_completed = completed.clone();
+        let mut monitor = MonitorMetrics {
+            stop,
+            metric_count: Arc::new(AtomicU64::new(0)),
+            join_handle: Some(thread::spawn(move || {
+                while !thread_stop.load(std::sync::atomic::Ordering::SeqCst) {
+                    thread::yield_now();
+                }
+                thread_completed.store(true, std::sync::atomic::Ordering::SeqCst);
+            })),
+        };
+
+        monitor.stop().unwrap();
+        assert!(completed.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(monitor.join_handle.is_none());
+        monitor.stop().unwrap();
+    }
+
+    #[test]
+    fn test_drop_waits_for_monitor_on_error() {
+        fn run(completed: Arc<AtomicBool>) -> Result<(), Error> {
+            let stop = Arc::new(AtomicBool::new(false));
+            let thread_stop = stop.clone();
+            let _monitor = MonitorMetrics {
+                stop,
+                metric_count: Arc::new(AtomicU64::new(0)),
+                join_handle: Some(thread::spawn(move || {
+                    while !thread_stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        thread::yield_now();
+                    }
+                    completed.store(true, std::sync::atomic::Ordering::SeqCst);
+                })),
+            };
+            Err(Error::msg("servicing failed"))
+        }
+
+        let completed = Arc::new(AtomicBool::new(false));
+        assert!(run(completed.clone()).is_err());
+        assert!(completed.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_stop_reports_monitor_panic() {
+        let mut monitor = MonitorMetrics {
+            stop: Arc::new(AtomicBool::new(false)),
+            metric_count: Arc::new(AtomicU64::new(0)),
+            join_handle: Some(thread::spawn(|| panic!("monitor failed"))),
+        };
+
+        let error = monitor.stop().unwrap_err();
+        assert_eq!(error.to_string(), "Metrics monitoring thread panicked");
+        monitor.stop().unwrap();
     }
 
     #[test]
