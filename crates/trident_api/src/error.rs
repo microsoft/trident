@@ -156,6 +156,12 @@ pub enum InternalError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InvalidInputError {
+    #[error("Failed to prepare disk selection")]
+    DiskSelectionPreparation,
+
+    #[error("Failed to resolve disk selector for '{disk_id}'")]
+    DiskSelection { disk_id: String },
+
     #[error("Allowed operations must be passed via command line, not in Host Configuration")]
     AllowedOperationsInHostConfiguration,
 

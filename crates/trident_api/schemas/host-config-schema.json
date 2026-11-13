@@ -216,21 +216,20 @@
       "description": "Per disk configuration.",
       "type": "object",
       "required": [
-        "device",
         "id",
         "partitionTableType",
         "partitions"
       ],
       "properties": {
         "adoptedPartitions": {
-          "description": "A list of pre-existing partitions that will be adopted from the disk.\n\nSeveral options are available to match a partition to adopt. If more than one option is specified, ALL the provided criteria will be used to match the partition.",
+          "description": "A list of pre-existing partitions that will be adopted from the disk.\n\nAdopting partitions requires an explicit `device` and cannot be combined with a disk selector.\n\nSeveral options are available to match a partition to adopt. If more than one option is specified, ALL the provided criteria will be used to match the partition.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/AdoptedPartition"
           }
         },
         "device": {
-          "description": "The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).",
+          "description": "The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name). Specify exactly one of `device` or `selector`.",
           "type": "string"
         },
         "id": {
@@ -252,6 +251,52 @@
           "items": {
             "$ref": "#/definitions/Partition"
           }
+        },
+        "selector": {
+          "description": "Select a disk during installation instead of specifying a device path.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/DiskSelector"
+            }
+          ],
+          "nullable": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "DiskSelectionStrategy": {
+      "description": "Supported disk selection strategies.",
+      "oneOf": [
+        {
+          "description": "Select the smallest eligible disk that fits the layout.",
+          "type": "string",
+          "enum": [
+            "smallest-fit"
+          ]
+        },
+        {
+          "description": "Apply device-family priority before comparing disk capacity. Check eligible disks by Linux device-name family, in this order:\n\n1. NVMe (`nvme*`)\n\n2. SCSI/SATA-style disks (`sd*`)\n\n3. Virtio disks (`vd*`)\n\n4. Non-removable eMMC user-area disks (`mmcblk*`)\n\n5. Legacy IDE-style disks (`hd*`)\n\nChoose the first family that contains a disk large enough for the configured storage layout, then select the smallest fitting disk within that family. Move to the next family only if no eligible disk in the current family fits.\n\nCapacity is not compared across families: a fitting NVMe disk is chosen even if a smaller fitting `sd` disk is available.",
+          "type": "string",
+          "enum": [
+            "tiered-smallest-fit"
+          ]
+        }
+      ]
+    },
+    "DiskSelector": {
+      "description": "Installation-time disk selection. Existing data does not prevent selection.\n\nNewly formatted filesystems require fixed partition sizes.",
+      "type": "object",
+      "required": [
+        "strategy"
+      ],
+      "properties": {
+        "strategy": {
+          "description": "Strategy used to choose an eligible disk large enough for the layout.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/DiskSelectionStrategy"
+            }
+          ]
         }
       },
       "additionalProperties": false

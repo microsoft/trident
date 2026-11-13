@@ -448,6 +448,7 @@ mod functional_test {
                         match_label: Some("part1".to_string()),
                         match_uuid: None,
                     }],
+                    selector: None,
                 }],
                 ..Default::default()
             },
@@ -491,6 +492,7 @@ mod functional_test {
                         match_label: Some("part4".to_string()),
                         match_uuid: None,
                     }],
+                    selector: None,
                 }],
                 ..Default::default()
             },

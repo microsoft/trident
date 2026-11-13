@@ -16,7 +16,7 @@ pub use host::{
     scripts::{Script, ScriptSource, Scripts, ServicingTypeSelection},
     storage::abupdate::{AbUpdate, AbVolumePair},
     storage::{
-        disks::{Disk, PartitionTableType},
+        disks::{Disk, DiskSelectionStrategy, DiskSelector, PartitionTableType},
         encryption::{EncryptedVolume, Encryption},
         filesystem::{FileSystem, FileSystemSource, MountOptions, MountPoint, MountPointInfo},
         filesystem_types::{AdoptedFileSystemType, FileSystemType, NewFileSystemType},
