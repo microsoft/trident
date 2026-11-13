@@ -40,6 +40,7 @@ use crate::{
         image_streamer,
         read_monitor::ReadMonitor,
     },
+    osimage::bootloader::Bootloader,
 };
 
 mod mshv;
@@ -363,7 +364,7 @@ fn copy_file_artifacts(
     debug!("Writing boot files to directory {}", esp_dir_path.display());
 
     // MSHV uses a complete bundle, not the ordinary boot-file list.
-    let slot_mshv = ctx.is_mshv();
+    let slot_mshv = ctx.bootloader().is_some_and(Bootloader::uses_mshv);
     let source_bundle = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
     // Compare source metadata with the retained slot before any ESP writes.
     mshv::validate_transition(ctx, &path::join_relative(mount_point, &ctx.esp_mount_path))?;

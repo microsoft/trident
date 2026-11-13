@@ -42,9 +42,6 @@ pub struct MockOsImage {
 
     pub is_uki: bool,
 
-    #[serde(default)]
-    pub is_mshv: bool,
-
     #[serde(skip)]
     pub partitioning_info: Option<MockPartitioningInfo>,
 }
@@ -129,7 +126,6 @@ impl MockOsImage {
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             is_uki: false,
-            is_mshv: false,
             images: vec![],
             partitioning_info: None,
         }

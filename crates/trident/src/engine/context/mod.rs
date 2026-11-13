@@ -191,7 +191,6 @@ impl EngineContext {
         })
     }
 
-    #[allow(dead_code)]
     pub(crate) fn bootloader(&self) -> Option<&Bootloader> {
         self.bootloader.as_ref()
     }
@@ -430,11 +429,6 @@ impl EngineContext {
         self.is_uki.structured(InternalError::Internal(
             "is_uki() called without it being set",
         ))
-    }
-
-    /// Returns whether the source image declares an MSHV boot chain.
-    pub(crate) fn is_mshv(&self) -> bool {
-        self.image.as_ref().is_some_and(OsImage::is_mshv)
     }
 
     /// Returns the zstd max window log required for decompression of files

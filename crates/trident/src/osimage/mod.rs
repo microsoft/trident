@@ -111,15 +111,6 @@ impl OsImage {
         Ok(os_image)
     }
 
-    /// Returns whether COSI metadata declares an MSHV boot chain.
-    pub(crate) fn is_mshv(&self) -> bool {
-        match &self.0 {
-            OsImageInner::Cosi(cosi) => cosi.metadata.is_mshv(),
-            #[cfg(test)]
-            OsImageInner::Mock(mock) => mock.is_mshv,
-        }
-    }
-
     pub(crate) fn is_uki(&self) -> bool {
         match &self.0 {
             OsImageInner::Cosi(cosi) => cosi.metadata.is_uki(),
@@ -515,7 +506,6 @@ mod tests {
             os_arch: arch,
             os_release: os_release.clone(),
             is_uki: false,
-            is_mshv: false,
             partitioning_info: None,
             images: vec![
                 MockImage::new(

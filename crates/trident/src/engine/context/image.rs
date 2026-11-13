@@ -173,7 +173,6 @@ mod tests {
             os_arch: SystemArchitecture::Amd64,
             os_release: OsRelease::default(),
             is_uki: false,
-            is_mshv: false,
             partitioning_info: None,
             images: mock_entries
                 .clone()

@@ -10,14 +10,17 @@ use trident_api::{
     status::ServicingType,
 };
 
-use crate::engine::{boot, EngineContext};
+use crate::{
+    engine::{boot, EngineContext},
+    osimage::bootloader::Bootloader,
+};
 
 /// Filename of the second-stage EFI executable for efitreeloader (ETL).
 pub(super) const ETL_SECOND_STAGE_EFI_FILENAME: &str = "second.efi";
 
 /// Enforces support restrictions for images declaring the MSHV bootloader type.
 pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentError> {
-    if !ctx.is_mshv() {
+    if !ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
         return Ok(());
     }
     // The current payload allowlist supports only x86-64.
@@ -57,7 +60,8 @@ pub(super) fn validate_transition(ctx: &EngineContext, esp_path: &Path) -> Resul
         .join(ESP_EFI_DIRECTORY)
         .join(boot::make_esp_dir_name(ctx.install_index, active_volume));
     ensure!(
-        boot::mshv::has_slot_mshv_bundle(&active_bundle)? == ctx.is_mshv(),
+        boot::mshv::has_slot_mshv_bundle(&active_bundle)?
+            == ctx.bootloader().is_some_and(Bootloader::uses_mshv),
         "Changing slot-owned MSHV mode on an existing installation is not supported"
     );
     Ok(())
@@ -75,12 +79,12 @@ fn unsupported(reason: &str) -> TridentError {
 mod tests {
     use super::*;
 
-    use crate::osimage::{mock::MockOsImage, OsImage};
+    use crate::osimage::{bootloader::BootloaderType, mock::MockOsImage};
 
     /// Only metadata-declared MSHV images receive these restrictions.
     #[test]
     fn rejects_unsupported_mshv_images_without_affecting_other_images() {
-        let mut image = MockOsImage {
+        let image = MockOsImage {
             os_release: osutils::osrelease::OsRelease {
                 id: Some(osutils::osrelease::AZURE_LINUX_DISTRO_ID.into()),
                 variant_id: Some(osutils::osrelease::AZURE_CONTAINER_LINUX_VARIANT_ID.into()),
@@ -95,10 +99,12 @@ mod tests {
             servicing_type: ServicingType::CleanInstall,
             ..Default::default()
         }
-        .with_image(image.clone());
+        .with_image(image);
         assert!(validate_configuration(&ctx).is_ok());
-        image.is_mshv = true;
-        ctx.image = Some(OsImage::mock(image));
+        ctx.bootloader = Some(Bootloader::new(
+            BootloaderType::EfitreeloaderMshvSystemdBoot,
+            None,
+        ));
         assert!(validate_configuration(&ctx).is_err());
         ctx.is_stream_image = false;
         assert_eq!(
@@ -142,10 +148,12 @@ mod tests {
                 ..Default::default()
             };
             for requested_mshv in [false, true] {
-                ctx.image = Some(OsImage::mock(MockOsImage {
-                    is_mshv: requested_mshv,
-                    ..MockOsImage::new()
-                }));
+                let bootloader_type = if requested_mshv {
+                    BootloaderType::EfitreeloaderMshvSystemdBoot
+                } else {
+                    BootloaderType::SystemdBoot
+                };
+                ctx.bootloader = Some(Bootloader::new(bootloader_type, None));
                 assert_eq!(
                     validate_transition(&ctx, esp.path()).is_ok(),
                     retained_mshv == requested_mshv

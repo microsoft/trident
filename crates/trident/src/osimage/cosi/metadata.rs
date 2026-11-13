@@ -148,13 +148,6 @@ impl CosiMetadata {
         self.bootloader.as_ref().map(OsImageBootloader::from)
     }
 
-    /// Returns whether the image declares an efitreeloader/MSHV/systemd-boot chain.
-    pub(crate) fn is_mshv(&self) -> bool {
-        self.bootloader.as_ref().is_some_and(|bootloader| {
-            bootloader.bootloader_type == BootloaderType::EfitreeloaderMshvSystemdBoot
-        })
-    }
-
     /// Returns the ESP filesystem image.
     pub(super) fn get_esp_filesystem(&self) -> Result<&Image, Error> {
         let matches = self
@@ -543,6 +536,8 @@ mod tests {
 
     use serde_json::{json, Value};
 
+    use crate::engine::EngineContext;
+
     const SAMPLE_SHA384: &str = "1d0f284efe3edea4b9ca3bd514fa134b17eae361ccc7a1eefeff801b9bd6604e01f21f6bf249ef030599f0c218f2ba8c";
 
     #[test]
@@ -561,21 +556,50 @@ mod tests {
     }
 
     #[test]
-    fn test_efitreeloader_mshv_systemd_boot_deserialization() {
-        let bootloader: Bootloader = serde_json::from_value(json!({
-            "type": "efitreeloader-mshv-systemd-boot",
-            "systemdBoot": {
-                "entries": [{
-                    "type": "uki-standalone",
-                    "kernel": "vmlinuz",
-                    "path": "EFI/Linux/image.efi",
-                    "cmdline": "quiet"
+    fn test_cosi_1_3_mshv_bootloader_context() {
+        let metadata: CosiMetadata = serde_json::from_value(json!({
+            "version": "1.3",
+            "osArch": "x86_64",
+            "osRelease": "ID=test\nNAME=Test\n",
+            "osPackages": [],
+            "images": [],
+            "compression": { "maxWindowLog": 27 },
+            "disk": {
+                "size": 1048576,
+                "lbaSize": 512,
+                "type": "gpt",
+                "gptRegions": [{
+                    "type": "primary-gpt",
+                    "image": {
+                        "path": "images/gpt.raw.zst",
+                        "compressedSize": 4096,
+                        "uncompressedSize": 17408,
+                        "sha384": SAMPLE_SHA384
+                    }
                 }]
+            },
+            "bootloader": {
+                "type": "efitreeloader-mshv-systemd-boot",
+                "systemdBoot": {
+                    "entries": [{
+                        "type": "uki-standalone",
+                        "kernel": "vmlinuz",
+                        "path": "EFI/Linux/image.efi",
+                        "cmdline": "quiet"
+                    }]
+                }
             }
         }))
         .unwrap();
+        metadata.validate().unwrap();
 
-        let exposed = OsImageBootloader::from(&bootloader);
+        let ctx = EngineContext {
+            bootloader: metadata.bootloader(),
+            ..Default::default()
+        };
+        let exposed = ctx.bootloader().unwrap();
+        assert!(exposed.uses_mshv());
+        assert!(metadata.is_uki());
         assert_eq!(
             exposed.bootloader_type(),
             &OsImageBootloaderType::EfitreeloaderMshvSystemdBoot
@@ -902,7 +926,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bootloader_detection() {
+    fn test_is_uki() {
         fn parse(value: Value) -> CosiMetadata {
             serde_json::from_value(value).unwrap()
         }
@@ -937,26 +961,11 @@ mod tests {
         });
 
         assert!(parse(base.clone()).is_uki());
-        assert!(!parse(base.clone()).is_mshv());
-
-        let mut mshv = base.clone();
-        mshv["bootloader"]["type"] = json!("efitreeloader-mshv-systemd-boot");
-        let metadata = parse(mshv);
-        assert!(metadata.is_mshv());
-        assert!(metadata.is_uki());
-
-        for bootloader_type in ["grub", "unknown"] {
-            let mut other = base.clone();
-            other["bootloader"]["type"] = json!(bootloader_type);
-            assert!(!parse(other).is_mshv());
-        }
 
         // No bootloader => false.
         let mut no_bootloader = base.clone();
         no_bootloader.as_object_mut().unwrap().remove("bootloader");
-        let metadata = parse(no_bootloader);
-        assert!(!metadata.is_uki());
-        assert!(!metadata.is_mshv());
+        assert!(!parse(no_bootloader).is_uki());
 
         // No systemdBoot section => false.
         let mut no_systemd_boot = base.clone();
