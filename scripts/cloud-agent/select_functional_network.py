@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import ipaddress
 import json
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -90,6 +91,26 @@ def libvirt_networks():
     return networks
 
 
+def ensure_namespace_available(namespace):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", namespace):
+        raise NetworkSelectionError(
+            "Namespace must contain only letters, digits, _ or -"
+        )
+    for resource in ("list", "net-list", "pool-list"):
+        output = run_command(
+            ["virsh", "-c", "qemu:///system", resource, "--all", "--name"]
+        )
+        for name in output.splitlines():
+            name = name.strip()
+            owner = re.fullmatch(r"(.+?)-(?:network|nvram-pool|pool|vm-\d+)", name)
+            if name.startswith(namespace + "-") or (
+                owner and namespace.startswith(owner[1] + "-")
+            ):
+                raise NetworkSelectionError(
+                    f"Namespace {namespace} conflicts with existing resource {name}"
+                )
+
+
 def candidate_networks(namespace):
     pool_offsets = []
     max_subnet_count = 0
@@ -140,6 +161,7 @@ def main():
     parser.add_argument("--network")
     args = parser.parse_args()
 
+    ensure_namespace_available(args.namespace)
     unavailable_networks = host_route_networks() + libvirt_networks()
     network = select_network(args.namespace, unavailable_networks, args.network)
     print(network)

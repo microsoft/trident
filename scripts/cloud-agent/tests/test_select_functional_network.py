@@ -3,6 +3,7 @@ import ipaddress
 import unittest
 
 from pathlib import Path
+from unittest.mock import patch
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "select_functional_network.py"
 SPEC = importlib.util.spec_from_file_location("select_functional_network", MODULE_PATH)
@@ -11,6 +12,39 @@ SPEC.loader.exec_module(MODULE)
 
 
 class FunctionalNetworkTests(unittest.TestCase):
+    def test_namespace_rejects_existing_resources_and_prefix_collisions(self):
+        for resource in ("list", "net-list", "pool-list"):
+            for name in ("foo-vm-0", "foo-other-network", "foo-nvram-pool"):
+                with self.subTest(resource=resource, name=name):
+                    with patch.object(
+                        MODULE,
+                        "run_command",
+                        side_effect=lambda command: (
+                            name if command[3] == resource else ""
+                        ),
+                    ):
+                        with self.assertRaisesRegex(
+                            MODULE.NetworkSelectionError, "conflicts"
+                        ):
+                            MODULE.ensure_namespace_available("foo")
+
+    def test_namespace_rejects_existing_parent_namespace(self):
+        with patch.object(MODULE, "run_command", return_value="foo-vm-0\n"):
+            with self.assertRaisesRegex(MODULE.NetworkSelectionError, "conflicts"):
+                MODULE.ensure_namespace_available("foo-other")
+
+    def test_namespace_allows_unrelated_resources(self):
+        with patch.object(
+            MODULE, "run_command", return_value="foobar-vm-0\nunrelated-network\n"
+        ):
+            MODULE.ensure_namespace_available("foo")
+
+    def test_namespace_rejects_invalid_names_without_querying_libvirt(self):
+        with patch.object(MODULE, "run_command") as run:
+            with self.assertRaises(MODULE.NetworkSelectionError):
+                MODULE.ensure_namespace_available("../foo")
+            run.assert_not_called()
+
     def test_libvirt_xml_networks_supports_prefix_and_netmask(self):
         xml = """
         <network>

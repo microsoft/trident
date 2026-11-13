@@ -122,7 +122,20 @@ scripts/cloud-agent/validate.sh functional
 The smoke suite verifies the selected ADO build and artifact, creates the VM,
 proves SSH connectivity, and runs the positive `helpers` functional tests. It
 stores each image under a cache directory named for its immutable build ID and
-symlinks the selected image to `artifacts/trident-functest.qcow2`.
+passes that immutable path directly to pytest. Cache preparation is locked per
+build, and an interrupted image/provenance publication is recovered on retry.
+An existing local `artifacts/trident-functest.qcow2` is left untouched. To
+explicitly publish a compatibility symlink, pass `--link-path` to
+`scripts/cloud-agent/download_functional_artifact.py`.
+
+Each cloud run reserves its namespace for the duration of the run and rejects
+existing or prefix-colliding libvirt resources before provisioning or enabling
+cleanup. `TRIDENT_FUNCTIONAL_NAMESPACE` must contain only letters, digits,
+underscores, or hyphens, starting with a letter or digit.
+
+When reusing a functional-test VM, its namespace is restored from pytest's
+cache. A conflicting `--virtdeploy-namespace`, or a legacy cached environment
+without namespace metadata, is rejected; recreate that environment first.
 
 Run the complete functional suite when the changed behavior requires it:
 

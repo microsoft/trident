@@ -67,6 +67,8 @@ main() {
     local marker_expression
     local requested_namespace
     local virtdeploy_network
+    local namespace_lock_dir
+    local namespace_lock
     local -a network_args
     local -a test_paths
 
@@ -100,7 +102,7 @@ main() {
     cd "$REPO_ROOT"
     export PATH="$HOME/.local/bin:$PATH"
 
-    for command in az ip virsh qemu-system-x86_64 python3; do
+    for command in az flock ip virsh qemu-system-x86_64 python3; do
         if ! command -v "$command" >/dev/null 2>&1; then
             echo "Missing $command. Run scripts/cloud-agent/setup-functional.sh first." >&2
             return 1
@@ -110,6 +112,17 @@ main() {
     run virsh -c qemu:///system list --all
 
     requested_namespace="${TRIDENT_FUNCTIONAL_NAMESPACE:-trident-functional-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$}"
+    if [[ ! "$requested_namespace" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
+        echo "Namespace must contain only letters, digits, _ or -" >&2
+        return 1
+    fi
+    namespace_lock_dir="${XDG_RUNTIME_DIR:-$HOME/.cache}/trident-cloud-agent"
+    mkdir -p "$namespace_lock_dir"
+    exec {namespace_lock}>"$namespace_lock_dir/$requested_namespace.lock"
+    if ! flock -n "$namespace_lock"; then
+        echo "Namespace $requested_namespace is already in use by another run" >&2
+        return 1
+    fi
     network_args=(
         python3 scripts/cloud-agent/select_functional_network.py
         "$requested_namespace"
@@ -117,8 +130,6 @@ main() {
     if [[ -n "${TRIDENT_FUNCTIONAL_NETWORK:-}" ]]; then
         network_args+=(--network "$TRIDENT_FUNCTIONAL_NETWORK")
     fi
-    virtdeploy_network="$("${network_args[@]}")"
-
     printf '\n==> python3 scripts/cloud-agent/download_functional_artifact.py\n'
     functional_image="$(python3 scripts/cloud-agent/download_functional_artifact.py)"
     test -f "$functional_image"
@@ -133,6 +144,7 @@ main() {
         generate-functional-test-manifest \
         bin/virtdeploy
     chmod +x bin/virtdeploy
+    virtdeploy_network="$("${network_args[@]}")"
     virtdeploy_namespace="$requested_namespace"
 
     pytest_args=(
