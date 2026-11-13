@@ -21,7 +21,7 @@ pub(crate) struct SystemdBootMetadata {
 pub(crate) struct SystemdBootEntryMetadata {
     pub(crate) entry_type: SystemdBootEntryMetadataType,
     pub(crate) kernel: String,
-    pub(crate) path: String,
+    pub(crate) path: PathBuf,
     pub(crate) cmdline: String,
 }
 
@@ -32,3 +32,4 @@ pub(crate) enum SystemdBootEntryMetadataType {
     Config,
     Unknown(String),
 }
+use std::path::PathBuf;

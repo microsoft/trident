@@ -36,7 +36,7 @@ pub(crate) struct SystemdBoot {
 pub(crate) struct SystemdBootEntry {
     pub(crate) entry_type: SystemdBootEntryType,
     pub(crate) kernel: String,
-    pub(crate) path: String,
+    pub(crate) path: PathBuf,
     pub(crate) cmdline: String,
 }
 
@@ -123,7 +123,7 @@ mod tests {
                 entries: vec![SystemdBootEntryMetadata {
                     entry_type: SystemdBootEntryMetadataType::UkiStandalone,
                     kernel: "vmlinuz".to_string(),
-                    path: "EFI/Linux/image.efi".to_string(),
+                    path: PathBuf::from("EFI/Linux/image.efi"),
                     cmdline: "quiet".to_string(),
                 }],
             }),
@@ -137,7 +137,7 @@ mod tests {
                     entries: vec![SystemdBootEntry {
                         entry_type: SystemdBootEntryType::UkiStandalone,
                         kernel: "vmlinuz".to_string(),
-                        path: "EFI/Linux/image.efi".to_string(),
+                        path: PathBuf::from("EFI/Linux/image.efi"),
                         cmdline: "quiet".to_string(),
                     }],
                 }),
@@ -153,7 +153,7 @@ mod tests {
                 entries: vec![SystemdBootEntryMetadata {
                     entry_type: SystemdBootEntryMetadataType::Unknown("future-entry".to_string()),
                     kernel: "vmlinuz".to_string(),
-                    path: "loader/entries/future.conf".to_string(),
+                    path: PathBuf::from("loader/entries/future.conf"),
                     cmdline: "quiet".to_string(),
                 }],
             }),
@@ -167,7 +167,7 @@ mod tests {
                     entries: vec![SystemdBootEntry {
                         entry_type: SystemdBootEntryType::Unknown("future-entry".to_string()),
                         kernel: "vmlinuz".to_string(),
-                        path: "loader/entries/future.conf".to_string(),
+                        path: PathBuf::from("loader/entries/future.conf"),
                         cmdline: "quiet".to_string(),
                     }],
                 }),
@@ -175,3 +175,4 @@ mod tests {
         );
     }
 }
+use std::path::PathBuf;

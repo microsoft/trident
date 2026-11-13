@@ -443,7 +443,7 @@ impl From<&BootloaderEntry> for SystemdBootEntryMetadata {
         Self {
             entry_type: SystemdBootEntryMetadataType::from(&entry.boot_type),
             kernel: entry.kernel.clone(),
-            path: entry.path.clone(),
+            path: PathBuf::from(&entry.path),
             cmdline: entry.cmdline.clone(),
         }
     }
@@ -572,7 +572,7 @@ mod tests {
                     entries: vec![SystemdBootEntryMetadata {
                         entry_type: SystemdBootEntryMetadataType::UkiStandalone,
                         kernel: "vmlinuz".to_string(),
-                        path: "EFI/Linux/image.efi".to_string(),
+                        path: PathBuf::from("EFI/Linux/image.efi"),
                         cmdline: "quiet".to_string(),
                     }],
                 }),
