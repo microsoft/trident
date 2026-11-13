@@ -387,16 +387,17 @@ rpm -qa --queryformat "%{NAME} %{VERSION} %{RELEASE} %{ARCH}\n"
 
 ##### `Bootloader` Object
 
-| Field         | Type                                     | Added in | Required                                                                   | Description                 |
-| ------------- | ---------------------------------------- | -------- | -------------------------------------------------------------------------- | --------------------------- |
-| `type`        | [`BootloaderType`](#bootloadertype-enum) | 1.1      | Yes (since 1.1)                                                            | The type of the bootloader. |
-| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` is `systemd-boot` or `efitreeloader-mshv-systemd-boot`[1]       | systemd-boot configuration. |
+| Field         | Type                                     | Added in | Required                            | Description                 |
+| ------------- | ---------------------------------------- | -------- | ----------------------------------- | --------------------------- |
+| `type`        | [`BootloaderType`](#bootloadertype-enum) | 1.1      | Yes (since 1.1)                     | The type of the bootloader. |
+| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` uses systemd-boot[1] | systemd-boot configuration. |
 
 _Notes:_
 
-- **[1]** The `systemdBoot` field is required if the `type` field is set to
-    `systemd-boot` or `efitreeloader-mshv-systemd-boot`. It MUST be omitted OR
-    set to `null` if the `type` field is set to any other value.
+- **[1]** The `systemdBoot` field is required for bootloader types that use
+    systemd-boot, currently `systemd-boot` and
+    `efitreeloader-mshv-systemd-boot`. It MUST be omitted OR set to `null` for
+    other bootloader types.
 
 ##### `BootloaderType` Enum
 

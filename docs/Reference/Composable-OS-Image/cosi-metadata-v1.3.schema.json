@@ -244,7 +244,7 @@
           "enum": ["systemd-boot", "grub", "efitreeloader-mshv-systemd-boot"]
         },
         "systemdBoot": {
-          "description": "systemd-boot configuration. Required when `type` is `systemd-boot` or `efitreeloader-mshv-systemd-boot`; otherwise omitted or null.",
+          "description": "systemd-boot configuration. Required for bootloader types that use systemd-boot; otherwise omitted or null.",
           "oneOf": [
             { "$ref": "#/$defs/SystemDBoot" },
             { "type": "null" }
