@@ -49,6 +49,10 @@ remote source.
 The current families are:
 
 - `azl-installer`
+- `azurelinux-direct-streaming-testimage`
+- `foreign-direct-streaming-testimage`
+- `trident-container-installer`
+- `trident-container-testimage`
 - `trident-functest`
 - `trident-installer`
 - `trident-testimage`
