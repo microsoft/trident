@@ -1,0 +1,31 @@
+bootType: efi
+disks:
+  - partitionTableType: gpt
+    maxSize: 10G
+    partitions:
+      - id: esp
+        type: esp
+        size: 16M
+      - id: root-a
+        size: 4G
+      - id: root-b
+        size: 4G
+      - id: trident
+        size: 1G
+      - id: srv
+        size: grow
+filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: root-a
+    type: ext4
+    mountPoint: /
+  - deviceId: trident
+    type: ext4
+    mountPoint: /var/lib/trident
+  - deviceId: srv
+    type: ext4
+    mountPoint: /srv
