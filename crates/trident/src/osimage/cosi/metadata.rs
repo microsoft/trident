@@ -358,9 +358,6 @@ pub(crate) enum BootloaderType {
     #[serde(rename = "systemd-boot")]
     SystemdBoot,
 
-    #[serde(rename = "efitreeloader-mshv-systemd-boot")]
-    EfitreeloaderMshvSystemdBoot,
-
     #[serde(rename = "grub")]
     Grub,
 

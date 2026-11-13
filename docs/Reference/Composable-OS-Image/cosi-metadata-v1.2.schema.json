@@ -241,10 +241,10 @@
         "type": {
           "description": "The type of the bootloader.",
           "type": "string",
-          "enum": ["systemd-boot", "efitreeloader-mshv-systemd-boot", "grub"]
+          "enum": ["systemd-boot", "grub"]
         },
         "systemdBoot": {
-          "description": "systemd-boot configuration. Required for systemd-boot and efitreeloader-mshv-systemd-boot; otherwise omitted or null.",
+          "description": "systemd-boot configuration. Required when `type` == `systemd-boot`; otherwise omitted or null.",
           "oneOf": [
             { "$ref": "#/$defs/SystemDBoot" },
             { "type": "null" }
@@ -252,7 +252,7 @@
         }
       },
       "if": {
-        "properties": { "type": { "enum": ["systemd-boot", "efitreeloader-mshv-systemd-boot"] } },
+        "properties": { "type": { "const": "systemd-boot" } },
         "required": ["type"]
       },
       "then": {
