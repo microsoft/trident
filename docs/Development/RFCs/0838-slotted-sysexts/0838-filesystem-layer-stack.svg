@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 540" width="1000" height="540" role="img" aria-labelledby="stack-title stack-desc">
+  <title id="stack-title">Final read-only /usr and writable /etc layer stacks</title>
+  <desc id="stack-desc">Both stacks use the booted slot's dm-verity-protected /usr
+    partition as their base. Native systemd-sysext overlays selected read-only
+    sysext /usr trees on the base /usr filesystem after switch-root. Earlier,
+    ACL Bootengine assembles writable /etc in the initrd: shared ROOT /etc is the
+    writable upper, selected read-only confext /etc trees are the next lower
+    layers, and /usr/share/distro/etc from the protected partition supplies the
+    factory-default lower. Higher layers take precedence. Extension image files
+    and user changes live on shared ROOT, not in the protected /usr partition.</desc>
+  <style>
+    .canvas { fill:#fff }
+    .panel { fill:#f3f5f8; stroke:#c7d1dd; stroke-width:1.5 }
+    .base { fill:#eaf1fc; stroke:#2357a2; stroke-width:1.5 }
+    .extension { fill:#e7f5eb; stroke:#17633e; stroke-width:1.5 }
+    .upper { fill:#fff3cd; stroke:#8a6500; stroke-width:1.5 }
+    text { fill:#182432; font:16px system-ui,sans-serif }
+    .heading { font-size:23px; font-weight:700 }
+    .label { font-weight:700 }
+    .detail { fill:#526173; font-size:14px }
+    .source-detail { fill:#2357a2; font-size:16px }
+    .mono { font-family:ui-monospace,monospace }
+    .wire { fill:none; stroke:#2357a2; stroke-width:2 }
+    .arrow { fill:#2357a2 }
+  </style>
+  <defs>
+    <marker id="base-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path class="arrow" d="M0 0 L8 4 L0 8 Z"/>
+    </marker>
+  </defs>
+  <rect class="canvas" width="1000" height="540"/>
+  <rect class="panel" x="20" y="20" width="450" height="360" rx="9"/>
+  <rect class="panel" x="530" y="20" width="450" height="360" rx="9"/>
+
+  <text class="heading" x="40" y="53">Final /usr: read-only merge</text>
+  <text class="detail" x="40" y="80">systemd-sysext, after switch-root</text>
+  <text class="detail" x="52" y="130">No writable upper</text>
+  <rect class="extension" x="36" y="177" width="418" height="78" rx="6"/>
+  <text class="label" x="52" y="203">/usr from selected sysext images</text>
+  <text class="detail" x="52" y="229">Read-only mounts; image files on shared ROOT</text>
+  <rect class="base" x="36" y="275" width="418" height="78" rx="6"/>
+  <text class="label" x="52" y="301">/usr base filesystem</text>
+  <text class="detail" x="52" y="327">Read-only lower layer</text>
+
+  <text class="heading" x="550" y="53">Final /etc: writable overlay</text>
+  <text class="detail" x="550" y="80">ACL Bootengine, in the initrd (before /usr merge)</text>
+  <rect class="upper" x="546" y="96" width="418" height="68" rx="6"/>
+  <text class="label" x="562" y="122">User /etc changes</text>
+  <text class="detail" x="562" y="148">Writable upper on shared ROOT; survives rollback</text>
+  <rect class="extension" x="546" y="177" width="418" height="78" rx="6"/>
+  <text class="label" x="562" y="203">Selected confext /etc defaults</text>
+  <text class="detail" x="562" y="229">Read-only lowers; image files on shared ROOT</text>
+  <rect class="base" x="546" y="275" width="418" height="78" rx="6"/>
+  <text class="label mono" x="562" y="301">/usr/share/distro/etc</text>
+  <text class="detail" x="562" y="327">Read-only factory-default lower</text>
+
+  <path class="wire" d="M245 442 V357" marker-end="url(#base-arrow)"/>
+  <path class="wire" d="M755 442 V357" marker-end="url(#base-arrow)"/>
+  <rect class="base" x="20" y="442" width="960" height="78" rx="9"/>
+  <text class="label" x="40" y="472">Booted slot: USR-A or USR-B</text>
+  <text class="source-detail" x="40" y="499">dm-verity-protected /usr partition (read-only)</text>
+</svg>
