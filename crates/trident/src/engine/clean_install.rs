@@ -289,7 +289,6 @@ pub(crate) fn finalize_clean_install(
     clean_install_start_time: Option<Instant>,
     is_stream_image: bool,
 ) -> Result<ExitKind, TridentError> {
-    state.ensure_supported_servicing_state()?;
     info!("Finalizing clean install");
 
     let ctx = EngineContext::new(EngineContextParams {

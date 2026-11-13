@@ -162,12 +162,6 @@ pub enum InvalidInputError {
     #[error("Failed to resolve disk selector for '{disk_id}'")]
     DiskSelection { disk_id: String },
 
-    #[error(
-        "This Trident version does not recognize servicing state '{state}'; \
-         use a version that supports this state"
-    )]
-    UnsupportedServicingState { state: String },
-
     #[error("Allowed operations must be passed via command line, not in Host Configuration")]
     AllowedOperationsInHostConfiguration,
 
