@@ -1,0 +1,45 @@
+disks:
+  - partitionTableType: gpt
+    maxSize: 5G
+    partitions:
+      - id: esp
+        type: esp
+        size: 500M
+        label: esp
+      - id: boot
+        size: 150M
+      - id: root
+        size: 2G
+      - id: usr-data
+        label: usr
+        size: 1G
+      - id: usr-hash
+        label: usr-hash
+        size: 128M
+bootType: efi
+verity:
+  - id: usr
+    name: usr
+    dataDeviceId: usr-data
+    hashDeviceId: usr-hash
+    dataDeviceMountIdType: uuid
+    hashDeviceMountIdType: uuid
+filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: boot
+    type: ext4
+    mountPoint:
+      path: /boot
+  - deviceId: root
+    type: ext4
+    mountPoint:
+      path: /
+  - deviceId: usr
+    type: ext4
+    mountPoint:
+      path: /usr
+      options: defaults,ro

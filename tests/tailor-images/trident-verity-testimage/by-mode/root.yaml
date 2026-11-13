@@ -1,0 +1,5 @@
+config:
+  os:
+    $include: ./include/root-os-common.yaml
+  storage:
+    $include: ./include/root-storage.yaml
