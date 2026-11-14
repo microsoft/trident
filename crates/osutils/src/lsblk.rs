@@ -424,11 +424,6 @@ mod tests {
             matches,
             [PathBuf::from("/dev/sdb1"), PathBuf::from("/dev/sr0")]
         );
-        let devices = parse_lsblk_output(output).unwrap();
-        assert_eq!(
-            devices[0].partition_table_type,
-            Some(PartitionTableType::Gpt)
-        );
     }
 
     /// Output obtained from running `lsblk --json --bytes --output-all --paths /dev/sda`

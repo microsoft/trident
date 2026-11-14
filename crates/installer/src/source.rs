@@ -23,7 +23,9 @@ use osutils::{
     mount, mountpoint,
 };
 use trident_api::{
-    config::HostConfiguration, constants::MOUNT_OPTION_READ_ONLY, primitives::hash::Sha384Hash,
+    config::{Check, HostConfiguration, Script, ScriptSource},
+    constants::MOUNT_OPTION_READ_ONLY,
+    primitives::hash::Sha384Hash,
 };
 
 use crate::config::{self, Config};
@@ -150,16 +152,78 @@ fn self_contained_install(
     let text = read_text(&url)?;
     let config: HostConfiguration =
         serde_yaml::from_str(&text).context("Invalid Host Configuration YAML")?;
-    if let Some(image) = &config.image {
-        if image.url.as_str() == IMAGE_MARKER || file_source_may_need_media(&image.url, settings)? {
-            return Ok(None);
-        }
+    if host_configuration_needs_media(&config, settings)? {
+        return Ok(None);
     }
     let config = resolve_parsed_host_configuration(config, None)?;
     Ok(Some(Plan::Install {
         config: Box::new(config),
         source,
     }))
+}
+
+/// Checks file-backed HC inputs that Trident may need from the installer mount.
+fn host_configuration_needs_media(
+    config: &HostConfiguration,
+    settings: &Config,
+) -> Result<bool, Error> {
+    if let Some(image) = &config.image {
+        if image.url.as_str() == IMAGE_MARKER || file_source_may_need_media(&image.url, settings)? {
+            return Ok(true);
+        }
+    }
+    if let Some(key) = config
+        .storage
+        .encryption
+        .as_ref()
+        .and_then(|encryption| encryption.recovery_key_url.as_ref())
+    {
+        if file_source_may_need_media(key, settings)? {
+            return Ok(true);
+        }
+    }
+    for extension in config.os.sysexts.iter().chain(&config.os.confexts) {
+        if file_source_may_need_media(&extension.url, settings)? {
+            return Ok(true);
+        }
+    }
+    for file in &config.os.additional_files {
+        if let Some(path) = &file.source {
+            if path_may_need_media(path, settings)? {
+                return Ok(true);
+            }
+        }
+    }
+    let scripts = config
+        .scripts
+        .pre_servicing
+        .iter()
+        .chain(&config.scripts.post_provision)
+        .chain(&config.scripts.post_configure)
+        .chain(config.health.checks.iter().filter_map(|check| match check {
+            Check::Script(script) => Some(script),
+            Check::SystemdCheck(_) => None,
+        }));
+    for script in scripts {
+        if script_needs_media(script, settings)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn script_needs_media(script: &Script, settings: &Config) -> Result<bool, Error> {
+    if let ScriptSource::Path(path) = &script.source {
+        if path_may_need_media(path, settings)? {
+            return Ok(true);
+        }
+    }
+    if let Some(interpreter) = &script.interpreter {
+        if path_may_need_media(interpreter, settings)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// A missing path behind a symlink may become readable only after installer media is mounted.
@@ -170,6 +234,10 @@ fn file_source_may_need_media(url: &Url, settings: &Config) -> Result<bool, Erro
     let path = url
         .to_file_path()
         .map_err(|()| anyhow!("Invalid local file URL"))?;
+    path_may_need_media(&path, settings)
+}
+
+fn path_may_need_media(path: &Path, settings: &Config) -> Result<bool, Error> {
     let media = settings
         .media
         .mount_path
@@ -627,6 +695,8 @@ mod tests {
     use tar::Builder as TarBuilder;
     use tempfile::TempDir;
 
+    use trident_api::config::{AdditionalFile, Encryption};
+
     #[test]
     /// Ensures recovery sources cannot silently fall back to local files or other schemes.
     fn remote_sources_are_explicit_and_limited() {
@@ -808,6 +878,46 @@ mod tests {
         assert!(self_contained_install(&settings, &mut |_| Ok(()))
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    /// An HTTPS image does not make an HC self-contained if other inputs live on installer media.
+    fn additional_file_and_scripts_keep_media_discovery() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("host.yaml");
+        let mut settings = Config::default();
+        let mount = root.path().join("not-mounted");
+        settings.media.mount_path = Some(mount.clone());
+        settings.autorun.host_configuration = Some(path.display().to_string());
+        let mut config: HostConfiguration = serde_yaml::from_str(
+            &valid_host_configuration().replace(IMAGE_MARKER, "https://example.com/image.cosi"),
+        )
+        .unwrap();
+        assert!(!host_configuration_needs_media(&config, &settings).unwrap());
+
+        config.os.additional_files.push(AdditionalFile {
+            destination: "/etc/example".into(),
+            source: Some(mount.join("installer/example")),
+            ..Default::default()
+        });
+        fs::write(&path, serde_yaml::to_string(&config).unwrap()).unwrap();
+        assert!(host_configuration_needs_media(&config, &settings).unwrap());
+        let error = prepare_with_progress(&settings, &Request::Autorun, |_| Ok(())).unwrap_err();
+        assert!(error.to_string().contains("not a mount point"), "{error:#}");
+
+        config.os.additional_files.clear();
+        config.scripts.post_provision.push(Script {
+            source: ScriptSource::Path(mount.join("installer/script.sh")),
+            ..Default::default()
+        });
+        assert!(host_configuration_needs_media(&config, &settings).unwrap());
+        config.scripts.post_provision.clear();
+
+        config.storage.encryption = Some(Encryption {
+            recovery_key_url: Some(file_url(&mount.join("installer/recovery.key")).unwrap()),
+            ..Default::default()
+        });
+        assert!(host_configuration_needs_media(&config, &settings).unwrap());
     }
 
     #[test]

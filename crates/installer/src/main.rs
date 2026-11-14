@@ -1,6 +1,6 @@
 use std::{
     fs::{self, OpenOptions, Permissions},
-    io::Write,
+    io::{self, IsTerminal, Write},
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::PathBuf,
     process::ExitCode,
@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::{Context, Error};
 use clap::Parser;
-use log::{warn, LevelFilter};
+use log::{warn, LevelFilter, Record};
 use tokio::runtime::Builder;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -45,27 +45,13 @@ struct Args {
 
 /// Starts logging and the installer runtime, returning a failing exit code on startup errors.
 fn main() -> ExitCode {
+    let stderr_is_terminal = io::stderr().is_terminal();
     env_logger::Builder::from_default_env()
         .filter_level(LevelFilter::Info)
         .filter_module("installer", LevelFilter::Trace)
         .filter_module("osutils", LevelFilter::Trace)
-        .format(|buf, record| {
-            let message = record.args().to_string();
-            if let Some(tx) = INSTALLER_LOG_TX.get() {
-                if tx
-                    .send(Event::InstallerLog {
-                        level: record.level(),
-                        message: message.clone(),
-                    })
-                    .is_err()
-                {
-                    writeln!(
-                        buf,
-                        "Installer log receiver unavailable; entry retained in journal"
-                    )?;
-                }
-            }
-            writeln!(buf, "[{} {}] {}", record.level(), record.target(), message)
+        .format(move |buf, record| {
+            format_log_record(buf, record, INSTALLER_LOG_TX.get(), stderr_is_terminal)
         })
         .init();
     let args = Args::parse();
@@ -82,6 +68,41 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Keeps terminal-bound logs in Ratatui while retaining startup and journal diagnostics.
+fn format_log_record(
+    output: &mut impl Write,
+    record: &Record<'_>,
+    log_tx: Option<&UnboundedSender<Event>>,
+    stderr_is_terminal: bool,
+) -> io::Result<()> {
+    let message = record.args().to_string();
+    if let Some(tx) = log_tx {
+        if tx
+            .send(Event::InstallerLog {
+                level: record.level(),
+                message: message.clone(),
+            })
+            .is_ok()
+        {
+            if stderr_is_terminal {
+                return Ok(());
+            }
+        } else {
+            writeln!(
+                output,
+                "Installer log receiver unavailable; entry retained in journal"
+            )?;
+        }
+    }
+    writeln!(
+        output,
+        "[{} {}] {}",
+        record.level(),
+        record.target(),
+        message
+    )
 }
 
 /// Sets up private diagnostics and optional console ownership before starting the UI.
@@ -117,4 +138,46 @@ async fn run(args: Args) -> Result<(), Error> {
         }
     }
     ui::run(args.config, args.plain, linux_vt, output).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use log::Level;
+    use tokio::sync::mpsc;
+
+    #[test]
+    fn terminal_logs_use_ui_events_while_journal_and_startup_logs_remain_visible() {
+        let record = Record::builder()
+            .args(format_args!("Installer progress"))
+            .level(Level::Info)
+            .target("installer")
+            .build();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut output = Vec::new();
+        format_log_record(&mut output, &record, Some(&tx), true).unwrap();
+        assert!(output.is_empty());
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            Event::InstallerLog {
+                level: Level::Info,
+                message
+            } if message == "Installer progress"
+        ));
+
+        format_log_record(&mut output, &record, Some(&tx), false).unwrap();
+        assert_eq!(output, b"[INFO installer] Installer progress\n");
+        output.clear();
+
+        format_log_record(&mut output, &record, None, true).unwrap();
+        assert_eq!(output, b"[INFO installer] Installer progress\n");
+        output.clear();
+
+        drop(rx);
+        format_log_record(&mut output, &record, Some(&tx), true).unwrap();
+        assert!(String::from_utf8(output)
+            .unwrap()
+            .contains("Installer log receiver unavailable"));
+    }
 }

@@ -33,12 +33,11 @@ may be omitted; unknown fields and invalid values are errors.
 
 `mode = "autorun"` means **start without an interactive source picker**. It
 does not choose the Trident operation; `mode = "install"` and `mode = "stream"`
-are not valid TOML settings. If the bootstrap configuration names a complete
-live-OS or HTTP(S) Host Configuration whose image does not use
-`installer://image` or a path on installer media, autorun uses it without
-looking for media or applying [media-local
-overrides](#optional-configuration-on-the-media). Otherwise it discovers media,
-applies any overrides, and makes this choice:
+are not valid TOML settings. If the bootstrap configuration names a live-OS
+or HTTP(S) Host Configuration whose file-backed inputs do not need installer
+media, autorun uses it without looking for media or applying
+[media-local overrides](#optional-configuration-on-the-media). Otherwise it
+discovers media, applies any overrides, and makes this choice:
 
 | Priority | Condition | Operation |
 | --- | --- | --- |
@@ -115,12 +114,15 @@ networking starts; HTTP response errors fail immediately.
 Host Configuration input must be valid YAML and is limited to 2 MiB. A Host
 Configuration image URL of `installer://image` fails if no COSI is available.
 Authored disk paths and image checksums remain unchanged. Media-relative Host
-Configuration paths and images on installer media (including
-`installer://image`) require discovery; a default
-`/etc/trident/config.yaml` symlink pointing into the media also waits for its
-target to become available. A Host Configuration entirely on the live OS or
-HTTP(S), with no media-backed image, takes precedence over media overlays even
-when media is already present.
+Configuration paths and file-backed inputs on installer media (including
+`installer://image`, additional files, script paths, extension images and
+recovery keys) require discovery; a default `/etc/trident/config.yaml` symlink
+pointing into the media also waits for its target to become available. A Host
+Configuration with no media-backed inputs takes precedence over media overlays
+even when media is already present. Script content and arguments are not
+inspected for embedded paths; use a media-relative Host Configuration when
+those depend on the installer media.
+
 Explicit remote Stream COSI recovery bypasses local media discovery and
 overlays, so it remains available when the local media cannot be read.
 
