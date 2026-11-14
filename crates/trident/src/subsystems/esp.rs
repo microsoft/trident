@@ -32,7 +32,9 @@ use trident_api::{
 
 use crate::{
     engine::{
-        boot::{self, uki, ESP_EXTRACTION_DIRECTORY, ESP_EXTRACTION_DIRECTORY_MODE},
+        boot::{
+            self, mshv as boot_mshv, uki, ESP_EXTRACTION_DIRECTORY, ESP_EXTRACTION_DIRECTORY_MODE,
+        },
         EngineContext, Subsystem,
     },
     io_utils::{
@@ -370,8 +372,8 @@ fn copy_file_artifacts(
     mshv::validate_transition(ctx, &path::join_relative(mount_point, &ctx.esp_mount_path))?;
     let boot_files = if slot_mshv {
         // Validate and budget space before deleting target-slot files.
-        boot::mshv::validate_bundle(&source_bundle)?;
-        boot::mshv::preflight_staging(
+        boot_mshv::validate_bundle(&source_bundle)?;
+        boot_mshv::preflight_staging(
             ctx,
             temp_mount_dir,
             &path::join_relative(mount_point, &ctx.esp_mount_path),
@@ -410,7 +412,7 @@ fn copy_file_artifacts(
 
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
     let grub_noprefix = if slot_mshv {
-        boot::mshv::copy_bundle(&source_bundle, &esp_dir_path)?;
+        boot_mshv::copy_bundle(&source_bundle, &esp_dir_path)?;
         false
     } else {
         copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
@@ -605,8 +607,8 @@ fn copy_boot_files_for_uefi_fallback(
         uefi_fallback_path.display()
     );
     // Fallback also runs without an image, so detect the selected slot's bundle.
-    let result = if boot::mshv::has_slot_mshv_bundle(&source_esp_dir_path)? {
-        boot::mshv::replace_bundle(&source_esp_dir_path, &uefi_fallback_path)
+    let result = if boot_mshv::has_slot_mshv_bundle(&source_esp_dir_path)? {
+        boot_mshv::replace_bundle(&source_esp_dir_path, &uefi_fallback_path)
     } else {
         replace_boot_files(&source_esp_dir_path, &uefi_fallback_path)
     };
@@ -728,9 +730,9 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
 pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
     let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
     let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-    let slot_mshv = boot::mshv::has_slot_mshv_bundle(&boot_esp_path)?;
+    let slot_mshv = boot_mshv::has_slot_mshv_bundle(&boot_esp_path)?;
     if slot_mshv && azla_esp_path.exists() {
-        return boot::mshv::validate_bundle(&azla_esp_path);
+        return boot_mshv::validate_bundle(&azla_esp_path);
     }
     trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
     if !azla_esp_path.exists() {
@@ -748,8 +750,8 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
         }
         let copy_result = if slot_mshv {
             // Check capacity after reclaiming stale staging contents.
-            boot::mshv::preflight_bootstrap(&boot_esp_path, esp_path)?;
-            boot::mshv::copy_bundle(&boot_esp_path, &azla_tmp_path)
+            boot_mshv::preflight_bootstrap(&boot_esp_path, esp_path)?;
+            boot_mshv::copy_bundle(&boot_esp_path, &azla_tmp_path)
         } else {
             replace_boot_files(&boot_esp_path, &azla_tmp_path)
         };
@@ -949,21 +951,22 @@ fn generate_efi_bin_base_dir_path(
 mod tests {
     use super::*;
 
-    use std::io::Write;
+    use std::{
+        fs::{File, OpenOptions},
+        io::Write,
+    };
 
-    use fs::File;
+    use nix::sys::statvfs;
+
+    use trident_api::{
+        config::{HostConfiguration, Os},
+        constants::{DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH, GRUB2_RELATIVE_PATH},
+        status::{AbVolumeSelection, ServicingType},
+    };
 
     use crate::engine::{
         boot::{get_update_esp_dir_name, make_esp_dir_name_candidates, mshv::FILES},
         install_index,
-    };
-    use trident_api::{
-        config::{HostConfiguration, Os},
-        constants::DEFAULT_ESP_RELATIVE_MOUNT_POINT_PATH,
-    };
-    use trident_api::{
-        constants::GRUB2_RELATIVE_PATH,
-        status::{AbVolumeSelection, ServicingType},
     };
 
     #[test]
@@ -1723,9 +1726,9 @@ mod tests {
         fs::write(temporary.join("stale"), b"abandoned copy").unwrap();
 
         // Force preflight failure with a sparse file, without filling the filesystem.
-        let stats = nix::sys::statvfs::statvfs(esp.path()).unwrap();
+        let stats = statvfs::statvfs(esp.path()).unwrap();
         let length = stats.blocks_available() * stats.fragment_size() + 1;
-        fs::OpenOptions::new()
+        OpenOptions::new()
             .write(true)
             .open(boot.join(BOOT_EFI))
             .unwrap()

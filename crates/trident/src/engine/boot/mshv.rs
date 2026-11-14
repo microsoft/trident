@@ -1,11 +1,15 @@
 use std::{fs, io::ErrorKind, path::Path};
 
-use anyhow::{ensure, Context, Result};
-use nix::sys::statvfs::statvfs;
-use osutils::uki::uki_addon_dir;
+use anyhow::{ensure, Context, Error};
+use nix::sys::statvfs;
+
+use osutils::uki as uki_utils;
 use trident_api::{config::UefiFallbackMode, constants::EFI_DEFAULT_BIN_RELATIVE_PATH};
 
-use crate::engine::{boot::uki, EngineContext};
+use crate::engine::{
+    boot::uki::{self, UKI_DIRECTORY},
+    EngineContext,
+};
 
 // This hardcoded x64 payload list limits the current implementation to x86-64.
 pub(crate) const FILES: &[&str] = &[
@@ -22,7 +26,7 @@ pub(crate) const FILES: &[&str] = &[
 const SPACE_RESERVE: u64 = 1024 * 1024;
 
 /// Detects MSHV in an installed bootloader directory; marked bundles must be complete.
-pub(crate) fn has_slot_mshv_bundle(bundle: &Path) -> Result<bool> {
+pub(crate) fn has_slot_mshv_bundle(bundle: &Path) -> Result<bool, Error> {
     for marker in ["HvLoader.efi", "lxhvloader.dll", "Windows"] {
         match fs::symlink_metadata(bundle.join(marker)) {
             Ok(_) => {
@@ -38,7 +42,7 @@ pub(crate) fn has_slot_mshv_bundle(bundle: &Path) -> Result<bool> {
 
 /// Checks allowed entries without requiring completeness or following symlinks.
 /// Matching ignores case; `temporary` also permits known `.new` and `.old` files.
-fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<()> {
+fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<(), Error> {
     ensure!(
         fs::symlink_metadata(directory)?.is_dir(),
         "Invalid payload directory"
@@ -80,7 +84,7 @@ fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<()> {
 
 /// Requires the complete allowlisted layout, relying on FAT's case-insensitive lookups.
 /// Does not validate executable contents or hypervisor identity.
-pub(crate) fn validate_bundle(root: &Path) -> Result<()> {
+pub(crate) fn validate_bundle(root: &Path) -> Result<(), Error> {
     validate_tree(root, root, false)?;
     for name in FILES {
         ensure!(
@@ -95,7 +99,7 @@ pub(crate) fn validate_bundle(root: &Path) -> Result<()> {
 
 /// Estimates cluster-rounded file bytes plus one cluster per directory.
 /// Missing paths contribute zero; symlinks and special files are rejected.
-fn allocation(path: &Path, cluster: u64) -> Result<u64> {
+fn allocation(path: &Path, cluster: u64) -> Result<u64, Error> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(0),
@@ -117,7 +121,7 @@ fn allocation(path: &Path, cluster: u64) -> Result<u64> {
 }
 
 /// Requires room for the incoming allocation plus a reserve, crediting planned reclamation.
-fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<()> {
+fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<(), Error> {
     ensure!(
         available.saturating_add(reclaimed) >= required.saturating_add(SPACE_RESERVE),
         "Insufficient ESP capacity: need {required} bytes plus {SPACE_RESERVE} bytes reserve, \
@@ -132,12 +136,12 @@ pub(crate) fn preflight_staging(
     source_esp: &Path,
     destination_esp: &Path,
     target_bundle: &Path,
-) -> Result<()> {
-    let stats = statvfs(destination_esp)?;
+) -> Result<(), Error> {
+    let stats = statvfs::statvfs(destination_esp)?;
     let cluster = stats.fragment_size();
     ensure!(cluster > 0, "Invalid ESP allocation unit");
     let bundle = allocation(&source_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH), cluster)?;
-    let mut required = bundle + allocation(&source_esp.join(uki::UKI_DIRECTORY), cluster)?;
+    let mut required = bundle + allocation(&source_esp.join(UKI_DIRECTORY), cluster)?;
     // Account for slot-addon templates whose selected file may replace a smaller live addon.
     required += allocation(&source_esp.join("acl/uki-addons"), cluster)?;
     if ctx.spec.os.uefi_fallback != UefiFallbackMode::Disabled {
@@ -145,17 +149,17 @@ pub(crate) fn preflight_staging(
         required += bundle.max(allocation(&existing_fallback, cluster)?);
     }
     let mut reclaimed = allocation(target_bundle, cluster)?;
-    for path in
-        uki::find_ukis_to_remove_before_staging(ctx, &destination_esp.join(uki::UKI_DIRECTORY))?
+    for path in uki::find_ukis_to_remove_before_staging(ctx, &destination_esp.join(UKI_DIRECTORY))?
     {
-        reclaimed += allocation(&path, cluster)? + allocation(&uki_addon_dir(&path), cluster)?;
+        reclaimed +=
+            allocation(&path, cluster)? + allocation(&uki_utils::uki_addon_dir(&path), cluster)?;
     }
     check_space(stats.blocks_available() * cluster, reclaimed, required)
 }
 
 /// Checks room for a new bundle copy without reclaiming existing ESP contents.
-pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<()> {
-    let stats = statvfs(esp)?;
+pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<(), Error> {
+    let stats = statvfs::statvfs(esp)?;
     let cluster = stats.fragment_size();
     ensure!(cluster > 0, "Invalid ESP allocation unit");
     check_space(
@@ -167,7 +171,7 @@ pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<()> {
 
 /// Copies a validated bundle non-atomically into an allowlisted destination.
 /// For atomic publication, copy to a temporary directory and rename it.
-pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<()> {
+pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<(), Error> {
     validate_bundle(from)?;
     fs::create_dir_all(to)?;
     validate_tree(to, to, false)?;
@@ -181,7 +185,7 @@ pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<()> {
 
 /// Reconciles `.old` backups and stages all `.new` files before replacing fallback.
 /// Whole-bundle replacement is not atomic.
-pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<()> {
+pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<(), Error> {
     validate_bundle(from)?;
     match fs::symlink_metadata(to) {
         Ok(_) => {
@@ -194,7 +198,7 @@ pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<()> {
         Err(error) if error.kind() == ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
     }
-    let stats = statvfs(to.parent().context("Missing fallback parent")?)?;
+    let stats = statvfs::statvfs(to.parent().context("Missing fallback parent")?)?;
     let cluster = stats.fragment_size();
     ensure!(cluster > 0, "Invalid ESP allocation unit");
     let required = allocation(from, cluster)?;
@@ -237,8 +241,14 @@ pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::symlink;
+
+    use std::{fs::File, os::unix::fs as unix_fs};
+
     use tempfile::TempDir;
+
+    use trident_api::status::{AbVolumeSelection, ServicingState, ServicingType};
+
+    use crate::subsystems::esp;
 
     /// Creates a complete test bundle.
     fn bundle(root: &Path, contents: &[u8]) {
@@ -309,11 +319,11 @@ mod tests {
         let outside = temp.path().join("outside");
         bundle(&source, b"new");
         fs::create_dir(&outside).unwrap();
-        symlink(&outside, &target).unwrap();
+        unix_fs::symlink(&outside, &target).unwrap();
         assert!(replace_bundle(&source, &target).is_err());
         fs::remove_file(&target).unwrap();
         fs::remove_file(source.join("lxhvloader.dll")).unwrap();
-        symlink(outside.join("dll"), source.join("lxhvloader.dll")).unwrap();
+        unix_fs::symlink(outside.join("dll"), source.join("lxhvloader.dll")).unwrap();
         assert!(copy_bundle(&source, &target).is_err());
         assert!(fs::read_dir(&outside).unwrap().next().is_none());
     }
@@ -365,15 +375,15 @@ mod tests {
         bundle(&source.join(EFI_DEFAULT_BIN_RELATIVE_PATH), b"new");
         bundle(&target, b"inactive");
         bundle(&retained, b"committed");
-        fs::create_dir_all(source.join(uki::UKI_DIRECTORY)).unwrap();
-        let stats = statvfs(&destination).unwrap();
-        fs::File::create(source.join(uki::UKI_DIRECTORY).join("new.efi"))
+        fs::create_dir_all(source.join(UKI_DIRECTORY)).unwrap();
+        let stats = statvfs::statvfs(&destination).unwrap();
+        File::create(source.join(UKI_DIRECTORY).join("new.efi"))
             .unwrap()
             .set_len(stats.blocks_available() * stats.fragment_size() + SPACE_RESERVE)
             .unwrap();
         let ctx = EngineContext {
-            servicing_type: trident_api::status::ServicingType::AbUpdate,
-            ab_active_volume: Some(trident_api::status::AbVolumeSelection::VolumeA),
+            servicing_type: ServicingType::AbUpdate,
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
             ..Default::default()
         };
         assert!(preflight_staging(&ctx, &source, &destination, &target).is_err());
@@ -386,7 +396,6 @@ mod tests {
     /// Enabled fallback policies copy whole bundles and preserve the retained slot.
     #[test]
     fn fallback_modes_use_the_full_selected_bundle_during_trial_commit_and_rollback() {
-        use trident_api::status::{AbVolumeSelection, ServicingState, ServicingType};
         for mode in [
             UefiFallbackMode::Conservative,
             UefiFallbackMode::Optimistic,
@@ -408,12 +417,8 @@ mod tests {
                 ..Default::default()
             };
             ctx.spec.os.uefi_fallback = mode;
-            crate::subsystems::esp::set_uefi_fallback_contents(
-                &ctx,
-                ServicingState::AbUpdateStaged,
-                temp.path(),
-            )
-            .unwrap();
+            esp::set_uefi_fallback_contents(&ctx, ServicingState::AbUpdateStaged, temp.path())
+                .unwrap();
             for name in FILES {
                 let expected = if mode == UefiFallbackMode::Optimistic {
                     b"candidate".as_slice()
@@ -422,12 +427,8 @@ mod tests {
                 };
                 assert_eq!(fs::read(fallback.join(name)).unwrap(), expected);
             }
-            crate::subsystems::esp::set_uefi_fallback_contents(
-                &ctx,
-                ServicingState::AbUpdateFinalized,
-                temp.path(),
-            )
-            .unwrap();
+            esp::set_uefi_fallback_contents(&ctx, ServicingState::AbUpdateFinalized, temp.path())
+                .unwrap();
             for name in FILES {
                 let expected = if mode == UefiFallbackMode::Disabled {
                     b"retained".as_slice()
@@ -439,7 +440,7 @@ mod tests {
             }
             ctx.servicing_type = ServicingType::ManualRollbackAb;
             ctx.ab_active_volume = Some(AbVolumeSelection::VolumeB);
-            crate::subsystems::esp::set_uefi_fallback_contents(
+            esp::set_uefi_fallback_contents(
                 &ctx,
                 ServicingState::ManualRollbackAbStaged,
                 temp.path(),

@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use anyhow::{anyhow, ensure, Context, Error};
+
 use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     constants::ESP_EFI_DIRECTORY,
@@ -11,7 +12,10 @@ use trident_api::{
 };
 
 use crate::{
-    engine::{boot, EngineContext},
+    engine::{
+        boot::{self, mshv as boot_mshv},
+        EngineContext,
+    },
     osimage::bootloader::Bootloader,
 };
 
@@ -60,7 +64,7 @@ pub(super) fn validate_transition(ctx: &EngineContext, esp_path: &Path) -> Resul
         .join(ESP_EFI_DIRECTORY)
         .join(boot::make_esp_dir_name(ctx.install_index, active_volume));
     ensure!(
-        boot::mshv::has_slot_mshv_bundle(&active_bundle)?
+        boot_mshv::has_slot_mshv_bundle(&active_bundle)?
             == ctx.bootloader().is_some_and(Bootloader::uses_mshv),
         "Changing slot-owned MSHV mode on an existing installation is not supported"
     );
@@ -79,6 +83,14 @@ fn unsupported(reason: &str) -> TridentError {
 mod tests {
     use super::*;
 
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use osutils::osrelease::{OsRelease, AZURE_CONTAINER_LINUX_VARIANT_ID, AZURE_LINUX_DISTRO_ID};
+    use sysdefs::tpm2::Pcr;
+    use trident_api::{config::Encryption, status::AbVolumeSelection};
+
     use crate::{
         engine::boot::mshv::FILES,
         osimage::{bootloader::BootloaderType, mock::MockOsImage},
@@ -88,9 +100,9 @@ mod tests {
     #[test]
     fn rejects_unsupported_mshv_images_without_affecting_other_images() {
         let image = MockOsImage {
-            os_release: osutils::osrelease::OsRelease {
-                id: Some(osutils::osrelease::AZURE_LINUX_DISTRO_ID.into()),
-                variant_id: Some(osutils::osrelease::AZURE_CONTAINER_LINUX_VARIANT_ID.into()),
+            os_release: OsRelease {
+                id: Some(AZURE_LINUX_DISTRO_ID.into()),
+                variant_id: Some(AZURE_CONTAINER_LINUX_VARIANT_ID.into()),
                 ..Default::default()
             },
             is_uki: true,
@@ -114,8 +126,8 @@ mod tests {
             validate_configuration(&ctx).is_ok(),
             SystemArchitecture::current().is_x64(),
         );
-        ctx.spec.storage.encryption = Some(trident_api::config::Encryption {
-            pcrs: vec![sysdefs::tpm2::Pcr::Pcr4],
+        ctx.spec.storage.encryption = Some(Encryption {
+            pcrs: vec![Pcr::Pcr4],
             ..Default::default()
         });
         assert!(validate_configuration(&ctx).is_err());
@@ -124,15 +136,13 @@ mod tests {
     /// Source metadata must match the retained slot, including non-default slots.
     #[test]
     fn rejects_mshv_layout_changes() {
-        use trident_api::status::AbVolumeSelection;
-
         for retained_mshv in [false, true] {
-            let esp = tempfile::TempDir::new().unwrap();
+            let esp = TempDir::new().unwrap();
             if retained_mshv {
                 for name in FILES {
                     let path = esp.path().join("EFI/AZL2B").join(name);
-                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-                    std::fs::write(path, b"payload").unwrap();
+                    fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    fs::write(path, b"payload").unwrap();
                 }
             }
             let mut ctx = EngineContext {

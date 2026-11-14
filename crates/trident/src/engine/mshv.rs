@@ -8,7 +8,7 @@ use trident_api::{
     status::AbVolumeSelection,
 };
 
-use super::boot;
+use super::boot::{self, mshv as boot_mshv};
 
 /// Checks the expected boot bundle, but assumes its hypervisor identity matches.
 pub(crate) fn validate_active_hypervisor(
@@ -31,7 +31,7 @@ pub(crate) fn validate_active_hypervisor(
         .map(|volume| boot::make_esp_dir_name(install_index, volume))
         .unwrap_or_else(|| EFI_DEFAULT_BIN_DIRECTORY.into());
     // No COSI is loaded; inspect the expected slot, or BOOT if no slot is selected.
-    if boot::mshv::has_slot_mshv_bundle(&esp_path.join(ESP_EFI_DIRECTORY).join(&expected_directory))
+    if boot_mshv::has_slot_mshv_bundle(&esp_path.join(ESP_EFI_DIRECTORY).join(&expected_directory))
         .structured(InvalidInputError::InvalidBootConfiguration)?
     {
         // TODO: Identify the running hypervisor and compare it with the expected OS payload.

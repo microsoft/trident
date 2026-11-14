@@ -69,7 +69,13 @@ pub use crate::{
 };
 
 use crate::{
-    engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
+    engine::{
+        ab_update,
+        rollback::{self, BootValidationResult},
+        runtime_update,
+        storage::rebuild,
+        SUBSYSTEMS,
+    },
     init::acl,
     osimage::OsImage,
     stream::DiskSelectionStrategy,
@@ -847,7 +853,7 @@ impl Trident {
         // Report success only after provisioning, not when rollback is required.
         if matches!(
             rollback_result,
-            Ok(rollback::BootValidationResult::ValidBootProvisioned)
+            Ok(BootValidationResult::ValidBootProvisioned)
         ) {
             if let Some(ref orchestrator) = self.orchestrator {
                 orchestrator.report_success(Some(
@@ -858,11 +864,9 @@ impl Trident {
         }
 
         match rollback_result {
-            Ok(rollback::BootValidationResult::ValidBootProvisioned) => {
-                Ok((ExitKind::Done, servicing_type))
-            }
-            Ok(rollback::BootValidationResult::InvalidHypervisor(e))
-            | Ok(rollback::BootValidationResult::ValidBootHealthCheckFailed(e)) => {
+            Ok(BootValidationResult::ValidBootProvisioned) => Ok((ExitKind::Done, servicing_type)),
+            Ok(BootValidationResult::InvalidHypervisor(e))
+            | Ok(BootValidationResult::ValidBootHealthCheckFailed(e)) => {
                 // The caller must reboot to complete automatic recovery.
                 debug!("Boot validation requires rollback: {e:?}");
                 Ok((ExitKind::NeedsReboot, servicing_type))

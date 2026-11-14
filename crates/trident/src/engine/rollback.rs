@@ -19,8 +19,9 @@ use trident_api::{
 
 use crate::{
     engine::{
-        bootentries,
+        boot, bootentries,
         context::{EngineContext, EngineContextParams},
+        mshv,
         storage::{encryption, verity},
     },
     health,
@@ -116,7 +117,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
 
     // Route trial identity failures to recovery; propagate recovery failures.
     if booted_to_expected_device {
-        if let Err(error) = super::mshv::validate_active_hypervisor(
+        if let Err(error) = mshv::validate_active_hypervisor(
             &ctx.spec,
             ctx.install_index,
             ctx.get_ab_update_volume(),
@@ -129,7 +130,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     ) {
         // Firmware rolled back; validate against the retained OS's configuration.
         let host_status = datastore.host_status();
-        super::mshv::validate_active_hypervisor(
+        mshv::validate_active_hypervisor(
             &host_status.spec_old,
             host_status.install_index,
             host_status.ab_active_volume,
@@ -205,7 +206,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 ServicingError::ValidateAbActiveHypervisor {
                     expected_slot: ctx
                         .get_ab_update_volume()
-                        .map(|volume| super::boot::make_esp_dir_name(ctx.install_index, volume))
+                        .map(|volume| boot::make_esp_dir_name(ctx.install_index, volume))
                         .unwrap_or_default(),
                     observed_slot: None,
                 },
@@ -857,6 +858,7 @@ mod tests {
 
     use const_format::formatcp;
     use maplit::btreemap;
+    use tempfile::TempDir;
 
     use osutils::{osrelease::OsRelease, testutils::repart::TEST_DISK_DEVICE_PATH};
     use trident_api::{
@@ -872,7 +874,7 @@ mod tests {
     /// The recovery state and original error survive reopening the datastore.
     #[test]
     fn hypervisor_failure_is_persisted_before_requesting_rollback() {
-        let temp = tempfile::TempDir::new().unwrap();
+        let temp = TempDir::new().unwrap();
         let path = temp.path().join("datastore.sqlite");
         let mut datastore = DataStore::open_or_create(&path).unwrap();
         let error = TridentError::new(ServicingError::ValidateAbActiveHypervisor {
@@ -907,7 +909,7 @@ mod tests {
     /// A recovery identity failure must not request another rollback.
     #[test]
     fn recovery_identity_failure_does_not_request_another_rollback() {
-        let temp = tempfile::TempDir::new().unwrap();
+        let temp = TempDir::new().unwrap();
         let mut datastore =
             DataStore::open_or_create(&temp.path().join("datastore.sqlite")).unwrap();
         datastore

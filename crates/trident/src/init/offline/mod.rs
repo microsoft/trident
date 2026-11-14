@@ -31,7 +31,7 @@ use trident_api::{
 };
 use uuid::Uuid;
 
-use crate::{datastore::DataStore, subsystems::esp};
+use crate::{datastore::DataStore, engine::boot::mshv, subsystems::esp};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 struct PrismPartition {
@@ -537,10 +537,8 @@ pub fn execute(
         )))?;
 
     // Offline initialization has no source COSI; inspect the installed BOOT bundle.
-    if crate::engine::boot::mshv::has_slot_mshv_bundle(
-        &esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH),
-    )
-    .structured(InvalidInputError::InvalidBootConfiguration)?
+    if mshv::has_slot_mshv_bundle(&esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH))
+        .structured(InvalidInputError::InvalidBootConfiguration)?
     {
         return Err(TridentError::new(
             InvalidInputError::InvalidBootConfiguration,
