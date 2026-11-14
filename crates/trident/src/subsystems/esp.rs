@@ -801,8 +801,8 @@ fn copy_boot_files(
 /// The func takes the arg temp_mount_dir, which is the path to the directory where the ESP image is mounted to.
 /// The is_uki parameter indicates whether the image being processed is a UKI (Unified Kernel Image), in which
 /// case, grub.cfg is not needed.
-/// When uses_efitreeloader is true, BOOT_EFI is efitreeloader and requires an
-/// adjacent second.efi.
+/// When uses_efitreeloader is true, the GRUB-position executable is
+/// efitreeloader and requires an adjacent second.efi.
 fn generate_boot_filepaths(
     temp_mount_dir: &Path,
     is_uki: bool,
@@ -861,37 +861,32 @@ fn generate_boot_filepaths(
         "Using GRUB EFI executable from '{}'",
         selected_grub_binary_path.display()
     );
-    paths.push(selected_grub_binary_path);
+    paths.push(selected_grub_binary_path.clone());
 
     // Construct file names of EFI executables
     let boot_efi_path = Path::new(temp_mount_dir)
         .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
         .join(BOOT_EFI);
-    let boot_efi_role = if uses_efitreeloader {
-        "efitreeloader"
-    } else {
-        "shim"
-    };
     if !boot_efi_path.exists() {
         bail!(
-            "Failed to find {boot_efi_role} EFI executable at path '{}'",
+            "Failed to find shim EFI executable at path '{}'",
             boot_efi_path.display()
         );
     }
     debug!(
-        "Using {boot_efi_role} EFI executable from '{}'",
+        "Using shim EFI executable from '{}'",
         boot_efi_path.display()
     );
-    paths.push(boot_efi_path.clone());
+    paths.push(boot_efi_path);
 
     if uses_efitreeloader {
         let efitreeloader_second =
-            boot_efi_path.with_file_name(mshv::ETL_SECOND_STAGE_EFI_FILENAME);
+            selected_grub_binary_path.with_file_name(mshv::ETL_SECOND_STAGE_EFI_FILENAME);
         ensure!(
             efitreeloader_second.is_file(),
             "efitreeloader second-stage EFI executable '{}' is missing or not a file next to '{}'",
             efitreeloader_second.display(),
-            boot_efi_path.display()
+            selected_grub_binary_path.display()
         );
         debug!(
             "Using efitreeloader second-stage EFI executable from '{}'",
@@ -1801,101 +1796,87 @@ mod tests {
                 boot_efi_path.display()
             )
         );
-        assert_eq!(
-            generate_boot_filepaths(temp_mount_dir.path(), false, true)
-                .unwrap_err()
-                .root_cause()
-                .to_string(),
-            format!(
-                "Failed to find efitreeloader EFI executable at path '{}'",
-                boot_efi_path.display()
-            )
-        );
     }
 
     /// Verifies efitreeloader second-stage validation and copying for UKI and
-    /// non-UKI images, with either standard or noprefix GRUB.
+    /// non-UKI images.
     #[test]
     fn test_generate_boot_filepaths_second_stage() {
         for is_uki in [false, true] {
-            for grub_filename in [GRUB_EFI, GRUB_NOPREFIX_EFI] {
-                let source = TempDir::new().unwrap();
-                let boot_dir = Path::new(EFI_DEFAULT_BIN_RELATIVE_PATH);
-                let mut relative_paths = Vec::new();
-                if !is_uki {
-                    relative_paths.push(boot_dir.join(GRUB2_CONFIG_FILENAME));
-                }
-                relative_paths.push(boot_dir.join(grub_filename));
-                relative_paths.push(boot_dir.join(BOOT_EFI));
-                create_boot_files(source.path(), &relative_paths, "test-content");
-                let expected_paths: Vec<PathBuf> = relative_paths
-                    .iter()
-                    .map(|path| source.path().join(path))
-                    .collect();
-                let boot_efi = source.path().join(boot_dir).join(BOOT_EFI);
-                let second_stage = source
-                    .path()
-                    .join(boot_dir)
-                    .join(mshv::ETL_SECOND_STAGE_EFI_FILENAME);
-                let expected_error = || {
-                    format!(
-                        "efitreeloader second-stage EFI executable '{}' is missing or not a file next to '{}'",
-                        second_stage.display(),
-                        boot_efi.display()
-                    )
-                };
-
-                // Other bootloaders ignore second.efi, even when it is present.
-                assert_eq!(
-                    generate_boot_filepaths(source.path(), is_uki, false).unwrap(),
-                    expected_paths,
-                    "non-efitreeloader image: is_uki={is_uki}, grub={grub_filename}"
-                );
-                fs::write(&second_stage, [0, 0xff, 1, 0x80]).unwrap();
-                assert_eq!(
-                    generate_boot_filepaths(source.path(), is_uki, false).unwrap(),
-                    expected_paths,
-                    "non-efitreeloader image with second.efi: is_uki={is_uki}, grub={grub_filename}"
-                );
-
-                // efitreeloader requires and copies its adjacent second stage.
-                let mut expected_efitreeloader_paths = expected_paths.clone();
-                expected_efitreeloader_paths.push(second_stage.clone());
-                let generated_paths = generate_boot_filepaths(source.path(), is_uki, true).unwrap();
-                assert_eq!(
-                    generated_paths, expected_efitreeloader_paths,
-                    "second stage must be appended exactly once: is_uki={is_uki}, grub={grub_filename}"
-                );
-
-                // GRUB's noprefix rename must not affect the second-stage filename
-                // or binary contents, and copying must leave the source intact.
-                let destination = TempDir::new().unwrap();
-                let noprefix =
-                    copy_boot_files(source.path(), destination.path(), generated_paths).unwrap();
-                assert_eq!(noprefix, grub_filename == GRUB_NOPREFIX_EFI);
-                assert_eq!(
-                    fs::read(destination.path().join(mshv::ETL_SECOND_STAGE_EFI_FILENAME)).unwrap(),
-                    [0, 0xff, 1, 0x80]
-                );
-                assert_eq!(fs::read(&second_stage).unwrap(), [0, 0xff, 1, 0x80]);
-
-                // Missing and non-file second stages are invalid.
-                fs::remove_file(&second_stage).unwrap();
-                assert_eq!(
-                    generate_boot_filepaths(source.path(), is_uki, true)
-                        .unwrap_err()
-                        .to_string(),
-                    expected_error()
-                );
-                fs::create_dir(&second_stage).unwrap();
-                assert_eq!(
-                    generate_boot_filepaths(source.path(), is_uki, true)
-                        .unwrap_err()
-                        .to_string(),
-                    expected_error(),
-                    "second-stage directory must be rejected: is_uki={is_uki}, grub={grub_filename}"
-                );
+            let source = TempDir::new().unwrap();
+            let boot_dir = Path::new(EFI_DEFAULT_BIN_RELATIVE_PATH);
+            let mut relative_paths = Vec::new();
+            if !is_uki {
+                relative_paths.push(boot_dir.join(GRUB2_CONFIG_FILENAME));
             }
+            relative_paths.push(boot_dir.join(GRUB_EFI));
+            relative_paths.push(boot_dir.join(BOOT_EFI));
+            create_boot_files(source.path(), &relative_paths, "test-content");
+            let expected_paths: Vec<PathBuf> = relative_paths
+                .iter()
+                .map(|path| source.path().join(path))
+                .collect();
+            let efitreeloader = source.path().join(boot_dir).join(GRUB_EFI);
+            let second_stage = source
+                .path()
+                .join(boot_dir)
+                .join(mshv::ETL_SECOND_STAGE_EFI_FILENAME);
+            let expected_error = || {
+                format!(
+                    "efitreeloader second-stage EFI executable '{}' is missing or not a file next to '{}'",
+                    second_stage.display(),
+                    efitreeloader.display()
+                )
+            };
+
+            // Other bootloaders ignore second.efi, even when it is present.
+            assert_eq!(
+                generate_boot_filepaths(source.path(), is_uki, false).unwrap(),
+                expected_paths,
+                "non-efitreeloader image: is_uki={is_uki}"
+            );
+            fs::write(&second_stage, [0, 0xff, 1, 0x80]).unwrap();
+            assert_eq!(
+                generate_boot_filepaths(source.path(), is_uki, false).unwrap(),
+                expected_paths,
+                "non-efitreeloader image with second.efi: is_uki={is_uki}"
+            );
+
+            // efitreeloader requires and copies its adjacent second stage.
+            let mut expected_efitreeloader_paths = expected_paths.clone();
+            expected_efitreeloader_paths.push(second_stage.clone());
+            let generated_paths = generate_boot_filepaths(source.path(), is_uki, true).unwrap();
+            assert_eq!(
+                generated_paths, expected_efitreeloader_paths,
+                "second stage must be appended exactly once: is_uki={is_uki}"
+            );
+
+            let destination = TempDir::new().unwrap();
+            let noprefix =
+                copy_boot_files(source.path(), destination.path(), generated_paths).unwrap();
+            assert!(!noprefix);
+            assert_eq!(
+                fs::read(destination.path().join(mshv::ETL_SECOND_STAGE_EFI_FILENAME)).unwrap(),
+                [0, 0xff, 1, 0x80]
+            );
+            assert_eq!(fs::read(&second_stage).unwrap(), [0, 0xff, 1, 0x80]);
+
+            // Missing and non-file second stages are invalid.
+            fs::remove_file(&second_stage).unwrap();
+            assert_eq!(
+                generate_boot_filepaths(source.path(), is_uki, true)
+                    .unwrap_err()
+                    .to_string(),
+                expected_error()
+            );
+            fs::create_dir(&second_stage).unwrap();
+            assert_eq!(
+                generate_boot_filepaths(source.path(), is_uki, true)
+                    .unwrap_err()
+                    .to_string(),
+                expected_error(),
+                "second-stage directory must be rejected: is_uki={is_uki}"
+            );
         }
     }
 
