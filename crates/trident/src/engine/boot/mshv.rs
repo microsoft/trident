@@ -8,7 +8,7 @@ use trident_api::{config::UefiFallbackMode, constants::EFI_DEFAULT_BIN_RELATIVE_
 use crate::engine::{boot::uki, EngineContext};
 
 // This hardcoded x64 payload list limits the current implementation to x86-64.
-const FILES: &[&str] = &[
+pub(crate) const FILES: &[&str] = &[
     "bootx64.efi",
     "grubx64.efi",
     "second.efi",
@@ -383,7 +383,7 @@ mod tests {
         }
     }
 
-    /// Each fallback policy copies whole bundles and preserves the retained slot.
+    /// Enabled fallback policies copy whole bundles and preserve the retained slot.
     #[test]
     fn fallback_modes_use_the_full_selected_bundle_during_trial_commit_and_rollback() {
         use trident_api::status::{AbVolumeSelection, ServicingState, ServicingType};

@@ -20,7 +20,6 @@ use crate::{
     ExitKind,
 };
 
-/// Selects and executes update servicing without changing MSHV mode.
 #[tracing::instrument(skip_all)]
 pub(crate) fn update(
     host_config: &HostConfiguration,

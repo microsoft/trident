@@ -38,7 +38,7 @@ pub enum BootValidationResult {
     InvalidHypervisor(TridentError),
 }
 
-/// Validates the boot device and calls the MSHV identity hook (currently a success stub).
+/// Validates the boot device and installed MSHV bundle, assuming hypervisor identity matches.
 /// Commits a valid target or reconciles rollback status. Trial A/B validation failures
 /// can request recovery; recovery failures return errors without another rollback.
 #[tracing::instrument(skip_all)]

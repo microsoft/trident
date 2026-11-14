@@ -79,7 +79,10 @@ fn unsupported(reason: &str) -> TridentError {
 mod tests {
     use super::*;
 
-    use crate::osimage::{bootloader::BootloaderType, mock::MockOsImage};
+    use crate::{
+        engine::boot::mshv::FILES,
+        osimage::{bootloader::BootloaderType, mock::MockOsImage},
+    };
 
     /// Only metadata-declared MSHV images receive these restrictions.
     #[test]
@@ -126,16 +129,7 @@ mod tests {
         for retained_mshv in [false, true] {
             let esp = tempfile::TempDir::new().unwrap();
             if retained_mshv {
-                for name in [
-                    "bootx64.efi",
-                    "grubx64.efi",
-                    "second.efi",
-                    "HvLoader.efi",
-                    "lxhvloader.dll",
-                    "Windows/System32/hvix64.exe",
-                    "Windows/System32/hvax64.exe",
-                    "Windows/System32/kdstub.dll",
-                ] {
+                for name in FILES {
                     let path = esp.path().join("EFI/AZL2B").join(name);
                     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                     std::fs::write(path, b"payload").unwrap();

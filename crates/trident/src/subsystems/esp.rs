@@ -724,7 +724,7 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
 
 /// Seeds missing `EFI/AZLA` from `EFI/BOOT` via a staged directory rename.
 /// Detects MSHV from BOOT and preflights capacity before copying.
-/// Existing AZLA is validated for MSHV, never refreshed.
+/// When BOOT contains MSHV, existing AZLA is validated but never refreshed.
 pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
     let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
     let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
@@ -954,7 +954,7 @@ mod tests {
     use fs::File;
 
     use crate::engine::{
-        boot::{get_update_esp_dir_name, make_esp_dir_name_candidates},
+        boot::{get_update_esp_dir_name, make_esp_dir_name_candidates, mshv::FILES},
         install_index,
     };
     use trident_api::{
@@ -1678,17 +1678,7 @@ mod tests {
             .path()
             .join(ESP_EFI_DIRECTORY)
             .join("AZLA.bootstrap-tmp");
-        let files = [
-            "bootx64.efi",
-            "grubx64.efi",
-            "second.efi",
-            "HvLoader.efi",
-            "lxhvloader.dll",
-            "Windows/System32/hvix64.exe",
-            "Windows/System32/hvax64.exe",
-            "Windows/System32/kdstub.dll",
-        ];
-        for name in files {
+        for name in FILES {
             let path = boot.join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, name).unwrap();
@@ -1697,7 +1687,7 @@ mod tests {
         fs::write(temporary.join("stale"), "incomplete").unwrap();
 
         bootstrap_azla_from_fallback(esp.path()).unwrap();
-        for name in files {
+        for name in FILES {
             assert!(files_are_identical(&boot.join(name), &azla.join(name)));
         }
         assert!(!temporary.exists());
@@ -1724,16 +1714,7 @@ mod tests {
             .path()
             .join(ESP_EFI_DIRECTORY)
             .join("AZLA.bootstrap-tmp");
-        for name in [
-            "bootx64.efi",
-            "grubx64.efi",
-            "second.efi",
-            "HvLoader.efi",
-            "lxhvloader.dll",
-            "Windows/System32/hvix64.exe",
-            "Windows/System32/hvax64.exe",
-            "Windows/System32/kdstub.dll",
-        ] {
+        for name in FILES {
             let path = boot.join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, b"retained").unwrap();

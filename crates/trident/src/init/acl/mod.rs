@@ -62,7 +62,7 @@ impl<'a> ExpectedPartition<'a> {
 /// the expectations of the ACL image layout, and returns a HostStatus
 /// representing the current state of the host. This will be used to
 /// initialize the Trident datastore if it has not been created yet.
-/// Also discovers MSHV mode without modifying the ESP.
+/// Validates any detected MSHV bundle without modifying the ESP.
 pub fn initial_host_status() -> Result<HostStatus, Error> {
     let blk_devices = lsblk::list().context("Failed to run lsblk")?;
     let root_blk_device = blk_devices
@@ -322,6 +322,8 @@ mod tests {
     };
     use sysdefs::{osuuid::OsUuid, partition_types::DiscoverablePartitionType};
 
+    use crate::engine::boot::mshv::FILES;
+
     enum TestPartitions {
         Correct,
         MissingOne,
@@ -478,16 +480,7 @@ mod tests {
 
     /// Creates a complete BOOT bundle for discovery tests.
     fn create_mshv_bundle(esp_path: &Path) {
-        for name in [
-            "bootx64.efi",
-            "grubx64.efi",
-            "second.efi",
-            "HvLoader.efi",
-            "lxhvloader.dll",
-            "Windows/System32/hvix64.exe",
-            "Windows/System32/hvax64.exe",
-            "Windows/System32/kdstub.dll",
-        ] {
+        for name in FILES {
             let path = esp_path.join("EFI/BOOT").join(name);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, b"payload").unwrap();

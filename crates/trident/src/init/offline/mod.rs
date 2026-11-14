@@ -459,7 +459,7 @@ fn parse_lazy_partitions(
 
 /// Given a path to a Host Status file, initializes the datastore with the Host Status.
 /// This command can be executed offline in a chroot environment as part of MIC image customization.
-/// Rejects explicit MSHV mode; does not discover MSHV payloads.
+/// Rejects detected MSHV bundles, which offline initialization does not support.
 pub fn execute(
     hs_path: Option<&Path>,
     lazy_partitions: &[String],
