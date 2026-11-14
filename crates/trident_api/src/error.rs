@@ -712,6 +712,12 @@ pub enum ServicingError {
         hs_active_volume: String,
     },
 
+    #[error("Running hypervisor does not match expected slot '{expected_slot}' (observed: {observed_slot:?})")]
+    ValidateAbActiveHypervisor {
+        expected_slot: String,
+        observed_slot: Option<String>,
+    },
+
     #[error("Trident rebuild-raid validation failed")]
     ValidateRebuildRaid,
 

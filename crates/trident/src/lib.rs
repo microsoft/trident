@@ -69,7 +69,13 @@ pub use crate::{
 };
 
 use crate::{
-    engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
+    engine::{
+        ab_update,
+        rollback::{self, BootValidationResult},
+        runtime_update,
+        storage::rebuild,
+        SUBSYSTEMS,
+    },
     init::acl,
     osimage::OsImage,
     stream::DiskSelectionStrategy,
@@ -290,6 +296,7 @@ impl Trident {
         Ok(())
     }
 
+    /// Records operation errors, preserving the original A/B validation error if recovery fails.
     fn execute_and_record_error<F, T>(
         &mut self,
         datastore: &mut DataStore,
@@ -298,17 +305,20 @@ impl Trident {
     where
         F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
-        // AbUpdateHealthCheckFailed is a special case where we would like
-        // to preserve the last error across any recovery. This aids in
-        // surfacing the original error.
+        // AbUpdateHealthCheckFailed and AbUpdateHypervisorCheckFailed are
+        // special cases where the last error must be preserved across failed
+        // recovery attempts. This keeps the original health/hypervisor failure
+        // visible instead of replacing it with a secondary recovery error.
         debug!(
             "Execute and record error with servicing state: {:?} and last error: {:?}",
             datastore.host_status().servicing_state,
             datastore.host_status().last_error
         );
-        let last_error_to_preserve = if datastore.host_status().servicing_state
-            == ServicingState::AbUpdateHealthCheckFailed
-        {
+        let last_error_to_preserve = if matches!(
+            datastore.host_status().servicing_state,
+            ServicingState::AbUpdateHealthCheckFailed
+                | ServicingState::AbUpdateHypervisorCheckFailed
+        ) {
             datastore.host_status().last_error.clone()
         } else {
             None
@@ -607,6 +617,7 @@ impl Trident {
         })
     }
 
+    /// Adopts untracked ACL hosts as needed, then stages/finalizes the update.
     pub fn update(
         &mut self,
         datastore: &mut DataStore,
@@ -807,18 +818,21 @@ impl Trident {
         self.install(datastore, Operations::all(), false, Some(image))
     }
 
+    /// Validates finalized servicing/recovery and returns whether a reboot is needed.
     pub fn commit(
         &mut self,
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
-        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
-        // re-evaluate the current state of the host.
+        // If the host's servicing state is *Finalized, AbUpdateHealthCheckFailed,
+        // or AbUpdateHypervisorCheckFailed, re-evaluate the current state of
+        // the host to validate either the target boot or the recovery boot.
         let servicing_state = datastore.host_status().servicing_state;
         if !matches!(
             servicing_state,
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
+                | ServicingState::AbUpdateHypervisorCheckFailed
                 | ServicingState::ManualRollbackAbFinalized
         ) {
             info!(
@@ -829,9 +843,9 @@ impl Trident {
         }
 
         let servicing_type = match servicing_state {
-            ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
-                ServicingType::AbUpdate
-            }
+            ServicingState::AbUpdateFinalized
+            | ServicingState::AbUpdateHealthCheckFailed
+            | ServicingState::AbUpdateHypervisorCheckFailed => ServicingType::AbUpdate,
             ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
             ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
             _ => ServicingType::NoActiveServicing,
@@ -843,7 +857,11 @@ impl Trident {
             )
         });
 
-        if rollback_result.is_ok() {
+        // Report success only after provisioning, not when rollback is required.
+        if matches!(
+            rollback_result,
+            Ok(BootValidationResult::ValidBootProvisioned)
+        ) {
             if let Some(ref orchestrator) = self.orchestrator {
                 orchestrator.report_success(Some(
                     serde_yaml::to_string(&datastore.host_status())
@@ -853,11 +871,11 @@ impl Trident {
         }
 
         match rollback_result {
-            Ok(rollback::BootValidationResult::ValidBootProvisioned) => {
-                Ok((ExitKind::Done, servicing_type))
-            }
-            Ok(rollback::BootValidationResult::ValidBootHealthCheckFailed(e)) => {
-                debug!("Correct boot, but health check(s) failed: {e:?}");
+            Ok(BootValidationResult::ValidBootProvisioned) => Ok((ExitKind::Done, servicing_type)),
+            Ok(BootValidationResult::InvalidHypervisor(e))
+            | Ok(BootValidationResult::ValidBootHealthCheckFailed(e)) => {
+                // The caller must reboot to complete automatic recovery.
+                debug!("Boot validation requires rollback: {e:?}");
                 Ok((ExitKind::NeedsReboot, servicing_type))
             }
             Err(e) => {

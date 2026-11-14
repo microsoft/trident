@@ -286,6 +286,7 @@ fn decode_location(location: ProtoFileLocation) -> SourceLocation {
     }
 }
 
+/// Decodes preview states, preserving unknown wire values.
 #[cfg(feature = "preview")]
 pub(crate) fn decode_servicing_state(state: i32) -> ServicingState {
     match ProtoServicingState::try_from(state) {
@@ -306,6 +307,9 @@ pub(crate) fn decode_servicing_state(state: i32) -> ServicingState {
         Ok(ProtoServicingState::Provisioned) => ServicingState::Provisioned,
         Ok(ProtoServicingState::UpdateAbHealthCheckFailed) => {
             ServicingState::AbUpdateHealthCheckFailed
+        }
+        Ok(ProtoServicingState::UpdateAbHypervisorCheckFailed) => {
+            ServicingState::AbUpdateHypervisorCheckFailed
         }
         Err(_) => ServicingState::Unknown(state),
     }

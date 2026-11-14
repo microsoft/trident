@@ -40,6 +40,7 @@ mod clean_install;
 mod context;
 mod kexec;
 pub mod manual_rollback;
+pub(crate) mod mshv;
 mod newroot;
 pub mod provisioning_network;
 pub mod rollback;

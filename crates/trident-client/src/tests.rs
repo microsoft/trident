@@ -1485,10 +1485,15 @@ async fn preview_status_validation_and_rollback_use_domain_types() {
     assert_eq!(captured.validation_yaml.len(), 2);
 }
 
+/// Preview decoding preserves known, unspecified, and unknown states.
 #[cfg(feature = "preview")]
 #[tokio::test]
 async fn preview_status_enums_preserve_known_unspecified_and_unknown_values() {
     let servicing_states = [
+        (
+            ProtoServicingState::UpdateAbHypervisorCheckFailed as i32,
+            ServicingState::AbUpdateHypervisorCheckFailed,
+        ),
         (
             ProtoServicingState::Provisioned as i32,
             ServicingState::Provisioned,

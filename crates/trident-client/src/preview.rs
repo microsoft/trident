@@ -49,6 +49,7 @@ pub enum ServicingState {
     ManualRollbackAbFinalized,
     Provisioned,
     AbUpdateHealthCheckFailed,
+    AbUpdateHypervisorCheckFailed,
     Unknown(i32),
 }
 
