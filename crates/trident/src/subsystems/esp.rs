@@ -1671,7 +1671,7 @@ mod tests {
         }
     }
 
-    /// MSHV copies nested files and validates, but never refreshes, existing AZLA.
+    /// MSHV discovers secondary files and validates, but never refreshes, existing AZLA.
     #[test]
     fn test_bootstrap_azla_from_mshv_fallback() {
         let esp = TempDir::new().unwrap();
@@ -1686,6 +1686,9 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, name).unwrap();
         }
+        let secondary = "Windows/System32/image-specific.dll";
+        fs::create_dir_all(boot.join("Windows/System32")).unwrap();
+        fs::write(boot.join(secondary), b"secondary").unwrap();
         fs::create_dir_all(&temporary).unwrap();
         fs::write(temporary.join("stale"), "incomplete").unwrap();
 
@@ -1693,6 +1696,10 @@ mod tests {
         for name in FILES {
             assert!(files_are_identical(&boot.join(name), &azla.join(name)));
         }
+        assert!(files_are_identical(
+            &boot.join(secondary),
+            &azla.join(secondary)
+        ));
         assert!(!temporary.exists());
 
         fs::write(boot.join("HvLoader.efi"), "new fallback").unwrap();
@@ -1702,9 +1709,12 @@ mod tests {
             "HvLoader.efi"
         );
 
-        fs::remove_file(azla.join("Windows/System32/kdstub.dll")).unwrap();
+        fs::remove_file(azla.join(secondary)).unwrap();
+        bootstrap_azla_from_fallback(esp.path()).unwrap();
+        assert!(!azla.join(secondary).exists());
+        fs::remove_file(azla.join("lxhvloader.dll")).unwrap();
         assert!(bootstrap_azla_from_fallback(esp.path()).is_err());
-        assert!(!azla.join("Windows/System32/kdstub.dll").exists());
+        assert!(!azla.join("lxhvloader.dll").exists());
     }
 
     /// Failed preflight follows stale-copy cleanup and leaves BOOT untouched.

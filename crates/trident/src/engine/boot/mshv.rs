@@ -1,4 +1,9 @@
-use std::{fs, io::ErrorKind, path::Path};
+use std::{
+    collections::BTreeSet,
+    fs,
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{ensure, Context, Error};
 use nix::sys::statvfs;
@@ -11,18 +16,16 @@ use crate::engine::{
     EngineContext,
 };
 
-// This hardcoded x64 payload list limits the current implementation to x86-64.
+// Required top-level x64 boot files; secondary payloads vary between images.
 pub(crate) const FILES: &[&str] = &[
     "bootx64.efi",
     "grubx64.efi",
     "second.efi",
     "HvLoader.efi",
     "lxhvloader.dll",
-    "Windows/System32/hvix64.exe",
-    "Windows/System32/hvax64.exe",
-    "Windows/System32/kdstub.dll",
 ];
 
+const MSHV_ESP_PAYLOAD_DIR: &str = "Windows/System32";
 const SPACE_RESERVE: u64 = 1024 * 1024;
 
 /// Detects MSHV in an installed bootloader directory; marked bundles must be complete.
@@ -40,13 +43,19 @@ pub(crate) fn has_slot_mshv_bundle(bundle: &Path) -> Result<bool, Error> {
     Ok(false)
 }
 
-/// Checks allowed entries without requiring completeness or following symlinks.
-/// Matching ignores case; `temporary` also permits known `.new` and `.old` files.
-fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<(), Error> {
+/// Validates entries and discovers files without requiring completeness or following symlinks.
+/// System32 subdirectories are ignored; `.new` and `.old` suffixes are reserved for staging.
+fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<Vec<String>, Error> {
     ensure!(
         fs::symlink_metadata(directory)?.is_dir(),
         "Invalid payload directory"
     );
+    let secondary = directory
+        .strip_prefix(root)?
+        .to_str()
+        .context("Non-UTF-8 MSHV payload path")?
+        .eq_ignore_ascii_case(MSHV_ESP_PAYLOAD_DIR);
+    let mut files = Vec::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let path = entry.path();
@@ -54,13 +63,16 @@ fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<(), E
         let relative_name = relative.to_str().context("Non-UTF-8 MSHV payload path")?;
         let kind = entry.file_type()?;
         if kind.is_dir() {
+            if secondary {
+                continue;
+            }
             ensure!(
                 relative_name.eq_ignore_ascii_case("Windows")
-                    || relative_name.eq_ignore_ascii_case("Windows/System32"),
+                    || relative_name.eq_ignore_ascii_case(MSHV_ESP_PAYLOAD_DIR),
                 "Unexpected payload directory: {}",
                 relative.display()
             );
-            validate_tree(root, &path, temporary)?;
+            files.extend(validate_tree(root, &path, temporary)?);
         } else {
             ensure!(
                 kind.is_file(),
@@ -68,24 +80,29 @@ fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<(), E
                 path.display()
             );
             ensure!(
-                FILES.iter().any(|name| {
-                    relative_name.eq_ignore_ascii_case(name)
-                        || temporary
-                            && (relative_name.eq_ignore_ascii_case(&format!("{name}.new"))
-                                || relative_name.eq_ignore_ascii_case(&format!("{name}.old")))
-                }),
+                secondary
+                    && (temporary
+                        || !relative_name.rsplit_once('.').is_some_and(|(_, suffix)| {
+                            suffix.eq_ignore_ascii_case("new") || suffix.eq_ignore_ascii_case("old")
+                        }))
+                    || FILES.iter().any(|name| {
+                        relative_name.eq_ignore_ascii_case(name)
+                            || temporary
+                                && (relative_name.eq_ignore_ascii_case(&format!("{name}.new"))
+                                    || relative_name.eq_ignore_ascii_case(&format!("{name}.old")))
+                    }),
                 "Unexpected payload file: {}",
                 relative.display()
             );
+            files.push(relative_name.to_owned());
         }
     }
-    Ok(())
+    Ok(files)
 }
 
-/// Requires the complete allowlisted layout, relying on FAT's case-insensitive lookups.
-/// Does not validate executable contents or hypervisor identity.
-pub(crate) fn validate_bundle(root: &Path) -> Result<(), Error> {
-    validate_tree(root, root, false)?;
+/// Discovers a complete bundle, relying on FAT's case-insensitive lookups.
+fn bundle_files(root: &Path) -> Result<Vec<String>, Error> {
+    let mut files = validate_tree(root, root, false)?;
     for name in FILES {
         ensure!(
             fs::symlink_metadata(root.join(name))
@@ -94,6 +111,14 @@ pub(crate) fn validate_bundle(root: &Path) -> Result<(), Error> {
             "Invalid MSHV payload file: {name}"
         );
     }
+    files.sort();
+    Ok(files)
+}
+
+/// Requires the top-level boot files; optional System32 payloads are discovered.
+/// Does not validate executable contents or hypervisor identity.
+pub(crate) fn validate_bundle(root: &Path) -> Result<(), Error> {
+    bundle_files(root)?;
     Ok(())
 }
 
@@ -120,6 +145,22 @@ fn allocation(path: &Path, cluster: u64) -> Result<u64, Error> {
     Ok(total)
 }
 
+/// Budgets selected bundle files and their parents, excluding ignored subdirectories.
+fn bundle_allocation(root: &Path, cluster: u64) -> Result<u64, Error> {
+    match fs::symlink_metadata(root) {
+        Ok(_) => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error.into()),
+    }
+    let mut directories = BTreeSet::from([PathBuf::new()]);
+    let mut total = 0;
+    for name in validate_tree(root, root, true)? {
+        total += allocation(&root.join(&name), cluster)?;
+        directories.extend(Path::new(&name).ancestors().skip(1).map(Path::to_path_buf));
+    }
+    Ok(total + directories.len() as u64 * cluster)
+}
+
 /// Requires room for the incoming allocation plus a reserve, crediting planned reclamation.
 fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<(), Error> {
     ensure!(
@@ -140,13 +181,13 @@ pub(crate) fn preflight_staging(
     let stats = statvfs::statvfs(destination_esp)?;
     let cluster = stats.fragment_size();
     ensure!(cluster > 0, "Invalid ESP allocation unit");
-    let bundle = allocation(&source_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH), cluster)?;
+    let bundle = bundle_allocation(&source_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH), cluster)?;
     let mut required = bundle + allocation(&source_esp.join(UKI_DIRECTORY), cluster)?;
     // Account for slot-addon templates whose selected file may replace a smaller live addon.
     required += allocation(&source_esp.join("acl/uki-addons"), cluster)?;
     if ctx.spec.os.uefi_fallback != UefiFallbackMode::Disabled {
         let existing_fallback = destination_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-        required += bundle.max(allocation(&existing_fallback, cluster)?);
+        required += bundle.max(bundle_allocation(&existing_fallback, cluster)?);
     }
     let mut reclaimed = allocation(target_bundle, cluster)?;
     for path in uki::find_ukis_to_remove_before_staging(ctx, &destination_esp.join(UKI_DIRECTORY))?
@@ -165,17 +206,17 @@ pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<(), Error> 
     check_space(
         stats.blocks_available() * cluster,
         0,
-        allocation(from, cluster)?,
+        bundle_allocation(from, cluster)?,
     )
 }
 
-/// Copies a validated bundle non-atomically into an allowlisted destination.
+/// Copies a validated bundle, including discovered System32 files, non-atomically.
 /// For atomic publication, copy to a temporary directory and rename it.
 pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<(), Error> {
-    validate_bundle(from)?;
+    let files = bundle_files(from)?;
     fs::create_dir_all(to)?;
     validate_tree(to, to, false)?;
-    for name in FILES {
+    for name in &files {
         let destination = to.join(name);
         fs::create_dir_all(destination.parent().context("Missing payload parent")?)?;
         fs::copy(from.join(name), destination)?;
@@ -184,30 +225,32 @@ pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<(), Error> {
 }
 
 /// Reconciles `.old` backups and stages all `.new` files before replacing fallback.
+/// Removes retired secondary payload files after publishing the selected bundle.
 /// Whole-bundle replacement is not atomic.
 pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<(), Error> {
-    validate_bundle(from)?;
-    match fs::symlink_metadata(to) {
+    let files = bundle_files(from)?;
+    let existing = match fs::symlink_metadata(to) {
         Ok(_) => {
-            validate_tree(to, to, true)?;
+            let existing = validate_tree(to, to, true)?;
             ensure!(
                 fs::canonicalize(from)? != fs::canonicalize(to)?,
                 "Source and fallback directories must differ"
             );
+            existing
         }
-        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => Vec::new(),
         Err(error) => return Err(error.into()),
-    }
+    };
     let stats = statvfs::statvfs(to.parent().context("Missing fallback parent")?)?;
     let cluster = stats.fragment_size();
     ensure!(cluster > 0, "Invalid ESP allocation unit");
-    let required = allocation(from, cluster)?;
+    let required = bundle_allocation(from, cluster)?;
     let mut reclaimed = 0;
-    for name in FILES {
+    for name in &files {
         reclaimed += allocation(&to.join(format!("{name}.new")), cluster)?;
     }
     check_space(stats.blocks_available() * cluster, reclaimed, required)?;
-    for name in FILES {
+    for name in &files {
         let destination = to.join(name);
         let previous = to.join(format!("{name}.old"));
         fs::create_dir_all(destination.parent().context("Missing payload parent")?)?;
@@ -220,19 +263,30 @@ pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<(), Error> {
         }
         fs::copy(from.join(name), to.join(format!("{name}.new")))?;
     }
-    for name in FILES {
+    for name in &files {
         let destination = to.join(name);
         if destination.exists() {
             fs::rename(&destination, to.join(format!("{name}.old")))?;
         }
     }
-    for name in FILES {
+    for name in &files {
         fs::rename(to.join(format!("{name}.new")), to.join(name))?;
     }
-    for name in FILES {
+    for name in &files {
         let previous = to.join(format!("{name}.old"));
         if previous.exists() {
             fs::remove_file(previous)?;
+        }
+    }
+    for name in existing {
+        let base = name
+            .rsplit_once('.')
+            .filter(|(_, suffix)| {
+                suffix.eq_ignore_ascii_case("new") || suffix.eq_ignore_ascii_case("old")
+            })
+            .map_or(name.as_str(), |(base, _)| base);
+        if !files.iter().any(|file| file.eq_ignore_ascii_case(base)) {
+            fs::remove_file(to.join(name))?;
         }
     }
     Ok(())
@@ -273,6 +327,136 @@ mod tests {
             assert_eq!(fs::read(target.join(name)).unwrap(), b"new");
             assert_eq!(fs::read(active.join(name)).unwrap(), b"retained");
         }
+    }
+
+    #[test]
+    fn discovers_optional_secondary_payload_without_recursing() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        let target = temp.path().join("target");
+        let secondary = source.join("Windows/System32");
+        bundle(&source, b"new");
+        fs::create_dir_all(secondary.join("drivers")).unwrap();
+        fs::write(secondary.join("image-specific.bin"), b"\0\xffpayload").unwrap();
+        fs::write(secondary.join("drivers/ignored.dll"), b"ignored").unwrap();
+
+        copy_bundle(&source, &target).unwrap();
+        assert_eq!(
+            fs::read(target.join("Windows/System32/image-specific.bin")).unwrap(),
+            b"\0\xffpayload"
+        );
+        assert!(!target.join("Windows/System32/drivers").exists());
+        assert!(has_slot_mshv_bundle(&target).unwrap());
+
+        fs::remove_dir_all(source.join("Windows")).unwrap();
+        let without_secondary = temp.path().join("without-secondary");
+        copy_bundle(&source, &without_secondary).unwrap();
+        assert!(!without_secondary.join("Windows").exists());
+        fs::create_dir_all(&secondary).unwrap();
+        let empty_secondary = temp.path().join("empty-secondary");
+        copy_bundle(&source, &empty_secondary).unwrap();
+        assert!(!empty_secondary.join("Windows").exists());
+
+        for name in ["payload.dll.new", "payload.dll.old"] {
+            let path = secondary.join(name);
+            fs::write(&path, b"reserved temporary name").unwrap();
+            assert!(validate_bundle(&source).is_err());
+            fs::remove_file(path).unwrap();
+        }
+        unix_fs::symlink(temp.path().join("outside"), secondary.join("linked.dll")).unwrap();
+        let rejected = temp.path().join("rejected");
+        assert!(copy_bundle(&source, &rejected).is_err());
+        assert!(!rejected.exists());
+    }
+
+    #[test]
+    fn replaces_changing_secondary_payload_and_recovers_partial_publication() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        let fallback = temp.path().join("fallback");
+        bundle(&source, b"new");
+        bundle(&fallback, b"old");
+        let secondary = "Windows/System32";
+        fs::create_dir_all(source.join(secondary)).unwrap();
+        fs::create_dir_all(fallback.join(secondary)).unwrap();
+        fs::write(source.join(secondary).join("current.dll"), b"current").unwrap();
+        fs::write(
+            fallback.join(secondary).join("current.dll.old"),
+            b"retained",
+        )
+        .unwrap();
+        fs::write(
+            fallback.join(secondary).join("current.dll.new"),
+            b"interrupted",
+        )
+        .unwrap();
+        for name in ["obsolete.dll", "obsolete.dll.old", "obsolete.dll.new"] {
+            fs::write(fallback.join(secondary).join(name), b"obsolete").unwrap();
+        }
+
+        replace_bundle(&source, &fallback).unwrap();
+        replace_bundle(&source, &fallback).unwrap();
+        assert_eq!(
+            fs::read(fallback.join(secondary).join("current.dll")).unwrap(),
+            b"current"
+        );
+        for name in [
+            "current.dll.old",
+            "current.dll.new",
+            "obsolete.dll",
+            "obsolete.dll.old",
+            "obsolete.dll.new",
+        ] {
+            assert!(!fallback.join(secondary).join(name).exists());
+        }
+
+        fs::remove_dir_all(source.join("Windows")).unwrap();
+        replace_bundle(&source, &fallback).unwrap();
+        assert!(!fallback.join(secondary).join("current.dll").exists());
+        validate_bundle(&fallback).unwrap();
+    }
+
+    #[test]
+    fn budgets_discovered_secondary_payload_but_not_ignored_subdirectories() {
+        let temp = TempDir::new().unwrap();
+        let source_esp = temp.path().join("source");
+        let source = source_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let esp = temp.path().join("esp");
+        let fallback = esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let target = esp.join("EFI/AZLB");
+        bundle(&source, b"new");
+        bundle(&fallback, b"retained");
+        let secondary = source.join("Windows/System32");
+        fs::create_dir_all(&secondary).unwrap();
+        let large = secondary.join("image-specific.bin");
+        let stats = statvfs::statvfs(&esp).unwrap();
+        File::create(&large)
+            .unwrap()
+            .set_len(stats.blocks_available() * stats.fragment_size() + SPACE_RESERVE)
+            .unwrap();
+        let mut ctx = EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            ab_active_volume: Some(AbVolumeSelection::VolumeA),
+            ..Default::default()
+        };
+        ctx.spec.os.uefi_fallback = UefiFallbackMode::Disabled;
+
+        assert!(preflight_staging(&ctx, &source_esp, &esp, &target).is_err());
+        assert!(preflight_bootstrap(&source, &esp).is_err());
+        assert!(replace_bundle(&source, &fallback).is_err());
+        assert_eq!(
+            fs::read(fallback.join("HvLoader.efi")).unwrap(),
+            b"retained"
+        );
+        assert!(!target.exists());
+
+        fs::create_dir(secondary.join("ignored")).unwrap();
+        fs::rename(&large, secondary.join("ignored/large.bin")).unwrap();
+        preflight_staging(&ctx, &source_esp, &esp, &target).unwrap();
+        preflight_bootstrap(&source, &esp).unwrap();
+        replace_bundle(&source, &fallback).unwrap();
+        assert_eq!(fs::read(fallback.join("HvLoader.efi")).unwrap(), b"new");
+        assert!(!fallback.join("Windows/System32/ignored").exists());
     }
 
     /// Allowlist matching ignores case; temporary names require opt-in.
@@ -409,6 +593,16 @@ mod tests {
             bundle(&active, b"retained");
             bundle(&target, b"candidate");
             bundle(&fallback, b"retained");
+            let secondary = "Windows/System32/image-defined.bin";
+            for (root, contents) in [
+                (&active, b"retained".as_slice()),
+                (&target, b"candidate".as_slice()),
+                (&fallback, b"retained".as_slice()),
+            ] {
+                let path = root.join(secondary);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, contents).unwrap();
+            }
             let mut ctx = EngineContext {
                 servicing_type: ServicingType::AbUpdate,
                 ab_active_volume: Some(AbVolumeSelection::VolumeA),
@@ -419,7 +613,7 @@ mod tests {
             ctx.spec.os.uefi_fallback = mode;
             esp::set_uefi_fallback_contents(&ctx, ServicingState::AbUpdateStaged, temp.path())
                 .unwrap();
-            for name in FILES {
+            for name in FILES.iter().copied().chain([secondary]) {
                 let expected = if mode == UefiFallbackMode::Optimistic {
                     b"candidate".as_slice()
                 } else {
@@ -429,7 +623,7 @@ mod tests {
             }
             esp::set_uefi_fallback_contents(&ctx, ServicingState::AbUpdateFinalized, temp.path())
                 .unwrap();
-            for name in FILES {
+            for name in FILES.iter().copied().chain([secondary]) {
                 let expected = if mode == UefiFallbackMode::Disabled {
                     b"retained".as_slice()
                 } else {
@@ -446,7 +640,7 @@ mod tests {
                 temp.path(),
             )
             .unwrap();
-            for name in FILES {
+            for name in FILES.iter().copied().chain([secondary]) {
                 assert_eq!(fs::read(fallback.join(name)).unwrap(), b"retained");
             }
         }

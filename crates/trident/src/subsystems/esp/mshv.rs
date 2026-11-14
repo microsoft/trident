@@ -27,7 +27,7 @@ pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
     if !ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
         return Ok(());
     }
-    // The current payload allowlist supports only x86-64.
+    // The required bootloader files currently support only x86-64.
     if !SystemArchitecture::current().is_x64() || !ctx.image_distro().is_acl() || !ctx.is_uki()? {
         return Err(unsupported(
             "Slot-owned MSHV requires an x86-64 ACL UKI image",
