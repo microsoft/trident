@@ -9,6 +9,7 @@ use anyhow::{ensure, Context, Error};
 use nix::sys::statvfs;
 
 use osutils::uki as uki_utils;
+
 use trident_api::{config::UefiFallbackMode, constants::EFI_DEFAULT_BIN_RELATIVE_PATH};
 
 use crate::engine::{
@@ -25,6 +26,9 @@ pub(crate) const FILES: &[&str] = &[
     "lxhvloader.dll",
 ];
 
+/// Optional bundle-relative directory containing secondary MSHV payload binaries.
+/// Contents vary between images, so discover its direct files instead of
+/// maintaining a fixed binary list. Subdirectories are ignored.
 const MSHV_ESP_PAYLOAD_DIR: &str = "Windows/System32";
 const SPACE_RESERVE: u64 = 1024 * 1024;
 
@@ -210,7 +214,14 @@ pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<(), Error> 
     )
 }
 
-/// Copies a validated bundle, including discovered System32 files, non-atomically.
+/// Copies the required top-level boot files listed in `FILES` and any direct
+/// secondary MSHV payload files from the optional `MSHV_ESP_PAYLOAD_DIR`,
+/// preserving bundle-relative paths. Subdirectories are ignored, and an absent
+/// secondary directory is allowed.
+///
+/// Validates and discovers the source payload before writing, so missing
+/// required files or traversal errors do not leave a partially copied payload.
+/// Copying itself is non-atomic and can leave partial output on an I/O failure.
 /// For atomic publication, copy to a temporary directory and rename it.
 pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<(), Error> {
     let files = bundle_files(from)?;

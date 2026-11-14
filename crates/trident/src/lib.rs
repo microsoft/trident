@@ -305,7 +305,10 @@ impl Trident {
     where
         F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
-        // A recovery error must not replace the original health/hypervisor failure.
+        // AbUpdateHealthCheckFailed and AbUpdateHypervisorCheckFailed are
+        // special cases where the last error must be preserved across failed
+        // recovery attempts. This keeps the original health/hypervisor failure
+        // visible instead of replacing it with a secondary recovery error.
         debug!(
             "Execute and record error with servicing state: {:?} and last error: {:?}",
             datastore.host_status().servicing_state,
@@ -818,7 +821,9 @@ impl Trident {
         &mut self,
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
-        // Validate finalized boots and health/hypervisor recovery.
+        // If the host's servicing state is *Finalized, AbUpdateHealthCheckFailed,
+        // or AbUpdateHypervisorCheckFailed, re-evaluate the current state of
+        // the host to validate either the target boot or the recovery boot.
         let servicing_state = datastore.host_status().servicing_state;
         if !matches!(
             servicing_state,

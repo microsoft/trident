@@ -220,9 +220,21 @@ fn remove_uki_and_addons(path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Frees ESP space by removing target-slot/OS-index UKIs and their addon directories.
-/// Also removes original UKIs for OS index 0 once Trident manages its active slot.
-/// Other slots and OS indices are preserved.
+/// Cleans up old UKIs for the target slot before staging a new one, freeing
+/// ESP space. This runs for all UKI-based A/B updates (not just ACL) because
+/// ESP space constraints are a general concern.
+///
+/// When staging a UKI for slot X on OS N, the old slot X/OS N UKI is being
+/// replaced and can be removed. Other slots and other OS indices are preserved.
+/// Each selected UKI's addon directory is removed with it.
+///
+/// Removes:
+/// 1. Trident-managed UKIs matching the target slot+OS-index (e.g. all `azla0`
+///    files when staging for slot A OS 0, regardless of update index).
+/// 2. Non-Trident-managed (original install) UKIs, but only for OS index 0
+///    when a Trident-managed UKI for its active slot already exists, so the
+///    original install UKI is no longer the sole rollback.
+/// 3. Interrupted staging's temporary UKI and any orphaned addon directory.
 pub fn cleanup_ukis_before_staging(
     ctx: &EngineContext,
     mount_point: &Path,
@@ -255,15 +267,24 @@ pub(crate) fn find_ukis_to_remove_before_staging(
     let active_suffix = format!("{active_slot}.efi");
     let trident_ukis = enumerate_trident_managed_ukis(esp_uki_directory)?;
 
-    // Select all update indices for the target slot and OS index.
+    // Select Trident-managed UKIs for the target slot+OS-index, across all
+    // update indices (e.g. vmlinuz-100-azla0.efi, vmlinuz-102-azla0.efi).
     for (_index, suffix, path) in &trident_ukis {
         if *suffix == target_suffix {
             removals.push(path.clone());
         }
     }
 
-    // Only OS 0 owns the original UKI. Its managed active slot is sufficient
-    // rollback; requiring both slots would leave too little ESP space to stage.
+    // Select non-Trident-managed UKIs only if:
+    // - This is install_index 0 (the OS that placed the original UKI), AND
+    // - Trident already manages the active slot, so the original UKI is
+    //   superseded as rollback.
+    // In multiboot, install_index > 0 never owns the original UKI: it has
+    // OS 0's partition references baked in and cannot boot other OS instances.
+    // This intentionally does not require both slots to be managed. For
+    // example, a roughly 125 MB ESP cannot hold three roughly 50 MB UKIs.
+    // Removing the original before staging frees space while retaining the
+    // managed active slot as rollback.
     let has_active_slot_uki = trident_ukis
         .iter()
         .any(|(_index, suffix, _)| *suffix == active_suffix);

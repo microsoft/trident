@@ -39,9 +39,17 @@ pub enum BootValidationResult {
     InvalidHypervisor(TridentError),
 }
 
-/// Validates the boot device and installed MSHV bundle, assuming hypervisor identity matches.
-/// Commits a valid target or reconciles rollback status. Trial A/B validation failures
-/// can request recovery; recovery failures return errors without another rollback.
+/// Validates that the firmware correctly booted from the expected target OS
+/// image rather than rolling back, and reconciles the Host Status accordingly.
+///
+/// Checks the boot device and installed MSHV bundle. The hypervisor identity
+/// hook currently assumes success rather than verifying the running hypervisor.
+///
+/// A successful finalized boot continues the commit process. An unexpected boot
+/// device returns an error, updating Host Status where rollback reconciliation
+/// requires it. Trial A/B health or hypervisor validation failures can request
+/// recovery; failed recovery returns an error without another rollback or
+/// changing Host Status.
 #[tracing::instrument(skip_all)]
 pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
     info!("Validating whether host correctly booted from target OS image");
@@ -52,7 +60,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         ServicingState::AbUpdateFinalized
         | ServicingState::CleanInstallFinalized
         | ServicingState::ManualRollbackAbFinalized => datastore.host_status().ab_active_volume,
-        // Invert the context volume so recovery targets the retained servicing OS.
+        // For AbUpdateHealthCheckFailed or AbUpdateHypervisorCheckFailed, use
+        // the opposite of the active volume set in Host Status, so recovery
+        // validates the retained servicing OS rather than the failed candidate.
         ServicingState::AbUpdateHealthCheckFailed
         | ServicingState::AbUpdateHypervisorCheckFailed => {
             match datastore.host_status().ab_active_volume {
@@ -156,7 +166,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         //
         (false, ServicingState::AbUpdateHealthCheckFailed)
         | (false, ServicingState::AbUpdateHypervisorCheckFailed) => {
-            // Failed recovery leaves Host Status unchanged.
+            // For an A/B update whose health or hypervisor validation failed,
+            // failure to boot back into the retained servicing OS is a failed
+            // recovery: report the error and leave Host Status unchanged.
             error!("Host failed to rollback into the servicing OS");
             return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
                 root_device_path: current_device_path.to_string_lossy().to_string(),

@@ -81,8 +81,9 @@ impl Subsystem for EspSubsystem {
 /// UEFI fallback is handled in two stages:
 /// 1. During finalize:
 ///    * Clean install copies the target OS boot files (always volume A).
-///    * A/B update copies the candidate in optimistic mode or the retained slot
-///      in conservative mode.
+///    * A/B update copies the candidate before boot validation in optimistic
+///      mode, or the retained slot in conservative mode so fallback continues
+///      to boot the previously working OS.
 ///    * Manual A/B rollback copies the rollback target in either enabled mode.
 /// 2. During A/B update commit, after boot validation, conservative mode copies
 ///    the target OS boot files. Optimistic mode needs no further copy.
@@ -330,7 +331,11 @@ where
     Ok((temp_image, computed_hash))
 }
 
-/// Deploys boot files, preflighting MSHV capacity before reclaiming target-slot files.
+/// Performs file-based update of a stand-alone ESP volume by copying boot files.
+///
+/// Mounts the source ESP image, copies boot files into the selected target-slot
+/// directory, and stages the UKI when applicable. For MSHV, validates the bundle
+/// and preflights capacity before reclaiming target-slot boot files and UKIs.
 /// Retained-slot payloads are preserved.
 fn copy_file_artifacts(
     temp_image_path: &Path,
@@ -387,6 +392,8 @@ fn copy_file_artifacts(
             !source_bundle.join("HvLoader.efi").try_exists()?,
             "An MSHV image must declare COSI bootloader type 'efitreeloader-mshv-systemd-boot'"
         );
+        // Generate the ordinary boot-file paths from the temporary directory
+        // where the source ESP image is mounted.
         generate_boot_filepaths(
             temp_mount_dir,
             ctx.is_uki().unstructured("UKI setting unknown")?,
@@ -426,8 +433,12 @@ fn copy_file_artifacts(
         // Prepare ESP directory structure for UKI boot
         uki::prepare_esp_for_uki(mount_point, &ctx.esp_mount_path)?;
 
-        // MSHV cleaned up after preflight; other UKI images reclaim space here.
-        // A crash before staging may lose the target UKI, but preserves the active slot.
+        // Clean up old UKIs for the target slot before staging the new one.
+        // MSHV already did this after its capacity preflight; other UKI images
+        // reclaim space here because the ESP may not fit old and new UKIs
+        // simultaneously (e.g. on a 128 MB ESP). A crash between cleanup and
+        // staging can remove the target slot's old UKI without a replacement,
+        // but the active slot's UKI is preserved, retaining a bootable rollback.
         if !slot_mshv {
             uki::cleanup_ukis_before_staging(ctx, mount_point, &ctx.esp_mount_path)?;
         }
@@ -480,17 +491,29 @@ fn copy_file_artifacts(
     Ok(())
 }
 
-/// Selects the slot to copy into `EFI/BOOT`; `None` leaves fallback unchanged.
+/// Determines the source directory to copy UEFI fallback boot files from.
+/// This varies based on the servicing state and UEFI fallback mode.
 ///
-/// | Servicing state | Optimistic | Conservative |
-/// | --- | --- | --- |
-/// | CleanInstallStaged | A | A |
-/// | AbUpdateStaged | Candidate | Retained |
-/// | AbUpdateFinalized | None | Validated target |
-/// | ManualRollbackAbStaged | Rollback target | Rollback target |
+/// 1. During finalize:
+///    * Clean install uses volume A, the target OS volume.
+///    * A/B update:
+///      - Optimistic uses the opposite of the recorded active volume, which
+///        contains the newly staged candidate's boot files.
+///      - Conservative uses the recorded active volume, retaining the
+///        previously working OS as fallback (this may be a redundant copy).
+///    * Manual A/B rollback uses the opposite of the recorded active volume,
+///      the rollback target, in either enabled mode.
+/// 2. During commit, after the target OS boot has been verified:
+///    * Clean install needs no copy because finalize already populated fallback.
+///    * A/B update:
+///      - Optimistic needs no copy because finalize already copied the candidate.
+///      - Conservative uses the validated target volume from
+///        `ctx.get_ab_update_volume()`. The recorded active volume still refers
+///        to the pre-update OS until commit updates Host Status.
 ///
-/// Disabled fallback and unlisted states return `None`.
-/// A missing active slot defaults to A in the two A/B staging cases.
+/// Returns `None` to leave fallback unchanged when disabled or for unlisted
+/// states. A missing active volume defaults to A for `AbUpdateStaged` and
+/// `ManualRollbackAbStaged`.
 fn find_uefi_fallback_source_dir_name(
     ctx: &EngineContext,
     servicing_state: ServicingState,
@@ -575,7 +598,11 @@ fn skip_uefi_fallback_copy(
     false
 }
 
-/// Replaces fallback with nested MSHV or top-level ordinary files.
+/// Copies boot files from the `source_esp_name` folder to the UEFI fallback
+/// folder, `EFI/BOOT`.
+///
+/// Copies the complete nested bundle for MSHV, or top-level files for ordinary
+/// bootloaders, replacing existing fallback files.
 /// Skips copying from an unseeded AZLA during A/B updates.
 fn copy_boot_files_for_uefi_fallback(
     mount_point: &Path,
@@ -724,9 +751,14 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Seeds missing `EFI/AZLA` from `EFI/BOOT` via a staged directory rename.
-/// Detects MSHV from BOOT and preflights capacity before copying.
-/// When BOOT contains MSHV, existing AZLA is validated but never refreshed.
+/// Ensures `EFI/AZLA` exists on the ESP, seeding it from the `EFI/BOOT` fallback
+/// loader if it is missing. Used by offline-initialize and ACL lazy adoption so
+/// a freshly derived HostStatus is backed by the expected on-disk ESP layout
+/// before the first A/B update or manual rollback assumes AZLA already exists.
+///
+/// Detects MSHV from BOOT, preflights capacity for its bundle, and publishes a
+/// complete copy via a staged directory rename. Existing AZLA is never refreshed:
+/// it is validated when BOOT contains MSHV, or left untouched for ordinary BOOT.
 pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
     let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
     let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
@@ -740,7 +772,12 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
             "AZLA volume ESP path {:?} does not exist, attempting to copy from fallback location",
             azla_esp_path
         );
-        // An incomplete published AZLA would be skipped or rejected on retry.
+        // Stage the copy in a temporary sibling directory and publish it via
+        // an atomic rename only once the copy has fully succeeded. Creating
+        // AZLA directly before the copy completes could leave a partially
+        // populated directory on failure. Ordinary-mode retries would skip
+        // that directory because it exists, while MSHV retries would reject
+        // its incomplete bundle rather than repair it.
         let azla_tmp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA.bootstrap-tmp");
         if azla_tmp_path.exists() {
             fs::remove_dir_all(&azla_tmp_path).context(format!(
@@ -1223,7 +1260,7 @@ mod tests {
                 UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                Some("AZLA".to_string()), // before reboot, copy the clean-install target
+                Some("AZLA".to_string()), // in finalize, with 'conservative', copy from volume A (volume we just put COSI files on)
                 "Validate CleanInstallStaged + Conservative + active volume A ==> AZLA",
             ),
             (
@@ -1231,7 +1268,7 @@ mod tests {
                 UefiFallbackMode::Optimistic,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::CleanInstall,
-                Some("AZLA".to_string()), // before reboot, copy the clean-install target
+                Some("AZLA".to_string()), // in finalize, with 'optimistic', copy from volume A (volume we just put COSI files on)
                 "Validate CleanInstallStaged + Optimistic + active volume A ==> AZLA",
             ),
             (
@@ -1239,7 +1276,7 @@ mod tests {
                 UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLA".to_string()), // before reboot, preserve the retained slot as fallback
+                Some("AZLA".to_string()), // in finalize, with 'conservative', copy from active volume (the COSI bits have not been validated yet)
                 "Validate AbUpdateStaged + Conservative + active volume A ==> AZLA",
             ),
             (
@@ -1247,7 +1284,7 @@ mod tests {
                 UefiFallbackMode::Optimistic,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLB".to_string()), // before reboot, copy the staged candidate
+                Some("AZLB".to_string()), // in finalize, with 'optimistic', copy from inactive volume (that we just put COSI files on)
                 "Validate AbUpdateStaged + Optimistic + active volume A ==> AZLB",
             ),
             (
@@ -1263,7 +1300,9 @@ mod tests {
                 UefiFallbackMode::Conservative,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                Some("AZLB".to_string()), // in commit, copy from the validated update target
+                // In commit, with 'conservative', copy the validated update target;
+                // the recorded active volume still refers to the pre-update OS.
+                Some("AZLB".to_string()),
                 "Validate AbUpdateFinalized + Conservative + active volume A ==> AZLB",
             ),
             (
@@ -1279,7 +1318,7 @@ mod tests {
                 UefiFallbackMode::Optimistic,
                 Some(AbVolumeSelection::VolumeA),
                 ServicingType::AbUpdate,
-                None, // optimistic fallback already contains the candidate
+                None, // in commit, with 'optimistic', no copy is needed because it was done in finalize
                 "Validate AbUpdateFinalized + Optimistic + active volume A ==> None",
             ),
             (
@@ -1611,7 +1650,8 @@ mod tests {
 
         bootstrap_azla_from_fallback(esp_dir.path()).unwrap();
 
-        // Ordinary mode neither validates nor refreshes existing AZLA.
+        // AZLA must be left untouched: ordinary-mode bootstrap only runs when
+        // AZLA is absent, so a second call neither validates nor refreshes it.
         let contents = fs::read_to_string(&sentinel_path).unwrap();
         assert_eq!(
             contents.trim(),
