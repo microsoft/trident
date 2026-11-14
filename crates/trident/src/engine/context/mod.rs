@@ -191,7 +191,6 @@ impl EngineContext {
         })
     }
 
-    #[allow(dead_code)]
     pub(crate) fn bootloader(&self) -> Option<&Bootloader> {
         self.bootloader.as_ref()
     }
