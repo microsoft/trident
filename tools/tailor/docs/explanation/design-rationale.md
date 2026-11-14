@@ -11,7 +11,7 @@ Image Customizer already owns image semantics: storage, packages, services, scri
 - loading workspace and image definitions,
 - merging fragments,
 - expanding matrices,
-- resolving/pinning toolchains and base images,
+- resolving toolchains and base images for each build,
 - building the IC command line,
 - running the IC container per cell.
 

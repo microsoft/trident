@@ -23,10 +23,12 @@ matrix:
 Here `by-edition/...` applies before `by-channel/...`. This is intentional: adding a directory or changing alphabetical order cannot silently change precedence. Authors control precedence where they declare the axes.
 
 A fragment can target a **combination** of axes (`by-edition+arch/pro+arm64.yaml`, a conjunction) or
-**several values of one axis** (`by-channel/stable+edge.yaml`, a disjunction). Such fragments sort after the
-single-axis ones they refine (more axes = more specific = later), and a narrower single-value fragment wins
-over a broader disjunction on the same axis. `tailor explain <image> --cell <slug>` prints the exact order;
-see [image.yaml](../reference/image-yaml.md) and [Merge directives](../reference/directives.md).
+**several values of one axis** (`by-channel/stable+edge.yaml`, a disjunction). Its optional inline
+`match:` further restricts the path match with nested `all`/`any`/`not` predicates; it does not
+alter precedence. Composite fragments sort after single-axis ones, while a narrower single-value
+fragment wins over a broader disjunction on the same axis. `tailor explain <image> --cell <slug>`
+prints the applicable order; see [Fragments](../reference/image-yaml.md#fragments) and
+[Field-specific merging](../reference/directives.md#field-specific-merging).
 
 ## Fragment sort order
 
@@ -36,7 +38,7 @@ For a given cell, the fragments that apply are sorted by these keys, in order, a
    (`by-edition/pro.yaml`) applies before a multi-axis one (`by-edition+arch/pro+arm64.yaml`), so the
    more specific composite wins.
 2. **Axis declaration order** — among fragments of equal arity, the axis declared earlier in `matrix:`
-   applies first (later-declared axes win later conflicts).
+   applies first. Feature fragments follow matrix-axis fragments of equal arity.
 3. **Breadth** — a broader disjunction (`by-channel/stable+edge.yaml`) applies before a narrower
    single value (`by-channel/edge.yaml`) on the same axis, so the single value wins.
 
@@ -64,8 +66,9 @@ previous):
 - Differing scalar assignments conflict unless the later assignment uses `$set`.
 - Set a key's value to the bare token `$unset` to remove the inherited key entirely.
 
-This makes accidental double ownership loud while keeping additive IC lists easy. See
-`docs/reference/directives.md` for every directive.
+These rules apply to merged `config`, `base`, and `outputs`; `params` conflict on different
+values, `rpmSources`/`extraParams` concatenate, and `skip` is last-wins. See
+[Field-specific merging](../reference/directives.md#field-specific-merging) for the exact surface.
 
 ## Why no IC-aware merge?
 
