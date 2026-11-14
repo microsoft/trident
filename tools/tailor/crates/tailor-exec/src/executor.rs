@@ -329,6 +329,7 @@ impl<R: ContainerRuntime> IcExecutor<R> {
                     args,
                     binds: arg_builder::container_binds(cell, context, extra_rw)?,
                     privileged: context.runtime.privileged,
+                    disable_selinux_label: false,
                     cell_slug: cell.slug.as_ref().to_owned(),
                     log_source: tailor_core::LogSource::ImageCustomizer,
                     log_file: log_file.cloned(),
