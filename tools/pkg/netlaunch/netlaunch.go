@@ -153,25 +153,38 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			trident["trident"].(map[interface{}]interface{})["logstream"] = logstreamAddress
 		}
 
-		// Patch the ISO Host Configuration file unless this is a stream-image test, where
-		// the Host Configuration file is not expected to be present.
+		// Stream-image tests replace the install service command and do not use
+		// a Host Configuration file.
 		if config.Rcp == nil || !config.Rcp.UseStreamImage {
 			tridentConfig, err := yaml.Marshal(trident)
 			if err != nil {
 				return fmt.Errorf("failed to marshal Trident config: %w", err)
 			}
 
-			// Store the modified trident config for later use
+			// Store the modified Trident config for gRPC mode.
 			finalHostConfigurationYaml = string(tridentConfig)
 
-			err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
-			if err != nil {
-				return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+			if config.Rcp == nil {
+				err = isopatcher.PatchFile(iso, "/etc/trident/config.yaml", tridentConfig)
+				if err != nil {
+					return fmt.Errorf("failed to patch Trident config into ISO: %w", err)
+				}
 			}
 		}
 
 		if config.Rcp != nil {
 			var extraRcpAgentFiles []rcpAgentFileDownload
+			if shouldDownloadHostConfiguration(*config.Rcp) {
+				extraRcpAgentFiles = append(
+					extraRcpAgentFiles,
+					newRcpAgentFileDownload(
+						"trident-host-configuration",
+						"/etc/trident/config.yaml",
+						0644,
+						[]byte(finalHostConfigurationYaml),
+					),
+				)
+			}
 			if config.Rcp.UseStreamImage {
 				overrideFile, err := makeStreamImageOverrideFileDownload(trident, logstreamAddress)
 				if err != nil {
@@ -443,6 +456,10 @@ func registerNamedRcpFile(builder *rcpAgentConfigBuilder, name string, remotePat
 	}
 	builder.registerRcpFile(newRcpAgentFileDownload(name, remotePath, 0755, data))
 	return nil
+}
+
+func shouldDownloadHostConfiguration(rcp RcpConfiguration) bool {
+	return !rcp.GrpcMode && !rcp.UseStreamImage
 }
 
 func doGrpcInstall(ctx context.Context, conn net.Conn, hostConfiguration string) error {

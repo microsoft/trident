@@ -457,9 +457,64 @@ These rules apply to agents writing code:
   performs source-only validation for Trident and the separate Tailor workspace
   and does not require VM image artifacts.
 - If validation fails, fix the failure and rerun the failed group
-  (`format`, `rust`, `go`, or `tailor`) before rerunning the default full suite.
+  (`format`, `rust`, `go`, `tailor`, or `cloud-agent`) before rerunning the
+  default full suite.
+- For changes that affect host interaction, storage, filesystems, boot,
+  servicing, or functional-test infrastructure, also run
+  `bash scripts/cloud-agent/setup-functional.sh` followed by
+  `scripts/cloud-agent/validate.sh functional`. This downloads the pinned
+  ADO-produced image, verifies its build and SHA-256 provenance, creates a
+  libvirt VM, and runs the bounded positive helper suite. Use
+  `bash scripts/cloud-agent/run-functional.sh full` when the change requires
+  the complete functional suite.
+- Functional validation is explicit and is not included in the default `all`
+  group because it requires the 1ES runner's nested virtualization and the
+  pinned VM artifact.
+- For changes that affect clean installation, installer boot, candidate-binary
+  injection, or initial provisioning, also run
+  `bash scripts/cloud-agent/setup-install.sh` followed by
+  `scripts/cloud-agent/validate.sh install`. This verifies the pinned ADO
+  installer ISO and COSI, builds the candidate Trident and launcher binaries,
+  injects them into the installer environment, provisions a fresh two-disk VM,
+  and proves the installed `/usr/bin/trident` matches the candidate binary.
+- Install validation is explicit and is not included in the default `all`
+  group. It requires the 1ES runner's nested virtualization, internal ADO
+  access, and up to 30 minutes for a fresh installation.
+- For changes that affect A/B staging, finalization, reboot, commit, or
+  self-upgrade behavior, run the same setup followed by
+  `scripts/cloud-agent/validate.sh update`. This performs the C1 fresh install,
+  stages the pinned update COSI while remaining on `volume-a`, finalizes and
+  reboots, waits for the Trident service to commit, and verifies the host is
+  `provisioned` on `volume-b` with the candidate `/usr/bin/trident`.
+- Update validation is explicit and is not included in the default `all`
+  group. It requires the same 1ES runner capabilities and may take up to 50
+  minutes including the fresh installation.
+- For changes that affect manual rollback staging, finalization, reboot, commit,
+  or rollback-chain behavior, run the same setup followed by
+  `scripts/cloud-agent/validate.sh rollback`. This performs C1 and C2, verifies
+  an A/B rollback to `volume-a` is available, stages it while remaining on
+  `volume-b`, finalizes and reboots, waits for the Trident service to commit,
+  and verifies the host is `provisioned` on `volume-a` with the candidate
+  `/usr/bin/trident`.
+- Rollback validation is explicit and is not included in the default `all`
+  group. It requires the same 1ES runner capabilities and may take up to 70
+  minutes including the fresh installation and A/B update.
 - Documentation-only changes may skip the suite when it is not applicable,
   but the pull request **Validation** section must record that it was not run
   and explain why.
 - Record the exact validation command and result in the pull request
   description. Do not treat this agent-run command as independent CI.
+- When functional validation runs, also record the ADO build ID, source commit,
+  image SHA-256 from the generated provenance file, selected mode, and result.
+- When install validation runs, also record the ADO build ID, pinned source
+  commit, installer ISO and COSI SHA-256 values, candidate Trident SHA-256,
+  installed Trident SHA-256, servicing state, active volume, and result.
+- When update validation runs, additionally record the update COSI SHA-256,
+  initial, staged, and final servicing states and active volumes, candidate and
+  installed Trident SHA-256 values, reboot and SSH recovery result, SELinux
+  state before and after the update, cleanup result, and exact test result.
+- When rollback validation runs, additionally record the rollback chain before
+  and after rollback, rollback-staged and final servicing states and active
+  volumes, candidate and installed Trident SHA-256 values, reboot and SSH
+  recovery result, SELinux state and policy evidence after rollback, cleanup
+  result, and exact test result.

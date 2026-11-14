@@ -1,0 +1,791 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+readonly DATA_DISK_MOUNT="/mnt/storage"
+readonly INSTALL_CACHE_DIR="${TRIDENT_INSTALL_CACHE_DIR:-$DATA_DISK_MOUNT/trident-cloud-agent/install}"
+readonly INSTALL_LOG_ROOT="${TRIDENT_INSTALL_LOG_DIR:-$DATA_DISK_MOUNT/trident-cloud-agent/install-runs}"
+readonly HOST_CONFIG_SOURCE="$REPO_ROOT/tests/e2e_tests/trident_configurations/base/trident-config.yaml"
+readonly INSTALLER_ISO="$REPO_ROOT/artifacts/iso/trident-direct-streaming-installer-amd64.iso"
+readonly COSI_DIRECTORY="$REPO_ROOT/artifacts/test-image"
+readonly CANDIDATE_TRIDENT="$REPO_ROOT/target/release/trident"
+readonly CANDIDATE_LAUNCHER="$REPO_ROOT/target/release/trident-acl-agent"
+readonly CANDIDATE_SELINUX_POLICY_DIR="$REPO_ROOT/packaging/selinux-policy-trident"
+readonly INSTALL_TIMEOUT="${TRIDENT_INSTALL_TIMEOUT:-30m}"
+readonly UPDATE_TIMEOUT="${TRIDENT_UPDATE_TIMEOUT:-20m}"
+readonly UPDATE_CONFIG_PATH="/var/lib/trident/config.yaml"
+readonly UPDATE_VERSION="2"
+readonly SSH_ATTEMPTS="${TRIDENT_INSTALL_SSH_ATTEMPTS:-60}"
+readonly SSH_DELAY_SECONDS="${TRIDENT_INSTALL_SSH_DELAY_SECONDS:-5}"
+
+runtime_dir=""
+log_dir=""
+namespace=""
+vm_name=""
+netlisten_pid=""
+target_host_ip=""
+ssh_key_path=""
+
+reexec_with_libvirt_group() {
+    if [[ "${TRIDENT_INSTALL_LIBVIRT_GROUP:-0}" == "1" ]]; then
+        return
+    fi
+    if id -nG | tr ' ' '\n' | grep -Fxq libvirt; then
+        return
+    fi
+
+    local quoted_command
+    printf -v quoted_command ' %q' "$0" "$@"
+    exec sg libvirt -c "TRIDENT_INSTALL_LIBVIRT_GROUP=1${quoted_command}"
+}
+
+capture_diagnostics() {
+    {
+        echo "=== install failure diagnostics ==="
+        date --iso-8601=seconds
+        id
+        uname -a
+        findmnt --mountpoint "$DATA_DISK_MOUNT" || true
+        ls -l /dev/kvm /run/libvirt/libvirt-sock 2>&1 || true
+        virsh list --all || true
+        virsh net-list --all || true
+        if [[ -n "$vm_name" ]]; then
+            virsh dominfo "$vm_name" || true
+            virsh dumpxml "$vm_name" || true
+        fi
+        if [[ -n "$netlisten_pid" ]]; then
+            ps -fp "$netlisten_pid" || true
+        fi
+        if [[ -n "$target_host_ip" && -f "$ssh_key_path" ]]; then
+            ssh \
+                -i "$ssh_key_path" \
+                -o BatchMode=yes \
+                -o ConnectTimeout=10 \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                "testing-user@$target_host_ip" \
+                "sudo /usr/bin/trident get; \
+                 sudo getenforce; \
+                 sudo ls -lZ /usr/bin/trident; \
+                 sudo findmnt -no TARGET,SOURCE,FSTYPE,OPTIONS /; \
+                 if command -v ausearch >/dev/null 2>&1; then \
+                     sudo ausearch -m AVC,USER_AVC -ts recent; \
+                 fi; \
+                 sudo journalctl --no-pager -k -n 300 | grep -Ei 'avc:|selinux|denied' || true; \
+                 sudo journalctl --no-pager -u trident.service -n 200" ||
+                true
+        fi
+        sudo journalctl --no-pager -u libvirtd.service -n 200 || true
+        sudo journalctl --no-pager -u virtqemud.service -n 200 || true
+    } 2>&1 | tee "$log_dir/diagnostics.log"
+}
+
+cleanup() {
+    local exit_code=$?
+    local cleanup_code=0
+    trap - EXIT
+    set +e
+
+    if ((exit_code != 0)) && [[ -n "$log_dir" ]]; then
+        capture_diagnostics
+    fi
+    if [[ -n "$netlisten_pid" ]] && kill -0 "$netlisten_pid" 2>/dev/null; then
+        kill "$netlisten_pid" || cleanup_code=$?
+        wait "$netlisten_pid" || true
+    fi
+    if [[ -n "$namespace" && -x "$REPO_ROOT/bin/virtdeploy" ]]; then
+        "$REPO_ROOT/bin/virtdeploy" clean --namespace "$namespace" \
+            > >(tee "$log_dir/cleanup.log") 2>&1 ||
+            cleanup_code=$?
+    fi
+    if [[ -n "$runtime_dir" && -d "$runtime_dir" ]]; then
+        rm -rf "$runtime_dir"
+    fi
+    if ((exit_code == 0 && cleanup_code != 0)); then
+        exit_code=$cleanup_code
+    fi
+    exit "$exit_code"
+}
+
+require_command() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "Missing $1. Run scripts/cloud-agent/setup-install.sh first." >&2
+        exit 1
+    fi
+}
+
+wait_for_http() {
+    local url="$1"
+    local attempt
+
+    for ((attempt = 1; attempt <= 30; attempt++)); do
+        if python3 - "$url" <<'PY'
+import sys
+import urllib.request
+
+request = urllib.request.Request(sys.argv[1], method="HEAD")
+with urllib.request.urlopen(request, timeout=5) as response:
+    if response.status != 200:
+        raise RuntimeError(f"unexpected HTTP status {response.status}")
+PY
+        then
+            return
+        fi
+        echo "Waiting for update artifact server ($attempt/30)"
+        sleep 1
+    done
+    echo "Update artifact server did not become ready at $url" >&2
+    return 1
+}
+
+wait_for_ssh() {
+    local host_ip="$1"
+    local key_path="$2"
+    local attempt
+    local ssh_options=(
+        -i "$key_path"
+        -o BatchMode=yes
+        -o ConnectTimeout=10
+        -o StrictHostKeyChecking=no
+        -o UserKnownHostsFile=/dev/null
+    )
+
+    for ((attempt = 1; attempt <= SSH_ATTEMPTS; attempt++)); do
+        if ssh "${ssh_options[@]}" "testing-user@$host_ip" true; then
+            return
+        fi
+        echo "Waiting for target SSH ($attempt/$SSH_ATTEMPTS)"
+        sleep "$SSH_DELAY_SECONDS"
+    done
+    echo "Target SSH did not become ready at $host_ip" >&2
+    return 1
+}
+
+wait_for_reboot() {
+    local host_ip="$1"
+    local key_path="$2"
+    local previous_boot_id="$3"
+    local attempt
+    local current_boot_id
+    local ssh_options=(
+        -i "$key_path"
+        -o BatchMode=yes
+        -o ConnectTimeout=10
+        -o StrictHostKeyChecking=no
+        -o UserKnownHostsFile=/dev/null
+    )
+
+    for ((attempt = 1; attempt <= SSH_ATTEMPTS; attempt++)); do
+        current_boot_id="$(
+            ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+                "cat /proc/sys/kernel/random/boot_id" 2>/dev/null || true
+        )"
+        if [[ -n "$current_boot_id" && "$current_boot_id" != "$previous_boot_id" ]]; then
+            return
+        fi
+        echo "Waiting for target reboot ($attempt/$SSH_ATTEMPTS)"
+        sleep "$SSH_DELAY_SECONDS"
+    done
+    echo "Target did not complete a reboot at $host_ip" >&2
+    return 1
+}
+
+assert_host_status() {
+    local status_path="$1"
+    local expected_state="$2"
+    local expected_volume="$3"
+    local servicing_state
+    local active_volume
+
+    servicing_state="$(
+        awk '$1 == "servicingState:" { print $2; exit }' "$status_path"
+    )"
+    if [[ "$servicing_state" != "$expected_state" ]]; then
+        echo "Expected servicingState $expected_state, got: $servicing_state" >&2
+        return 1
+    fi
+
+    active_volume="$(
+        awk '$1 == "abActiveVolume:" { print $2; exit }' "$status_path"
+    )"
+    if [[ "$active_volume" != "$expected_volume" ]]; then
+        echo "Expected abActiveVolume $expected_volume, got: $active_volume" >&2
+        return 1
+    fi
+}
+
+main() {
+    local mode="${1:-install}"
+    if (($# > 1)) ||
+        [[ "$mode" != "install" && "$mode" != "update" && "$mode" != "rollback" ]]; then
+        echo "Usage: scripts/cloud-agent/run-install.sh [install|update|rollback]" >&2
+        return 2
+    fi
+
+    cd "$REPO_ROOT"
+    reexec_with_libvirt_group "$@"
+    trap cleanup EXIT
+
+    require_command az
+    require_command make
+    require_command python3
+    require_command scp
+    require_command ssh
+    require_command timeout
+    require_command virsh
+
+    if ! mountpoint --quiet "$DATA_DISK_MOUNT"; then
+        echo "Expected runner data disk is not mounted at $DATA_DISK_MOUNT" >&2
+        exit 1
+    fi
+    if [[ ! -c /dev/kvm ]]; then
+        echo "Nested virtualization is unavailable: /dev/kvm is missing" >&2
+        exit 1
+    fi
+    if [[ ! -S /run/libvirt/libvirt-sock ]]; then
+        echo "libvirt socket is unavailable at /run/libvirt/libvirt-sock" >&2
+        exit 1
+    fi
+
+    local run_label
+    run_label="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    log_dir="$INSTALL_LOG_ROOT/$run_label"
+    mkdir -p "$log_dir"
+    runtime_dir="$(mktemp -d "/tmp/trident-${mode}-${run_label}-XXXXXX")"
+    chmod 0700 "$runtime_dir"
+    namespace="trident-${mode}-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-$$"
+
+    local provenance_path
+    provenance_path="$(
+        TRIDENT_INSTALL_CACHE_DIR="$INSTALL_CACHE_DIR" \
+            python3 scripts/cloud-agent/download_install_artifacts.py
+    )"
+    cp "$provenance_path" "$log_dir/provenance.json"
+
+    make -j2 target/release/trident bin/netlaunch bin/virtdeploy
+    if [[ "$mode" != "install" ]]; then
+        make -j2 bin/netlisten bin/storm-trident
+    fi
+    test -x "$CANDIDATE_TRIDENT"
+    test -x "$CANDIDATE_LAUNCHER"
+    test -x bin/netlaunch
+    test -x bin/virtdeploy
+    if [[ "$mode" != "install" ]]; then
+        test -x bin/netlisten
+        test -x bin/storm-trident
+    fi
+
+    local candidate_sha
+    candidate_sha="$(sha256sum "$CANDIDATE_TRIDENT" | awk '{print $1}')"
+    git rev-parse HEAD >"$log_dir/candidate-source-commit.txt"
+    printf '%s\n' "$candidate_sha" >"$log_dir/candidate-trident-sha256.txt"
+
+    local host_config="$runtime_dir/trident-config.yaml"
+    local ssh_key="$runtime_dir/id_ed25519"
+    ssh_key_path="$ssh_key"
+    cp "$HOST_CONFIG_SOURCE" "$host_config"
+    python3 tests/e2e_tests/helpers/edit_host_config.py \
+        --keypath "$ssh_key" \
+        --hostconfig "$host_config" \
+        --runtimeEnv host
+    python3 scripts/cloud-agent/prepare_install_host_config.py \
+        "$host_config" \
+        "$CANDIDATE_SELINUX_POLICY_DIR"
+    chmod 0600 "$ssh_key"
+    "$CANDIDATE_TRIDENT" validate "$host_config" -v info
+    cp "$host_config" "$log_dir/trident-config.yaml"
+
+    local netlaunch_config="$runtime_dir/netlaunch.yaml"
+    local virtdeploy_status="$log_dir/virtdeploy.json"
+    bin/virtdeploy create-one \
+        --namespace "$namespace" \
+        --mem 12 \
+        --disks 32,32 \
+        --netlaunch "$netlaunch_config" \
+        --json >"$virtdeploy_status"
+
+    vm_name="$(
+        python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["vms"][0]["name"])' \
+            "$virtdeploy_status"
+    )"
+    local host_ip
+    host_ip="$(
+        python3 -c \
+            'import json,sys; print(json.load(open(sys.argv[1]))["vms"][0]["ip"])' \
+            "$virtdeploy_status"
+    )"
+    target_host_ip="$host_ip"
+
+    timeout "$INSTALL_TIMEOUT" bin/netlaunch \
+        --iso "$INSTALLER_ISO" \
+        --config "$netlaunch_config" \
+        --trident "$host_config" \
+        --servefolder "$COSI_DIRECTORY" \
+        --logstream \
+        --remoteaddress "$log_dir/remote-address.txt" \
+        --trace-file "$log_dir/trident-clean-install-metrics.jsonl" \
+        --full-logstream "$log_dir/logstream-full.log" \
+        --wait-for-provisioned-state \
+        --rcp-agent-mode cli \
+        --trident-binary "$CANDIDATE_TRIDENT" \
+        --launcher-binary "$CANDIDATE_LAUNCHER" \
+        2>&1 | tee "$log_dir/clean-install-deployment.log"
+
+    wait_for_ssh "$host_ip" "$ssh_key"
+
+    local ssh_options=(
+        -i "$ssh_key"
+        -o BatchMode=yes
+        -o ConnectTimeout=10
+        -o StrictHostKeyChecking=no
+        -o UserKnownHostsFile=/dev/null
+    )
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get" |
+        tee "$log_dir/host-status-initial.yaml"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo cat /etc/os-release; sudo findmnt -no SOURCE /" |
+        tee "$log_dir/target-system-initial.txt"
+
+    local initial_remote_sha
+    initial_remote_sha="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "sudo sha256sum /usr/bin/trident" |
+            awk '{print $1}'
+    )"
+    if [[ "$initial_remote_sha" != "$candidate_sha" ]]; then
+        echo "Installed Trident SHA-256 does not match the candidate binary" >&2
+        echo "candidate: $candidate_sha" >&2
+        echo "installed: $initial_remote_sha" >&2
+        exit 1
+    fi
+    printf '%s\n' "$initial_remote_sha" \
+        >"$log_dir/installed-trident-sha256-initial.txt"
+
+    local initial_selinux_state
+    initial_selinux_state="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" "sudo getenforce"
+    )"
+    printf '%s\n' "$initial_selinux_state" >"$log_dir/selinux-state-initial.txt"
+    if [[ "$initial_selinux_state" != "Enforcing" ]]; then
+        echo "Expected SELinux Enforcing, got: $initial_selinux_state" >&2
+        exit 1
+    fi
+
+    assert_host_status "$log_dir/host-status-initial.yaml" provisioned volume-a
+
+    if [[ "$mode" == "install" ]]; then
+        python3 - "$log_dir/provenance.json" "$candidate_sha" "$initial_remote_sha" "$host_ip" "$log_dir" <<'PY'
+import json
+import sys
+
+provenance = json.load(open(sys.argv[1], encoding="utf-8"))
+payloads = {
+    artifact["payload"]["archivePath"]: artifact["payload"]["sha256"]
+    for artifact in provenance["artifacts"]
+}
+print("Phase C1 fresh-install smoke test passed")
+print(f"ADO build ID: {provenance['build']['id']}")
+print(f"Pinned source commit: {provenance['build']['sourceVersion']}")
+print(
+    "Installer ISO SHA-256: "
+    f"{payloads['trident-direct-streaming-installer-amd64/trident-direct-streaming-installer-amd64.iso']}"
+)
+print(
+    "Install COSI SHA-256: "
+    f"{payloads['trident-testimage/trident-testimage_0.cosi']}"
+)
+print(f"Candidate Trident SHA-256: {sys.argv[2]}")
+print(f"Installed Trident SHA-256: {sys.argv[3]}")
+print(f"Target IP: {sys.argv[4]}")
+print("SELinux: Enforcing")
+print("servicingState: provisioned")
+print("abActiveVolume: volume-a")
+print(f"Logs: {sys.argv[5]}")
+PY
+        return
+    fi
+
+    local current_config="$runtime_dir/trident-current-config.yaml"
+    local update_config="$runtime_dir/trident-update-config.yaml"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get configuration" >"$current_config"
+
+    local update_url
+    update_url="$(
+        python3 scripts/cloud-agent/prepare_update_host_config.py \
+            "$current_config" \
+            "$update_config" \
+            --version "$UPDATE_VERSION"
+    )"
+    "$CANDIDATE_TRIDENT" validate "$update_config" -v info
+    cp "$current_config" "$log_dir/trident-config-before-update.yaml"
+    cp "$update_config" "$log_dir/trident-config-update.yaml"
+    printf '%s\n' "$update_url" >"$log_dir/update-image-url.txt"
+
+    local update_port
+    update_port="$(
+        python3 -c \
+            'import sys,urllib.parse; parsed=urllib.parse.urlsplit(sys.argv[1]); print(parsed.port or (443 if parsed.scheme == "https" else 80))' \
+            "$update_url"
+    )"
+    bin/netlisten \
+        --port "$update_port" \
+        --servefolder "$COSI_DIRECTORY" \
+        --trace-file "$log_dir/trident-update-metrics.jsonl" \
+        --full-logstream "$log_dir/logstream-update-full.log" \
+        >"$log_dir/netlisten-update.log" 2>&1 &
+    netlisten_pid=$!
+    wait_for_http "$update_url"
+
+    scp "${ssh_options[@]}" \
+        "$update_config" \
+        "testing-user@$host_ip:/tmp/trident-update-config.yaml"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo install -m 0644 -o root -g root /tmp/trident-update-config.yaml '$UPDATE_CONFIG_PATH' && rm -f /tmp/trident-update-config.yaml"
+
+    timeout "$UPDATE_TIMEOUT" \
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident grpc-client update -v trace '$UPDATE_CONFIG_PATH' --allowed-operations stage" \
+        2>&1 | tee "$log_dir/stage-ab-update.log"
+
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get" |
+        tee "$log_dir/host-status-staged.yaml"
+    assert_host_status "$log_dir/host-status-staged.yaml" ab-update-staged volume-a
+
+    local staged_remote_sha
+    staged_remote_sha="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "sudo sha256sum /usr/bin/trident" |
+            awk '{print $1}'
+    )"
+    if [[ "$staged_remote_sha" != "$candidate_sha" ]]; then
+        echo "Staged host Trident SHA-256 does not match the candidate binary" >&2
+        echo "candidate: $candidate_sha" >&2
+        echo "staged host: $staged_remote_sha" >&2
+        exit 1
+    fi
+    printf '%s\n' "$staged_remote_sha" \
+        >"$log_dir/installed-trident-sha256-staged.txt"
+
+    local staged_selinux_state
+    staged_selinux_state="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" "sudo getenforce"
+    )"
+    printf '%s\n' "$staged_selinux_state" >"$log_dir/selinux-state-staged.txt"
+    if [[ "$staged_selinux_state" != "Enforcing" ]]; then
+        echo "Expected SELinux Enforcing after stage, got: $staged_selinux_state" >&2
+        exit 1
+    fi
+
+    timeout "$UPDATE_TIMEOUT" bin/storm-trident helper ab-update \
+        "$ssh_key" \
+        "$host_ip" \
+        testing-user \
+        host \
+        --trident-config "$UPDATE_CONFIG_PATH" \
+        --version "$UPDATE_VERSION" \
+        --finalize-ab-update \
+        2>&1 | tee "$log_dir/finalize-ab-update.log"
+
+    wait_for_ssh "$host_ip" "$ssh_key"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get" |
+        tee "$log_dir/host-status-final.yaml"
+    assert_host_status "$log_dir/host-status-final.yaml" provisioned volume-b
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo cat /etc/os-release; sudo findmnt -no SOURCE /" |
+        tee "$log_dir/target-system-final.txt"
+
+    local final_remote_sha
+    final_remote_sha="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "sudo sha256sum /usr/bin/trident" |
+            awk '{print $1}'
+    )"
+    if [[ "$final_remote_sha" != "$candidate_sha" ]]; then
+        echo "Updated Trident SHA-256 does not match the candidate binary" >&2
+        echo "candidate: $candidate_sha" >&2
+        echo "updated: $final_remote_sha" >&2
+        exit 1
+    fi
+    printf '%s\n' "$final_remote_sha" \
+        >"$log_dir/installed-trident-sha256-final.txt"
+
+    local final_selinux_state
+    final_selinux_state="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" "sudo getenforce"
+    )"
+    printf '%s\n' "$final_selinux_state" >"$log_dir/selinux-state-final.txt"
+    if [[ "$final_selinux_state" != "Enforcing" ]]; then
+        echo "Expected SELinux Enforcing after update, got: $final_selinux_state" >&2
+        exit 1
+    fi
+
+    if [[ "$mode" == "update" ]]; then
+        python3 - "$log_dir/provenance.json" "$candidate_sha" "$initial_remote_sha" "$staged_remote_sha" "$final_remote_sha" "$host_ip" "$log_dir" <<'PY'
+import json
+import sys
+
+provenance = json.load(open(sys.argv[1], encoding="utf-8"))
+payloads = {
+    artifact["payload"]["archivePath"]: artifact["payload"]["sha256"]
+    for artifact in provenance["artifacts"]
+}
+print("Phase C2 A/B update smoke test passed")
+print(f"ADO build ID: {provenance['build']['id']}")
+print(f"Pinned source commit: {provenance['build']['sourceVersion']}")
+print(
+    "Installer ISO SHA-256: "
+    f"{payloads['trident-direct-streaming-installer-amd64/trident-direct-streaming-installer-amd64.iso']}"
+)
+print(
+    "Install COSI SHA-256: "
+    f"{payloads['trident-testimage/trident-testimage_0.cosi']}"
+)
+print(
+    "Update COSI SHA-256: "
+    f"{payloads['trident-testimage/trident-testimage_1.cosi']}"
+)
+print(f"Candidate Trident SHA-256: {sys.argv[2]}")
+print(f"Initial installed Trident SHA-256: {sys.argv[3]}")
+print(f"Staged host Trident SHA-256: {sys.argv[4]}")
+print(f"Final installed Trident SHA-256: {sys.argv[5]}")
+print(f"Target IP: {sys.argv[6]}")
+print("Initial state: provisioned, volume-a")
+print("Staged state: ab-update-staged, volume-a")
+print("Final state: provisioned, volume-b")
+print("SELinux before, during, and after update: Enforcing")
+print(f"Logs: {sys.argv[7]}")
+PY
+        return
+    fi
+
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get rollback-chain" |
+        tee "$log_dir/rollback-chain-before.yaml"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get rollback-target" |
+        tee "$log_dir/rollback-target-before.yaml"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident rollback --check" |
+        tee "$log_dir/rollback-check-before.txt"
+
+    python3 - "$log_dir/rollback-chain-before.yaml" \
+        "$log_dir/rollback-check-before.txt" <<'PY'
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as file:
+    rollback_chain = yaml.safe_load(file)
+if not isinstance(rollback_chain, list) or not rollback_chain:
+    raise SystemExit("Expected at least one available rollback")
+first_rollback = rollback_chain[0]
+if first_rollback.get("kind") != "ab":
+    raise SystemExit(
+        f"Expected first rollback kind ab, got: {first_rollback.get('kind')}"
+    )
+if first_rollback.get("abActiveVolume") != "volume-a":
+    raise SystemExit(
+        "Expected first rollback to restore volume-a, got: "
+        f"{first_rollback.get('abActiveVolume')}"
+    )
+with open(sys.argv[2], encoding="utf-8") as file:
+    rollback_check = file.read().strip()
+if rollback_check != "ab":
+    raise SystemExit(f"Expected rollback --check to report ab, got: {rollback_check}")
+PY
+
+    timeout "$UPDATE_TIMEOUT" \
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident rollback -v trace --allowed-operations stage" \
+        2>&1 | tee "$log_dir/stage-manual-rollback.log"
+
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get" |
+        tee "$log_dir/host-status-rollback-staged.yaml"
+    assert_host_status \
+        "$log_dir/host-status-rollback-staged.yaml" \
+        manual-rollback-ab-staged \
+        volume-b
+
+    local rollback_staged_remote_sha
+    rollback_staged_remote_sha="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "sudo sha256sum /usr/bin/trident" |
+            awk '{print $1}'
+    )"
+    if [[ "$rollback_staged_remote_sha" != "$candidate_sha" ]]; then
+        echo "Rollback-staged Trident SHA-256 does not match the candidate binary" >&2
+        echo "candidate: $candidate_sha" >&2
+        echo "rollback-staged host: $rollback_staged_remote_sha" >&2
+        exit 1
+    fi
+    printf '%s\n' "$rollback_staged_remote_sha" \
+        >"$log_dir/installed-trident-sha256-rollback-staged.txt"
+
+    local rollback_staged_selinux_state
+    rollback_staged_selinux_state="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" "sudo getenforce"
+    )"
+    printf '%s\n' "$rollback_staged_selinux_state" \
+        >"$log_dir/selinux-state-rollback-staged.txt"
+    if [[ "$rollback_staged_selinux_state" != "Enforcing" ]]; then
+        echo "Expected SELinux Enforcing after rollback stage, got: $rollback_staged_selinux_state" >&2
+        exit 1
+    fi
+
+    local pre_rollback_boot_id
+    pre_rollback_boot_id="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "cat /proc/sys/kernel/random/boot_id"
+    )"
+    printf '%s\n' "$pre_rollback_boot_id" >"$log_dir/boot-id-before-rollback.txt"
+
+    local rollback_finalize_code
+    set +e
+    timeout "$UPDATE_TIMEOUT" \
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident rollback -v trace --allowed-operations finalize" \
+        >"$log_dir/finalize-manual-rollback.log" 2>&1
+    rollback_finalize_code=$?
+    set -e
+    cat "$log_dir/finalize-manual-rollback.log"
+    if ((rollback_finalize_code != 0)) &&
+        ! grep -Fq "Requesting reboot" "$log_dir/finalize-manual-rollback.log"; then
+        echo "Rollback finalize failed with exit code $rollback_finalize_code" >&2
+        return "$rollback_finalize_code"
+    fi
+
+    wait_for_reboot "$host_ip" "$ssh_key" "$pre_rollback_boot_id"
+
+    local rollback_status_tmp="$runtime_dir/host-status-rollback-final.yaml"
+    local rollback_status_ready=0
+    local rollback_status_attempt
+    for ((rollback_status_attempt = 1; rollback_status_attempt <= SSH_ATTEMPTS; rollback_status_attempt++)); do
+        if ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "sudo /usr/bin/trident get" >"$rollback_status_tmp" 2>/dev/null &&
+            assert_host_status "$rollback_status_tmp" provisioned volume-a; then
+            rollback_status_ready=1
+            break
+        fi
+        echo "Waiting for rollback commit ($rollback_status_attempt/$SSH_ATTEMPTS)"
+        sleep "$SSH_DELAY_SECONDS"
+    done
+    if ((rollback_status_ready == 0)); then
+        echo "Rollback did not commit to provisioned on volume-a" >&2
+        return 1
+    fi
+    cp "$rollback_status_tmp" "$log_dir/host-status-rollback-final.yaml"
+    cat "$log_dir/host-status-rollback-final.yaml"
+
+    local rollback_boot_id
+    rollback_boot_id="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "cat /proc/sys/kernel/random/boot_id"
+    )"
+    printf '%s\n' "$rollback_boot_id" >"$log_dir/boot-id-after-rollback.txt"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo cat /etc/os-release; sudo findmnt -no SOURCE /" |
+        tee "$log_dir/target-system-rollback-final.txt"
+
+    local rollback_remote_sha
+    rollback_remote_sha="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+            "sudo sha256sum /usr/bin/trident" |
+            awk '{print $1}'
+    )"
+    if [[ "$rollback_remote_sha" != "$candidate_sha" ]]; then
+        echo "Rolled-back Trident SHA-256 does not match the candidate binary" >&2
+        echo "candidate: $candidate_sha" >&2
+        echo "rolled back: $rollback_remote_sha" >&2
+        exit 1
+    fi
+    printf '%s\n' "$rollback_remote_sha" \
+        >"$log_dir/installed-trident-sha256-rollback-final.txt"
+
+    local rollback_selinux_state
+    rollback_selinux_state="$(
+        ssh "${ssh_options[@]}" "testing-user@$host_ip" "sudo getenforce"
+    )"
+    printf '%s\n' "$rollback_selinux_state" \
+        >"$log_dir/selinux-state-rollback-final.txt"
+    if [[ "$rollback_selinux_state" != "Enforcing" ]]; then
+        echo "Expected SELinux Enforcing after rollback, got: $rollback_selinux_state" >&2
+        exit 1
+    fi
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo semodule -l | grep -E '^trident([[:space:]]|$)' && sudo ls -lZ /usr/bin/trident" |
+        tee "$log_dir/selinux-policy-rollback-final.txt"
+
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident get rollback-chain" |
+        tee "$log_dir/rollback-chain-after.yaml"
+    ssh "${ssh_options[@]}" "testing-user@$host_ip" \
+        "sudo /usr/bin/trident rollback --check" |
+        tee "$log_dir/rollback-check-after.txt"
+    python3 - "$log_dir/rollback-chain-after.yaml" \
+        "$log_dir/rollback-check-after.txt" <<'PY'
+import sys
+
+import yaml
+
+with open(sys.argv[1], encoding="utf-8") as file:
+    rollback_chain = yaml.safe_load(file)
+if rollback_chain != []:
+    raise SystemExit(
+        "Expected an empty rollback chain after returning to the initial installation"
+    )
+with open(sys.argv[2], encoding="utf-8") as file:
+    rollback_check = file.read().strip()
+if rollback_check != "none":
+    raise SystemExit(f"Expected rollback --check to report none, got: {rollback_check}")
+PY
+
+    python3 - "$log_dir/provenance.json" "$candidate_sha" "$initial_remote_sha" "$staged_remote_sha" "$final_remote_sha" "$rollback_staged_remote_sha" "$rollback_remote_sha" "$host_ip" "$log_dir" <<'PY'
+import json
+import sys
+
+provenance = json.load(open(sys.argv[1], encoding="utf-8"))
+payloads = {
+    artifact["payload"]["archivePath"]: artifact["payload"]["sha256"]
+    for artifact in provenance["artifacts"]
+}
+print("Phase C3 manual rollback smoke test passed")
+print(f"ADO build ID: {provenance['build']['id']}")
+print(f"Pinned source commit: {provenance['build']['sourceVersion']}")
+print(
+    "Installer ISO SHA-256: "
+    f"{payloads['trident-direct-streaming-installer-amd64/trident-direct-streaming-installer-amd64.iso']}"
+)
+print(
+    "Install COSI SHA-256: "
+    f"{payloads['trident-testimage/trident-testimage_0.cosi']}"
+)
+print(
+    "Update COSI SHA-256: "
+    f"{payloads['trident-testimage/trident-testimage_1.cosi']}"
+)
+print(f"Candidate Trident SHA-256: {sys.argv[2]}")
+print(f"Initial installed Trident SHA-256: {sys.argv[3]}")
+print(f"Update-staged host Trident SHA-256: {sys.argv[4]}")
+print(f"Updated installed Trident SHA-256: {sys.argv[5]}")
+print(f"Rollback-staged host Trident SHA-256: {sys.argv[6]}")
+print(f"Rolled-back installed Trident SHA-256: {sys.argv[7]}")
+print(f"Target IP: {sys.argv[8]}")
+print("Initial state: provisioned, volume-a")
+print("Update-staged state: ab-update-staged, volume-a")
+print("Updated state: provisioned, volume-b")
+print("Rollback-staged state: manual-rollback-ab-staged, volume-b")
+print("Rolled-back state: provisioned, volume-a")
+print("Rollback chain: ab to volume-a before rollback; none after rollback")
+print("SELinux throughout install, update, and rollback: Enforcing")
+print(f"Logs: {sys.argv[9]}")
+PY
+}
+
+main "$@"
