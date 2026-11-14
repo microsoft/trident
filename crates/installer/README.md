@@ -1,0 +1,203 @@
+# Trident Linux Installer
+
+`installer` builds the `trident-installer` binary and optional RPM. It is an
+autorun wrapper around Trident's gRPC API through the shared `trident-client`
+crate, not a partitioning engine.
+
+## Configuration
+
+Read `/etc/trident/installer.toml` or the path supplied with `--config`.
+See the [Installer Configuration reference](../../docs/Reference/Installer-Configuration.md)
+for all fields, defaults, and media-overlay rules.
+`mode = "autorun"` is required and controls startup, not the servicing
+operation: a Host Configuration selects Install; without one, the first media
+COSI selects StreamDisk. All other fields are optional:
+
+```toml
+mode = "autorun"
+serialMode = "logs"
+serialVerbosity = "debug"
+
+[media]
+cosiDirectory = "cosi/"
+# Optional: filesystemLabel = "CUSTOM_LABEL"
+# Or use mountPath for already-mounted media.
+
+[autorun]
+# If omitted, use /etc/trident/config.yaml when that file exists.
+# hostConfiguration = "installer/host-configuration.yaml"
+reboot = true
+```
+
+Unknown fields and conflicting media selectors are errors. `interactive` is
+reserved for later work, not an alias for autorun. COSI directory paths must
+stay beneath the media root.
+`serialMode` defaults to `logs`. `ui` is reserved and currently rejected with
+an error rather than showing an unfinished serial TUI.
+`serialVerbosity` defaults to `debug` and accepts `off`, `error`, `warn`,
+`info`, `debug`, and `trace`.
+
+`media.filesystemLabel` is a filesystem label, not a CD-ROM device name. When
+omitted, the installer looks for either `TRD_INSTALL` (FAT-compatible, 11
+characters) or `CDROM` (Image Customizer's ISO label), and rejects ambiguity
+if both are present. Set it explicitly for other labels or when booting from
+an optical ISO alongside a separate installer USB.
+The older `cdromLabel` key is accepted as an alias; setting both is an error.
+Media is mounted read-only with filesystem auto-detection at
+`/run/trident/installer-media`. Media discovery waits up to 60 seconds for
+USB/BMC block-device enumeration when the Host Configuration or COSI depends
+on media. A live-OS or HTTP(S) Host Configuration without media-backed inputs
+skips discovery and media-local overrides; a symlink to media,
+`installer://image`, or a file-backed HC input on media still waits. Explicit
+remote Stream COSI recovery bypasses local media discovery, configuration
+overlays, and COSI scanning, including when media is broken.
+Other filesystem types require corresponding kernel mount support on the live
+OS. Duplicate labels are rejected. Optional `installer/installer.toml` on the
+mounted media can override mode, image directory, and autorun options, but not
+bootstrap media discovery or `serialMode`. Relative HC paths are media-relative;
+absolute paths and `file://` refer to the live filesystem. HTTP(S) HC sources
+are supported. Remote connection and timeout failures are retried for at most
+60 seconds while networking comes up; HTTP errors fail immediately.
+
+With an HC, use Install. Otherwise stream the first regular `.cosi` file in
+the configured folder, sorted by filename, without recursing or following
+image symlinks. Invalid HC or selected-image input is an error, not permission
+to choose another operation or image.
+
+An HC can use the installer-only image reference:
+
+```yaml
+image:
+  url: installer://image
+  sha384: ignored
+```
+
+The marker becomes the selected image's encoded `file://` URL before validation
+and submission. Authored checksum settings are preserved. An explicit HC image
+URL stays unchanged and needs no ISO image. Configure a checksum for production
+images rather than copying the deliberately unverified example above.
+HC disk paths are used as authored. The installer does not resolve legacy disk
+placeholders or automatically choose a disk for an HC.
+
+## Console and recovery
+
+The UI uses the cyan Trident ASCII wordmark and the name Trident Linux
+Installer. At 80x24 and larger the complete wordmark is shown; smaller terminals
+use a compact text header to preserve usable controls and error details.
+
+On the ISO, `--system-console` uses the graphical virtual console for local
+keyboard/monitor and BMC KVM, independent of `console=` order. With
+`serialMode = "logs"`, active serial consoles receive only formatted installer
+and gRPC logs, never a TUI, even when no graphical console exists. Autorun
+continues without an interactive console; missing inputs and failures
+emit an error and stop.
+Failures to open or write a serial console are logged and mirroring to that
+console stops; they do not stop installation. On boots with
+`trident.installer=1`, the RPM's getty drop-ins prevent serial login prompts
+from mixing with the log stream and prevent tty1 getty from taking input.
+Serial mirrors are nonblocking; a console that cannot accept a record is
+disabled rather than delaying installation or reboot.
+Firmware, kernel and systemd output during boot is separate from the
+installer's stream and may precede it; scrapers should match tagged log lines.
+
+No ordinary source picker or confirmation precedes autorun. Missing sources
+and failures keep recent logs visible in a red result frame; `D` opens the
+scrollable full error details and Esc returns to the logs. Successful installs
+keep their logs in a green result frame. Each result is also the last highlighted
+log entry. Continue opens recovery: Shell,
+Stream COSI URL, remote HC URL, or Shutdown. Shell `exit` returns to the
+originating screen; a nonzero shell exit is logged without changing the
+installation result or reboot decision. The recovery shell is a root login
+Bash, so it reads `/etc/profile` and the root profile (if present); on the installer ISO,
+`/etc/profile` gives root a red prompt. The ISO service sets `TERM=linux`
+for tty1 so terminal tools such as `clear` work in the shell. Installation
+continues while a shell is open; automatic reboot waits. The success screen
+offers Reboot and Shell. While servicing is active, Ctrl-C remains in the
+installation menu and power actions are blocked.
+Before each recovery attempt the baked configuration is reloaded, so shell
+edits take effect. Invalid or missing configuration never supplies implicit
+defaults for an installation.
+
+Display filtering never removes daemon log records. All received responses are
+also appended to the private `/var/log/trident-installer.log`. HTTP(S) URLs in
+received diagnostics have credentials, queries and fragments removed before
+display, serial mirroring or installer-log persistence; Trident's own journal
+is separate. Installer events and daemon records use
+`MM:SS [INST:LEVEL] message` and
+`MM:SS [TRIDENT:LEVEL] message`, respectively. `serialVerbosity` controls the
+serial stream independently of TUI verbosity; each line of a multiline message
+gets its own `MM:SS [SOURCE:LEVEL]` prefix. The TUI defaults to Debug: errors red, warnings
+amber, INFO pale neutral, DEBUG steel gray and TRACE slate gray; INST labels
+are muted slate and TRIDENT labels seafoam. The wordmark remains cyan and
+success is green. On the graphical Linux virtual terminal, the installer
+programs its 16 ANSI palette slots to A1 RGB values, then restores the
+original palette when opening a shell or leaving the UI. Non-VT terminals use
+the RGB values directly.
+`V` opens a live verbosity picker (Off,
+Error, Warn, Info, Debug, Trace) beside the operation; this only filters the
+display, not serial or stored diagnostics. The private diagnostic file retains
+all levels even when serialVerbosity filters them. PgUp/PgDn scroll by wrapped
+terminal rows, keeping the latest result visible.
+TRACE output can expose low-level inputs; restrict access to BMC serial captures.
+A missing final Completed response means unknown
+outcome, not success. Another write requires a successful Trident status query
+establishing that the daemon is idle; power actions remain unavailable until
+that check or a confirmed completion resolves the uncertain outcome.
+
+Autorun does not compare filesystem UUIDs or confirm repeat installations.
+**An ISO left in the boot path can reimage the machine on every boot.** Remove
+or deprioritize the media after installation. The former `autorun.force` key
+is accepted for compatibility but ignored; interactive mode, where an operator
+could confirm a repeat install, is not implemented yet.
+Mounted or read-only potential stream targets are still refused.
+For StreamDisk, the daemon checks the SHA-384 of the metadata inspected by
+the installer before selecting the target disk; changed metadata stops the
+operation instead of bypassing this safety check.
+If the installer USB itself is the smallest disk fitting the COSI, streaming
+stops rather than overwriting it; use a USB smaller than the COSI's original
+disk size or an HC selecting an explicit target. The current StreamDisk RPC
+cannot exclude a specific disk.
+**HC installation also has no repeat-install guard:** the HC is
+the operator's authority to overwrite its selected disks. Remove ISO media or
+correct boot order to avoid repeated HC-driven installations.
+
+`autorun.reboot` defaults to true. Successful installations requiring reboot
+show a short countdown, then reboot; false leaves the success screen. Errors,
+unknown outcomes, and no-servicing results never
+automatically reboot.
+
+## ISO integration
+
+On a full-OS installer ISO, install `trident-installer`, add
+`trident.installer=1` to its **ISO kernel command line**, and provide a COSI
+under `cosi/` or a Host Configuration. The RPM pulls in Trident and Bash for
+the recovery shell, enables its service, starts the gRPC socket and waits for
+udev from the running installer only on marked boots, and suppresses tty1 and
+serial gettys on those boots.
+Without that flag the service skips startup and normal gettys are unchanged,
+including on an installed OS that happens to have the RPM.
+Include optional tools in the ISO when the image or Host Configuration needs
+them (for example, `veritysetup` for verity-enabled storage).
+
+Do not also enable `trident-install.service` or older autologin entrypoints.
+The daemon must be built with `grpc-preview` for regular Install; repository
+RPM builds enable it. For Image Customizer ISOs, `CDROM` is automatically
+recognized; for GPT USB media, `TRD_INSTALL` is automatically recognized.
+Specify `media.filesystemLabel` in the bootstrap TOML only to override those
+labels or disambiguate multiple matching devices. With full-OS initramfs,
+keep SELinux disabled and include USB storage/UAS, CD-ROM/SCSI, and USB
+host-controller drivers. QEMU's IDE CD-ROM does not validate BMC virtual
+media support.
+
+## Validation
+
+```console
+cargo test -p installer
+cargo test -p osutils terminal::tests
+cargo clippy -p installer --all-targets --no-deps -- -D warnings
+cargo fmt --all -- --check
+```
+
+Interactive disk-selection strategies and broader HC generation are follow-ups.
+ISO boot, serial-terminal behaviour, RPM builds, and physical BMC virtual media
+need separate integration validation.

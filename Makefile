@@ -141,8 +141,8 @@ format:
 
 .PHONY: test
 test: .cargo/config
-	cargo test --all --no-fail-fast
-	cargo test -p trident-client --all-features --no-fail-fast
+	cargo test --locked --all --no-fail-fast
+	cargo test --locked -p trident-client --all-features --no-fail-fast
 
 COVERAGE_EXCLUDED_FILES_REGEX='crates/docbuilder|crates/pytest|crates/setsail|target|/mnt/vss'
 
@@ -184,12 +184,12 @@ clean-coverage:
 	rm -rf target/coverage/profraw
 	rm -rf target/lcov.info
 
-target/release/trident target/release/trident-acl-agent: .cargo/config | version-vars
+target/release/trident target/release/trident-acl-agent target/release/trident-installer: .cargo/config | version-vars
 	@OPENSSL_STATIC=1 \
 		OPENSSL_LIB_DIR=$(shell dirname `whereis libssl.a | cut -d" " -f2`) \
 		OPENSSL_INCLUDE_DIR=/usr/include/openssl \
 		TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
-		cargo build --release --features dangerous-options,grpc-preview -p trident -p trident-acl-agent
+		cargo build --release --features dangerous-options,grpc-preview -p trident -p trident-acl-agent -p installer
 
 ARTIFACTS_DIR="artifacts"
 
@@ -212,7 +212,7 @@ clean-builder-image: azl-version-vars
 	@echo "Removing local image $(BUILDER_IMAGE)..."
 	@docker rmi $(BUILDER_IMAGE) || echo "Image $(BUILDER_IMAGE) not found locally."
 
-target/$(DISTRO)/release/trident target/$(DISTRO)/release/trident-acl-agent: azl-version-vars version-vars builder-image
+target/$(DISTRO)/release/trident target/$(DISTRO)/release/trident-acl-agent target/$(DISTRO)/release/trident-installer: azl-version-vars version-vars builder-image
 	@mkdir -p bin/
 	@mkdir -p target/$(DISTRO)/
 	@echo "Building Trident for Azure Linux ($(DISTRO)) using Docker image $(BUILDER_IMAGE)..."
@@ -225,10 +225,11 @@ target/$(DISTRO)/release/trident target/$(DISTRO)/release/trident-acl-agent: azl
 			--release \
 			--features dangerous-options,grpc-preview \
 			-p trident \
-			-p trident-acl-agent
+			-p trident-acl-agent \
+			-p installer
 
 # This will do a proper build on azl3, exactly as the pipelines would, with the custom registry and all.
-bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.service packaging/rpm/trident.spec packaging/selinux-policy-trident/* LICENSE NOTICE version-vars azl-version-vars
+bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/etc/installer.toml packaging/systemd/*.service packaging/systemd/*/*.conf packaging/rpm/trident.spec packaging/selinux-policy-trident/* LICENSE NOTICE version-vars azl-version-vars
 	@case "$@" in \
 		*$(DISTRO).tar.gz) ;; \
 		*) echo "Invalid target '$@' for DISTRO '$(DISTRO)'. Expected target ending in '$(DISTRO).tar.gz'."; exit 1 ;; \
@@ -262,13 +263,16 @@ bin/trident-rpms-%.tar.gz: packaging/docker/Dockerfile.full packaging/systemd/*.
 # backward compatibility; other distros use the in-container distro build.
 TRIDENT_RPM_BIN_DIR := $(if $(filter azl3,$(DISTRO)),target/release,target/$(DISTRO)/release)
 
-bin/trident-rpms.tar.gz: azl-version-vars packaging/docker/Dockerfile.azl packaging/systemd/*.service packaging/rpm/trident.spec $(TRIDENT_RPM_BIN_DIR)/trident $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent packaging/selinux-policy-trident/* LICENSE NOTICE
+bin/trident-rpms.tar.gz: azl-version-vars packaging/docker/Dockerfile.azl packaging/etc/installer.toml packaging/systemd/*.service packaging/systemd/*/*.conf packaging/rpm/trident.spec $(TRIDENT_RPM_BIN_DIR)/trident $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent $(TRIDENT_RPM_BIN_DIR)/trident-installer packaging/selinux-policy-trident/* LICENSE NOTICE
 	@mkdir -p bin/
 	@if [ ! -f bin/trident ] || ! cmp -s $(TRIDENT_RPM_BIN_DIR)/trident bin/trident; then \
 		cp $(TRIDENT_RPM_BIN_DIR)/trident bin/trident; \
 	fi
 	@if [ ! -f bin/trident-acl-agent ] || ! cmp -s $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent bin/trident-acl-agent; then \
 		cp $(TRIDENT_RPM_BIN_DIR)/trident-acl-agent bin/trident-acl-agent; \
+	fi
+	@if [ ! -f bin/trident-installer ] || ! cmp -s $(TRIDENT_RPM_BIN_DIR)/trident-installer bin/trident-installer; then \
+		cp $(TRIDENT_RPM_BIN_DIR)/trident-installer bin/trident-installer; \
 	fi
 	@docker build -t trident/trident-build:latest \
 		--build-arg TRIDENT_VERSION="$(LOCAL_BUILD_TRIDENT_VERSION)" \
