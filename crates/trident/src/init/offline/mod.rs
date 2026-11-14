@@ -19,9 +19,7 @@ use trident_api::{
         MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType,
         VerityCorruptionOption, VerityDevice,
     },
-    constants::{
-        internal_params::ENABLE_UKI_SUPPORT, EFI_DEFAULT_BIN_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH,
-    },
+    constants::{internal_params::ENABLE_UKI_SUPPORT, ROOT_MOUNT_POINT_PATH},
     error::{
         ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
         InvalidInputError, ReportError, TridentError, TridentResultExt,
@@ -31,7 +29,7 @@ use trident_api::{
 };
 use uuid::Uuid;
 
-use crate::{datastore::DataStore, engine::boot::mshv, subsystems::esp};
+use crate::{datastore::DataStore, subsystems::esp};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 struct PrismPartition {
@@ -459,7 +457,7 @@ fn parse_lazy_partitions(
 
 /// Given a path to a Host Status file, initializes the datastore with the Host Status.
 /// This command can be executed offline in a chroot environment as part of MIC image customization.
-/// Rejects detected MSHV bundles, which offline initialization does not support.
+/// Seeds a missing AZLA from the installed fallback, validating any detected MSHV bundle.
 pub fn execute(
     hs_path: Option<&Path>,
     lazy_partitions: &[String],
@@ -536,15 +534,6 @@ pub fn execute(
             "Failed to find ESP filesystem in Host Status, validation should have failed if this was the case",
         )))?;
 
-    // Offline initialization has no source COSI; inspect the installed BOOT bundle.
-    if mshv::has_slot_mshv_bundle(&esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH))
-        .structured(InvalidInputError::InvalidBootConfiguration)?
-    {
-        return Err(TridentError::new(
-            InvalidInputError::InvalidBootConfiguration,
-        ))
-        .message("Offline initialization of slot-owned MSHV images is not supported");
-    }
     esp::bootstrap_azla_from_fallback(esp_path)
         .structured(InvalidInputError::InvalidBootConfiguration)
         .message("Failed to bootstrap AZLA from fallback")?;

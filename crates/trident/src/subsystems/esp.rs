@@ -59,11 +59,8 @@ impl Subsystem for EspSubsystem {
         mshv::validate_configuration(ctx)
     }
 
-    /// Revalidates MSHV restrictions before file-based ESP deployment.
     #[tracing::instrument(name = "esp_provision", skip_all)]
     fn provision(&mut self, ctx: &EngineContext, mount_path: &Path) -> Result<(), TridentError> {
-        // Recheck constraints even if prior validation was skipped.
-        mshv::validate_configuration(ctx)?;
         // Perform file-based deployment of ESP images, if needed, after filesystems have been
         // mounted and initialized.
 
@@ -679,15 +676,16 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
         })
         .context("Failed to copy files")?;
 
-    // Rename all pre-existing files from to_dir/<filename> to to_dir/<filename>.old
+    // Rename pre-existing entries from to_dir/<filename> to to_dir/<filename>.old.
     fs::read_dir(to_dir)?
         .collect::<Result<Vec<_>, _>>()?
         .iter()
         .try_for_each(|orig_path| {
             let orig_file_name = orig_path.file_name();
             let orig_file_name_string = orig_file_name.to_string_lossy();
-            // Skip files that end with .new
-            if !orig_file_name_string.ends_with(".new") {
+            // Leave staged files and pending cleanup entries in place.
+            if !orig_file_name_string.ends_with(".new") && !orig_file_name_string.ends_with(".old")
+            {
                 let new_file_name = format!("{orig_file_name_string}.old");
                 let to_path = to_dir.join(new_file_name);
                 fs::rename(orig_path.path(), &to_path).context(format!(
@@ -731,7 +729,7 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
         })
         .context("Failed to rename copied files")?;
 
-    // Remove all preexisting files <filename>.old
+    // Remove retired files and the known MSHV payload directory.
     fs::read_dir(to_dir)?
         .collect::<Result<Vec<_>, _>>()?
         .iter()
@@ -739,11 +737,23 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
             let orig_file_name = orig_path.file_name();
             // Skip files that do not end with .old
             if orig_file_name.to_string_lossy().ends_with(".old") {
-                fs::remove_file(orig_path.path()).context(format!(
-                    "Failed to remove pre-existing file '{}'",
+                let result = if orig_path.file_type()?.is_dir()
+                    && orig_file_name
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case("Windows.old")
+                {
+                    fs::remove_dir_all(orig_path.path())
+                } else {
+                    fs::remove_file(orig_path.path())
+                };
+                result.context(format!(
+                    "Failed to remove pre-existing entry '{}'",
                     orig_path.path().display()
                 ))?;
-                trace!("Removed pre-existing file '{}'", orig_path.path().display());
+                trace!(
+                    "Removed pre-existing entry '{}'",
+                    orig_path.path().display()
+                );
             }
             Ok::<(), Error>(())
         })
@@ -1590,6 +1600,44 @@ mod tests {
                 assert!(!to_dir.path().join(file_name).exists());
             }
         }
+    }
+
+    #[test]
+    fn test_replace_boot_files_retires_mshv_directory() {
+        for directory in ["Windows", "Windows.old", "wInDoWs.old"] {
+            let source = TempDir::new().unwrap();
+            let destination = TempDir::new().unwrap();
+            fs::write(source.path().join(BOOT_EFI), b"ordinary loader").unwrap();
+            for name in FILES {
+                fs::write(destination.path().join(name), b"previous loader").unwrap();
+            }
+            let secondary = destination.path().join(directory).join("System32");
+            fs::create_dir_all(&secondary).unwrap();
+            fs::write(secondary.join("image-specific.dll"), b"previous payload").unwrap();
+
+            replace_boot_files(source.path(), destination.path()).unwrap();
+
+            assert_eq!(
+                fs::read(destination.path().join(BOOT_EFI)).unwrap(),
+                b"ordinary loader"
+            );
+            assert_eq!(fs::read_dir(destination.path()).unwrap().count(), 1);
+        }
+    }
+
+    #[test]
+    fn test_replace_boot_files_preserves_unrelated_directories() {
+        let source = TempDir::new().unwrap();
+        let destination = TempDir::new().unwrap();
+        fs::write(source.path().join(BOOT_EFI), b"ordinary loader").unwrap();
+        fs::create_dir_all(destination.path().join("unrelated")).unwrap();
+        fs::write(destination.path().join("unrelated/keep"), b"unrelated data").unwrap();
+
+        assert!(replace_boot_files(source.path(), destination.path()).is_err());
+        assert_eq!(
+            fs::read(destination.path().join("unrelated.old/keep")).unwrap(),
+            b"unrelated data"
+        );
     }
 
     /// Ordinary bootstrap copies top-level boot files.

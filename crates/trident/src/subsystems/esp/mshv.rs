@@ -22,20 +22,15 @@ use crate::{
 /// Filename of the second-stage EFI executable for efitreeloader (ETL).
 pub(super) const ETL_SECOND_STAGE_EFI_FILENAME: &str = "second.efi";
 
-/// Enforces support restrictions for images declaring the MSHV bootloader type.
+/// Enforces support restrictions for file-based deployment of MSHV images.
 pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentError> {
-    if !ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
+    if ctx.is_stream_image || !ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
         return Ok(());
     }
     // The required bootloader files currently support only x86-64.
     if !SystemArchitecture::current().is_x64() || !ctx.image_distro().is_acl() || !ctx.is_uki()? {
         return Err(unsupported(
             "Slot-owned MSHV requires an x86-64 ACL UKI image",
-        ));
-    }
-    if ctx.is_stream_image {
-        return Err(unsupported(
-            "Slot-owned MSHV requires file-based ESP deployment",
         ));
     }
     if ctx
@@ -96,7 +91,7 @@ mod tests {
         osimage::{bootloader::BootloaderType, mock::MockOsImage},
     };
 
-    /// Only metadata-declared MSHV images receive these restrictions.
+    /// Only file-based deployment of metadata-declared MSHV images receives these restrictions.
     #[test]
     fn rejects_unsupported_mshv_images_without_affecting_other_images() {
         let image = MockOsImage {
@@ -120,7 +115,7 @@ mod tests {
             BootloaderType::EfitreeloaderMshvSystemdBoot,
             None,
         ));
-        assert!(validate_configuration(&ctx).is_err());
+        assert!(validate_configuration(&ctx).is_ok());
         ctx.is_stream_image = false;
         assert_eq!(
             validate_configuration(&ctx).is_ok(),
@@ -131,6 +126,8 @@ mod tests {
             ..Default::default()
         });
         assert!(validate_configuration(&ctx).is_err());
+        ctx.is_stream_image = true;
+        assert!(validate_configuration(&ctx).is_ok());
     }
 
     /// Source metadata must match the retained slot, including non-default slots.
