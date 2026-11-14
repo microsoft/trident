@@ -45,9 +45,12 @@ an optical ISO alongside a separate installer USB.
 The older `cdromLabel` key is accepted as an alias; setting both is an error.
 Media is mounted read-only with filesystem auto-detection at
 `/run/trident/installer-media`. Media discovery waits up to 60 seconds for
-USB/BMC block-device enumeration during autorun before reporting a missing
-source. Explicit remote Stream COSI recovery bypasses local media discovery,
-configuration overlays, and COSI scanning, including when media is broken.
+USB/BMC block-device enumeration when the Host Configuration or COSI depends
+on media. A live-OS or HTTP(S) Host Configuration without a media-backed image
+skips discovery and media-local overrides; a symlink to media or an
+`installer://image` reference still waits. Explicit remote Stream COSI recovery
+bypasses local media discovery, configuration overlays, and COSI scanning,
+including when media is broken.
 Other filesystem types require corresponding kernel mount support on the live
 OS. Duplicate labels are rejected. Optional `installer/installer.toml` on the
 mounted media can override mode, image directory, and autorun options, but not

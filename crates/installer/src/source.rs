@@ -121,8 +121,95 @@ pub(super) fn prepare_with_progress(
     if matches!(request, Request::Stream(_)) {
         return prepare_from_media_with_progress(settings, request, None, &mut progress);
     }
+    if request == &Request::Autorun {
+        settings.require_autorun()?;
+        if let Some(plan) = self_contained_install(settings, &mut progress)? {
+            return Ok((settings.clone(), plan));
+        }
+    }
     let root = media_root(settings, request == &Request::Autorun, &mut progress)?;
     prepare_from_media_with_progress(settings, request, root.as_deref(), &mut progress)
+}
+
+/// Treats a complete live-OS or remote Host Configuration as authoritative, without media overlays.
+fn self_contained_install(
+    settings: &Config,
+    progress: &mut impl FnMut(&str) -> Result<(), Error>,
+) -> Result<Option<Plan>, Error> {
+    let Some(source) = configured_host_configuration_source(settings)? else {
+        return Ok(None);
+    };
+    if !source.starts_with('/') && !source.contains("://") {
+        return Ok(None);
+    }
+    let url = source_url(&source, None)?;
+    if file_source_may_need_media(&url, settings)? {
+        return Ok(None);
+    }
+    progress("Checking Host Configuration")?;
+    let text = read_text(&url)?;
+    let config: HostConfiguration =
+        serde_yaml::from_str(&text).context("Invalid Host Configuration YAML")?;
+    if let Some(image) = &config.image {
+        if image.url.as_str() == IMAGE_MARKER || file_source_may_need_media(&image.url, settings)? {
+            return Ok(None);
+        }
+    }
+    let config = resolve_parsed_host_configuration(config, None)?;
+    Ok(Some(Plan::Install {
+        config: Box::new(config),
+        source,
+    }))
+}
+
+/// A missing path behind a symlink may become readable only after installer media is mounted.
+fn file_source_may_need_media(url: &Url, settings: &Config) -> Result<bool, Error> {
+    if url.scheme() != "file" {
+        return Ok(false);
+    }
+    let path = url
+        .to_file_path()
+        .map_err(|()| anyhow!("Invalid local file URL"))?;
+    let media = settings
+        .media
+        .mount_path
+        .as_deref()
+        .unwrap_or(Path::new(config::MEDIA_MOUNT));
+    if path.starts_with(media) {
+        return Ok(true);
+    }
+    match path.canonicalize() {
+        Ok(resolved) => Ok(resolved.starts_with(media)),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            let mut ancestor = PathBuf::new();
+            for component in path.components() {
+                ancestor.push(component);
+                match fs::symlink_metadata(&ancestor) {
+                    Ok(metadata) if metadata.file_type().is_symlink() => return Ok(true),
+                    Ok(_) => {}
+                    Err(error) if error.kind() == ErrorKind::NotFound => break,
+                    Err(error) => {
+                        return Err(error)
+                            .with_context(|| format!("Failed to inspect '{}'", ancestor.display()))
+                    }
+                }
+            }
+            Ok(false)
+        }
+        Err(error) => Err(error).with_context(|| format!("Failed to resolve '{}'", path.display())),
+    }
+}
+
+/// Keeps dangling default Host Configuration symlinks eligible for media-dependent installs.
+fn configured_host_configuration_source(settings: &Config) -> Result<Option<String>, Error> {
+    if let Some(source) = &settings.autorun.host_configuration {
+        return Ok(Some(source.clone()));
+    }
+    match fs::symlink_metadata(config::DEFAULT_HOST_CONFIGURATION) {
+        Ok(_) => Ok(Some(config::DEFAULT_HOST_CONFIGURATION.into())),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).context("Failed to inspect default Host Configuration"),
+    }
 }
 
 #[cfg(test)]
@@ -167,16 +254,7 @@ fn prepare_from_media_with_progress(
         remote_url(source)?;
         Some(source.clone())
     } else {
-        match &settings.autorun.host_configuration {
-            Some(source) => Some(source.clone()),
-            None => match fs::metadata(config::DEFAULT_HOST_CONFIGURATION) {
-                Ok(_) => Some(config::DEFAULT_HOST_CONFIGURATION.into()),
-                Err(error) if error.kind() == ErrorKind::NotFound => None,
-                Err(error) => {
-                    return Err(error).context("Failed to inspect default Host Configuration")
-                }
-            },
-        }
+        configured_host_configuration_source(&settings)?
     };
     let plan = match source {
         Some(source) => {
@@ -405,8 +483,15 @@ pub(super) fn resolve_host_configuration(
     text: &str,
     selected: Option<&Path>,
 ) -> Result<HostConfiguration, Error> {
-    let mut config: HostConfiguration =
+    let config: HostConfiguration =
         serde_yaml::from_str(text).context("Invalid Host Configuration YAML")?;
+    resolve_parsed_host_configuration(config, selected)
+}
+
+fn resolve_parsed_host_configuration(
+    mut config: HostConfiguration,
+    selected: Option<&Path>,
+) -> Result<HostConfiguration, Error> {
     if let Some(image) = &mut config.image {
         if image.url.as_str() == IMAGE_MARKER {
             image.url = file_url(selected.context(
@@ -535,6 +620,7 @@ mod tests {
     use std::{
         io::{Cursor, Write},
         net::TcpListener,
+        os::unix::fs as unix_fs,
     };
 
     use indoc::indoc;
@@ -644,6 +730,128 @@ mod tests {
         let (_, plan) =
             prepare_with_progress(&settings, &Request::Stream(url.clone()), |_| Ok(())).unwrap();
         assert!(matches!(plan, Plan::Stream { image } if image == url));
+    }
+
+    #[test]
+    /// A complete live-OS Host Configuration never waits for media or applies its overlay.
+    fn self_contained_autorun_skips_media() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("host.yaml");
+        fs::write(
+            &path,
+            valid_host_configuration().replace(IMAGE_MARKER, "https://example.com/image.cosi"),
+        )
+        .unwrap();
+        let mut settings = Config::default();
+        settings.autorun.host_configuration = Some(path.display().to_string());
+        settings.media.mount_path = Some(root.path().join("not-mounted"));
+        let (_, plan) = prepare_with_progress(&settings, &Request::Autorun, |_| Ok(())).unwrap();
+        assert!(matches!(plan, Plan::Install { source, .. } if source == path.to_string_lossy()));
+
+        settings.mode = config::Mode::Interactive;
+        let error = prepare_with_progress(&settings, &Request::Autorun, |_| Ok(())).unwrap_err();
+        assert!(
+            error.to_string().contains("Interactive installation"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    /// An HTTP Host Configuration with its own image does not need a local media mount.
+    fn self_contained_remote_autorun_skips_media() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/host.yaml", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0; 512];
+            assert_ne!(socket.read(&mut request).unwrap(), 0);
+            let body =
+                valid_host_configuration().replace(IMAGE_MARKER, "https://example.com/image.cosi");
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).unwrap();
+        });
+        let mut settings = Config::default();
+        settings.autorun.host_configuration = Some(url.clone());
+        settings.media.mount_path = Some("/nonexistent-installer-media".into());
+        let (_, plan) = prepare_with_progress(&settings, &Request::Autorun, |_| Ok(())).unwrap();
+        assert!(matches!(plan, Plan::Install { source, .. } if source == url));
+        server.join().unwrap();
+    }
+
+    #[test]
+    /// Media-relative Host Configurations and media-backed images still need discovery.
+    fn media_dependent_host_configuration_is_not_self_contained() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("host.yaml");
+        fs::write(&path, valid_host_configuration()).unwrap();
+        let mut settings = Config::default();
+        settings.autorun.host_configuration = Some(path.display().to_string());
+        assert!(self_contained_install(&settings, &mut |_| Ok(()))
+            .unwrap()
+            .is_none());
+        settings.autorun.host_configuration = Some("installer/host.yaml".into());
+        assert!(self_contained_install(&settings, &mut |_| Ok(()))
+            .unwrap()
+            .is_none());
+        fs::write(
+            &path,
+            valid_host_configuration().replace(
+                IMAGE_MARKER,
+                &format!("file://{}/cosi/image.cosi", config::MEDIA_MOUNT),
+            ),
+        )
+        .unwrap();
+        settings.autorun.host_configuration = Some(path.display().to_string());
+        assert!(self_contained_install(&settings, &mut |_| Ok(()))
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    /// Dangling links into installer media must not be mistaken for an absent Host Configuration.
+    fn symlinked_host_configuration_waits_for_media() {
+        let root = TempDir::new().unwrap();
+        let link = root.path().join("host.yaml");
+        unix_fs::symlink(
+            Path::new(config::MEDIA_MOUNT).join("installer/host.yaml"),
+            &link,
+        )
+        .unwrap();
+        assert!(fs::metadata(&link).is_err());
+        assert!(fs::symlink_metadata(&link).is_ok());
+        let mut settings = Config::default();
+        settings.autorun.host_configuration = Some(link.display().to_string());
+        assert!(self_contained_install(&settings, &mut |_| Ok(()))
+            .unwrap()
+            .is_none());
+
+        let directory_link = root.path().join("media");
+        unix_fs::symlink(config::MEDIA_MOUNT, &directory_link).unwrap();
+        settings.autorun.host_configuration = Some(
+            directory_link
+                .join("installer/host.yaml")
+                .display()
+                .to_string(),
+        );
+        assert!(self_contained_install(&settings, &mut |_| Ok(()))
+            .unwrap()
+            .is_none());
+
+        let local = root.path().join("local.yaml");
+        fs::write(
+            &local,
+            valid_host_configuration().replace(IMAGE_MARKER, "https://example.com/image.cosi"),
+        )
+        .unwrap();
+        let local_link = root.path().join("local-link.yaml");
+        unix_fs::symlink(local, &local_link).unwrap();
+        settings.autorun.host_configuration = Some(local_link.display().to_string());
+        assert!(self_contained_install(&settings, &mut |_| Ok(()))
+            .unwrap()
+            .is_some());
     }
 
     #[test]

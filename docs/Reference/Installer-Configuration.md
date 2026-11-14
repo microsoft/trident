@@ -33,14 +33,17 @@ may be omitted; unknown fields and invalid values are errors.
 
 `mode = "autorun"` means **start without an interactive source picker**. It
 does not choose the Trident operation; `mode = "install"` and `mode = "stream"`
-are not valid TOML settings. After looking for media and applying any
-[media-local overrides](#optional-configuration-on-the-media), autorun makes
-this choice:
+are not valid TOML settings. If the bootstrap configuration names a complete
+live-OS or HTTP(S) Host Configuration whose image does not use
+`installer://image` or a path on installer media, autorun uses it without
+looking for media or applying [media-local
+overrides](#optional-configuration-on-the-media). Otherwise it discovers media,
+applies any overrides, and makes this choice:
 
 | Priority | Condition | Operation |
 | --- | --- | --- |
 | 1 | `autorun.hostConfiguration` is set | **Install** using that Host Configuration, even if a COSI is present. |
-| 2 | Otherwise, `/etc/trident/config.yaml` exists in the live OS | **Install** using that file, even if a COSI is present. |
+| 2 | Otherwise, `/etc/trident/config.yaml` exists or is a symlink in the live OS | **Install** using that file, even if a COSI is present. |
 | 3 | Otherwise, media contains a `.cosi` file | **StreamDisk** using the first regular COSI in `media.cosiDirectory`, sorted by filename. |
 | 4 | Neither source is available | Show recovery actions on the graphical console, or report an error without one. |
 
@@ -88,8 +91,9 @@ necessarily the value written in the packaged file.
 | `autorun.reboot` | `true` | Reboot after successful servicing **only if** Trident reports that work was performed and a reboot is required. |
 | `autorun.force` | `false` | Legacy key accepted for compatibility but ignored. Autorun never compares installed filesystem UUIDs or asks for repeat-install confirmation. |
 
-Media discovery waits up to 60 seconds during autorun for late USB/BMC device
-enumeration. It fails if more than one device matches the selected/default
+Media-dependent autorun waits up to 60 seconds for late USB/BMC device
+enumeration; a self-contained Host Configuration skips discovery entirely.
+Discovery fails if more than one device matches the selected/default
 labels. The selected filesystem is mounted read-only at
 `/run/trident/installer-media`;
 the live OS must support its filesystem. A manually selected remote recovery
@@ -110,9 +114,13 @@ Remote connection and timeout errors are retried for up to 60 seconds while
 networking starts; HTTP response errors fail immediately.
 Host Configuration input must be valid YAML and is limited to 2 MiB. A Host
 Configuration image URL of `installer://image` fails if no COSI is available.
-Authored disk paths and image checksums remain unchanged. Even with an
-explicit Host Configuration source, autorun checks for media first (up to
-the 60-second label-discovery wait) so it can resolve `installer://image`.
+Authored disk paths and image checksums remain unchanged. Media-relative Host
+Configuration paths and images on installer media (including
+`installer://image`) require discovery; a default
+`/etc/trident/config.yaml` symlink pointing into the media also waits for its
+target to become available. A Host Configuration entirely on the live OS or
+HTTP(S), with no media-backed image, takes precedence over media overlays even
+when media is already present.
 Explicit remote Stream COSI recovery bypasses local media discovery and
 overlays, so it remains available when the local media cannot be read.
 
@@ -126,8 +134,8 @@ could select as its smallest fitting target, such as a large installer USB.
 
 ## Optional configuration on the media
 
-After finding or mounting media, the installer merges
-`installer/installer.toml` from its root over the bootstrap configuration.
+For media-dependent installs, after finding or mounting media the installer
+merges `installer/installer.toml` from its root over the bootstrap configuration.
 For example, this media-local file selects **Install** without changing the
 bootstrap file baked into the live OS:
 
