@@ -777,6 +777,7 @@ mod tests {
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
             hash_device_id: "root-hash".to_string(),
+            hash_signature_device_id: None,
             ..Default::default()
         }];
 
@@ -787,6 +788,7 @@ mod tests {
                 name: "root".to_string(),
                 data_device_id: "root-data".to_string(),
                 hash_device_id: "root-hash".to_string(),
+                hash_signature_device_id: None,
                 ..Default::default()
             }
         );

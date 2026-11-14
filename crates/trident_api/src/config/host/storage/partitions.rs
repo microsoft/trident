@@ -123,6 +123,11 @@ pub enum PartitionType {
     /// x64: `2c7357ed-ebd2-46d9-aec1-23d437ec2bf5`
     RootVerity,
 
+    /// # Root verity hash signature partition
+    ///
+    /// x64: `41092b05-9fc8-4523-994f-2def0408b176`
+    RootVeritySig,
+
     /// # Home partition
     ///
     /// `933ac7e1-2eb4-4f13-b844-0e14e2aef915`
@@ -201,6 +206,7 @@ impl PartitionType {
             PartitionType::Root => "root",
             PartitionType::Swap => "swap",
             PartitionType::RootVerity => "root-verity",
+            PartitionType::RootVeritySig => "root-verity-sig",
             PartitionType::Home => "home",
             PartitionType::Var => "var",
             PartitionType::Usr => "usr",
@@ -232,6 +238,7 @@ impl PartitionType {
             Self::LinuxGeneric => Some(Self::LinuxGeneric),
 
             Self::RootVerity
+            | Self::RootVeritySig
             | Self::UsrVerity
             | Self::UsrVeritySig
             | Self::Esp
@@ -259,6 +266,7 @@ impl From<PartitionType> for DiscoverablePartitionType {
             PartitionType::Root => Self::Root,
             PartitionType::Swap => Self::Swap,
             PartitionType::RootVerity => Self::RootVerity,
+            PartitionType::RootVeritySig => Self::RootVeritySig,
             PartitionType::Home => Self::Home,
             PartitionType::Var => Self::Var,
             PartitionType::Usr => Self::Usr,
@@ -328,11 +336,10 @@ impl From<DiscoverablePartitionType> for PartitionType {
             | DiscoverablePartitionType::UsrAmd64VeritySig
             | DiscoverablePartitionType::UsrArm64VeritySig => Self::UsrVeritySig,
 
-            // Root verity signature partitions do not have a corresponding
-            // PartitionType variant yet, so we treat them as unknown.
+            // We coalesce all root verity signature variants into one.
             DiscoverablePartitionType::RootVeritySig
             | DiscoverablePartitionType::RootAmd64VeritySig
-            | DiscoverablePartitionType::RootArm64VeritySig => Self::Unknown(dpt.to_uuid()),
+            | DiscoverablePartitionType::RootArm64VeritySig => Self::RootVeritySig,
 
             // Fallback for unknown types
             DiscoverablePartitionType::Unknown(uuid) => Self::Unknown(uuid),
@@ -419,17 +426,26 @@ mod tests {
             assert_eq!(PartitionType::from(dpt), PartitionType::UsrVeritySig);
         }
 
-        // Root-verity-sig variants have no corresponding PartitionType
-        // variant yet, so they still fall back to Unknown.
+        assert_eq!(
+            DiscoverablePartitionType::from(PartitionType::RootVeritySig),
+            DiscoverablePartitionType::RootVeritySig
+        );
+        assert_eq!(
+            PartitionType::RootVeritySig.to_sdrepart_part_type(),
+            "root-verity-sig"
+        );
+        let root_sig: PartitionType = serde_yaml::from_str("root-verity-sig").unwrap();
+        assert_eq!(root_sig, PartitionType::RootVeritySig);
+        assert_eq!(
+            serde_yaml::to_string(&root_sig).unwrap().trim(),
+            "root-verity-sig"
+        );
         for dpt in [
             DiscoverablePartitionType::RootVeritySig,
             DiscoverablePartitionType::RootAmd64VeritySig,
             DiscoverablePartitionType::RootArm64VeritySig,
         ] {
-            assert!(matches!(
-                PartitionType::from(dpt),
-                PartitionType::Unknown(_)
-            ));
+            assert_eq!(PartitionType::from(dpt), PartitionType::RootVeritySig);
         }
     }
 

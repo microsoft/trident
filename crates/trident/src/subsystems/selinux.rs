@@ -507,6 +507,7 @@ mod tests {
                 name: "root".into(),
                 data_device_id: "root-data".into(),
                 hash_device_id: "root-hash".into(),
+                hash_signature_device_id: None,
                 corruption_option: VerityCorruptionOption::Ignore,
             }],
             ..Default::default()

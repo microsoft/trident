@@ -693,6 +693,7 @@ mod tests {
             name: "myVerityDevice".into(),
             data_device_id: "data".into(),
             hash_device_id: "hash".into(),
+            hash_signature_device_id: None,
             ..Default::default()
         };
         let backing_node_idx = graph.inner.add_node((&verity_dev).into());
@@ -723,6 +724,7 @@ mod tests {
             name: "myVerityDevice2".into(),
             data_device_id: "data2".into(),
             hash_device_id: "hash2".into(),
+            hash_signature_device_id: None,
             ..Default::default()
         };
         let backing_node_idx2 = graph.inner.add_node((&verity_dev2).into());
@@ -813,6 +815,7 @@ mod tests {
                     name: "myVerityDevice".into(),
                     data_device_id: "data".into(),
                     hash_device_id: "hash".into(),
+                    hash_signature_device_id: None,
                     ..Default::default()
                 }),
             }));
@@ -910,6 +913,7 @@ mod tests {
                     name: "myVerityDevice".into(),
                     data_device_id: "data".into(),
                     hash_device_id: "hash".into(),
+                    hash_signature_device_id: None,
                     ..Default::default()
                 }),
             }));
@@ -1062,6 +1066,7 @@ mod tests {
                 name: "verity".into(),
                 data_device_id: "data".into(),
                 hash_device_id: "hash".into(),
+                hash_signature_device_id: None,
                 ..Default::default()
             }],
             encryption: Some(Encryption {
