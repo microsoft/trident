@@ -257,11 +257,22 @@ fn perform_relabel(ctx: &EngineContext) -> Result<(), TridentError> {
 /// - The filesystem supports SELinux.
 /// - The filesystem is mounted.
 /// - The filesystem is not read-only.
+/// - During an A/B update, the filesystem belongs to an A/B volume pair.
 ///
 fn filesystems_to_relabel(ctx: &EngineContext) -> Result<Vec<PathBuf>, TridentError> {
     let mut out = Vec::new();
+    let ab_volume_pair_ids = ctx.spec.storage.get_ab_volume_pair_ids();
 
     for filesystem in &ctx.filesystems {
+        // Shared filesystems may be in use by the active OS during an A/B update.
+        if ctx.servicing_type == ServicingType::AbUpdate
+            && !filesystem
+                .device_id()
+                .is_some_and(|id| ab_volume_pair_ids.contains(id))
+        {
+            continue;
+        }
+
         // Filter to only Real filesystems
         let Some(KernelFilesystemType::Real(fs_type)) = &filesystem.fs_type() else {
             continue;
@@ -303,8 +314,8 @@ mod tests {
 
     use trident_api::{
         config::{
-            Disk, Extension, FileSystem, FileSystemSource, MountOptions, MountPoint,
-            NewFileSystemType, Partition, PartitionSize, PartitionType, Storage,
+            AbUpdate, AbVolumePair, Disk, Extension, FileSystem, FileSystemSource, MountOptions,
+            MountPoint, NewFileSystemType, Partition, PartitionSize, PartitionType, Storage,
             VerityCorruptionOption, VerityDevice,
         },
         constants::MOUNT_OPTION_READ_ONLY,
@@ -313,7 +324,7 @@ mod tests {
     };
 
     use crate::{
-        engine::filesystem::{FileSystemData, FileSystemDataImage},
+        engine::filesystem::{FileSystemData, FileSystemDataImage, FileSystemDataNew},
         osimage::{
             mock::{MockImage, MockOsImage},
             OsImage, OsImageFileSystemType,
@@ -405,6 +416,70 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(filesystems_to_relabel(&ctx).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_filesystems_to_relabel_ab_update_and_clean_install() {
+        let mut ctx = EngineContext::default();
+        ctx.spec.storage.ab_update = Some(AbUpdate {
+            volume_pairs: vec![
+                AbVolumePair {
+                    id: "root".into(),
+                    volume_a_id: "root-a".into(),
+                    volume_b_id: "root-b".into(),
+                },
+                AbVolumePair {
+                    id: "usr".into(),
+                    volume_a_id: "usr-a".into(),
+                    volume_b_id: "usr-b".into(),
+                },
+            ],
+        });
+        ctx.filesystems = [
+            ("root", Some("/"), "", RealFilesystemType::Ext4),
+            ("usr", Some("/usr"), "", RealFilesystemType::Xfs),
+            (
+                "shared",
+                Some("/var/lib/containerd"),
+                "",
+                RealFilesystemType::Ext4,
+            ),
+            (
+                "root",
+                Some("/read-only"),
+                MOUNT_OPTION_READ_ONLY,
+                RealFilesystemType::Ext4,
+            ),
+            ("root", None, "", RealFilesystemType::Ext4),
+            ("root", Some("/unsupported"), "", RealFilesystemType::Vfat),
+        ]
+        .into_iter()
+        .map(|(device_id, path, options, fs_type)| {
+            FileSystemData::New(FileSystemDataNew {
+                device_id: device_id.into(),
+                mount_point: path.map(|path| MountPoint {
+                    path: path.into(),
+                    options: MountOptions::new(options),
+                }),
+                fs_type,
+            })
+        })
+        .collect();
+
+        for (servicing_type, expected) in [
+            (
+                ServicingType::CleanInstall,
+                vec!["/", "/usr", "/var/lib/containerd"],
+            ),
+            (ServicingType::AbUpdate, vec!["/", "/usr"]),
+        ] {
+            ctx.servicing_type = servicing_type;
+            assert_eq!(
+                filesystems_to_relabel(&ctx).unwrap(),
+                expected.into_iter().map(PathBuf::from).collect::<Vec<_>>(),
+                "servicing type: {servicing_type:?}",
+            );
+        }
     }
 
     #[test]
