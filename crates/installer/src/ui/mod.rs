@@ -25,14 +25,14 @@ use tokio::{
     time,
 };
 
-use osutils::{systemd, terminal as os_terminal};
+use osutils::systemd;
 use trident_client::{LogLevel, ServicingEvent};
 
 use crate::{
     client::{self, Event},
     config::Config,
     source::{self, Request},
-    INSTALLER_LOG_TX,
+    terminal as installer_terminal, INSTALLER_LOG_TX,
 };
 
 mod model;
@@ -72,7 +72,7 @@ impl Display {
         terminal::enable_raw_mode()?;
         self.active = true;
         if self.linux_vt {
-            os_terminal::set_vt_palette(&mut io::stdout(), &vt_rgb_palette()?)?;
+            installer_terminal::set_vt_palette(&mut io::stdout(), &vt_rgb_palette()?)?;
         }
         execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
         self.terminal.clear()?;
@@ -97,7 +97,7 @@ impl Display {
             Ok(())
         })();
         let palette = if self.linux_vt {
-            os_terminal::reset_vt_palette(&mut io::stdout())
+            installer_terminal::reset_vt_palette(&mut io::stdout())
         } else {
             Ok(())
         };
@@ -340,8 +340,9 @@ pub(super) async fn run(
                                 println!("\nShell: type exit to return. Installation continues; automatic reboot waits.");
                                 let tty =
                                     OpenOptions::new().read(true).write(true).open("/dev/tty")?;
-                                shell =
-                                    Some(task::spawn_blocking(move || os_terminal::shell(&tty)));
+                                shell = Some(task::spawn_blocking(move || {
+                                    installer_terminal::shell(&tty)
+                                }));
                                 break;
                             }
                             Action::Start(request) => {

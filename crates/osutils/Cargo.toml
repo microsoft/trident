@@ -51,4 +51,5 @@ rand = {workspace = true}
 [features]
 functional-test = ["pytest", "test-utilities"]
 pytest-generator = ["pytest"]
+run-interactive = []
 test-utilities = ["rand"]

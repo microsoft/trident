@@ -1,3 +1,5 @@
+//! Console ownership, serial mirrors and recovery-shell setup for installer boots.
+
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, IsTerminal, Write},
@@ -9,20 +11,19 @@ use std::{
 };
 
 use anyhow::{ensure, Context, Error};
-use nix::{
-    libc,
-    sys::signal::{self, SigSet, SigmaskHow, Signal},
-    unistd::{self, Pid},
-};
+use nix::{libc, unistd};
 
-use crate::dependencies::Dependency;
+use osutils::dependencies::{self, Dependency};
 
 const ACTIVE_CONSOLES_PATH: &str = "/sys/class/tty/console/active";
 const GRAPHICAL_CONSOLE: &str = "tty1";
 const VT_PALETTE_SIZE: u8 = 16;
 
 /// Sets RGB values for the Linux virtual console's 16 ANSI colour slots.
-pub fn set_vt_palette(output: &mut impl Write, colours: &[(u8, u8, u8, u8)]) -> io::Result<()> {
+pub(super) fn set_vt_palette(
+    output: &mut impl Write,
+    colours: &[(u8, u8, u8, u8)],
+) -> io::Result<()> {
     for &(slot, red, green, blue) in colours {
         if slot >= VT_PALETTE_SIZE {
             return Err(io::Error::new(
@@ -36,13 +37,13 @@ pub fn set_vt_palette(output: &mut impl Write, colours: &[(u8, u8, u8, u8)]) -> 
 }
 
 /// Restores the Linux virtual console's built-in ANSI colour palette.
-pub fn reset_vt_palette(output: &mut impl Write) -> io::Result<()> {
+pub(super) fn reset_vt_palette(output: &mut impl Write) -> io::Result<()> {
     output.write_all(b"\x1b]R")?;
     output.flush()
 }
 
 /// Reads the active kernel consoles, resolving `tty0` to the graphical `tty1`.
-pub fn active_consoles() -> Result<Vec<PathBuf>, Error> {
+pub(super) fn active_consoles() -> Result<Vec<PathBuf>, Error> {
     let active = fs::read_to_string(ACTIVE_CONSOLES_PATH)
         .context("Failed to read active kernel consoles")?;
     console_paths(&active)
@@ -70,21 +71,8 @@ fn console_paths(active: &str) -> Result<Vec<PathBuf>, Error> {
     Ok(consoles)
 }
 
-/// Prefers `tty1` for the TUI and otherwise uses the first active console.
-pub fn preferred_console(consoles: &[PathBuf]) -> Result<&Path, Error> {
-    consoles
-        .iter()
-        .find(|path| {
-            path.file_name()
-                .is_some_and(|name| name == GRAPHICAL_CONSOLE)
-        })
-        .or_else(|| consoles.first())
-        .map(PathBuf::as_path)
-        .context("No console available")
-}
-
 /// Opens a serial console without allowing flow control to block a caller's event loop.
-pub fn open_nonblocking_console(path: impl AsRef<Path>) -> Result<File, Error> {
+pub(super) fn open_nonblocking_console(path: impl AsRef<Path>) -> Result<File, Error> {
     let path = path.as_ref();
     OpenOptions::new()
         .write(true)
@@ -96,7 +84,7 @@ pub fn open_nonblocking_console(path: impl AsRef<Path>) -> Result<File, Error> {
 /// Claims a character terminal as the controlling TTY and redirects stdin/stdout to it.
 ///
 /// The caller must stop competing getty units before attaching.
-pub fn attach(path: impl AsRef<Path>) -> Result<File, Error> {
+pub(super) fn attach(path: impl AsRef<Path>) -> Result<File, Error> {
     let path = path.as_ref();
     let terminal = OpenOptions::new()
         .read(true)
@@ -115,7 +103,8 @@ pub fn attach(path: impl AsRef<Path>) -> Result<File, Error> {
     if unsafe { libc::ioctl(terminal.as_raw_fd(), libc::TIOCSCTTY, 1) } < 0 {
         return Err(io::Error::last_os_error()).context("Failed to claim controlling terminal");
     }
-    set_foreground_group(&terminal, unistd::getpgrp())
+    // The recovery shell later takes this foreground group and returns it on exit.
+    dependencies::set_foreground_group(&terminal, unistd::getpgrp())
         .context("Failed to make installer the terminal's foreground process group")?;
     for target in [libc::STDIN_FILENO, libc::STDOUT_FILENO] {
         // dup2 redirects the inherited stdio descriptors without transferring ownership.
@@ -126,20 +115,8 @@ pub fn attach(path: impl AsRef<Path>) -> Result<File, Error> {
     Ok(terminal)
 }
 
-/// Transfers foreground terminal ownership while blocking `SIGTTOU` during the handoff.
-pub(crate) fn set_foreground_group(terminal: &File, group: Pid) -> io::Result<()> {
-    let mut blocked = SigSet::empty();
-    blocked.add(Signal::SIGTTOU);
-    let mut previous = SigSet::empty();
-    signal::pthread_sigmask(SigmaskHow::SIG_BLOCK, Some(&blocked), Some(&mut previous))?;
-    let result = unistd::tcsetpgrp(terminal, group);
-    signal::pthread_sigmask(SigmaskHow::SIG_SETMASK, Some(&previous), None)?;
-    result?;
-    Ok(())
-}
-
 /// Runs an interactive login Bash on the supplied terminal, loading the root profile.
-pub fn shell(terminal: &File) -> Result<(), Error> {
+pub(super) fn shell(terminal: &File) -> Result<(), Error> {
     Dependency::Bash
         .cmd()
         .args(["--login", "-i"])
@@ -158,10 +135,6 @@ mod tests {
         assert_eq!(
             consoles,
             [PathBuf::from("/dev/ttyS0"), PathBuf::from("/dev/tty1")]
-        );
-        assert_eq!(
-            preferred_console(&consoles).unwrap(),
-            Path::new("/dev/tty1")
         );
         console_paths("../tty1").unwrap_err();
         console_paths("").unwrap_err();

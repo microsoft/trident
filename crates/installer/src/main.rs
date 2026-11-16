@@ -13,13 +13,14 @@ use log::{warn, LevelFilter, Record};
 use tokio::runtime::Builder;
 use tokio::sync::mpsc::UnboundedSender;
 
-use osutils::{systemd, terminal};
+use osutils::systemd;
 
 use crate::{client::Event, config::DEFAULT_CONFIG, ui::Output};
 
 mod client;
 mod config;
 mod source;
+mod terminal;
 mod ui;
 
 const LOG_PATH: &str = "/var/log/trident-installer.log";

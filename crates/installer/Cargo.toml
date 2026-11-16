@@ -16,6 +16,7 @@ clap = { workspace = true }
 crossterm = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
+nix = { workspace = true, features = ["fs", "process", "term"] }
 ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
 regex = { workspace = true }
 reqwest = { workspace = true }
@@ -29,7 +30,7 @@ toml = { workspace = true }
 url = { workspace = true }
 
 # Local Crate Dependencies
-osutils = { path = "../osutils" }
+osutils = { path = "../osutils", features = ["run-interactive"] }
 trident-client = { path = "../trident-client", features = ["preview"] }
 trident_api = { path = "../trident_api" }
 

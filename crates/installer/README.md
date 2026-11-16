@@ -114,6 +114,14 @@ for tty1 so terminal tools such as `clear` work in the shell. Installation
 continues while a shell is open; automatic reboot waits. The success screen
 offers Reboot and Shell. While servicing is active, Ctrl-C remains in the
 installation menu and power actions are blocked.
+
+Only the installer enables `osutils`'s `run-interactive` feature. The recovery
+shell gets the controlling TTY as stdin, stdout, and stderr and runs in its own
+foreground process group so keyboard signals reach the shell rather than the
+installer. After the shell exits, the installer reclaims the foreground group
+and resumes the UI; a shell that reads before the handoff is continued once
+it owns the TTY.
+
 Before each recovery attempt the baked configuration is reloaded, so shell
 edits take effect. Invalid or missing configuration never supplies implicit
 defaults for an installation.

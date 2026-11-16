@@ -174,6 +174,7 @@ fn lsblk_output() -> Result<String, Error> {
         .context("Failed to execute lsblk")
 }
 
+/// BlockDevice has no label and requires fields that label discovery does not need.
 #[derive(Deserialize, Default)]
 struct LabelledDevice {
     name: String,
