@@ -19,9 +19,6 @@ use crate::{
     osimage::bootloader::Bootloader,
 };
 
-/// Filename of the second-stage EFI executable for efitreeloader (ETL).
-pub(super) const ETL_SECOND_STAGE_EFI_FILENAME: &str = "second.efi";
-
 /// Enforces support restrictions for file-based deployment of MSHV images.
 pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentError> {
     if ctx.is_stream_image || !ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
