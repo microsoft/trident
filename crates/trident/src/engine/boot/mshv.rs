@@ -8,6 +8,10 @@ use std::{
 use anyhow::{ensure, Context, Error};
 use nix::sys::statvfs;
 
+use osutils::bootloaders::GRUB_NOPREFIX_EFI;
+
+use trident_api::constants::GRUB2_CONFIG_FILENAME;
+
 // Required top-level x64 boot files; secondary payloads vary between images.
 pub(crate) const FILES: &[&str] = &[
     "bootx64.efi",
@@ -16,6 +20,15 @@ pub(crate) const FILES: &[&str] = &[
     "HvLoader.efi",
     "lxhvloader.dll",
 ];
+
+const ORDINARY_FALLBACK_FILES: &[&str] = &[GRUB2_CONFIG_FILENAME, GRUB_NOPREFIX_EFI];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TreePolicy {
+    Source,
+    Staging,
+    ExistingFallback,
+}
 
 /// Optional bundle-relative directory containing secondary MSHV payload binaries.
 /// Contents vary between images, so discover its direct files instead of
@@ -38,9 +51,11 @@ pub(crate) fn has_slot_mshv_bundle(bundle: &Path) -> Result<bool, Error> {
     Ok(false)
 }
 
-/// Validates entries and discovers files without requiring completeness or following symlinks.
-/// System32 subdirectories are ignored; `.new` and `.old` suffixes are reserved for staging.
-fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<Vec<String>, Error> {
+/// Discovers selected regular files without following symlinks or requiring completeness.
+/// Existing fallback may also contain ordinary GRUB files; only sources reject staging suffixes.
+/// System32 subdirectories are ignored.
+fn validate_tree(root: &Path, directory: &Path, policy: TreePolicy) -> Result<Vec<String>, Error> {
+    let temporary = policy != TreePolicy::Source;
     ensure!(
         fs::symlink_metadata(directory)?.is_dir(),
         "Invalid payload directory"
@@ -67,7 +82,7 @@ fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<Vec<S
                 "Unexpected payload directory: {}",
                 relative.display()
             );
-            files.extend(validate_tree(root, &path, temporary)?);
+            files.extend(validate_tree(root, &path, policy)?);
         } else {
             ensure!(
                 kind.is_file(),
@@ -80,12 +95,20 @@ fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<Vec<S
                         || !relative_name.rsplit_once('.').is_some_and(|(_, suffix)| {
                             suffix.eq_ignore_ascii_case("new") || suffix.eq_ignore_ascii_case("old")
                         }))
-                    || FILES.iter().any(|name| {
-                        relative_name.eq_ignore_ascii_case(name)
-                            || temporary
-                                && (relative_name.eq_ignore_ascii_case(&format!("{name}.new"))
-                                    || relative_name.eq_ignore_ascii_case(&format!("{name}.old")))
-                    }),
+                    || FILES
+                        .iter()
+                        .chain(
+                            ORDINARY_FALLBACK_FILES
+                                .iter()
+                                .filter(|_| policy == TreePolicy::ExistingFallback),
+                        )
+                        .any(|name| {
+                            relative_name.eq_ignore_ascii_case(name)
+                                || temporary
+                                    && (relative_name.eq_ignore_ascii_case(&format!("{name}.new"))
+                                        || relative_name
+                                            .eq_ignore_ascii_case(&format!("{name}.old")))
+                        }),
                 "Unexpected payload file: {}",
                 relative.display()
             );
@@ -97,7 +120,7 @@ fn validate_tree(root: &Path, directory: &Path, temporary: bool) -> Result<Vec<S
 
 /// Discovers a complete bundle, relying on FAT's case-insensitive lookups.
 fn bundle_files(root: &Path) -> Result<Vec<String>, Error> {
-    let mut files = validate_tree(root, root, false)?;
+    let mut files = validate_tree(root, root, TreePolicy::Source)?;
     for name in FILES {
         ensure!(
             fs::symlink_metadata(root.join(name))
@@ -149,7 +172,7 @@ fn bundle_allocation(root: &Path, cluster: u64) -> Result<u64, Error> {
     }
     let mut directories = BTreeSet::from([PathBuf::new()]);
     let mut total = 0;
-    for name in validate_tree(root, root, true)? {
+    for name in validate_tree(root, root, TreePolicy::Staging)? {
         total += allocation(&root.join(&name), cluster)?;
         directories.extend(Path::new(&name).ancestors().skip(1).map(Path::to_path_buf));
     }
@@ -190,7 +213,7 @@ pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<(), Error> 
 pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<(), Error> {
     let files = bundle_files(from)?;
     fs::create_dir_all(to)?;
-    validate_tree(to, to, false)?;
+    validate_tree(to, to, TreePolicy::Source)?;
     for name in &files {
         let destination = to.join(name);
         fs::create_dir_all(destination.parent().context("Missing payload parent")?)?;
@@ -206,7 +229,7 @@ pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<(), Error> {
     let files = bundle_files(from)?;
     let existing = match fs::symlink_metadata(to) {
         Ok(_) => {
-            let existing = validate_tree(to, to, true)?;
+            let existing = validate_tree(to, to, TreePolicy::ExistingFallback)?;
             ensure!(
                 fs::canonicalize(from)? != fs::canonicalize(to)?,
                 "Source and fallback directories must differ"
@@ -273,6 +296,7 @@ mod tests {
 
     use std::{fs::File, os::unix::fs as unix_fs};
 
+    use nix::{sys::stat::Mode, unistd};
     use tempfile::TempDir;
 
     use trident_api::{
@@ -289,6 +313,110 @@ mod tests {
             let path = root.join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, contents).unwrap();
+        }
+    }
+
+    #[test]
+    fn stages_and_replaces_ordinary_fallback_without_touching_other_installations() {
+        for mode in [UefiFallbackMode::Conservative, UefiFallbackMode::Optimistic] {
+            let temp = TempDir::new().unwrap();
+            let source_esp = temp.path().join("source");
+            let source = source_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+            let esp = temp.path().join("esp");
+            let fallback = esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+            let target = esp.join("EFI/AZLA");
+            let retained = esp.join("EFI/AZL2A");
+            bundle(&source, b"mshv");
+            fs::create_dir_all(&fallback).unwrap();
+            fs::create_dir_all(&retained).unwrap();
+            for root in [&fallback, &retained] {
+                for name in [
+                    "bootx64.efi",
+                    "grubx64.efi",
+                    "GRUB.CFG",
+                    "grub.cfg.NEW",
+                    "grub.cfg.old",
+                    "grubx64-noprefix.efi",
+                    "grubx64-noprefix.efi.new",
+                    "grubx64-noprefix.efi.OLD",
+                ] {
+                    fs::write(root.join(name), b"ordinary").unwrap();
+                }
+            }
+            let mut ctx = EngineContext {
+                servicing_type: ServicingType::CleanInstall,
+                esp_mount_path: ".".into(),
+                ..Default::default()
+            };
+            ctx.spec.os.uefi_fallback = mode;
+            copy_bundle(&source, &target).unwrap();
+            for _ in 0..2 {
+                esp::set_uefi_fallback_contents(&ctx, ServicingState::CleanInstallStaged, &esp)
+                    .unwrap();
+            }
+            validate_bundle(&fallback).unwrap();
+            for name in FILES {
+                assert_eq!(fs::read(fallback.join(name)).unwrap(), b"mshv");
+            }
+            for entry in fs::read_dir(&retained).unwrap() {
+                let entry = entry.unwrap();
+                assert_eq!(fs::read(entry.path()).unwrap(), b"ordinary");
+                if !FILES.iter().any(|name| entry.file_name() == *name) {
+                    assert!(!fallback.join(entry.file_name()).exists());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_ordinary_fallback_files_in_incoming_mshv_bundles() {
+        for name in [
+            "grub.cfg",
+            "grub.cfg.new",
+            "grub.cfg.old",
+            "grubx64-noprefix.efi",
+            "grubx64-noprefix.efi.new",
+            "grubx64-noprefix.efi.old",
+        ] {
+            let temp = TempDir::new().unwrap();
+            let source = temp.path().join("source");
+            let fallback = temp.path().join("fallback");
+            let target = temp.path().join("target");
+            bundle(&source, b"mshv");
+            bundle(&fallback, b"retained");
+            fs::write(source.join(name), b"ordinary").unwrap();
+            validate_bundle(&source).unwrap_err();
+            copy_bundle(&source, &target).unwrap_err();
+            replace_bundle(&source, &fallback).unwrap_err();
+            assert!(!target.exists());
+            assert_eq!(fs::read(fallback.join("bootx64.efi")).unwrap(), b"retained");
+        }
+    }
+
+    #[test]
+    fn rejects_unsafe_ordinary_fallback_entries_before_mutation() {
+        for kind in ["symlink", "fifo", "directory", "unknown"] {
+            let temp = TempDir::new().unwrap();
+            let source_esp = temp.path().join("source");
+            let source = source_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+            let esp = temp.path().join("esp");
+            let fallback = esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+            let outside = temp.path().join("outside");
+            bundle(&source, b"mshv");
+            fs::create_dir_all(&fallback).unwrap();
+            fs::write(fallback.join("bootx64.efi"), b"retained").unwrap();
+            fs::write(&outside, b"outside").unwrap();
+            let ordinary = fallback.join("grub.cfg");
+            match kind {
+                "symlink" => unix_fs::symlink(&outside, ordinary).unwrap(),
+                "fifo" => unistd::mkfifo(&ordinary, Mode::S_IRUSR).unwrap(),
+                "directory" => fs::create_dir(ordinary).unwrap(),
+                "unknown" => fs::write(fallback.join("unowned.bin"), b"unowned").unwrap(),
+                _ => unreachable!(),
+            }
+            replace_bundle(&source, &fallback).unwrap_err();
+            assert_eq!(fs::read(fallback.join("bootx64.efi")).unwrap(), b"retained");
+            assert_eq!(fs::read(&outside).unwrap(), b"outside");
         }
     }
 
@@ -436,14 +564,14 @@ mod tests {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, b"payload").unwrap();
         }
-        validate_tree(temp.path(), temp.path(), false).unwrap();
+        validate_tree(temp.path(), temp.path(), TreePolicy::Source).unwrap();
         let pending = temp.path().join("SECOND.EFI.NEW");
         fs::write(&pending, b"pending").unwrap();
-        assert!(validate_tree(temp.path(), temp.path(), false).is_err());
-        validate_tree(temp.path(), temp.path(), true).unwrap();
+        assert!(validate_tree(temp.path(), temp.path(), TreePolicy::Source).is_err());
+        validate_tree(temp.path(), temp.path(), TreePolicy::Staging).unwrap();
         fs::remove_file(pending).unwrap();
         fs::write(temp.path().join("IDENTITY.JSON"), b"unexpected").unwrap();
-        assert!(validate_tree(temp.path(), temp.path(), true).is_err());
+        assert!(validate_tree(temp.path(), temp.path(), TreePolicy::Staging).is_err());
     }
 
     /// Invalid sources fail before destination creation.
