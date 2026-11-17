@@ -305,7 +305,7 @@ fn inner_initial_host_status(
         partition_paths,
         ..Default::default()
     };
-    mshv::validate_installed_boot_files(esp_path)?;
+    mshv::validate_mshv_bootstrap_components(esp_path)?;
     Ok(host_status)
 }
 

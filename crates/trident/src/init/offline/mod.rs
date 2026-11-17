@@ -534,7 +534,7 @@ pub fn execute(
             "Failed to find ESP filesystem in Host Status, validation should have failed if this was the case",
         )))?;
 
-    mshv::validate_installed_boot_files(esp_path)
+    mshv::validate_mshv_bootstrap_components(esp_path)
         .structured(InvalidInputError::InvalidBootConfiguration)
         .message("Invalid installed MSHV boot components")?;
     esp::bootstrap_azla_from_fallback(esp_path)

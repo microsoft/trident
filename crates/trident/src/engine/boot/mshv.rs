@@ -11,7 +11,13 @@ use super::files;
 const MSHV_BOOT_FILES: &[&str] = &["HvLoader.efi", "lxhvloader.dll"];
 const MSHV_BOOT_COMPONENTS_DIR: &str = "Windows";
 
-/// Detects MSHV boot components and validates their required loader files.
+/// Detects MSHV components in a slot or fallback BOOT directory.
+///
+/// Any loader filename or Windows entry triggers validation of both required
+/// loaders and the optional Windows tree. Returns true only after validation;
+/// partial components are an error, not an ordinary non-MSHV directory.
+/// Returns false when no markers exist, including when the directory is absent.
+/// Filesystem inspection errors propagate without modifying the directory.
 pub(crate) fn has_slot_mshv_boot_components(boot_dir: &Path) -> Result<bool, Error> {
     for marker in MSHV_BOOT_FILES
         .iter()
@@ -30,8 +36,13 @@ pub(crate) fn has_slot_mshv_boot_components(boot_dir: &Path) -> Result<bool, Err
     Ok(false)
 }
 
-/// Requires the MSHV loaders and validates the optional Windows tree.
+/// Requires regular HvLoader.efi and lxhvloader.dll files in `boot_dir`.
+///
+/// Windows is optional, but when present must be a directory tree containing
+/// only regular files/directories, with no links or reserved replacement names.
+/// Checks filesystem structure, not binary contents or runtime hypervisor identity.
 /// Supporting bootloaders, including ETL's second stage, are validated separately.
+/// This function does not modify the directory.
 pub(crate) fn validate_boot_components(boot_dir: &Path) -> Result<(), Error> {
     for name in MSHV_BOOT_FILES {
         let path = boot_dir.join(name);
@@ -53,8 +64,16 @@ pub(crate) fn validate_boot_components(boot_dir: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Validates discovered installed MSHV components before initializing Host Status.
-pub(crate) fn validate_installed_boot_files(esp: &Path) -> Result<(), Error> {
+/// Validates MSHV components used to seed or adopt the initial AZLA slot.
+///
+/// MSHV markers in EFI/BOOT trigger fallback validation and, if EFI/AZLA already
+/// exists, validation of its required loaders and optional Windows tree. A missing
+/// AZLA is left for the caller to bootstrap. Without BOOT markers, this check
+/// returns without inspecting AZLA.
+///
+/// This is read-only and limited to BOOT/AZLA, not AZLB or numbered installations.
+/// It checks filesystem structure, not runtime hypervisor identity.
+pub(crate) fn validate_mshv_bootstrap_components(esp: &Path) -> Result<(), Error> {
     if has_slot_mshv_boot_components(&esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH))? {
         let installed = esp.join(ESP_EFI_DIRECTORY).join("AZLA");
         if installed.try_exists()? {

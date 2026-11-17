@@ -2010,7 +2010,7 @@ mod tests {
         fs::remove_file(azla.join("lxhvloader.dll")).unwrap();
         bootstrap_azla_from_fallback(esp.path()).unwrap();
         assert!(!azla.join("lxhvloader.dll").exists());
-        assert!(boot_mshv::validate_installed_boot_files(esp.path()).is_err());
+        assert!(boot_mshv::validate_mshv_bootstrap_components(esp.path()).is_err());
     }
 
     /// Failed source validation leaves AZLA unpublished and permits a clean retry.
@@ -2062,7 +2062,7 @@ mod tests {
         fs::create_dir_all(&boot).unwrap();
         fs::write(boot.join(BOOT_EFI), "shim").unwrap();
         fs::write(boot.join("HvLoader.efi"), "loader").unwrap();
-        boot_mshv::validate_installed_boot_files(esp.path()).unwrap_err();
+        boot_mshv::validate_mshv_bootstrap_components(esp.path()).unwrap_err();
         assert!(!azla.exists());
         assert_eq!(fs::read_to_string(boot.join(BOOT_EFI)).unwrap(), "shim");
     }
