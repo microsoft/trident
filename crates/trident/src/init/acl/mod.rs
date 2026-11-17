@@ -475,7 +475,6 @@ mod tests {
         }
     }
 
-    /// Derives ACL Host Status from partition metadata without inspecting boot files.
     #[test]
     fn test_inner_initial_host_status_success() {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::Correct);
@@ -593,7 +592,6 @@ mod tests {
         assert!(volume_pairs.iter().all(|p| p.id != "usr-hash-sig"));
     }
 
-    /// Unexpected ESP labels fail Host Status derivation.
     #[test]
     fn test_inner_initial_host_status_unexpected_part_name() {
         let wrong_label = "wrong-label";
@@ -610,7 +608,6 @@ mod tests {
             )));
     }
 
-    /// Missing required partitions must be rejected during Host Status derivation.
     #[test]
     fn test_inner_initial_host_status_missing_part() {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::MissingOne);
@@ -623,7 +620,6 @@ mod tests {
             .contains("Missing partition labels found on root disk"));
     }
 
-    /// Unrecognized partitions must not be silently adopted.
     #[test]
     fn test_inner_initial_host_status_extra_part() {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::ExtraOne);
@@ -636,7 +632,6 @@ mod tests {
             .contains("Unexpected partition label 'extra-one' found on root disk"));
     }
 
-    /// Duplicate labels cannot produce an ambiguous HostStatus.
     #[test]
     fn test_inner_initial_host_status_duplicate_part() {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::Duplicate);

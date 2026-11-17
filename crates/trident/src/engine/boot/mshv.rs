@@ -4,7 +4,7 @@ use std::{fs, io::ErrorKind, path::Path};
 
 use anyhow::{ensure, Context, Error};
 
-use super::files;
+use super::boot_tree;
 
 const MSHV_BOOT_FILES: &[&str] = &["HvLoader.efi", "lxhvloader.dll"];
 const MSHV_BOOT_COMPONENTS_DIR: &str = "Windows";
@@ -54,7 +54,7 @@ pub(crate) fn validate_boot_components(boot_dir: &Path) -> Result<(), Error> {
     let windows = boot_dir.join(MSHV_BOOT_COMPONENTS_DIR);
     match fs::symlink_metadata(&windows) {
         Ok(_) => {
-            files::filepaths(&windows)?;
+            boot_tree::filepaths(&windows)?;
         }
         Err(error) if error.kind() == ErrorKind::NotFound => {}
         Err(error) => return Err(error).context("Failed to inspect MSHV boot component directory"),

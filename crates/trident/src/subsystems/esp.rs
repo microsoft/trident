@@ -33,7 +33,7 @@ use trident_api::{
 use crate::{
     engine::{
         boot::{
-            self, files as boot_files, mshv as boot_mshv, uki, ESP_EXTRACTION_DIRECTORY,
+            self, boot_tree, mshv as boot_mshv, uki, ESP_EXTRACTION_DIRECTORY,
             ESP_EXTRACTION_DIRECTORY_MODE,
         },
         EngineContext, Subsystem,
@@ -638,7 +638,7 @@ fn copy_boot_files_for_uefi_fallback(
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     );
-    let result = boot_files::replace_fallback_boot_files(&source_esp_dir_path, &uefi_fallback_path);
+    let result = boot_tree::replace_fallback_boot_files(&source_esp_dir_path, &uefi_fallback_path);
     result.context(format!(
         "Failed to copy boot files from directory '{}' to directory '{}'",
         source_esp_dir_path.display(),
@@ -676,7 +676,7 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
                 azla_tmp_path.display()
             ))?;
         }
-        let copy_result = boot_files::copy_fallback_for_bootstrap(&boot_esp_path, &azla_tmp_path);
+        let copy_result = boot_tree::copy_fallback_for_bootstrap(&boot_esp_path, &azla_tmp_path);
         copy_result.context(format!(
             "Failed to copy boot files from '{}' to temporary AZLA bootstrap path '{}'",
             boot_esp_path.display(),
@@ -895,7 +895,7 @@ fn generate_mshv_boot_filepaths(source_boot_dir: &Path) -> Result<Vec<PathBuf>, 
     let mut paths = Vec::new();
     // Include nested Windows components and future image-specific files;
     // the staging copier preserves their BOOT-relative paths.
-    for component in boot_files::filepaths(source_boot_dir)? {
+    for component in boot_tree::filepaths(source_boot_dir)? {
         let relative = component.strip_prefix(source_boot_dir)?;
         let name = relative.to_str().context("Non-UTF-8 boot file path")?;
         // Keep root loader/config selection under generate_boot_filepaths.
@@ -1786,7 +1786,7 @@ mod tests {
         }
 
         // Call the function to copy files
-        boot_files::replace_fallback_boot_files(from_dir.path(), to_dir.path()).unwrap();
+        boot_tree::replace_fallback_boot_files(from_dir.path(), to_dir.path()).unwrap();
 
         // Verify that files have been copied and renamed correctly
         for (file_name, _content) in &file_infos {
@@ -1822,7 +1822,7 @@ mod tests {
             fs::create_dir_all(&secondary).unwrap();
             fs::write(secondary.join("image-specific.dll"), b"previous payload").unwrap();
 
-            boot_files::replace_fallback_boot_files(source.path(), destination.path()).unwrap();
+            boot_tree::replace_fallback_boot_files(source.path(), destination.path()).unwrap();
 
             assert_eq!(
                 fs::read(destination.path().join(BOOT_EFI)).unwrap(),
@@ -1839,7 +1839,7 @@ mod tests {
         fs::write(source.path().join(BOOT_EFI), b"ordinary loader").unwrap();
         fs::create_dir_all(destination.path().join("retired")).unwrap();
         fs::write(destination.path().join("retired/old"), b"retired data").unwrap();
-        boot_files::replace_fallback_boot_files(source.path(), destination.path()).unwrap();
+        boot_tree::replace_fallback_boot_files(source.path(), destination.path()).unwrap();
         assert!(!destination.path().join("retired").exists());
         assert_eq!(
             fs::read(destination.path().join(BOOT_EFI)).unwrap(),
