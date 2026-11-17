@@ -248,7 +248,7 @@ pub fn cleanup_ukis_before_staging(
     Ok(())
 }
 
-/// Lists cleanup candidates without mutation, also used to budget reclaimable space.
+/// Lists cleanup candidates without mutation.
 pub(crate) fn find_ukis_to_remove_before_staging(
     ctx: &EngineContext,
     esp_uki_directory: &Path,
