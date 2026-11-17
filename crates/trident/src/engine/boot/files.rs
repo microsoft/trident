@@ -1,4 +1,8 @@
 //! Copies complete installed boot trees without interpreting their bootloader.
+//!
+//! Image-specific completeness belongs to staging and initialization. Relocation
+//! preserves unfamiliar files and directories while enforcing structural safety.
+//! Replacement owns the destination's entire contents, not individual filenames.
 
 use std::{
     fs,
@@ -9,8 +13,11 @@ use std::{
 use anyhow::{ensure, Context, Error};
 use nix::sys::statvfs;
 
+// Leave headroom for directory growth beyond the per-directory estimate.
 const SPACE_RESERVE: u64 = 1024 * 1024;
 
+/// Validates the whole tree, including empty directories, and collects relative file paths.
+/// `temporary` permits replacement suffixes in destinations left by interrupted work.
 fn scan(
     root: &Path,
     directory: &Path,
@@ -46,6 +53,7 @@ fn scan(
     Ok(())
 }
 
+/// Returns sorted root-relative file paths; empty directories are validated but not listed.
 fn boot_files(root: &Path, temporary: bool) -> Result<Vec<PathBuf>, Error> {
     let mut files = Vec::new();
     scan(root, root, temporary, &mut files)?;
@@ -54,6 +62,7 @@ fn boot_files(root: &Path, temporary: bool) -> Result<Vec<PathBuf>, Error> {
 }
 
 /// Enumerates regular files recursively without following links.
+/// Paths retain the supplied root prefix; reserved replacement names are rejected.
 pub(crate) fn filepaths(root: &Path) -> Result<Vec<PathBuf>, Error> {
     Ok(boot_files(root, false)?
         .into_iter()
@@ -61,12 +70,14 @@ pub(crate) fn filepaths(root: &Path) -> Result<Vec<PathBuf>, Error> {
         .collect())
 }
 
+// ESP names are case-insensitive, so casing cannot escape reserved replacement suffixes.
 fn is_temporary(name: &str) -> bool {
     name.rsplit_once('.').is_some_and(|(_, suffix)| {
         suffix.eq_ignore_ascii_case("new") || suffix.eq_ignore_ascii_case("old")
     })
 }
 
+/// Resolves existing ancestors so overlap checks also cover destinations not yet created.
 fn canonical_path(path: &Path) -> Result<PathBuf, Error> {
     match fs::canonicalize(path) {
         Ok(path) => Ok(path),
@@ -78,6 +89,7 @@ fn canonical_path(path: &Path) -> Result<PathBuf, Error> {
     }
 }
 
+/// Prevents recursive copying into the source or retiring entries that contain the source.
 fn ensure_disjoint(from: &Path, to: &Path) -> Result<(), Error> {
     let from = canonical_path(from)?;
     let to = canonical_path(to)?;
@@ -88,6 +100,8 @@ fn ensure_disjoint(from: &Path, to: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Copies an already-validated entry, creating even empty directories.
+/// Existing destination-only entries are not retired, and failure can leave a partial copy.
 fn copy_entry(from: &Path, to: &Path) -> Result<(), Error> {
     if fs::symlink_metadata(from)?.is_dir() {
         fs::create_dir_all(to)?;
@@ -101,6 +115,7 @@ fn copy_entry(from: &Path, to: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+/// Removes an owned entry; missing entries are expected during retry cleanup.
 fn remove_entry(path: &Path) -> Result<(), Error> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(path)?,
@@ -111,8 +126,9 @@ fn remove_entry(path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Copies every file and directory after validating both trees.
-/// The caller supplies an empty destination when an exact copy is required.
+/// Copies a validated tree without retiring destination-only entries.
+/// An exact copy requires an empty destination. Copy failures may leave partial
+/// contents for the caller to discard, as bootstrap does with its staging directory.
 pub(crate) fn copy_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
     boot_files(from, false)?;
     if to.try_exists()? {
@@ -145,6 +161,8 @@ fn allocation(path: &Path, cluster: u64) -> Result<u64, Error> {
     Ok(total)
 }
 
+/// Checks the estimated copy budget without reclaiming current entries or backups.
+/// `reclaimed` counts only matching `.new` entries that retries will discard.
 fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<(), Error> {
     ensure!(available.saturating_add(reclaimed) >= required.saturating_add(SPACE_RESERVE),
         "Insufficient ESP capacity: need {required} bytes plus {SPACE_RESERVE} bytes reserve, have {available} bytes free and {reclaimed} bytes reclaimable");
@@ -152,6 +170,7 @@ fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<(), Erro
 }
 
 /// Checks room for a complete new boot tree without reclaiming ESP contents.
+/// `esp` identifies the destination filesystem; stale bootstrap staging is removed by the caller.
 pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<(), Error> {
     boot_files(from, false)?;
     let stats = statvfs::statvfs(esp)?;
@@ -164,11 +183,15 @@ pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<(), Error> 
     )
 }
 
-/// Stages complete top-level entries as `.new`, backs up the old entries,
-/// then publishes and retires backups. Directory entries include their full
-/// subtrees. Publication across entries is not atomic; retries discard partial
-/// staging and recover a selected `.old` entry when its current entry is absent.
+/// Replaces an owned directory's complete contents, including nested and empty
+/// directories. Destination-only entries are retired after the new tree is staged.
+///
+/// Each top-level entry is staged as `.new`, backed up as `.old`, then published.
+/// Directories move with their complete subtrees. Publication across entries is
+/// not atomic: failure can leave a mix of current, staged and backup entries.
+/// Retries rebuild staging and recover selected backups whose current entry is absent.
 pub(crate) fn replace_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
+    // Reject malformed or overlapping trees before modifying destination entries.
     boot_files(from, false)?;
     if to.try_exists()? {
         boot_files(to, true)?;
@@ -178,6 +201,10 @@ pub(crate) fn replace_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
         .map(|entry| entry.map(|entry| entry.file_name()))
         .collect::<Result<Vec<_>, _>>()?;
     entries.sort();
+
+    // Budget the new tree alongside current entries and backups. Only matching
+    // abandoned `.new` entries are credited; other temporary entries stay in place
+    // until publication succeeds.
     let stats = statvfs::statvfs(to.parent().context("Missing fallback parent")?)?;
     let cluster = stats.fragment_size();
     ensure!(cluster > 0, "Invalid ESP allocation unit");
@@ -190,10 +217,14 @@ pub(crate) fn replace_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
         reclaimed,
         allocation(from, cluster)?,
     )?;
+
+    // Rebuild all incoming staging while leaving current entries available.
     fs::create_dir_all(to)?;
     for name in &entries {
         let destination = to.join(name);
         let previous = to.join(format!("{}.old", name.to_string_lossy()));
+        // A missing current entry may be an interrupted rename. Restore its backup
+        // before risking another copy; otherwise the current entry wins.
         if previous.try_exists()? {
             if destination.try_exists()? {
                 remove_entry(&previous)?;
@@ -201,10 +232,14 @@ pub(crate) fn replace_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
                 fs::rename(&previous, &destination)?;
             }
         }
+        // Never merge a partial staged directory: it may contain retired files.
         let staged = to.join(format!("{}.new", name.to_string_lossy()));
         remove_entry(&staged)?;
         copy_entry(&from.join(name), &staged)?;
     }
+
+    // Snapshot before renaming so directory iteration cannot skip changed entries.
+    // Back up destination-only entries too: ownership is of the complete tree.
     for entry in fs::read_dir(to)?.collect::<Result<Vec<_>, _>>()? {
         let name = entry.file_name();
         let name = name.to_str().context("Non-UTF-8 boot file name")?;
@@ -214,12 +249,17 @@ pub(crate) fn replace_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
             fs::rename(entry.path(), previous)?;
         }
     }
+
+    // Publish only the entries rebuilt from this source, never unrelated stale `.new` files.
     for name in &entries {
         fs::rename(
             to.join(format!("{}.new", name.to_string_lossy())),
             to.join(name),
         )?;
     }
+
+    // Publication is complete. Retire backups and abandoned temporary entries,
+    // including entries no longer present in the source.
     for entry in fs::read_dir(to)?.collect::<Result<Vec<_>, _>>()? {
         if is_temporary(
             entry
