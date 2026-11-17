@@ -458,47 +458,13 @@ fn prepare_boot_files_for_staging(
     mount_point: &Path,
 ) -> Result<Vec<PathBuf>, Error> {
     let is_uki = ctx.is_uki().unstructured("UKI setting unknown")?;
-    let source_boot_dir = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
     // Compare source metadata with the retained slot before any ESP writes.
     mshv::validate_transition(ctx, &path::join_relative(mount_point, &ctx.esp_mount_path))?;
     // Select shim and the main loader (GRUB or efitreeloader), plus second.efi
     // for efitreeloader and grub.cfg for non-UKI images. UKI payloads are staged
-    // separately; MSHV-specific components are added below.
-    let mut boot_files = generate_boot_filepaths(temp_mount_dir, is_uki, ctx.bootloader())
+    // separately; declared MSHV components are included by discovery.
+    let boot_files = generate_boot_filepaths(temp_mount_dir, is_uki, ctx.bootloader())
         .context("Failed to generate boot filepaths")?;
-    if ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
-        // Require HvLoader.efi and lxhvloader.dll as regular files, and validate
-        // the optional Windows tree's structure. Reject malformed components
-        // before any target-slot cleanup.
-        boot_mshv::validate_boot_components(&source_boot_dir)?;
-        // Add all remaining BOOT files, including nested Windows components and
-        // future image-specific files; the copier preserves BOOT-relative paths.
-        for component in boot_files::filepaths(&source_boot_dir)? {
-            let relative = component.strip_prefix(&source_boot_dir)?;
-            let name = relative.to_str().context("Non-UTF-8 boot file path")?;
-            // Keep root loader/config selection under generate_boot_filepaths.
-            // Re-adding an unselected noprefix binary could overwrite efitreeloader
-            // during copy-time normalization. Nested same-named files are retained.
-            if [
-                BOOT_EFI,
-                GRUB_EFI,
-                GRUB_NOPREFIX_EFI,
-                GRUB2_CONFIG_FILENAME,
-                ETL_SECOND_STAGE_EFI_FILENAME,
-            ]
-            .iter()
-            .any(|ordinary| name.eq_ignore_ascii_case(ordinary))
-            {
-                continue;
-            }
-            boot_files.push(component);
-        }
-    } else {
-        ensure!(
-            !source_boot_dir.join("HvLoader.efi").try_exists()?,
-            "An MSHV image must declare COSI bootloader type 'efitreeloader-mshv-systemd-boot'"
-        );
-    }
     for path in &boot_files {
         ensure!(
             fs::symlink_metadata(path)?.is_file(),
@@ -780,6 +746,7 @@ fn copy_boot_files(
 /// The is_uki parameter indicates whether the image being processed is a UKI (Unified Kernel Image), in which
 /// case, grub.cfg is not needed. Efitreeloader selects the main loader without
 /// GRUB noprefix substitution and requires its separate second-stage executable.
+/// MSHV images additionally select validated components; UKI payloads are staged separately.
 fn generate_boot_filepaths(
     temp_mount_dir: &Path,
     is_uki: bool,
@@ -827,6 +794,7 @@ fn generate_boot_filepaths(
         .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
         .join(GRUB_EFI);
 
+    // Efitreeloader uses GRUB_EFI's filename, not the GRUB noprefix binary.
     let selected_grub_binary_path = if !uses_efitreeloader
         && grub_efi_noprefix_path.exists()
         && grub_efi_noprefix_path.is_file()
@@ -858,18 +826,65 @@ fn generate_boot_filepaths(
         boot_efi_path.display()
     );
     paths.push(boot_efi_path);
+    let source_boot_dir = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+    // Efitreeloader's second stage is required independently of MSHV.
     if uses_efitreeloader {
-        let second = temp_mount_dir
-            .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
-            .join(ETL_SECOND_STAGE_EFI_FILENAME);
-        ensure!(
-            fs::symlink_metadata(&second)?.is_file(),
-            "Invalid efitreeloader second stage: {}",
-            second.display()
-        );
-        paths.push(second);
+        paths.extend(generate_efitreeloader_boot_filepaths(&source_boot_dir)?);
     }
 
+    // Add MSHV components without changing ordinary loader/config selection.
+    if bootloader.is_some_and(Bootloader::uses_mshv) {
+        paths.extend(generate_mshv_boot_filepaths(&source_boot_dir)?);
+    } else {
+        ensure!(
+            !source_boot_dir.join("HvLoader.efi").try_exists()?,
+            "An MSHV image must declare COSI bootloader type 'efitreeloader-mshv-systemd-boot'"
+        );
+    }
+
+    Ok(paths)
+}
+
+/// Selects and validates efitreeloader's second stage, without requiring MSHV.
+fn generate_efitreeloader_boot_filepaths(source_boot_dir: &Path) -> Result<Vec<PathBuf>, Error> {
+    let second = source_boot_dir.join(ETL_SECOND_STAGE_EFI_FILENAME);
+    ensure!(
+        fs::symlink_metadata(&second)?.is_file(),
+        "Invalid efitreeloader second stage: {}",
+        second.display()
+    );
+    Ok(vec![second])
+}
+
+/// Validates required MSHV loaders and selects additional BOOT files for staging.
+/// Supporting loaders/configs remain the responsibility of ordinary discovery.
+fn generate_mshv_boot_filepaths(source_boot_dir: &Path) -> Result<Vec<PathBuf>, Error> {
+    // Require HvLoader.efi and lxhvloader.dll as regular files, and validate
+    // the optional Windows tree's structure before any target-slot cleanup.
+    boot_mshv::validate_boot_components(source_boot_dir)?;
+    let mut paths = Vec::new();
+    // Include nested Windows components and future image-specific files;
+    // the staging copier preserves their BOOT-relative paths.
+    for component in boot_files::filepaths(source_boot_dir)? {
+        let relative = component.strip_prefix(source_boot_dir)?;
+        let name = relative.to_str().context("Non-UTF-8 boot file path")?;
+        // Keep root loader/config selection under generate_boot_filepaths.
+        // Re-adding an unselected noprefix binary could overwrite efitreeloader
+        // during copy-time normalization. Nested same-named files are retained.
+        if [
+            BOOT_EFI,
+            GRUB_EFI,
+            GRUB_NOPREFIX_EFI,
+            GRUB2_CONFIG_FILENAME,
+            ETL_SECOND_STAGE_EFI_FILENAME,
+        ]
+        .iter()
+        .any(|ordinary| name.eq_ignore_ascii_case(ordinary))
+        {
+            continue;
+        }
+        paths.push(component);
+    }
     Ok(paths)
 }
 
@@ -2229,6 +2244,38 @@ mod tests {
                 boot_efi_path.display()
             )
         );
+    }
+
+    #[test]
+    fn test_generate_boot_filepaths_includes_validated_mshv_components() {
+        for is_uki in [false, true] {
+            let (source, _esp, ctx) = boot_file_staging_fixture(true, is_uki);
+            let boot = source.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+            let nested = Path::new("Windows/System32").join(GRUB_NOPREFIX_EFI);
+            let future = Path::new("FutureSupport/deep/component.bin");
+            for name in [nested.as_path(), future] {
+                fs::create_dir_all(boot.join(name).parent().unwrap()).unwrap();
+                fs::write(boot.join(name), b"component").unwrap();
+            }
+            fs::write(boot.join(GRUB_NOPREFIX_EFI), b"unrelated GRUB").unwrap();
+            fs::write(boot.join(GRUB2_CONFIG_FILENAME), b"configuration").unwrap();
+            let mut expected = FILES.iter().map(|name| boot.join(name)).collect::<Vec<_>>();
+            expected.extend([boot.join(&nested), boot.join(future)]);
+            if !is_uki {
+                expected.push(boot.join(GRUB2_CONFIG_FILENAME));
+            }
+            expected.sort();
+            let mut paths =
+                generate_boot_filepaths(source.path(), is_uki, ctx.bootloader()).unwrap();
+            paths.sort();
+            assert_eq!(paths, expected);
+
+            let ordinary = Bootloader::new(BootloaderType::SystemdBoot, None);
+            assert!(generate_boot_filepaths(source.path(), is_uki, Some(&ordinary)).is_err());
+
+            fs::remove_file(boot.join("lxhvloader.dll")).unwrap();
+            assert!(generate_boot_filepaths(source.path(), is_uki, ctx.bootloader()).is_err());
+        }
     }
 
     #[test]
