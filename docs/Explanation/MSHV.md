@@ -2,8 +2,7 @@
 
 This page covers the `efitreeloader-mshv-systemd-boot` COSI bootloader type
 (`BootloaderType::EfitreeloaderMshvSystemdBoot` in Trident), including its boot
-chain, file layout, and slot-owned servicing. Other MSHV bootloader chains may
-have different requirements.
+chain, file layout, and slot-owned servicing.
 
 Azure Container Linux (ACL) images with MSHV support boot Linux as the root
 partition of the Microsoft hypervisor. Servicing these images requires keeping
