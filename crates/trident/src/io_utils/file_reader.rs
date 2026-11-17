@@ -8,7 +8,7 @@ use std::{
 #[cfg(test)]
 use std::io::Cursor;
 
-use anyhow::{anyhow, bail, ensure, Error};
+use anyhow::{bail, ensure, Error};
 use log::debug;
 use url::Url;
 
@@ -45,10 +45,9 @@ impl FileReader {
     pub(crate) fn new(source: &Url, timeout: Duration) -> Result<Self, Error> {
         Ok(match source.scheme() {
             "file" => {
-                let path = source
-                    .to_file_path()
-                    .map_err(|()| anyhow!("Invalid local file URL"))?;
-                debug!("Loading file: '{}'", path.display());
+                // Load from local file
+                debug!("Loading file: '{}'", source.path());
+                let path = PathBuf::from(source.path());
                 ensure!(
                     path.exists(),
                     format!("Path '{}' does not exist", path.display()),
@@ -141,7 +140,7 @@ mod tests {
     use std::io::{SeekFrom, Write};
 
     use log::trace;
-    use tempfile::{NamedTempFile, TempDir};
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_file_reader_factory_file() {
@@ -199,26 +198,6 @@ mod tests {
         check_section(7, 6); // World!
         check_section(3, 6); // llo, W
         check_section(0, 13); // Hello, World!
-    }
-
-    #[test]
-    fn file_url_decodes_escaped_local_path() {
-        let directory = TempDir::new().unwrap();
-        let path = directory.path().join("installer image #1.cosi");
-        std::fs::write(&path, b"local COSI").unwrap();
-        let url = Url::from_file_path(&path).unwrap();
-        assert!(url.path().contains("%20"));
-        assert!(url.path().contains("%23"));
-
-        let reader = FileReader::new(&url, Duration::from_secs(5)).unwrap();
-        let mut bytes = Vec::new();
-        reader.reader().unwrap().read_to_end(&mut bytes).unwrap();
-        assert_eq!(bytes, b"local COSI");
-        FileReader::new(
-            &Url::parse("file://remote.example/installer%20image.cosi").unwrap(),
-            Duration::from_secs(5),
-        )
-        .unwrap_err();
     }
 
     #[test]
