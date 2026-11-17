@@ -352,8 +352,7 @@ impl ManualRollbackContext {
                         current_operation.kind = OperationKind::RuntimeManualRollback;
                         current_operation.operation_host_status = Some(current_hs.clone());
                     }
-                    ServicingState::AbUpdateHealthCheckFailed
-                    | ServicingState::AbUpdateHypervisorCheckFailed => {
+                    ServicingState::AbUpdateHealthCheckFailed | ServicingState::CommitFailed => {
                         // Do not offer the rejected candidate as a rollback target.
                         current_operation.kind = OperationKind::AbUpdateAutoRollback;
                         trace!("Detected AbUpdateAutoRollback operation, ending parsing here.");
@@ -1037,7 +1036,7 @@ mod tests {
             prov(VOL_A, false, vec![], MIN),
             inter(VOL_A, AB_STAGE, MIN),
             inter(VOL_A, AB_FINAL, MIN),
-            inter(VOL_A, ServicingState::AbUpdateHypervisorCheckFailed, MIN),
+            inter(VOL_A, ServicingState::CommitFailed, MIN),
             prov_e(
                 VOL_A,
                 false,

@@ -49,7 +49,7 @@ pub enum ServicingState {
     ManualRollbackAbFinalized,
     Provisioned,
     AbUpdateHealthCheckFailed,
-    AbUpdateHypervisorCheckFailed,
+    CommitFailed,
     Unknown(i32),
 }
 

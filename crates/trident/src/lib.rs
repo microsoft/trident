@@ -305,7 +305,7 @@ impl Trident {
     where
         F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
-        // AbUpdateHealthCheckFailed and AbUpdateHypervisorCheckFailed are
+        // AbUpdateHealthCheckFailed and CommitFailed are
         // special cases where the last error must be preserved across failed
         // recovery attempts. This keeps the original health/hypervisor failure
         // visible instead of replacing it with a secondary recovery error.
@@ -316,8 +316,7 @@ impl Trident {
         );
         let last_error_to_preserve = if matches!(
             datastore.host_status().servicing_state,
-            ServicingState::AbUpdateHealthCheckFailed
-                | ServicingState::AbUpdateHypervisorCheckFailed
+            ServicingState::AbUpdateHealthCheckFailed | ServicingState::CommitFailed
         ) {
             datastore.host_status().last_error.clone()
         } else {
@@ -822,7 +821,7 @@ impl Trident {
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
         // If the host's servicing state is *Finalized, AbUpdateHealthCheckFailed,
-        // or AbUpdateHypervisorCheckFailed, re-evaluate the current state of
+        // or CommitFailed, re-evaluate the current state of
         // the host to validate either the target boot or the recovery boot.
         let servicing_state = datastore.host_status().servicing_state;
         if !matches!(
@@ -830,7 +829,7 @@ impl Trident {
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
-                | ServicingState::AbUpdateHypervisorCheckFailed
+                | ServicingState::CommitFailed
                 | ServicingState::ManualRollbackAbFinalized
         ) {
             info!(
@@ -843,7 +842,7 @@ impl Trident {
         let servicing_type = match servicing_state {
             ServicingState::AbUpdateFinalized
             | ServicingState::AbUpdateHealthCheckFailed
-            | ServicingState::AbUpdateHypervisorCheckFailed => ServicingType::AbUpdate,
+            | ServicingState::CommitFailed => ServicingType::AbUpdate,
             ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
             ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
             _ => ServicingType::NoActiveServicing,

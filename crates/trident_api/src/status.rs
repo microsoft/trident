@@ -133,8 +133,9 @@ pub enum ServicingState {
     Provisioned,
     /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
-    /// The trial OS booted, but its hypervisor failed validation; recovery is pending.
-    AbUpdateHypervisorCheckFailed,
+    /// Commit failed and rollback to the retained OS is required.
+    #[serde(alias = "ab-update-hypervisor-check-failed")]
+    CommitFailed,
 }
 
 /// A/B volume selection. Determines which set of volumes are currently
@@ -318,6 +319,25 @@ pub fn decode_host_status(mut yaml: Value) -> Result<HostStatus, serde_yaml::Err
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn commit_failure_accepts_previous_name_without_merging_health_failure() {
+        for name in ["commit-failed", "ab-update-hypervisor-check-failed"] {
+            let state: ServicingState = serde_yaml::from_str(name).unwrap();
+            assert_eq!(state, ServicingState::CommitFailed);
+            assert_eq!(
+                serde_yaml::to_string(&state).unwrap().trim(),
+                "commit-failed"
+            );
+        }
+
+        let health: ServicingState = serde_yaml::from_str("ab-update-health-check-failed").unwrap();
+        assert_eq!(health, ServicingState::AbUpdateHealthCheckFailed);
+        assert_eq!(
+            serde_yaml::to_string(&health).unwrap().trim(),
+            "ab-update-health-check-failed"
+        );
+    }
 
     #[test]
     fn load_old_format() {

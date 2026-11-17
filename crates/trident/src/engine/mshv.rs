@@ -1,44 +1,95 @@
+use std::path::Path;
+
 use log::warn;
 
-use osutils::container;
 use trident_api::{
-    config::HostConfiguration,
-    constants::{EFI_DEFAULT_BIN_DIRECTORY, ESP_EFI_DIRECTORY},
-    error::{InvalidInputError, ReportError, TridentError, TridentResultExt},
-    status::AbVolumeSelection,
+    constants::EFI_DEFAULT_BIN_DIRECTORY, error::TridentError, status::AbVolumeSelection,
 };
 
-use super::boot::{self, mshv as boot_mshv};
+use super::boot;
 
-/// Checks the expected boot bundle, but assumes its hypervisor identity matches.
+const MSHV_DEVICE_PATH: &str = "/dev/mshv";
+
+/// Calls the identity hook only when the MSHV device is present.
 pub(crate) fn validate_active_hypervisor(
-    spec: &HostConfiguration,
     install_index: usize,
     expected_volume: Option<AbVolumeSelection>,
 ) -> Result<(), TridentError> {
-    let Some(esp_path) = spec
-        .storage
-        .filesystems
-        .iter()
-        .find(|filesystem| filesystem.is_esp)
-        .and_then(|filesystem| filesystem.mount_point_path())
-    else {
-        return Ok(());
-    };
-    let esp_path = container::get_host_relative_path(esp_path.to_path_buf())
-        .message("Failed to resolve ESP path for MSHV validation")?;
+    validate_if_mshv_present(Path::new(MSHV_DEVICE_PATH), || {
+        validate_hypervisor_identity(install_index, expected_volume)
+    })
+}
+
+fn validate_if_mshv_present(
+    device: &Path,
+    check: impl FnOnce() -> Result<(), TridentError>,
+) -> Result<(), TridentError> {
+    // Presence is a best-effort gate, not evidence of the expected hypervisor identity.
+    if device.exists() {
+        check()?;
+    }
+    Ok(())
+}
+
+fn validate_hypervisor_identity(
+    install_index: usize,
+    expected_volume: Option<AbVolumeSelection>,
+) -> Result<(), TridentError> {
     let expected_directory = expected_volume
         .map(|volume| boot::make_esp_dir_name(install_index, volume))
         .unwrap_or_else(|| EFI_DEFAULT_BIN_DIRECTORY.into());
-    // No COSI is loaded; inspect the expected slot, or BOOT if no slot is selected.
-    if boot_mshv::has_slot_mshv_bundle(&esp_path.join(ESP_EFI_DIRECTORY).join(&expected_directory))
-        .structured(InvalidInputError::InvalidBootConfiguration)?
-    {
-        // TODO: Identify the running hypervisor and compare it with the expected OS payload.
-        warn!(
-            "MSHV hypervisor identity validation is not implemented; assuming success for {:?}",
-            expected_directory
-        );
-    }
+    // TODO: Identify the running hypervisor and compare it with the expected OS payload.
+    warn!(
+        "MSHV hypervisor identity validation is not implemented; assuming success for {:?}",
+        expected_directory
+    );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use trident_api::error::{ErrorKind, ServicingError};
+
+    #[test]
+    fn missing_mshv_device_skips_identity_validation() {
+        let temp = TempDir::new().unwrap();
+        validate_if_mshv_present(&temp.path().join("mshv"), || {
+            panic!("Identity validation must not run without the MSHV device")
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn present_mshv_device_runs_identity_validation_and_propagates_failure() {
+        let temp = TempDir::new().unwrap();
+        let device = temp.path().join("mshv");
+        fs::write(&device, []).unwrap();
+        let mut checked = false;
+        validate_if_mshv_present(&device, || {
+            checked = true;
+            Ok(())
+        })
+        .unwrap();
+        assert!(checked);
+
+        let error = validate_if_mshv_present(&device, || {
+            Err(TridentError::new(
+                ServicingError::ValidateAbActiveHypervisor {
+                    expected_slot: "AZLB".into(),
+                    observed_slot: Some("AZLA".into()),
+                },
+            ))
+        })
+        .unwrap_err();
+        assert!(matches!(
+            error.kind(),
+            ErrorKind::Servicing(ServicingError::ValidateAbActiveHypervisor { .. })
+        ));
+    }
 }
