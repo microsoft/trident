@@ -52,11 +52,11 @@ pub(super) fn validate_transition(ctx: &EngineContext, esp_path: &Path) -> Resul
     let active_volume = ctx
         .ab_active_volume
         .context("A/B active volume is not set")?;
-    let active_bundle = esp_path
+    let active_boot_dir = esp_path
         .join(ESP_EFI_DIRECTORY)
         .join(boot::make_esp_dir_name(ctx.install_index, active_volume));
     ensure!(
-        boot_mshv::has_slot_mshv_bundle(&active_bundle)?
+        boot_mshv::has_slot_mshv_boot_components(&active_boot_dir)?
             == ctx.bootloader().is_some_and(Bootloader::uses_mshv),
         "Changing slot-owned MSHV mode on an existing installation is not supported"
     );

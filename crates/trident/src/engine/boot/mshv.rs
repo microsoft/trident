@@ -12,7 +12,7 @@ use osutils::bootloaders::GRUB_NOPREFIX_EFI;
 
 use trident_api::constants::GRUB2_CONFIG_FILENAME;
 
-// Required top-level x64 boot files; secondary payloads vary between images.
+// Required top-level x64 boot files; secondary MSHV boot components vary between images.
 pub(crate) const FILES: &[&str] = &[
     "bootx64.efi",
     "grubx64.efi",
@@ -30,22 +30,22 @@ enum TreePolicy {
     ExistingFallback,
 }
 
-/// Optional bundle-relative directory containing secondary MSHV payload binaries.
+/// Optional directory of secondary MSHV boot components, relative to the boot directory.
 /// Contents vary between images, so discover its direct files instead of
 /// maintaining a fixed binary list. Subdirectories are ignored.
-const MSHV_ESP_PAYLOAD_DIR: &str = "Windows/System32";
+const MSHV_BOOT_COMPONENTS_DIR: &str = "Windows/System32";
 const SPACE_RESERVE: u64 = 1024 * 1024;
 
-/// Detects MSHV in an installed bootloader directory; marked bundles must be complete.
-pub(crate) fn has_slot_mshv_bundle(bundle: &Path) -> Result<bool, Error> {
+/// Detects MSHV boot components and validates all required slot boot files.
+pub(crate) fn has_slot_mshv_boot_components(boot_dir: &Path) -> Result<bool, Error> {
     for marker in ["HvLoader.efi", "lxhvloader.dll", "Windows"] {
-        match fs::symlink_metadata(bundle.join(marker)) {
+        match fs::symlink_metadata(boot_dir.join(marker)) {
             Ok(_) => {
-                validate_bundle(bundle)?;
+                validate_boot_files(boot_dir)?;
                 return Ok(true);
             }
             Err(error) if error.kind() == ErrorKind::NotFound => {}
-            Err(error) => return Err(error).context("Failed to inspect MSHV boot payload"),
+            Err(error) => return Err(error).context("Failed to inspect MSHV boot components"),
         }
     }
     Ok(false)
@@ -58,19 +58,21 @@ fn validate_tree(root: &Path, directory: &Path, policy: TreePolicy) -> Result<Ve
     let temporary = policy != TreePolicy::Source;
     ensure!(
         fs::symlink_metadata(directory)?.is_dir(),
-        "Invalid payload directory"
+        "Invalid MSHV boot component directory"
     );
     let secondary = directory
         .strip_prefix(root)?
         .to_str()
-        .context("Non-UTF-8 MSHV payload path")?
-        .eq_ignore_ascii_case(MSHV_ESP_PAYLOAD_DIR);
+        .context("Non-UTF-8 MSHV boot component path")?
+        .eq_ignore_ascii_case(MSHV_BOOT_COMPONENTS_DIR);
     let mut files = Vec::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let path = entry.path();
         let relative = path.strip_prefix(root)?;
-        let relative_name = relative.to_str().context("Non-UTF-8 MSHV payload path")?;
+        let relative_name = relative
+            .to_str()
+            .context("Non-UTF-8 MSHV boot component path")?;
         let kind = entry.file_type()?;
         if kind.is_dir() {
             if secondary {
@@ -78,15 +80,15 @@ fn validate_tree(root: &Path, directory: &Path, policy: TreePolicy) -> Result<Ve
             }
             ensure!(
                 relative_name.eq_ignore_ascii_case("Windows")
-                    || relative_name.eq_ignore_ascii_case(MSHV_ESP_PAYLOAD_DIR),
-                "Unexpected payload directory: {}",
+                    || relative_name.eq_ignore_ascii_case(MSHV_BOOT_COMPONENTS_DIR),
+                "Unexpected MSHV boot component directory: {}",
                 relative.display()
             );
             files.extend(validate_tree(root, &path, policy)?);
         } else {
             ensure!(
                 kind.is_file(),
-                "Payload entry is not a regular file: {}",
+                "MSHV boot component is not a regular file: {}",
                 path.display()
             );
             ensure!(
@@ -109,7 +111,7 @@ fn validate_tree(root: &Path, directory: &Path, policy: TreePolicy) -> Result<Ve
                                         || relative_name
                                             .eq_ignore_ascii_case(&format!("{name}.old")))
                         }),
-                "Unexpected payload file: {}",
+                "Unexpected MSHV boot component file: {}",
                 relative.display()
             );
             files.push(relative_name.to_owned());
@@ -118,25 +120,25 @@ fn validate_tree(root: &Path, directory: &Path, policy: TreePolicy) -> Result<Ve
     Ok(files)
 }
 
-/// Discovers a complete bundle, relying on FAT's case-insensitive lookups.
-fn bundle_files(root: &Path) -> Result<Vec<String>, Error> {
+/// Discovers MSHV boot components and supporting boot files using FAT case-insensitive lookups.
+fn boot_files(root: &Path) -> Result<Vec<String>, Error> {
     let mut files = validate_tree(root, root, TreePolicy::Source)?;
     for name in FILES {
         ensure!(
             fs::symlink_metadata(root.join(name))
-                .with_context(|| format!("Missing MSHV payload file: {name}"))?
+                .with_context(|| format!("Missing MSHV boot component: {name}"))?
                 .is_file(),
-            "Invalid MSHV payload file: {name}"
+            "Invalid MSHV boot component: {name}"
         );
     }
     files.sort();
     Ok(files)
 }
 
-/// Requires the top-level boot files; optional System32 payloads are discovered.
+/// Requires the top-level boot files and discovers optional System32 MSHV boot components.
 /// Does not validate executable contents or hypervisor identity.
-pub(crate) fn validate_bundle(root: &Path) -> Result<(), Error> {
-    bundle_files(root)?;
+pub(crate) fn validate_boot_files(root: &Path) -> Result<(), Error> {
+    boot_files(root)?;
     Ok(())
 }
 
@@ -163,8 +165,8 @@ fn allocation(path: &Path, cluster: u64) -> Result<u64, Error> {
     Ok(total)
 }
 
-/// Budgets selected bundle files and their parents, excluding ignored subdirectories.
-fn bundle_allocation(root: &Path, cluster: u64) -> Result<u64, Error> {
+/// Budgets selected boot files and their parents, excluding ignored subdirectories.
+fn boot_file_allocation(root: &Path, cluster: u64) -> Result<u64, Error> {
     match fs::symlink_metadata(root) {
         Ok(_) => {}
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(0),
@@ -189,7 +191,7 @@ fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<(), Erro
     Ok(())
 }
 
-/// Checks room for a new bundle copy without reclaiming existing ESP contents.
+/// Checks room for a new copy of slot boot files without reclaiming ESP contents.
 pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<(), Error> {
     let stats = statvfs::statvfs(esp)?;
     let cluster = stats.fragment_size();
@@ -197,36 +199,40 @@ pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<(), Error> 
     check_space(
         stats.blocks_available() * cluster,
         0,
-        bundle_allocation(from, cluster)?,
+        boot_file_allocation(from, cluster)?,
     )
 }
 
 /// Copies the required top-level boot files listed in `FILES` and any direct
-/// secondary MSHV payload files from the optional `MSHV_ESP_PAYLOAD_DIR`,
-/// preserving bundle-relative paths. Subdirectories are ignored, and an absent
+/// secondary MSHV boot components from the optional `MSHV_BOOT_COMPONENTS_DIR`,
+/// preserving boot-directory-relative paths. Subdirectories are ignored, and an absent
 /// secondary directory is allowed.
 ///
-/// Validates and discovers the source payload before writing, so missing
-/// required files or traversal errors do not leave a partially copied payload.
+/// Validates and discovers source boot files before writing, so missing
+/// required files or traversal errors do not leave partially copied boot files.
 /// Copying itself is non-atomic and can leave partial output on an I/O failure.
 /// For atomic publication, copy to a temporary directory and rename it.
-pub(crate) fn copy_bundle(from: &Path, to: &Path) -> Result<(), Error> {
-    let files = bundle_files(from)?;
+pub(crate) fn copy_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
+    let files = boot_files(from)?;
     fs::create_dir_all(to)?;
     validate_tree(to, to, TreePolicy::Source)?;
     for name in &files {
         let destination = to.join(name);
-        fs::create_dir_all(destination.parent().context("Missing payload parent")?)?;
+        fs::create_dir_all(
+            destination
+                .parent()
+                .context("Missing boot component parent")?,
+        )?;
         fs::copy(from.join(name), destination)?;
     }
     Ok(())
 }
 
 /// Reconciles `.old` backups and stages all `.new` files before replacing fallback.
-/// Removes retired secondary payload files after publishing the selected bundle.
-/// Whole-bundle replacement is not atomic.
-pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<(), Error> {
-    let files = bundle_files(from)?;
+/// Removes retired secondary MSHV boot components after publishing the selected boot files.
+/// Replacing the complete set of boot files is not atomic.
+pub(crate) fn replace_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
+    let files = boot_files(from)?;
     let existing = match fs::symlink_metadata(to) {
         Ok(_) => {
             let existing = validate_tree(to, to, TreePolicy::ExistingFallback)?;
@@ -242,7 +248,7 @@ pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<(), Error> {
     let stats = statvfs::statvfs(to.parent().context("Missing fallback parent")?)?;
     let cluster = stats.fragment_size();
     ensure!(cluster > 0, "Invalid ESP allocation unit");
-    let required = bundle_allocation(from, cluster)?;
+    let required = boot_file_allocation(from, cluster)?;
     let mut reclaimed = 0;
     for name in &files {
         reclaimed += allocation(&to.join(format!("{name}.new")), cluster)?;
@@ -251,7 +257,11 @@ pub(crate) fn replace_bundle(from: &Path, to: &Path) -> Result<(), Error> {
     for name in &files {
         let destination = to.join(name);
         let previous = to.join(format!("{name}.old"));
-        fs::create_dir_all(destination.parent().context("Missing payload parent")?)?;
+        fs::create_dir_all(
+            destination
+                .parent()
+                .context("Missing boot component parent")?,
+        )?;
         if previous.exists() {
             if destination.exists() {
                 fs::remove_file(&previous)?;
@@ -307,8 +317,8 @@ mod tests {
 
     use crate::{engine::EngineContext, subsystems::esp};
 
-    /// Creates a complete test bundle.
-    fn bundle(root: &Path, contents: &[u8]) {
+    /// Creates all required slot boot files for tests.
+    fn create_boot_files(root: &Path, contents: &[u8]) {
         for name in FILES {
             let path = root.join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -326,7 +336,7 @@ mod tests {
             let fallback = esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
             let target = esp.join("EFI/AZLA");
             let retained = esp.join("EFI/AZL2A");
-            bundle(&source, b"mshv");
+            create_boot_files(&source, b"mshv");
             fs::create_dir_all(&fallback).unwrap();
             fs::create_dir_all(&retained).unwrap();
             for root in [&fallback, &retained] {
@@ -349,12 +359,12 @@ mod tests {
                 ..Default::default()
             };
             ctx.spec.os.uefi_fallback = mode;
-            copy_bundle(&source, &target).unwrap();
+            copy_boot_files(&source, &target).unwrap();
             for _ in 0..2 {
                 esp::set_uefi_fallback_contents(&ctx, ServicingState::CleanInstallStaged, &esp)
                     .unwrap();
             }
-            validate_bundle(&fallback).unwrap();
+            validate_boot_files(&fallback).unwrap();
             for name in FILES {
                 assert_eq!(fs::read(fallback.join(name)).unwrap(), b"mshv");
             }
@@ -369,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_ordinary_fallback_files_in_incoming_mshv_bundles() {
+    fn rejects_ordinary_fallback_files_in_incoming_mshv_source() {
         for name in [
             "grub.cfg",
             "grub.cfg.new",
@@ -382,12 +392,12 @@ mod tests {
             let source = temp.path().join("source");
             let fallback = temp.path().join("fallback");
             let target = temp.path().join("target");
-            bundle(&source, b"mshv");
-            bundle(&fallback, b"retained");
+            create_boot_files(&source, b"mshv");
+            create_boot_files(&fallback, b"retained");
             fs::write(source.join(name), b"ordinary").unwrap();
-            validate_bundle(&source).unwrap_err();
-            copy_bundle(&source, &target).unwrap_err();
-            replace_bundle(&source, &fallback).unwrap_err();
+            validate_boot_files(&source).unwrap_err();
+            copy_boot_files(&source, &target).unwrap_err();
+            replace_boot_files(&source, &fallback).unwrap_err();
             assert!(!target.exists());
             assert_eq!(fs::read(fallback.join("bootx64.efi")).unwrap(), b"retained");
         }
@@ -402,7 +412,7 @@ mod tests {
             let esp = temp.path().join("esp");
             let fallback = esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
             let outside = temp.path().join("outside");
-            bundle(&source, b"mshv");
+            create_boot_files(&source, b"mshv");
             fs::create_dir_all(&fallback).unwrap();
             fs::write(fallback.join("bootx64.efi"), b"retained").unwrap();
             fs::write(&outside, b"outside").unwrap();
@@ -414,7 +424,7 @@ mod tests {
                 "unknown" => fs::write(fallback.join("unowned.bin"), b"unowned").unwrap(),
                 _ => unreachable!(),
             }
-            replace_bundle(&source, &fallback).unwrap_err();
+            replace_boot_files(&source, &fallback).unwrap_err();
             assert_eq!(fs::read(fallback.join("bootx64.efi")).unwrap(), b"retained");
             assert_eq!(fs::read(&outside).unwrap(), b"outside");
         }
@@ -422,14 +432,14 @@ mod tests {
 
     /// Candidate copying preserves the retained slot.
     #[test]
-    fn copies_complete_bundle_without_touching_other_slots() {
+    fn copies_slot_boot_files_without_touching_other_slots() {
         let temp = TempDir::new().unwrap();
         let source = temp.path().join("source");
         let active = temp.path().join("AZLA");
         let target = temp.path().join("AZLB");
-        bundle(&source, b"new");
-        bundle(&active, b"retained");
-        copy_bundle(&source, &target).unwrap();
+        create_boot_files(&source, b"new");
+        create_boot_files(&active, b"retained");
+        copy_boot_files(&source, &target).unwrap();
         for name in FILES {
             assert_eq!(fs::read(target.join(name)).unwrap(), b"new");
             assert_eq!(fs::read(active.join(name)).unwrap(), b"retained");
@@ -437,52 +447,52 @@ mod tests {
     }
 
     #[test]
-    fn discovers_optional_secondary_payload_without_recursing() {
+    fn discovers_optional_boot_components_without_recursing() {
         let temp = TempDir::new().unwrap();
         let source = temp.path().join("source");
         let target = temp.path().join("target");
         let secondary = source.join("Windows/System32");
-        bundle(&source, b"new");
+        create_boot_files(&source, b"new");
         fs::create_dir_all(secondary.join("drivers")).unwrap();
         fs::write(secondary.join("image-specific.bin"), b"\0\xffpayload").unwrap();
         fs::write(secondary.join("drivers/ignored.dll"), b"ignored").unwrap();
 
-        copy_bundle(&source, &target).unwrap();
+        copy_boot_files(&source, &target).unwrap();
         assert_eq!(
             fs::read(target.join("Windows/System32/image-specific.bin")).unwrap(),
             b"\0\xffpayload"
         );
         assert!(!target.join("Windows/System32/drivers").exists());
-        assert!(has_slot_mshv_bundle(&target).unwrap());
+        assert!(has_slot_mshv_boot_components(&target).unwrap());
 
         fs::remove_dir_all(source.join("Windows")).unwrap();
         let without_secondary = temp.path().join("without-secondary");
-        copy_bundle(&source, &without_secondary).unwrap();
+        copy_boot_files(&source, &without_secondary).unwrap();
         assert!(!without_secondary.join("Windows").exists());
         fs::create_dir_all(&secondary).unwrap();
         let empty_secondary = temp.path().join("empty-secondary");
-        copy_bundle(&source, &empty_secondary).unwrap();
+        copy_boot_files(&source, &empty_secondary).unwrap();
         assert!(!empty_secondary.join("Windows").exists());
 
         for name in ["payload.dll.new", "payload.dll.old"] {
             let path = secondary.join(name);
             fs::write(&path, b"reserved temporary name").unwrap();
-            assert!(validate_bundle(&source).is_err());
+            assert!(validate_boot_files(&source).is_err());
             fs::remove_file(path).unwrap();
         }
         unix_fs::symlink(temp.path().join("outside"), secondary.join("linked.dll")).unwrap();
         let rejected = temp.path().join("rejected");
-        assert!(copy_bundle(&source, &rejected).is_err());
+        assert!(copy_boot_files(&source, &rejected).is_err());
         assert!(!rejected.exists());
     }
 
     #[test]
-    fn replaces_changing_secondary_payload_and_recovers_partial_publication() {
+    fn replaces_changing_boot_components_and_recovers_partial_publication() {
         let temp = TempDir::new().unwrap();
         let source = temp.path().join("source");
         let fallback = temp.path().join("fallback");
-        bundle(&source, b"new");
-        bundle(&fallback, b"old");
+        create_boot_files(&source, b"new");
+        create_boot_files(&fallback, b"old");
         let secondary = "Windows/System32";
         fs::create_dir_all(source.join(secondary)).unwrap();
         fs::create_dir_all(fallback.join(secondary)).unwrap();
@@ -501,8 +511,8 @@ mod tests {
             fs::write(fallback.join(secondary).join(name), b"obsolete").unwrap();
         }
 
-        replace_bundle(&source, &fallback).unwrap();
-        replace_bundle(&source, &fallback).unwrap();
+        replace_boot_files(&source, &fallback).unwrap();
+        replace_boot_files(&source, &fallback).unwrap();
         assert_eq!(
             fs::read(fallback.join(secondary).join("current.dll")).unwrap(),
             b"current"
@@ -518,20 +528,20 @@ mod tests {
         }
 
         fs::remove_dir_all(source.join("Windows")).unwrap();
-        replace_bundle(&source, &fallback).unwrap();
+        replace_boot_files(&source, &fallback).unwrap();
         assert!(!fallback.join(secondary).join("current.dll").exists());
-        validate_bundle(&fallback).unwrap();
+        validate_boot_files(&fallback).unwrap();
     }
 
     #[test]
-    fn budgets_discovered_secondary_payload_but_not_ignored_subdirectories() {
+    fn budgets_discovered_boot_components_but_not_ignored_subdirectories() {
         let temp = TempDir::new().unwrap();
         let source_esp = temp.path().join("source");
         let source = source_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
         let esp = temp.path().join("esp");
         let fallback = esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-        bundle(&source, b"new");
-        bundle(&fallback, b"retained");
+        create_boot_files(&source, b"new");
+        create_boot_files(&fallback, b"retained");
         let secondary = source.join("Windows/System32");
         fs::create_dir_all(&secondary).unwrap();
         let large = secondary.join("image-specific.bin");
@@ -541,7 +551,7 @@ mod tests {
             .set_len(stats.blocks_available() * stats.fragment_size() + SPACE_RESERVE)
             .unwrap();
         assert!(preflight_bootstrap(&source, &esp).is_err());
-        assert!(replace_bundle(&source, &fallback).is_err());
+        assert!(replace_boot_files(&source, &fallback).is_err());
         assert_eq!(
             fs::read(fallback.join("HvLoader.efi")).unwrap(),
             b"retained"
@@ -550,7 +560,7 @@ mod tests {
         fs::create_dir(secondary.join("ignored")).unwrap();
         fs::rename(&large, secondary.join("ignored/large.bin")).unwrap();
         preflight_bootstrap(&source, &esp).unwrap();
-        replace_bundle(&source, &fallback).unwrap();
+        replace_boot_files(&source, &fallback).unwrap();
         assert_eq!(fs::read(fallback.join("HvLoader.efi")).unwrap(), b"new");
         assert!(!fallback.join("Windows/System32/ignored").exists());
     }
@@ -576,17 +586,17 @@ mod tests {
 
     /// Invalid sources fail before destination creation.
     #[test]
-    fn rejects_incomplete_and_unexpected_payload_before_copy() {
+    fn rejects_incomplete_and_unexpected_boot_components_before_copy() {
         let temp = TempDir::new().unwrap();
         let source = temp.path().join("source");
         let target = temp.path().join("target");
-        bundle(&source, b"new");
+        create_boot_files(&source, b"new");
         fs::remove_file(source.join("lxhvloader.dll")).unwrap();
-        assert!(copy_bundle(&source, &target).is_err());
+        assert!(copy_boot_files(&source, &target).is_err());
         assert!(!target.exists());
-        bundle(&source, b"new");
+        create_boot_files(&source, b"new");
         fs::write(source.join("identity.json"), b"unexpected").unwrap();
-        assert!(copy_bundle(&source, &target).is_err());
+        assert!(copy_boot_files(&source, &target).is_err());
         assert!(!target.exists());
     }
 
@@ -597,14 +607,14 @@ mod tests {
         let source = temp.path().join("source");
         let target = temp.path().join("target");
         let outside = temp.path().join("outside");
-        bundle(&source, b"new");
+        create_boot_files(&source, b"new");
         fs::create_dir(&outside).unwrap();
         unix_fs::symlink(&outside, &target).unwrap();
-        assert!(replace_bundle(&source, &target).is_err());
+        assert!(replace_boot_files(&source, &target).is_err());
         fs::remove_file(&target).unwrap();
         fs::remove_file(source.join("lxhvloader.dll")).unwrap();
         unix_fs::symlink(outside.join("dll"), source.join("lxhvloader.dll")).unwrap();
-        assert!(copy_bundle(&source, &target).is_err());
+        assert!(copy_boot_files(&source, &target).is_err());
         assert!(fs::read_dir(&outside).unwrap().next().is_none());
     }
 
@@ -614,8 +624,8 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let source = temp.path().join("AZLB");
         let fallback = temp.path().join("BOOT");
-        bundle(&source, b"new");
-        bundle(&fallback, b"old");
+        create_boot_files(&source, b"new");
+        create_boot_files(&fallback, b"old");
         fs::rename(
             fallback.join("HvLoader.efi"),
             fallback.join("HvLoader.efi.old"),
@@ -623,15 +633,15 @@ mod tests {
         .unwrap();
         fs::write(fallback.join("second.efi.new"), b"partial").unwrap();
         fs::write(fallback.join("lxhvloader.dll.old"), b"stale").unwrap();
-        replace_bundle(&source, &fallback).unwrap();
-        replace_bundle(&source, &fallback).unwrap();
-        validate_bundle(&fallback).unwrap();
+        replace_boot_files(&source, &fallback).unwrap();
+        replace_boot_files(&source, &fallback).unwrap();
+        validate_boot_files(&fallback).unwrap();
         for name in FILES {
             assert_eq!(fs::read(fallback.join(name)).unwrap(), b"new");
             assert!(!fallback.join(format!("{name}.new")).exists());
             assert!(!fallback.join(format!("{name}.old")).exists());
         }
-        assert!(replace_bundle(&source, &source).is_err());
+        assert!(replace_boot_files(&source, &source).is_err());
     }
 
     /// Capacity includes cluster rounding, reclamation, and a reserve.
@@ -644,9 +654,9 @@ mod tests {
         assert!(check_space(SPACE_RESERVE, 4096, 4096).is_ok());
     }
 
-    /// Enabled fallback policies copy whole bundles and preserve the retained slot.
+    /// Enabled fallback policies copy all slot boot files and preserve the retained slot.
     #[test]
-    fn fallback_modes_use_the_full_selected_bundle_during_trial_commit_and_rollback() {
+    fn fallback_modes_use_selected_boot_files_during_trial_commit_and_rollback() {
         for mode in [
             UefiFallbackMode::Conservative,
             UefiFallbackMode::Optimistic,
@@ -657,9 +667,9 @@ mod tests {
             let active = efi.join("AZL2A");
             let target = efi.join("AZL2B");
             let fallback = efi.join("BOOT");
-            bundle(&active, b"retained");
-            bundle(&target, b"candidate");
-            bundle(&fallback, b"retained");
+            create_boot_files(&active, b"retained");
+            create_boot_files(&target, b"candidate");
+            create_boot_files(&fallback, b"retained");
             let secondary = "Windows/System32/image-defined.bin";
             for (root, contents) in [
                 (&active, b"retained".as_slice()),

@@ -38,7 +38,7 @@ fn validate_hypervisor_identity(
     let expected_directory = expected_volume
         .map(|volume| boot::make_esp_dir_name(install_index, volume))
         .unwrap_or_else(|| EFI_DEFAULT_BIN_DIRECTORY.into());
-    // TODO: Identify the running hypervisor and compare it with the expected OS payload.
+    // TODO: Identify the running hypervisor and compare it with the expected OS's MSHV boot components.
     warn!(
         "MSHV hypervisor identity validation is not implemented; assuming success for {:?}",
         expected_directory

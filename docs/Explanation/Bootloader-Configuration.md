@@ -49,7 +49,7 @@ The bootloader choice (and choice of UKI) has some implications on
 ## Bootloader Servicing
 
 For ACL images with MSHV, see [MSHV](./MSHV.md) for the boot chain,
-slot-owned payload layout, and servicing requirements.
+slot-owned MSHV boot component layout, and servicing requirements.
 
 :::note
 Trident handles bootloader servicing for A/B updates without any required user

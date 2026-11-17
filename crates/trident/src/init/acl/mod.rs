@@ -62,7 +62,7 @@ impl<'a> ExpectedPartition<'a> {
 /// the expectations of the ACL image layout, and returns a HostStatus
 /// representing the current state of the host. This will be used to
 /// initialize the Trident datastore if it has not been created yet.
-/// Validates any detected MSHV bundle without modifying the ESP.
+/// Validates any detected MSHV boot components without modifying the ESP.
 pub fn initial_host_status() -> Result<HostStatus, Error> {
     let blk_devices = lsblk::list().context("Failed to run lsblk")?;
     let root_blk_device = blk_devices
@@ -89,7 +89,7 @@ pub fn initial_host_status() -> Result<HostStatus, Error> {
 /// initial ACL HostStatus, separated from the code that gets the
 /// Host's current disk information. This allows for easier testing
 /// of the HostStatus creation logic.
-/// Rejects incomplete MSHV bundles without modifying the ESP.
+/// Rejects incomplete MSHV boot components without modifying the ESP.
 fn inner_initial_host_status(
     disk_information: &SfDisk,
     root_blk_device: &BlockDevice,
@@ -306,7 +306,7 @@ fn inner_initial_host_status(
         partition_paths,
         ..Default::default()
     };
-    mshv::has_slot_mshv_bundle(&esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH))?;
+    mshv::has_slot_mshv_boot_components(&esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH))?;
     Ok(host_status)
 }
 
@@ -480,8 +480,8 @@ mod tests {
         }
     }
 
-    /// Creates a complete BOOT bundle for discovery tests.
-    fn create_mshv_bundle(esp_path: &Path) {
+    /// Creates complete BOOT files with MSHV boot components for discovery tests.
+    fn create_mshv_boot_files(esp_path: &Path) {
         for name in FILES {
             let path = esp_path.join("EFI/BOOT").join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -507,17 +507,17 @@ mod tests {
         let status = inner_initial_host_status(&disk, &device, esp.path()).unwrap();
         assert_eq!(status.spec, ordinary.spec);
 
-        create_mshv_bundle(esp.path());
+        create_mshv_boot_files(esp.path());
         let status = inner_initial_host_status(&disk, &device, esp.path()).unwrap();
         assert_eq!(status.spec, ordinary.spec);
         assert!(!esp.path().join("EFI/AZLA").exists());
     }
 
-    /// Incomplete marked bundles fail discovery without creating AZLA.
+    /// Incomplete MSHV boot components fail discovery without creating AZLA.
     #[test]
-    fn initial_host_status_rejects_incomplete_slot_mshv_payload() {
+    fn initial_host_status_rejects_incomplete_slot_mshv_boot_components() {
         let esp = TempDir::new().unwrap();
-        create_mshv_bundle(esp.path());
+        create_mshv_boot_files(esp.path());
         fs::remove_file(esp.path().join("EFI/BOOT/HvLoader.efi")).unwrap();
         let error = inner_initial_host_status(
             &create_sfdisk("EFI-SYSTEM", TestPartitions::Correct),
@@ -527,7 +527,7 @@ mod tests {
         .unwrap_err();
         assert!(error
             .to_string()
-            .contains("Missing MSHV payload file: HvLoader.efi"));
+            .contains("Missing MSHV boot component: HvLoader.efi"));
         assert!(!esp.path().join("EFI/AZLA").exists());
     }
 
@@ -542,7 +542,7 @@ mod tests {
         }
     }
 
-    /// Ordinary ACL discovery needs no MSHV payload.
+    /// Ordinary ACL discovery needs no MSHV boot components.
     #[test]
     fn test_inner_initial_host_status_success() {
         let sfdisk = create_sfdisk("efi-system", TestPartitions::Correct);
@@ -664,7 +664,7 @@ mod tests {
         assert!(volume_pairs.iter().all(|p| p.id != "usr-hash-sig"));
     }
 
-    /// Unexpected ESP labels fail before payload discovery.
+    /// Unexpected ESP labels fail before MSHV boot component discovery.
     #[test]
     fn test_inner_initial_host_status_unexpected_part_name() {
         let wrong_label = "wrong-label";
