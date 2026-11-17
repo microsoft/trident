@@ -461,14 +461,24 @@ fn prepare_boot_files_for_staging(
     let source_boot_dir = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
     // Compare source metadata with the retained slot before any ESP writes.
     mshv::validate_transition(ctx, &path::join_relative(mount_point, &ctx.esp_mount_path))?;
+    // Select shim and the main loader (GRUB or efitreeloader), plus second.efi
+    // for efitreeloader and grub.cfg for non-UKI images. UKI payloads are staged
+    // separately; MSHV-specific components are added below.
     let mut boot_files = generate_boot_filepaths(temp_mount_dir, is_uki, ctx.bootloader())
         .context("Failed to generate boot filepaths")?;
     if ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
+        // Require HvLoader.efi and lxhvloader.dll as regular files, and validate
+        // the optional Windows tree's structure. Reject malformed components
+        // before any target-slot cleanup.
         boot_mshv::validate_boot_components(&source_boot_dir)?;
+        // Add all remaining BOOT files, including nested Windows components and
+        // future image-specific files; the copier preserves BOOT-relative paths.
         for component in boot_files::filepaths(&source_boot_dir)? {
             let relative = component.strip_prefix(&source_boot_dir)?;
             let name = relative.to_str().context("Non-UTF-8 boot file path")?;
-            // These are selected and normalized by ordinary bootloader discovery.
+            // Keep root loader/config selection under generate_boot_filepaths.
+            // Re-adding an unselected noprefix binary could overwrite efitreeloader
+            // during copy-time normalization. Nested same-named files are retained.
             if [
                 BOOT_EFI,
                 GRUB_EFI,
