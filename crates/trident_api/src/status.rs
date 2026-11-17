@@ -134,7 +134,6 @@ pub enum ServicingState {
     /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
     /// Commit failed and rollback to the retained OS is required.
-    #[serde(alias = "ab-update-hypervisor-check-failed")]
     CommitFailed,
 }
 
@@ -321,15 +320,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn commit_failure_accepts_previous_name_without_merging_health_failure() {
-        for name in ["commit-failed", "ab-update-hypervisor-check-failed"] {
-            let state: ServicingState = serde_yaml::from_str(name).unwrap();
-            assert_eq!(state, ServicingState::CommitFailed);
-            assert_eq!(
-                serde_yaml::to_string(&state).unwrap().trim(),
-                "commit-failed"
-            );
-        }
+    fn commit_failure_roundtrips_without_previous_hypervisor_alias() {
+        let state: ServicingState = serde_yaml::from_str("commit-failed").unwrap();
+        assert_eq!(state, ServicingState::CommitFailed);
+        assert_eq!(
+            serde_yaml::to_string(&state).unwrap().trim(),
+            "commit-failed"
+        );
+        assert!(
+            serde_yaml::from_str::<ServicingState>("ab-update-hypervisor-check-failed").is_err()
+        );
 
         let health: ServicingState = serde_yaml::from_str("ab-update-health-check-failed").unwrap();
         assert_eq!(health, ServicingState::AbUpdateHealthCheckFailed);
