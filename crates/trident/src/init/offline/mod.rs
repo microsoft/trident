@@ -29,7 +29,7 @@ use trident_api::{
 };
 use uuid::Uuid;
 
-use crate::{datastore::DataStore, subsystems::esp};
+use crate::{datastore::DataStore, engine::boot::mshv, subsystems::esp};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 struct PrismPartition {
@@ -534,6 +534,9 @@ pub fn execute(
             "Failed to find ESP filesystem in Host Status, validation should have failed if this was the case",
         )))?;
 
+    mshv::validate_installed_boot_files(esp_path)
+        .structured(InvalidInputError::InvalidBootConfiguration)
+        .message("Invalid installed MSHV boot components")?;
     esp::bootstrap_azla_from_fallback(esp_path)
         .structured(InvalidInputError::InvalidBootConfiguration)
         .message("Failed to bootstrap AZLA from fallback")?;

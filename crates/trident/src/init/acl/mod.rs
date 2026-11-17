@@ -20,7 +20,6 @@ use trident_api::{
         MountOptions, MountPoint, Partition, PartitionSize, PartitionTableType, PartitionType,
         Storage, VerityDevice,
     },
-    constants::EFI_DEFAULT_BIN_RELATIVE_PATH,
     error::TridentResultExt,
     status::{AbVolumeSelection, HostStatus, ServicingState},
     BlockDeviceId,
@@ -306,7 +305,7 @@ fn inner_initial_host_status(
         partition_paths,
         ..Default::default()
     };
-    mshv::has_slot_mshv_boot_components(&esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH))?;
+    mshv::validate_installed_boot_files(esp_path)?;
     Ok(host_status)
 }
 

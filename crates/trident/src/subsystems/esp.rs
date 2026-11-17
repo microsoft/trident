@@ -33,7 +33,8 @@ use trident_api::{
 use crate::{
     engine::{
         boot::{
-            self, mshv as boot_mshv, uki, ESP_EXTRACTION_DIRECTORY, ESP_EXTRACTION_DIRECTORY_MODE,
+            self, files as boot_files, mshv as boot_mshv, uki, ESP_EXTRACTION_DIRECTORY,
+            ESP_EXTRACTION_DIRECTORY_MODE,
         },
         EngineContext, Subsystem,
     },
@@ -46,6 +47,8 @@ use crate::{
 };
 
 mod mshv;
+
+const ETL_SECOND_STAGE_EFI_FILENAME: &str = "second.efi";
 
 #[derive(Default, Debug)]
 pub struct EspSubsystem;
@@ -366,9 +369,6 @@ fn copy_file_artifacts(
     // Call helper func to copy files from mounted img dir to esp_dir_path
     debug!("Writing boot files to directory {}", esp_dir_path.display());
 
-    // MSHV boot components require additional files beyond the ordinary boot-file list.
-    let slot_mshv = ctx.bootloader().is_some_and(Bootloader::uses_mshv);
-    let source_boot_dir = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
     let boot_files = prepare_boot_files_for_staging(temp_mount_dir, ctx, mount_point)?;
 
     // Clear esp_dir_path if it exists
@@ -388,16 +388,14 @@ fn copy_file_artifacts(
     }
 
     // Call helper func to copy boot files from temp_mount_dir to esp_dir_path
-    let grub_noprefix = if slot_mshv {
-        boot_mshv::copy_boot_files(&source_boot_dir, &esp_dir_path)?;
-        false
-    } else {
-        copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).context(format!(
-            "Failed to copy boot files from directory {} to directory {}",
-            temp_mount_dir.display(),
-            esp_dir_path.display()
-        ))?
-    };
+    let grub_noprefix =
+        copy_boot_files(temp_mount_dir, &esp_dir_path, boot_files).with_context(|| {
+            format!(
+                "Failed to copy boot files from directory {} to directory {}",
+                temp_mount_dir.display(),
+                esp_dir_path.display()
+            )
+        })?;
 
     if ctx.is_uki().unstructured("UKI setting unknown")? {
         // Prepare ESP directory structure for UKI boot
@@ -461,18 +459,41 @@ fn prepare_boot_files_for_staging(
     let source_boot_dir = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
     // Compare source metadata with the retained slot before any ESP writes.
     mshv::validate_transition(ctx, &path::join_relative(mount_point, &ctx.esp_mount_path))?;
-    let boot_files = if ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
-        boot_mshv::validate_boot_files(&source_boot_dir)?;
-        Vec::new()
+    let mut boot_files = generate_boot_filepaths(temp_mount_dir, is_uki, ctx.bootloader())
+        .context("Failed to generate boot filepaths")?;
+    if ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
+        boot_mshv::validate_boot_components(&source_boot_dir)?;
+        for component in boot_files::filepaths(&source_boot_dir)? {
+            let relative = component.strip_prefix(&source_boot_dir)?;
+            let name = relative.to_str().context("Non-UTF-8 boot file path")?;
+            // These are selected and normalized by ordinary bootloader discovery.
+            if [
+                BOOT_EFI,
+                GRUB_EFI,
+                GRUB_NOPREFIX_EFI,
+                GRUB2_CONFIG_FILENAME,
+                ETL_SECOND_STAGE_EFI_FILENAME,
+            ]
+            .iter()
+            .any(|ordinary| name.eq_ignore_ascii_case(ordinary))
+            {
+                continue;
+            }
+            boot_files.push(component);
+        }
     } else {
-        // Ordinary copying would omit required MSHV boot components.
         ensure!(
             !source_boot_dir.join("HvLoader.efi").try_exists()?,
             "An MSHV image must declare COSI bootloader type 'efitreeloader-mshv-systemd-boot'"
         );
-        generate_boot_filepaths(temp_mount_dir, is_uki)
-            .context("Failed to generate boot filepaths")?
-    };
+    }
+    for path in &boot_files {
+        ensure!(
+            fs::symlink_metadata(path)?.is_file(),
+            "Not a regular boot file: {}",
+            path.display()
+        );
+    }
     if is_uki {
         // Reclaim target-slot space before copying, preserving the active slot.
         // A failed copy can leave the target without its previous UKI.
@@ -623,12 +644,7 @@ fn copy_boot_files_for_uefi_fallback(
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     );
-    // Fallback also runs without an image, so detect the selected slot's MSHV boot components.
-    let result = if boot_mshv::has_slot_mshv_boot_components(&source_esp_dir_path)? {
-        boot_mshv::replace_boot_files(&source_esp_dir_path, &uefi_fallback_path)
-    } else {
-        replace_boot_files(&source_esp_dir_path, &uefi_fallback_path)
-    };
+    let result = replace_boot_files(&source_esp_dir_path, &uefi_fallback_path);
     result.context(format!(
         "Failed to copy boot files from directory '{}' to directory '{}'",
         source_esp_dir_path.display(),
@@ -637,121 +653,9 @@ fn copy_boot_files_for_uefi_fallback(
     Ok(())
 }
 
-/// Copies boot files from one folder to another.
+/// Replaces the complete fallback boot tree, including nested files.
 pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
-    trace!(
-        "Copying boot files from '{}' to '{}'",
-        from_dir.display(),
-        to_dir.display()
-    );
-    // Ensure to_dir exists
-    fs::create_dir_all(to_dir)
-        .context(format!("Failed to create directory '{}'", to_dir.display()))?;
-
-    // Copy all files from from_dir to to_dir as <existing_filename>.new
-    fs::read_dir(from_dir)?
-        .collect::<Result<Vec<_>, _>>()?
-        .iter()
-        .try_for_each(|from_path| {
-            let to_file_name = format!("{}.new", from_path.file_name().to_string_lossy());
-            let to_path = to_dir.join(to_file_name);
-            fs::copy(from_path.path(), &to_path).context(format!(
-                "Failed to copy file '{}' to '{}'",
-                from_path.path().display(),
-                to_path.display(),
-            ))?;
-            trace!(
-                "Copied file '{}' to '{}'",
-                from_path.path().display(),
-                to_path.display()
-            );
-            Ok::<(), Error>(())
-        })
-        .context("Failed to copy files")?;
-
-    // Rename pre-existing entries from to_dir/<filename> to to_dir/<filename>.old.
-    fs::read_dir(to_dir)?
-        .collect::<Result<Vec<_>, _>>()?
-        .iter()
-        .try_for_each(|orig_path| {
-            let orig_file_name = orig_path.file_name();
-            let orig_file_name_string = orig_file_name.to_string_lossy();
-            // Leave staged files and pending cleanup entries in place.
-            if !orig_file_name_string.ends_with(".new") && !orig_file_name_string.ends_with(".old")
-            {
-                let new_file_name = format!("{orig_file_name_string}.old");
-                let to_path = to_dir.join(new_file_name);
-                fs::rename(orig_path.path(), &to_path).context(format!(
-                    "Failed to rename pre-existing file '{}' to '{}'",
-                    orig_path.path().display(),
-                    to_path.display()
-                ))?;
-                trace!(
-                    "Renamed pre-existing file '{}' to '{}'",
-                    orig_path.path().display(),
-                    to_path.display()
-                );
-            }
-            Ok::<(), Error>(())
-        })
-        .context("Failed to rename pre-existing files")?;
-
-    // Rename all copied files from to_dir/<filename>.new to to_dir/<filename>
-    fs::read_dir(to_dir)?
-        .collect::<Result<Vec<_>, _>>()?
-        .iter()
-        .try_for_each(|orig_path| {
-            let orig_file_name = orig_path.file_name();
-            let orig_file_name_string = orig_file_name.to_string_lossy();
-            // Skip files that do not end with .new
-            if orig_file_name_string.ends_with(".new") {
-                let new_file_name = orig_file_name_string.trim_end_matches(".new");
-                let to_path = to_dir.join(new_file_name);
-                fs::rename(orig_path.path(), &to_path).context(format!(
-                    "Failed to rename copied file '{}' to '{}'",
-                    orig_path.path().display(),
-                    to_path.display()
-                ))?;
-                trace!(
-                    "Renamed copied file '{}' to '{}'",
-                    orig_path.path().display(),
-                    to_path.display()
-                );
-            }
-            Ok::<(), Error>(())
-        })
-        .context("Failed to rename copied files")?;
-
-    // Remove retired files and the known MSHV boot component directory.
-    fs::read_dir(to_dir)?
-        .collect::<Result<Vec<_>, _>>()?
-        .iter()
-        .try_for_each(|orig_path| {
-            let orig_file_name = orig_path.file_name();
-            // Skip files that do not end with .old
-            if orig_file_name.to_string_lossy().ends_with(".old") {
-                let result = if orig_path.file_type()?.is_dir()
-                    && orig_file_name
-                        .to_string_lossy()
-                        .eq_ignore_ascii_case("Windows.old")
-                {
-                    fs::remove_dir_all(orig_path.path())
-                } else {
-                    fs::remove_file(orig_path.path())
-                };
-                result.context(format!(
-                    "Failed to remove pre-existing entry '{}'",
-                    orig_path.path().display()
-                ))?;
-                trace!(
-                    "Removed pre-existing entry '{}'",
-                    orig_path.path().display()
-                );
-            }
-            Ok::<(), Error>(())
-        })
-        .context("Failed to remove pre-existing files")?;
-    Ok(())
+    boot_files::replace_boot_files(from_dir, to_dir)
 }
 
 /// Ensures `EFI/AZLA` exists on the ESP, seeding it from the `EFI/BOOT` fallback
@@ -759,16 +663,12 @@ pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
 /// a freshly derived HostStatus is backed by the expected on-disk ESP layout
 /// before the first A/B update or manual rollback assumes AZLA already exists.
 ///
-/// Detects MSHV boot components in BOOT, preflights boot-file capacity, and publishes a
-/// complete copy via a staged directory rename. Existing AZLA is never refreshed:
-/// it is validated when BOOT contains MSHV, or left untouched for ordinary BOOT.
+/// Preflights the complete BOOT tree and publishes a copy via a staged
+/// directory rename. Existing AZLA is never refreshed; image-specific
+/// completeness checks belong to initialization, not tree relocation.
 pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
     let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
     let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-    let slot_mshv = boot_mshv::has_slot_mshv_boot_components(&boot_esp_path)?;
-    if slot_mshv && azla_esp_path.exists() {
-        return boot_mshv::validate_boot_files(&azla_esp_path);
-    }
     trace!("Checking for AZLA volume ESP path at {:?}", &azla_esp_path);
     if !azla_esp_path.exists() {
         trace!(
@@ -779,8 +679,7 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
         // an atomic rename only once the copy has fully succeeded. Creating
         // AZLA directly before the copy completes could leave a partially
         // populated directory on failure. Ordinary-mode retries would skip
-        // that directory because it exists, while MSHV retries would reject
-        // its incomplete MSHV boot components rather than repair them.
+        // that directory because it exists instead of repairing the partial copy.
         let azla_tmp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA.bootstrap-tmp");
         if azla_tmp_path.exists() {
             fs::remove_dir_all(&azla_tmp_path).context(format!(
@@ -788,13 +687,9 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
                 azla_tmp_path.display()
             ))?;
         }
-        let copy_result = if slot_mshv {
-            // Check capacity after reclaiming stale staging contents.
-            boot_mshv::preflight_bootstrap(&boot_esp_path, esp_path)?;
-            boot_mshv::copy_boot_files(&boot_esp_path, &azla_tmp_path)
-        } else {
-            replace_boot_files(&boot_esp_path, &azla_tmp_path)
-        };
+        // Check capacity after reclaiming stale staging contents.
+        boot_files::preflight_bootstrap(&boot_esp_path, esp_path)?;
+        let copy_result = boot_files::copy_boot_files(&boot_esp_path, &azla_tmp_path);
         copy_result.context(format!(
             "Failed to copy boot files from '{}' to temporary AZLA bootstrap path '{}'",
             boot_esp_path.display(),
@@ -828,7 +723,11 @@ fn copy_boot_files(
             boot_file.display()
         ))?;
 
-        let destination_path = esp_dir.join(file_name);
+        let boot_root = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let relative = source_path
+            .strip_prefix(&boot_root)
+            .unwrap_or_else(|_| Path::new(file_name));
+        let destination_path = esp_dir.join(relative);
 
         // Create directories if they don't exist
         if let Some(parent) = destination_path.parent() {
@@ -848,7 +747,10 @@ fn copy_boot_files(
         ))?;
 
         // Rename grub-noprefix efi to grub efi
-        if file_name == GRUB_NOPREFIX_EFI {
+        if relative
+            .to_str()
+            .is_some_and(|name| name.eq_ignore_ascii_case(GRUB_NOPREFIX_EFI))
+        {
             fs::rename(
                 &destination_path,
                 esp_dir
@@ -869,9 +771,15 @@ fn copy_boot_files(
 ///
 /// The func takes the arg temp_mount_dir, which is the path to the directory where the ESP image is mounted to.
 /// The is_uki parameter indicates whether the image being processed is a UKI (Unified Kernel Image), in which
-/// case, grub.cfg is not needed.
-fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<PathBuf>, Error> {
+/// case, grub.cfg is not needed. Efitreeloader selects the main loader without
+/// GRUB noprefix substitution and requires its separate second-stage executable.
+fn generate_boot_filepaths(
+    temp_mount_dir: &Path,
+    is_uki: bool,
+    bootloader: Option<&Bootloader>,
+) -> Result<Vec<PathBuf>, Error> {
     let mut paths = Vec::new();
+    let uses_efitreeloader = bootloader.is_some_and(Bootloader::uses_efitreeloader);
 
     // Check if grub.cfg exists in EFI_DEFAULT_BIN_RELATIVE_PATH, otherwise use GRUB2_RELATIVE_PATH
     let efi_boot_grub_path = Path::new(temp_mount_dir)
@@ -912,14 +820,16 @@ fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<Pa
         .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
         .join(GRUB_EFI);
 
-    let selected_grub_binary_path =
-        if grub_efi_noprefix_path.exists() && grub_efi_noprefix_path.is_file() {
-            grub_efi_noprefix_path
-        } else if grub_efi_path.exists() && grub_efi_path.is_file() {
-            grub_efi_path
-        } else {
-            bail!("Failed to find GRUB EFI executable");
-        };
+    let selected_grub_binary_path = if !uses_efitreeloader
+        && grub_efi_noprefix_path.exists()
+        && grub_efi_noprefix_path.is_file()
+    {
+        grub_efi_noprefix_path
+    } else if grub_efi_path.exists() && grub_efi_path.is_file() {
+        grub_efi_path
+    } else {
+        bail!("Failed to find GRUB EFI executable");
+    };
     debug!(
         "Using GRUB EFI executable from '{}'",
         selected_grub_binary_path.display()
@@ -941,6 +851,17 @@ fn generate_boot_filepaths(temp_mount_dir: &Path, is_uki: bool) -> Result<Vec<Pa
         boot_efi_path.display()
     );
     paths.push(boot_efi_path);
+    if uses_efitreeloader {
+        let second = temp_mount_dir
+            .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+            .join(ETL_SECOND_STAGE_EFI_FILENAME);
+        ensure!(
+            fs::symlink_metadata(&second)?.is_file(),
+            "Invalid efitreeloader second stage: {}",
+            second.display()
+        );
+        paths.push(second);
+    }
 
     Ok(paths)
 }
@@ -993,7 +914,161 @@ mod tests {
         osimage::bootloader::BootloaderType,
     };
 
-    const ETL_SECOND_STAGE_EFI_FILENAME: &str = "second.efi";
+    #[test]
+    fn test_boot_tree_staging_uses_shared_copying_for_etl_and_mshv() {
+        let (source, esp, ctx) = boot_file_staging_fixture(true, true);
+        let components = source
+            .path()
+            .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+            .join("Windows/System32/drivers");
+        fs::create_dir_all(&components).unwrap();
+        fs::write(components.join("future.dll"), b"component").unwrap();
+        fs::write(components.join(GRUB_NOPREFIX_EFI), b"nested component").unwrap();
+        let future = source
+            .path()
+            .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+            .join("FutureSupport/deep");
+        fs::create_dir_all(&future).unwrap();
+        fs::write(future.join("support.bin"), b"future support").unwrap();
+        fs::write(
+            source
+                .path()
+                .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+                .join("future-loader.dll"),
+            b"future loader",
+        )
+        .unwrap();
+        fs::write(
+            source
+                .path()
+                .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+                .join(GRUB_NOPREFIX_EFI),
+            b"unrelated GRUB binary",
+        )
+        .unwrap();
+        let files = prepare_boot_files_for_staging(source.path(), &ctx, esp.path()).unwrap();
+        assert!(files
+            .iter()
+            .any(|path| path.ends_with(ETL_SECOND_STAGE_EFI_FILENAME)));
+        let target = esp.path().join("EFI/AZL2B");
+        assert!(!copy_boot_files(source.path(), &target, files).unwrap());
+        for name in [
+            BOOT_EFI,
+            GRUB_EFI,
+            ETL_SECOND_STAGE_EFI_FILENAME,
+            "HvLoader.efi",
+            "lxhvloader.dll",
+        ] {
+            assert_eq!(fs::read(target.join(name)).unwrap(), b"bootloader");
+        }
+        assert_eq!(
+            fs::read(target.join("Windows/System32/drivers/future.dll")).unwrap(),
+            b"component"
+        );
+        assert_eq!(
+            fs::read(
+                target
+                    .join("Windows/System32/drivers")
+                    .join(GRUB_NOPREFIX_EFI)
+            )
+            .unwrap(),
+            b"nested component"
+        );
+        assert_eq!(
+            fs::read(target.join("FutureSupport/deep/support.bin")).unwrap(),
+            b"future support"
+        );
+        assert_eq!(
+            fs::read(target.join("future-loader.dll")).unwrap(),
+            b"future loader"
+        );
+    }
+
+    #[test]
+    fn test_boot_tree_staging_requires_second_stage_only_for_etl() {
+        for name in [ETL_SECOND_STAGE_EFI_FILENAME, BOOT_EFI, GRUB_EFI] {
+            let (source, esp, ctx) = boot_file_staging_fixture(true, true);
+            let boot = source.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+            fs::remove_file(boot.join(name)).unwrap();
+            fs::create_dir(boot.join(name)).unwrap();
+            boot_mshv::validate_boot_components(&boot).unwrap();
+            prepare_boot_files_for_staging(source.path(), &ctx, esp.path()).unwrap_err();
+            assert!(esp
+                .path()
+                .join(uki::UKI_DIRECTORY)
+                .join("vmlinuz-100-azlb1.efi")
+                .is_file());
+        }
+
+        let (source, esp, ctx) = boot_file_staging_fixture(false, true);
+        fs::create_dir(
+            source
+                .path()
+                .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
+                .join(ETL_SECOND_STAGE_EFI_FILENAME),
+        )
+        .unwrap();
+        let paths = prepare_boot_files_for_staging(source.path(), &ctx, esp.path()).unwrap();
+        assert!(!paths
+            .iter()
+            .any(|path| path.ends_with(ETL_SECOND_STAGE_EFI_FILENAME)));
+    }
+
+    #[test]
+    fn test_boot_tree_fallback_copies_all_entries_without_image_metadata() {
+        let esp = TempDir::new().unwrap();
+        let source = esp.path().join("EFI/AZLA");
+        let fallback = esp.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        let retained = esp.path().join("EFI/AZL2A");
+        for path in [&source, &fallback, &retained] {
+            fs::create_dir_all(path).unwrap();
+            fs::write(path.join(BOOT_EFI), b"loader").unwrap();
+        }
+        fs::create_dir_all(source.join("future/deep")).unwrap();
+        fs::create_dir_all(source.join("empty")).unwrap();
+        fs::write(source.join("future/deep/component.bin"), b"future").unwrap();
+        fs::write(source.join("future-loader.efi"), b"future loader").unwrap();
+        fs::create_dir_all(fallback.join("retired")).unwrap();
+        fs::write(fallback.join("retired/old.bin"), b"retired").unwrap();
+        let ctx = EngineContext {
+            servicing_type: ServicingType::CleanInstall,
+            esp_mount_path: ".".into(),
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            set_uefi_fallback_contents(&ctx, ServicingState::CleanInstallStaged, esp.path())
+                .unwrap();
+        }
+        assert_eq!(
+            fs::read(fallback.join("future/deep/component.bin")).unwrap(),
+            b"future"
+        );
+        assert_eq!(
+            fs::read(fallback.join("future-loader.efi")).unwrap(),
+            b"future loader"
+        );
+        assert!(fallback.join("empty").is_dir());
+        assert!(!fallback.join("retired").exists());
+        assert_eq!(fs::read(retained.join(BOOT_EFI)).unwrap(), b"loader");
+    }
+
+    #[test]
+    fn test_boot_tree_bootstrap_preserves_non_mshv_subdirectories() {
+        let esp = TempDir::new().unwrap();
+        let boot = esp.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+        fs::create_dir_all(boot.join("future/deep")).unwrap();
+        fs::create_dir_all(boot.join("empty")).unwrap();
+        fs::write(boot.join(BOOT_EFI), b"loader").unwrap();
+        fs::write(boot.join("future/deep/component.bin"), b"future").unwrap();
+        bootstrap_azla_from_fallback(esp.path()).unwrap();
+        let slot = esp.path().join("EFI/AZLA");
+        assert_eq!(
+            fs::read(slot.join("future/deep/component.bin")).unwrap(),
+            b"future"
+        );
+        assert!(slot.join("empty").is_dir());
+        assert_eq!(fs::read(boot.join(BOOT_EFI)).unwrap(), b"loader");
+    }
 
     fn boot_file_staging_fixture(is_mshv: bool, is_uki: bool) -> (TempDir, TempDir, EngineContext) {
         let source = TempDir::new().unwrap();
@@ -1028,6 +1103,9 @@ mod tests {
             fs::create_dir_all(&root).unwrap();
             for name in names {
                 fs::write(root.join(name), b"bootloader").unwrap();
+            }
+            if !is_uki {
+                fs::write(root.join(GRUB2_CONFIG_FILENAME), b"configuration").unwrap();
             }
         }
         let ukis = esp.path().join(uki::UKI_DIRECTORY);
@@ -1708,17 +1786,17 @@ mod tests {
     }
 
     #[test]
-    fn test_replace_boot_files_preserves_unrelated_directories() {
+    fn test_replace_boot_files_retires_directories_inside_owned_boot_tree() {
         let source = TempDir::new().unwrap();
         let destination = TempDir::new().unwrap();
         fs::write(source.path().join(BOOT_EFI), b"ordinary loader").unwrap();
-        fs::create_dir_all(destination.path().join("unrelated")).unwrap();
-        fs::write(destination.path().join("unrelated/keep"), b"unrelated data").unwrap();
-
-        assert!(replace_boot_files(source.path(), destination.path()).is_err());
+        fs::create_dir_all(destination.path().join("retired")).unwrap();
+        fs::write(destination.path().join("retired/old"), b"retired data").unwrap();
+        replace_boot_files(source.path(), destination.path()).unwrap();
+        assert!(!destination.path().join("retired").exists());
         assert_eq!(
-            fs::read(destination.path().join("unrelated.old/keep")).unwrap(),
-            b"unrelated data"
+            fs::read(destination.path().join(BOOT_EFI)).unwrap(),
+            b"ordinary loader"
         );
     }
 
@@ -1841,7 +1919,7 @@ mod tests {
         }
     }
 
-    /// MSHV discovers secondary files and validates, but never refreshes, existing AZLA.
+    /// Bootstrap preserves all MSHV files but never refreshes an existing AZLA.
     #[test]
     fn test_bootstrap_azla_from_mshv_fallback() {
         let esp = TempDir::new().unwrap();
@@ -1883,8 +1961,9 @@ mod tests {
         bootstrap_azla_from_fallback(esp.path()).unwrap();
         assert!(!azla.join(secondary).exists());
         fs::remove_file(azla.join("lxhvloader.dll")).unwrap();
-        assert!(bootstrap_azla_from_fallback(esp.path()).is_err());
+        bootstrap_azla_from_fallback(esp.path()).unwrap();
         assert!(!azla.join("lxhvloader.dll").exists());
+        assert!(boot_mshv::validate_installed_boot_files(esp.path()).is_err());
     }
 
     /// Failed preflight follows stale-copy cleanup and leaves BOOT untouched.
@@ -1925,14 +2004,14 @@ mod tests {
 
     /// Incomplete marked fallback cannot publish AZLA.
     #[test]
-    fn test_bootstrap_azla_rejects_incomplete_mshv_fallback() {
+    fn test_initialization_rejects_incomplete_mshv_before_bootstrap() {
         let esp = TempDir::new().unwrap();
         let boot = esp.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
         let azla = esp.path().join(ESP_EFI_DIRECTORY).join("AZLA");
         fs::create_dir_all(&boot).unwrap();
         fs::write(boot.join(BOOT_EFI), "shim").unwrap();
         fs::write(boot.join("HvLoader.efi"), "loader").unwrap();
-        assert!(bootstrap_azla_from_fallback(esp.path()).is_err());
+        boot_mshv::validate_installed_boot_files(esp.path()).unwrap_err();
         assert!(!azla.exists());
         assert_eq!(fs::read_to_string(boot.join(BOOT_EFI)).unwrap(), "shim");
     }
@@ -2051,7 +2130,7 @@ mod tests {
         File::create(&boot_efi_path).unwrap();
 
         let generated_paths_efi_boot =
-            generate_boot_filepaths(temp_mount_dir.path(), false).unwrap();
+            generate_boot_filepaths(temp_mount_dir.path(), false, None).unwrap();
         // Define your expected paths here when file exists
         let expected_paths_efi_boot = vec![
             efi_boot_grub_path.clone(),
@@ -2067,14 +2146,14 @@ mod tests {
         // Remove the GRUB config from the temp dir and create a new one, under GRUB2_RELATIVE_PATH
         fs::remove_file(&efi_boot_grub_path).unwrap();
         assert_eq!(
-            generate_boot_filepaths(temp_mount_dir.path(), false)
+            generate_boot_filepaths(temp_mount_dir.path(), false, None)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
             "Failed to find grub.cfg",
             "generate_boot_filepaths() should fail if grub.cfg does not exist"
         );
-        generate_boot_filepaths(temp_mount_dir.path(), true).unwrap();
+        generate_boot_filepaths(temp_mount_dir.path(), true, None).unwrap();
 
         // Test case 3: Run generate_boot_filepaths() with GRUB under GRUB2_RELATIVE_PATH
         let boot_grub2_grub_path = temp_mount_dir
@@ -2085,7 +2164,7 @@ mod tests {
         File::create(&boot_grub2_grub_path).unwrap();
 
         let generated_paths_boot_grub2 =
-            generate_boot_filepaths(temp_mount_dir.path(), false).unwrap();
+            generate_boot_filepaths(temp_mount_dir.path(), false, None).unwrap();
         // Define expected paths here when EFI/BOOT/grub.cfg does not exist and boot/grub2/grub.cfg
         // is used instead
         let expected_paths_boot_grub2 = vec![
@@ -2102,7 +2181,7 @@ mod tests {
         // Remove old grub EFI executable
         fs::remove_file(&grub_efi_path).unwrap();
         assert_eq!(
-            generate_boot_filepaths(temp_mount_dir.path(), false)
+            generate_boot_filepaths(temp_mount_dir.path(), false, None)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -2118,7 +2197,7 @@ mod tests {
         File::create(&grub_efi_noprefix_path).unwrap();
 
         let generated_paths_noprefix =
-            generate_boot_filepaths(temp_mount_dir.path(), false).unwrap();
+            generate_boot_filepaths(temp_mount_dir.path(), false, None).unwrap();
         // Define expected paths here when EFI/BOOT/grub.cfg does not exist and boot/grub2/grub.cfg
         // is used instead
         let expected_paths_noprefix = vec![
@@ -2135,7 +2214,7 @@ mod tests {
         // Remove old boot EFI executable
         fs::remove_file(&boot_efi_path).unwrap();
         assert_eq!(
-            generate_boot_filepaths(temp_mount_dir.path(), false)
+            generate_boot_filepaths(temp_mount_dir.path(), false, None)
                 .unwrap_err()
                 .root_cause()
                 .to_string(),
@@ -2169,13 +2248,13 @@ mod tests {
                     .join(ETL_SECOND_STAGE_EFI_FILENAME);
 
                 assert_eq!(
-                    generate_boot_filepaths(source.path(), is_uki).unwrap(),
+                    generate_boot_filepaths(source.path(), is_uki, None).unwrap(),
                     expected_paths,
                     "absent second stage: is_uki={is_uki}, grub={grub_filename}"
                 );
 
                 fs::write(&second_stage, [0, 0xff, 1, 0x80]).unwrap();
-                let generated_paths = generate_boot_filepaths(source.path(), is_uki).unwrap();
+                let generated_paths = generate_boot_filepaths(source.path(), is_uki, None).unwrap();
                 assert_eq!(
                     generated_paths, expected_paths,
                     "unrelated second-stage file: is_uki={is_uki}, grub={grub_filename}"
@@ -2194,7 +2273,7 @@ mod tests {
                 fs::remove_file(&second_stage).unwrap();
                 fs::create_dir(&second_stage).unwrap();
                 assert_eq!(
-                    generate_boot_filepaths(source.path(), is_uki).unwrap(),
+                    generate_boot_filepaths(source.path(), is_uki, None).unwrap(),
                     expected_paths,
                     "unrelated second-stage directory: is_uki={is_uki}, grub={grub_filename}"
                 );

@@ -42,12 +42,13 @@ difference is which additional files belong to each slot.
 ## Boot Component Layout
 
 The MSHV boot components are `HvLoader.efi`, `lxhvloader.dll`, and any
-hypervisor or support binaries under `Windows/System32`. Shim, efitreeloader,
-and systemd-boot are supporting bootloaders, not MSHV-specific components.
+hypervisor or support binaries under `Windows`, including `Windows/System32`.
+Shim, efitreeloader, and systemd-boot are supporting bootloaders, not
+MSHV-specific components.
 Each slot keeps both sets of files together.
 
 The source COSI must contain the five top-level boot files shown below.
-The optional `Windows/System32` directory may contain image-specific MSHV
+The optional `Windows` directory may contain image-specific MSHV
 boot components; the examples below are not a fixed required list. Paths
 are relative to the EFI System Partition (ESP), independent of its Linux
 mount point.
@@ -67,9 +68,12 @@ EFI/
             `-- kdstub.dll
 ```
 
-Trident copies the five top-level boot files and discovers direct files in
-`Windows/System32`, preserving their relative paths. Subdirectories under
-`System32` are ignored. For the first OS installation, the managed layout is:
+COSI staging reuses ordinary shim and main-bootloader discovery and copying.
+Efitreeloader additionally requires `second.efi`; MSHV additionally requires
+`HvLoader.efi` and `lxhvloader.dll`. MSHV staging preserves all additional
+BOOT files and subdirectories, including nested `Windows` components, rather
+than imposing an exhaustive filename list. UKI handling is selected separately.
+For the first OS installation, the managed layout is:
 
 ```text
 EFI/
@@ -95,10 +99,10 @@ Trident selects MSHV servicing from this bootloader type, without a Host
 Configuration opt-in.
 
 For first-update adoption, no source COSI describes the installed image.
-Trident detects MSHV boot components in BOOT and seeds the AZLA boot files
-before persisting the discovered HostStatus. Incomplete MSHV boot components
-fail discovery; legacy shared files outside BOOT do not establish slot-owned
-mode.
+Initialization validates detected MSHV loader files before seeding AZLA
+and persisting the discovered HostStatus. Legacy shared files outside BOOT
+do not establish slot-owned mode. Bootstrap copies the complete BOOT tree
+without interpreting its bootloader; an existing AZLA is never refreshed.
 
 ## Updates, Fallback, and Rollback
 
@@ -108,6 +112,18 @@ slot, then stages the OS's UKI and addons using the normal UKI servicing flow.
 Staging relies on actual writes rather than predicting capacity; a write
 failure returns an error and may leave partial inactive-slot files. The
 retained slot's boot files are not replaced.
+
+Fallback and bootstrap relocate complete installed boot trees without COSI
+metadata or MSHV/efitreeloader filename selection. Files, nested directories
+and empty directories are preserved. Destination-only entries inside the
+owned boot directory are retired; other slots and ESP directories are untouched.
+
+Fallback replacement stages each top-level file or complete subtree as `.new`,
+renames existing entries to `.old`, publishes the staged entries and removes
+backups. Retries discard partial staging and reconcile backups. Replacement
+across entries remains non-atomic. Bootstrap publishes its complete temporary
+directory by rename. Both paths retain capacity preflight; staging does not.
+Links, special files and source names ending in `.new` or `.old` are rejected.
 
 [UEFI fallback modes](./UEFI-Fallback.md) apply to all BOOT files:
 

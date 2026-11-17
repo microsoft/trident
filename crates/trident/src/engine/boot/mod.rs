@@ -11,6 +11,7 @@ use crate::engine::Subsystem;
 
 use super::EngineContext;
 
+pub(crate) mod files;
 pub(super) mod grub;
 pub(crate) mod mshv;
 pub mod uki;
