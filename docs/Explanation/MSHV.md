@@ -70,9 +70,11 @@ EFI/
 
 COSI staging reuses ordinary shim and main-bootloader discovery and copying.
 Efitreeloader additionally requires `second.efi`; MSHV additionally requires
-`HvLoader.efi` and `lxhvloader.dll`. MSHV staging preserves all additional
-BOOT files and subdirectories, including nested `Windows` components, rather
-than imposing an exhaustive filename list. UKI handling is selected separately.
+`HvLoader.efi` and `lxhvloader.dll`. MSHV staging recursively selects additional
+BOOT files and preserves their relative paths, including nested `Windows`
+components, rather than imposing an exhaustive filename list. Root bootloader
+and configuration files remain governed by ordinary discovery.
+UKI handling is selected separately.
 For the first OS installation, the managed layout is:
 
 ```text
@@ -101,8 +103,8 @@ Configuration opt-in.
 For first-update adoption, no source COSI describes the installed image.
 Initialization seeds a missing AZLA from the complete BOOT tree using the
 same structural checks for every boot type, without validating loader-specific
-completeness. An existing AZLA is never refreshed. Legacy shared files outside
-BOOT do not establish slot-owned mode.
+completeness. An existing AZLA is neither inspected nor refreshed.
+Legacy shared files outside BOOT do not establish slot-owned mode.
 
 ## Updates, Fallback, and Rollback
 
@@ -111,12 +113,14 @@ It copies the MSHV boot components and supporting bootloaders into the inactive
 slot, then stages the OS's UKI and addons using the normal UKI servicing flow.
 Staging relies on actual writes rather than predicting capacity; a write
 failure returns an error and may leave partial inactive-slot files. The
-retained slot's boot files are not replaced.
+retained slot's boot files are not replaced. Old target-slot UKIs and addons
+may already have been removed to free space; failed staging does not restore them.
 
 Fallback and bootstrap relocate complete installed boot trees without COSI
 metadata or MSHV/efitreeloader filename selection. Files, nested directories
-and empty directories are preserved. Destination-only entries inside the
-owned boot directory are retired; other slots and ESP directories are untouched.
+and empty directories are preserved. Fallback replacement retires
+destination-only entries inside BOOT; bootstrap only seeds a missing AZLA.
+Other slots and ESP directories are untouched.
 
 Fallback replacement stages each top-level file or complete subtree as `.new`,
 renames existing entries to `.old`, publishes the staged entries and removes
@@ -134,11 +138,12 @@ Links, special files and source names ending in `.new` or `.old` are rejected.
 | --- | --- | --- |
 | `conservative` | BOOT contains the retained slot's boot files. | Commit refreshes BOOT from the validated update target. |
 | `optimistic` | BOOT already contains the update target's boot files. | No further fallback copy is needed. |
-| `disabled` | Trident does not populate BOOT. | No fallback copy is performed. |
+| `disabled` | BOOT is left unchanged. | No fallback copy is performed. |
 
 Rollback selects the retained OS slot and its corresponding MSHV boot components.
-A separate hypervisor-validation failure state supports automatic recovery
-without classifying an identity failure as a user health-check failure.
+If a trial A/B hypervisor-identity check fails, Trident records `CommitFailed`
+and requests a reboot to recover the retained OS, rather than treating it as
+a user health-check failure.
 
 ## Current Limitations
 
@@ -153,15 +158,18 @@ without MSHV-specific completeness checks.
 ### Changing the Boot Layout
 
 A/B staging compares the source COSI's bootloader type with the retained
-slot's actual MSHV boot components. Converting between MSHV and ordinary boot layouts is
-not supported. Manual rollback and fallback use the selected slot's files,
-not a recorded configuration flag.
+slot's actual MSHV boot components. Converting between MSHV and ordinary boot
+layouts is not supported. Manual rollback and fallback use the selected
+slot's files, not a recorded configuration flag.
 
 ### Hypervisor Identity
 
-**Hypervisor identity validation currently assumes success**, meaning that the
-running hypervisor matches the MSHV boot components in the active OS slot's
-`EFI/AZLA` or `EFI/AZLB` directory. Commit and rollback do not yet identify
-the running hypervisor or detect a mixed hypervisor/OS boot. Root-device
-validation and health checks still apply; passing them does not establish
-hypervisor/OS consistency or production readiness.
+**Hypervisor identity validation currently assumes success.** A best-effort
+check for `/dev/mshv` gates a placeholder that logs the expected slot or
+fallback directory and returns success. A missing or uninspectable device
+path skips the placeholder successfully. No ESP files are inspected.
+
+Commit and rollback do not yet identify the running hypervisor or detect a
+mixed hypervisor/OS boot. Root-device validation and health checks still
+apply; passing them does not establish hypervisor/OS consistency or
+production readiness.
