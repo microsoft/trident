@@ -1,15 +1,20 @@
 # MSHV
 
+This page covers the `efitreeloader-mshv-systemd-boot` COSI bootloader type
+(`BootloaderType::EfitreeloaderMshvSystemdBoot` in Trident), including its boot
+chain, file layout, and slot-owned servicing. Other MSHV bootloader chains may
+have different requirements.
+
 Azure Container Linux (ACL) images with MSHV support boot Linux as the root
 partition of the Microsoft hypervisor. Servicing these images requires keeping
 the MSHV boot components together with the OS version that uses them.
 Trident's slot-owned MSHV mode extends [A/B updates](./AB-Update.md) to manage
 those components alongside each OS slot.
 
-## How MSHV Boot Differs
+## How This Boot Chain Differs
 
-In an ordinary UKI-based image, shim starts systemd-boot, which loads the
-selected Unified Kernel Image (UKI). An MSHV image adds
+In a direct systemd-boot UKI chain, shim starts systemd-boot, which loads the
+selected Unified Kernel Image (UKI). This bootloader type adds
 [efitreeloader](https://github.com/microsoft/efitreeloader) and hypervisor-loading
 components before systemd-boot:
 
