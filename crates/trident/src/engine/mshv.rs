@@ -10,7 +10,15 @@ use super::boot;
 
 const MSHV_DEVICE_PATH: &str = "/dev/mshv";
 
-/// Calls the identity hook only when the MSHV device is present.
+/// Runs the expected-slot identity hook when /dev/mshv reports as present.
+///
+/// `expected_volume` selects the A/B slot for `install_index`; None selects the
+/// EFI/BOOT fallback. A missing or uninspectable device path skips the check
+/// successfully. When invoked, an identity-hook error propagates unchanged.
+///
+/// The identity hook is currently an assume-success stub. Ok means the check was
+/// skipped or the stub accepted it, not that the running hypervisor matches the
+/// expected OS slot. This does not inspect installed ESP files.
 pub(crate) fn validate_active_hypervisor(
     install_index: usize,
     expected_volume: Option<AbVolumeSelection>,
@@ -20,6 +28,11 @@ pub(crate) fn validate_active_hypervisor(
     })
 }
 
+/// Applies a best-effort path-presence gate to an identity check.
+///
+/// Path existence does not establish device type or hypervisor identity.
+/// Missing/uninspectable paths return success without invoking `check`;
+/// otherwise the callback runs once and its failure is propagated.
 fn validate_if_mshv_present(
     device: &Path,
     check: impl FnOnce() -> Result<(), TridentError>,
@@ -31,6 +44,11 @@ fn validate_if_mshv_present(
     Ok(())
 }
 
+/// Assume-success placeholder for verifying the running hypervisor's identity.
+///
+/// Formats the expected slot/fallback directory for a warning, but does not read
+/// ESP components or query the running hypervisor. Always returns Ok until an
+/// actual identity comparison is implemented.
 fn validate_hypervisor_identity(
     install_index: usize,
     expected_volume: Option<AbVolumeSelection>,
