@@ -332,8 +332,7 @@ where
 ///
 /// Mounts the source ESP image, copies boot files into the selected target-slot
 /// directory, and stages the UKI when applicable. For MSHV, validates the bundle
-/// and preflights capacity before reclaiming target-slot boot files and UKIs.
-/// Retained-slot payloads are preserved.
+/// before reclaiming target-slot boot files and UKIs. Retained-slot payloads are preserved.
 fn copy_file_artifacts(
     temp_image_path: &Path,
     ctx: &EngineContext,
@@ -373,14 +372,8 @@ fn copy_file_artifacts(
     // Compare source metadata with the retained slot before any ESP writes.
     mshv::validate_transition(ctx, &path::join_relative(mount_point, &ctx.esp_mount_path))?;
     let boot_files = if slot_mshv {
-        // Validate and budget space before deleting target-slot files.
+        // Validate the source before deleting target-slot files.
         boot_mshv::validate_bundle(&source_bundle)?;
-        boot_mshv::preflight_staging(
-            ctx,
-            temp_mount_dir,
-            &path::join_relative(mount_point, &ctx.esp_mount_path),
-            &esp_dir_path,
-        )?;
         uki::cleanup_ukis_before_staging(ctx, mount_point, &ctx.esp_mount_path)?;
         Vec::new()
     } else {
@@ -431,7 +424,7 @@ fn copy_file_artifacts(
         uki::prepare_esp_for_uki(mount_point, &ctx.esp_mount_path)?;
 
         // Clean up old UKIs for the target slot before staging the new one.
-        // MSHV already did this after its capacity preflight; other UKI images
+        // MSHV already did this before copying its bundle; other UKI images
         // reclaim space here because the ESP may not fit old and new UKIs
         // simultaneously (e.g. on a 128 MB ESP). A crash between cleanup and
         // staging can remove the target slot's old UKI without a replacement,

@@ -8,15 +8,6 @@ use std::{
 use anyhow::{ensure, Context, Error};
 use nix::sys::statvfs;
 
-use osutils::uki as uki_utils;
-
-use trident_api::{config::UefiFallbackMode, constants::EFI_DEFAULT_BIN_RELATIVE_PATH};
-
-use crate::engine::{
-    boot::uki::{self, UKI_DIRECTORY},
-    EngineContext,
-};
-
 // Required top-level x64 boot files; secondary payloads vary between images.
 pub(crate) const FILES: &[&str] = &[
     "bootx64.efi",
@@ -175,33 +166,6 @@ fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<(), Erro
     Ok(())
 }
 
-/// Budgets bundles, UKIs, addons, and fallback, crediting planned pre-staging cleanup.
-pub(crate) fn preflight_staging(
-    ctx: &EngineContext,
-    source_esp: &Path,
-    destination_esp: &Path,
-    target_bundle: &Path,
-) -> Result<(), Error> {
-    let stats = statvfs::statvfs(destination_esp)?;
-    let cluster = stats.fragment_size();
-    ensure!(cluster > 0, "Invalid ESP allocation unit");
-    let bundle = bundle_allocation(&source_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH), cluster)?;
-    let mut required = bundle + allocation(&source_esp.join(UKI_DIRECTORY), cluster)?;
-    // Account for slot-addon templates whose selected file may replace a smaller live addon.
-    required += allocation(&source_esp.join("acl/uki-addons"), cluster)?;
-    if ctx.spec.os.uefi_fallback != UefiFallbackMode::Disabled {
-        let existing_fallback = destination_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-        required += bundle.max(bundle_allocation(&existing_fallback, cluster)?);
-    }
-    let mut reclaimed = allocation(target_bundle, cluster)?;
-    for path in uki::find_ukis_to_remove_before_staging(ctx, &destination_esp.join(UKI_DIRECTORY))?
-    {
-        reclaimed +=
-            allocation(&path, cluster)? + allocation(&uki_utils::uki_addon_dir(&path), cluster)?;
-    }
-    check_space(stats.blocks_available() * cluster, reclaimed, required)
-}
-
 /// Checks room for a new bundle copy without reclaiming existing ESP contents.
 pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<(), Error> {
     let stats = statvfs::statvfs(esp)?;
@@ -311,9 +275,13 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use trident_api::status::{AbVolumeSelection, ServicingState, ServicingType};
+    use trident_api::{
+        config::UefiFallbackMode,
+        constants::EFI_DEFAULT_BIN_RELATIVE_PATH,
+        status::{AbVolumeSelection, ServicingState, ServicingType},
+    };
 
-    use crate::subsystems::esp;
+    use crate::{engine::EngineContext, subsystems::esp};
 
     /// Creates a complete test bundle.
     fn bundle(root: &Path, contents: &[u8]) {
@@ -434,7 +402,6 @@ mod tests {
         let source = source_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
         let esp = temp.path().join("esp");
         let fallback = esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-        let target = esp.join("EFI/AZLB");
         bundle(&source, b"new");
         bundle(&fallback, b"retained");
         let secondary = source.join("Windows/System32");
@@ -445,25 +412,15 @@ mod tests {
             .unwrap()
             .set_len(stats.blocks_available() * stats.fragment_size() + SPACE_RESERVE)
             .unwrap();
-        let mut ctx = EngineContext {
-            servicing_type: ServicingType::AbUpdate,
-            ab_active_volume: Some(AbVolumeSelection::VolumeA),
-            ..Default::default()
-        };
-        ctx.spec.os.uefi_fallback = UefiFallbackMode::Disabled;
-
-        assert!(preflight_staging(&ctx, &source_esp, &esp, &target).is_err());
         assert!(preflight_bootstrap(&source, &esp).is_err());
         assert!(replace_bundle(&source, &fallback).is_err());
         assert_eq!(
             fs::read(fallback.join("HvLoader.efi")).unwrap(),
             b"retained"
         );
-        assert!(!target.exists());
 
         fs::create_dir(secondary.join("ignored")).unwrap();
         fs::rename(&large, secondary.join("ignored/large.bin")).unwrap();
-        preflight_staging(&ctx, &source_esp, &esp, &target).unwrap();
         preflight_bootstrap(&source, &esp).unwrap();
         replace_bundle(&source, &fallback).unwrap();
         assert_eq!(fs::read(fallback.join("HvLoader.efi")).unwrap(), b"new");
@@ -557,35 +514,6 @@ mod tests {
         assert_eq!(allocation(&temp.path().join("file"), 4096).unwrap(), 4096);
         assert!(check_space(SPACE_RESERVE, 0, 1).is_err());
         assert!(check_space(SPACE_RESERVE, 4096, 4096).is_ok());
-    }
-
-    /// Failed preflight leaves both slots untouched.
-    #[test]
-    fn preflight_rejects_peak_allocation_before_mutating_inactive_or_retained_files() {
-        let temp = TempDir::new().unwrap();
-        let source = temp.path().join("source");
-        let destination = temp.path().join("esp");
-        let target = destination.join("EFI/AZLB");
-        let retained = destination.join("EFI/AZLA");
-        bundle(&source.join(EFI_DEFAULT_BIN_RELATIVE_PATH), b"new");
-        bundle(&target, b"inactive");
-        bundle(&retained, b"committed");
-        fs::create_dir_all(source.join(UKI_DIRECTORY)).unwrap();
-        let stats = statvfs::statvfs(&destination).unwrap();
-        File::create(source.join(UKI_DIRECTORY).join("new.efi"))
-            .unwrap()
-            .set_len(stats.blocks_available() * stats.fragment_size() + SPACE_RESERVE)
-            .unwrap();
-        let ctx = EngineContext {
-            servicing_type: ServicingType::AbUpdate,
-            ab_active_volume: Some(AbVolumeSelection::VolumeA),
-            ..Default::default()
-        };
-        assert!(preflight_staging(&ctx, &source, &destination, &target).is_err());
-        for name in FILES {
-            assert_eq!(fs::read(target.join(name)).unwrap(), b"inactive");
-            assert_eq!(fs::read(retained.join(name)).unwrap(), b"committed");
-        }
     }
 
     /// Enabled fallback policies copy whole bundles and preserve the retained slot.
