@@ -23,12 +23,18 @@ mod source;
 mod terminal;
 mod ui;
 
+/// Append-only diagnostic log; unlike the display, it keeps full event details.
 const LOG_PATH: &str = "/var/log/trident-installer.log";
+/// Restricts diagnostic records that may contain configuration details.
 const PRIVATE_FILE_MODE: u32 = 0o600;
+/// Leaves a runtime worker available while another drives a servicing request.
 const WORKER_THREADS: usize = 2;
+/// One name for the command help and console header.
 const APPLICATION_NAME: &str = "Trident Linux Installer";
+/// The logger forwards records here after the UI starts; earlier records use stderr.
 static INSTALLER_LOG_TX: OnceLock<UnboundedSender<Event>> = OnceLock::new();
 
+/// Bootstrap options; installation details come from installer TOML and the Host Configuration.
 #[derive(Debug, Parser)]
 #[command(
     name = "trident-installer",
@@ -36,10 +42,13 @@ static INSTALLER_LOG_TX: OnceLock<UnboundedSender<Event>> = OnceLock::new();
     about = APPLICATION_NAME
 )]
 struct Args {
+    /// Path to installer TOML, not the Host Configuration YAML.
     #[arg(long, default_value = DEFAULT_CONFIG)]
     config: PathBuf,
+    /// Show line-oriented output instead of the full-screen UI.
     #[arg(long)]
     plain: bool,
+    /// Claim the ISO console and mirror log records to active serial consoles.
     #[arg(long)]
     system_console: bool,
 }

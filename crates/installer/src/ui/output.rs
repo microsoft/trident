@@ -9,13 +9,16 @@ use crate::client::Event;
 
 use super::model::{log_visible, LogEntry};
 
+/// Writes complete diagnostics privately and mirrors filtered status to serial ports.
 pub(crate) struct Output {
+    /// Opened by startup with restrictive permissions; optional in tests.
     pub(crate) log: Option<File>,
+    /// Device paths identify failing mirrors so only those ports are disabled.
     pub(crate) mirrors: Vec<(PathBuf, File)>,
 }
 
 impl Output {
-    /// Persists the complete event in the diagnostic file, if one is configured.
+    /// Preserve the event before the UI shortens its display copy.
     pub(super) fn record(&mut self, event: &Event) -> Result<(), Error> {
         if let Some(log) = &mut self.log {
             writeln!(log, "{event:#?}").context("Failed to preserve installer diagnostics")?;

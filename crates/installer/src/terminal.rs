@@ -15,8 +15,11 @@ use nix::{libc, unistd};
 
 use osutils::dependencies::{self, Dependency};
 
+/// Kernel list of consoles active for this boot.
 const ACTIVE_CONSOLES_PATH: &str = "/sys/class/tty/console/active";
+/// The installer service owns tty1 and stops its getty before attaching.
 const GRAPHICAL_CONSOLE: &str = "tty1";
+/// Linux virtual terminals expose 16 programmable ANSI color slots.
 const VT_PALETTE_SIZE: u8 = 16;
 
 /// Sets RGB values for the Linux virtual console's 16 ANSI colour slots.
@@ -97,6 +100,7 @@ pub(super) fn attach(path: impl AsRef<Path>) -> Result<File, Error> {
         path.display()
     );
     if unistd::getsid(None)? != unistd::getpid() {
+        // A session leader can claim tty1 as its controlling terminal.
         unistd::setsid()?;
     }
     // The caller has stopped competing getty units before claiming the terminal.
@@ -107,7 +111,7 @@ pub(super) fn attach(path: impl AsRef<Path>) -> Result<File, Error> {
     dependencies::set_foreground_group(&terminal, unistd::getpgrp())
         .context("Failed to make installer the terminal's foreground process group")?;
     for target in [libc::STDIN_FILENO, libc::STDOUT_FILENO] {
-        // dup2 redirects the inherited stdio descriptors without transferring ownership.
+        // Leave stderr on its inherited sink rather than drawing it over tty1.
         if unsafe { libc::dup2(terminal.as_raw_fd(), target) } < 0 {
             return Err(io::Error::last_os_error()).context("Failed to attach terminal");
         }

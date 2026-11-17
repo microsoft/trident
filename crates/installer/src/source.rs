@@ -30,31 +30,51 @@ use trident_api::{
 
 use crate::config::{self, Config};
 
+/// Host Configuration image reference replaced with the first selected media COSI.
 pub(super) const IMAGE_MARKER: &str = "installer://image";
+/// Maximum time for one HTTP source request.
 const SOURCE_TIMEOUT: Duration = Duration::from_secs(30);
+/// Overall window for transient connection and request-timeout retries.
 const REMOTE_RETRY_TIMEOUT: Duration = Duration::from_secs(60);
+/// Pause between remote source retries while networking starts.
 const REMOTE_RETRY_INTERVAL: Duration = Duration::from_secs(2);
+/// Allow time for late USB or BMC virtual-media enumeration.
 const MEDIA_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(60);
+/// Recheck labelled block devices while awaiting media.
 const MEDIA_POLL_INTERVAL: Duration = Duration::from_secs(2);
+/// Reject oversized YAML before deserializing a Host Configuration.
 const MAX_HOST_CONFIGURATION_BYTES: u64 = 2 * 1024 * 1024;
+/// Bound the archive scan and the metadata entry read during preflight.
 const MAX_METADATA_BYTES: u64 = 16 * 1024 * 1024;
+/// Trident's COSI metadata member name.
 const METADATA_PATH: &str = "metadata.json";
+/// Match the disk-name families StreamDisk may choose as a target.
 const STREAM_DISK_PREFIXES: &[&str] = &["sd", "nvme", "vd", "hd", "mmcblk"];
 
+/// Initial autorun or a manually chosen recovery source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Request {
+    /// Select a Host Configuration or COSI from the configured sources.
     Autorun,
+    /// Remote Host Configuration URL entered on the recovery screen.
     HostConfiguration(String),
+    /// Remote COSI URL entered on the recovery screen.
     Stream(Url),
 }
 
+/// Fully selected servicing operation passed to the gRPC worker.
 #[derive(Debug, Clone)]
 pub(super) enum Plan {
+    /// Validated Host Configuration and its original diagnostic source.
     Install {
+        /// `installer://image`, if present, has already been resolved.
         config: Box<HostConfiguration>,
+        /// Original source reference; redact URL credentials before display.
         source: String,
     },
+    /// Image URL retained for preflight and the daemon's subsequent fetch.
     Stream {
+        /// May contain signed query parameters, so never log it raw.
         image: Url,
     },
 }
@@ -93,6 +113,7 @@ pub(super) fn display_source(source: &str) -> String {
 
 /// Removes credentials and signed query data from URLs embedded in diagnostics.
 pub(super) fn redact_message_urls(message: &str) -> String {
+    /// Share the URL pattern across diagnostic records instead of recompiling it.
     static URLS: OnceLock<Regex> = OnceLock::new();
     let urls = URLS.get_or_init(|| {
         Regex::new(r#"(?i)https?://[^\s"<>]+"#).expect("invariant: diagnostic URL pattern is valid")
@@ -133,7 +154,9 @@ pub(super) fn prepare_with_progress(
     prepare_from_media_with_progress(settings, request, root.as_deref(), &mut progress)
 }
 
-/// Treats a complete live-OS or remote Host Configuration as authoritative, without media overlays.
+/// Treats a complete live-OS or remote Host Configuration as authoritative.
+///
+/// `None` means it or another file-backed input may need media and its overlay.
 fn self_contained_install(
     settings: &Config,
     progress: &mut impl FnMut(&str) -> Result<(), Error>,
@@ -212,6 +235,7 @@ fn host_configuration_needs_media(
     Ok(false)
 }
 
+/// Checks typed script paths; shell contents and arbitrary arguments cannot be inspected.
 fn script_needs_media(script: &Script, settings: &Config) -> Result<bool, Error> {
     if let ScriptSource::Path(path) = &script.source {
         if path_may_need_media(path, settings)? {
@@ -237,6 +261,7 @@ fn file_source_may_need_media(url: &Url, settings: &Config) -> Result<bool, Erro
     path_may_need_media(&path, settings)
 }
 
+/// A missing path behind any symlink may become readable after mounting late media.
 fn path_may_need_media(path: &Path, settings: &Config) -> Result<bool, Error> {
     let media = settings
         .media
@@ -556,6 +581,7 @@ pub(super) fn resolve_host_configuration(
     resolve_parsed_host_configuration(config, selected)
 }
 
+/// Validate only after replacing the installer marker with the chosen local image.
 fn resolve_parsed_host_configuration(
     mut config: HostConfiguration,
     selected: Option<&Path>,
@@ -573,17 +599,22 @@ fn resolve_parsed_host_configuration(
     Ok(config)
 }
 
-// Only disk sizing and the metadata hash are needed here; Trident validates the full COSI.
+/// Only the fields needed for disk safety and hash binding; Trident parses the full COSI.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Metadata {
+    /// StreamDisk needs COSI version 1.2 or newer.
     version: String,
+    /// Disk size decides which attached device Trident could select.
     disk: Option<DiskMetadata>,
+    /// An image-less COSI is invalid even when it declares disk metadata.
     images: Vec<IgnoredAny>,
 }
 
+/// The disk size is in bytes, matching `lsblk` capacity.
 #[derive(Debug, Deserialize)]
 struct DiskMetadata {
+    /// Trident chooses the smallest disk fitting this byte size.
     size: u64,
 }
 

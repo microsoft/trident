@@ -25,21 +25,28 @@ use super::theme::{
     COLOR_TRIDENT, COLOR_WARN, VERBOSITY_LEVELS,
 };
 
+/// Give operators time to remove installer media before the automatic reboot.
 const REBOOT_DELAY: Duration = Duration::from_secs(5);
+/// Limit in-memory display history; the private diagnostic file keeps complete records.
 const LOG_CAPACITY: usize = 500;
+/// Bound work spent rendering one record without shortening saved diagnostics.
 const DISPLAY_LOG_CHARACTERS: usize = 4096;
 
+/// Screen state used by both Ratatui and the plain-text fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Screen {
     Progress,
     Error,
+    /// Actions after a failed attempt when no worker is active.
     Recovery,
     Success,
     StreamUrl,
     HostConfigUrl,
+    /// Limited actions while an operation may still be writing.
     Menu,
 }
 
+/// Distinguishes local installer messages from records sent by Trident.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum LogSource {
     Inst,
@@ -67,12 +74,18 @@ impl LogSource {
     }
 }
 
+/// One diagnostic, with a shortened copy retained in UI history.
 #[derive(Debug, Clone)]
 pub(super) struct LogEntry {
+    /// Time since this installation attempt began.
     pub(super) elapsed: Duration,
+    /// Controls the source tag and its color in both output modes.
     pub(super) source: LogSource,
+    /// Used by display and serial filters independently.
     pub(super) level: LogLevel,
+    /// Full message for output; the copy in `Model::logs` may be shortened.
     pub(super) message: String,
+    /// Keeps a success or failure record visible even under a restrictive filter.
     pub(super) result_color: Option<Color>,
 }
 
@@ -122,26 +135,46 @@ impl LogEntry {
     }
 }
 
+/// Mutable UI state; events and keys change it without directly performing I/O.
 #[derive(Debug)]
 pub(super) struct Model {
+    /// Current page, including recovery menus shown while work may still run.
     pub(super) screen: Screen,
+    /// Sanitized description of the current Host Configuration or COSI source.
     pub(super) source: String,
+    /// Short, most recent progress message above the log panel.
     pub(super) activity: String,
+    /// Current result or failure, retained for the detailed error view.
     pub(super) details: String,
+    /// Bounded, single-line copies of diagnostics; complete entries go to the log file.
     pub(super) logs: VecDeque<LogEntry>,
+    /// On-screen filter; changing it does not discard stored records.
     pub(super) verbosity: LevelFilter,
+    /// Separate serial filter loaded from installer settings.
     pub(super) serial_verbosity: LevelFilter,
+    /// Whether the display-only log filter is being edited.
     pub(super) verbosity_open: bool,
+    /// Highlighted option in the log filter picker.
     pub(super) verbosity_selected: usize,
+    /// Highlighted action on the current screen.
     pub(super) selected: usize,
+    /// Wrapped log rows to scroll back, or detail rows when details are open.
     pub(super) scroll: u16,
+    /// Recovery URL under edit; it is validated before starting a request.
     pub(super) url: String,
+    /// The daemon may still be writing; block power actions until idleness is confirmed.
     pub(super) uncertain: bool,
+    /// Media settings can disable the otherwise automatic reboot.
     reboot: bool,
+    /// Countdown starts only after Trident reports completed work needing reboot.
     pub(super) reboot_at: Option<Instant>,
+    /// Reset at each attempt so elapsed times refer to the current operation.
     pub(super) started: Instant,
+    /// Headless runs return an error if recovery requires a terminal.
     pub(super) failed: bool,
+    /// Toggle between retained logs and the full failure details.
     error_details_open: bool,
+    /// Selects ANSI palette roles instead of raw RGB for graphical Linux VTs.
     pub(super) linux_vt: bool,
 }
 
@@ -340,7 +373,8 @@ impl Model {
     }
 
     /// Updates navigation for a key press and returns an action only when one is requested.
-    /// URL entry and the verbosity picker consume keys before screen-level shortcuts.
+    /// URL entry and the verbosity picker consume keys before screen-level shortcuts;
+    /// a running worker or uncertain outcome blocks power even on a stale screen.
     pub(super) fn key(&mut self, key: KeyEvent, worker_active: bool) -> Option<Action> {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return None;
@@ -515,10 +549,13 @@ impl Model {
     }
 }
 
+/// A request for the runtime to act; key handling itself never starts servicing.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Action {
+    /// Launch the selected recovery operation after releasing any previous worker.
     Start(Request),
     Shell,
+    /// Reject power actions while a worker runs or the prior outcome is uncertain.
     BlockedPower,
     Reboot,
     Poweroff,

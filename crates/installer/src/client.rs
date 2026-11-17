@@ -15,32 +15,45 @@ use crate::{
     source::{self, Plan, Request},
 };
 
+/// Messages passed from source preparation and the gRPC worker to the UI.
 #[derive(Debug)]
 pub(super) enum Event {
-    InstallerLog {
-        level: Level,
-        message: String,
-    },
+    /// Installer or dependency log, before display and serial filtering.
+    InstallerLog { level: Level, message: String },
+    /// A named preparation step while no daemon operation is active.
     Preparing(String),
+    /// Current source and policy; sent again if media settings change them.
     Prepared {
+        /// Display-safe source description; never include signed URL parameters.
         description: String,
+        /// Caller-managed automatic reboot policy, not a daemon action.
         reboot: bool,
+        /// Media settings may change which records reach serial.
         serial_verbosity: SerialVerbosity,
     },
+    /// A domain event received from Trident, including its terminal result.
     Response(ServicingEvent),
+    /// A status call established that an earlier uncertain write is no longer active.
     IdleConfirmed,
+    /// `uncertain` keeps power actions blocked when Trident may still be writing.
     Error {
         details: String,
+        /// An ambiguous RPC or disconnected stream cannot prove Trident is idle.
         uncertain: bool,
     },
 }
 
+/// Interpreted daemon completion, separate from a broken or invalid response.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Completion {
+    /// `performed` prevents a no-op from triggering the installer's reboot countdown.
     Success {
+        /// Reported by Trident; used only when the caller allows automatic reboot.
         reboot_required: bool,
+        /// No-op completions must not claim an installation or trigger reboot.
         performed: bool,
     },
+    /// Trident completed with a known failure, so the active-write guard can clear.
     Failure(String),
 }
 

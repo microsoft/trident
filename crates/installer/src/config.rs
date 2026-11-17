@@ -9,43 +9,60 @@ use log::LevelFilter;
 use serde::{Deserialize, Serialize};
 use toml::Value as TomlValue;
 
+/// Bootstrap TOML packaged with the installer RPM.
 pub(super) const DEFAULT_CONFIG: &str = "/etc/trident/installer.toml";
+/// Fallback Host Configuration when no explicit source is configured.
 pub(super) const DEFAULT_HOST_CONFIGURATION: &str = "/etc/trident/config.yaml";
+/// Optional settings layered from the selected installation media.
 pub(super) const MEDIA_CONFIG: &str = "installer/installer.toml";
+/// Read-only mount for media selected by filesystem label.
 pub(super) const MEDIA_MOUNT: &str = "/run/trident/installer-media";
+/// FAT-compatible label for installer USB partitions.
 pub(super) const DEFAULT_MEDIA_LABEL: &str = "TRD_INSTALL";
+/// Also recognize the ISO label emitted by Image Customizer.
 pub(super) const DEFAULT_MEDIA_LABELS: &[&str] = &[DEFAULT_MEDIA_LABEL, "CDROM"];
 
+/// Bootstrap settings merged with media-local overrides when the install needs media.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Config {
+    /// Startup mode; only autorun is implemented.
     pub mode: Mode,
+    /// Serial consoles mirror logs, not the interactive UI.
     #[serde(default)]
     pub serial_mode: SerialMode,
+    /// Filters serial output independently of the on-screen log filter.
     #[serde(default)]
     pub serial_verbosity: SerialVerbosity,
+    /// How to find and scan installation media.
     #[serde(default)]
     pub media: Media,
+    /// Source and reboot policy for unattended startup.
     #[serde(default)]
     pub autorun: Autorun,
 }
 
+/// Interactive source selection is reserved; recovery remains available after autorun.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum Mode {
     #[default]
     Autorun,
+    /// Reserved; `require_autorun` rejects it until source selection is implemented.
     Interactive,
 }
 
+/// The serial UI variant is reserved so it cannot silently enable an unfinished feature.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum SerialMode {
     #[default]
     Logs,
+    /// Reserved; a serial TUI is not implemented.
     Ui,
 }
 
+/// Limits serial records without dropping them from the private diagnostic log.
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub(super) enum SerialVerbosity {
@@ -59,7 +76,7 @@ pub(super) enum SerialVerbosity {
 }
 
 impl SerialVerbosity {
-    /// Converts the configured serial level into the log filter used when mirroring records.
+    /// Maps the serialized level to a serial filter without changing retained records.
     pub(super) fn filter(self) -> LevelFilter {
         match self {
             Self::Off => LevelFilter::Off,
@@ -72,13 +89,17 @@ impl SerialVerbosity {
     }
 }
 
+/// Locate media by label or use an existing mount; only one selector may be set.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Media {
+    /// Overrides automatic discovery of the USB and ISO labels.
     #[serde(default, alias = "cdromLabel", skip_serializing_if = "Option::is_none")]
     pub filesystem_label: Option<String>,
+    /// Already-mounted media, never mounted again by label discovery.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mount_path: Option<PathBuf>,
+    /// Relative directory containing directly selectable COSI files.
     #[serde(default = "default_cosi_directory")]
     pub cosi_directory: PathBuf,
 }
@@ -94,16 +115,18 @@ impl Default for Media {
     }
 }
 
-/// Returns the relative COSI directory used when the media config omits it.
 fn default_cosi_directory() -> PathBuf {
     "cosi".into()
 }
 
+/// Picks a Host Configuration before falling back to a COSI, then handles reboot.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct Autorun {
+    /// Local, remote, or media-relative YAML source; absent uses the live-OS fallback.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_configuration: Option<String>,
+    /// Reboot only if Trident reports completed work that requires it.
     #[serde(default = "default_reboot")]
     pub reboot: bool,
     /// Accepted for compatibility with older installer media; autorun does not check UUIDs.
@@ -122,7 +145,6 @@ impl Default for Autorun {
     }
 }
 
-/// Enables reboot when the autorun configuration does not specify a preference.
 fn default_reboot() -> bool {
     true
 }

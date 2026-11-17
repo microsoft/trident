@@ -21,9 +21,13 @@ use super::{
     },
 };
 
+/// Reserve space for the wordmark, name and state on a standard terminal.
 const WORDMARK_HEADER_HEIGHT: u16 = 12;
+/// Keep a readable two-line heading when the wordmark does not fit.
 const COMPACT_HEADER_HEIGHT: u16 = 2;
+/// Leave enough height for logs and actions beneath the full wordmark.
 const MIN_WORDMARK_TERMINAL_HEIGHT: u16 = 24;
+/// Trident name drawn without relying on terminal-specific fonts or graphics.
 const TRIDENT_WORDMARK: [&str; 8] = [
     r#"88888888888      d8b      888                   888"#,
     r#"    888          Y8P      888                   888"#,
@@ -34,6 +38,7 @@ const TRIDENT_WORDMARK: [&str; 8] = [
     r#"    888  888     888 Y88b 888 Y8b.     888  888 Y88b."#,
     r#"    888  888     888  "Y88888  "Y8888  888  888  "Y888"#,
 ];
+/// ASCII borders remain legible on Linux VTs and serial-like terminals.
 const ASCII_BORDER: BorderSet = BorderSet {
     top_left: "+",
     top_right: "+",
@@ -45,7 +50,7 @@ const ASCII_BORDER: BorderSet = BorderSet {
     horizontal_bottom: "-",
 };
 
-/// Provides the short status heading for each installer screen.
+/// Use the same screen headings in Ratatui and plain terminal output.
 pub(super) fn title(screen: Screen) -> &'static str {
     match screen {
         Screen::Progress => "INSTALLING",
@@ -68,7 +73,7 @@ fn block(title: &str, linux_vt: bool) -> Block<'_> {
         .title(title)
 }
 
-/// Finds the widest wordmark row for layout and centering.
+/// Center against the widest row; the ASCII rows do not all have equal width.
 fn wordmark_width() -> usize {
     TRIDENT_WORDMARK
         .iter()
@@ -153,6 +158,7 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
         ));
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     let visible_rows = usize::from(area.height.saturating_sub(2));
+    // Wrapped rows, not entry counts, determine whether the final result remains visible.
     let total_rows = paragraph.line_count(area.width.saturating_sub(2).max(1));
     let offset = total_rows
         .saturating_sub(visible_rows)

@@ -45,13 +45,20 @@ pub(super) use output::Output;
 use render::{render, title};
 use theme::{vt_rgb_palette, VERBOSITY_LEVELS};
 
+/// Refresh often enough to show progress without busy-polling the terminal.
 const FRAME_INTERVAL: Duration = Duration::from_millis(100);
+/// Drain pasted input promptly without starving worker events.
 const INPUT_EVENTS_PER_FRAME: usize = 256;
+/// Bound the worker event queue and the amount processed in one loop iteration.
 const EVENT_CAPACITY: usize = 64;
 
+/// Owns the alternate screen and restores terminal state even on early exit.
 struct Display {
+    /// Ratatui draws to stdout, which may be an attached graphical console.
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
+    /// Only restore raw mode and the alternate screen when the UI owns them.
     active: bool,
+    /// Linux VTs need a programmed ANSI palette; other terminals use RGB directly.
     linux_vt: bool,
 }
 
@@ -264,6 +271,7 @@ pub(super) async fn run(
             printed_screen = None;
         }
         if shell.is_some() {
+            // Keep draining servicing events while the shell owns the TTY, but hold reboot.
             tokio::select! {
                 _ = time::sleep(FRAME_INTERVAL) => {}
                 _ = termination.recv() => return Err(anyhow!("Installer stopped; servicing may continue in Trident")),
