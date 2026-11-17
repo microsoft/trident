@@ -99,10 +99,10 @@ Trident selects MSHV servicing from this bootloader type, without a Host
 Configuration opt-in.
 
 For first-update adoption, no source COSI describes the installed image.
-Initialization validates detected MSHV loader files before seeding AZLA
-and persisting the discovered HostStatus. Legacy shared files outside BOOT
-do not establish slot-owned mode. Bootstrap copies the complete BOOT tree
-without interpreting its bootloader; an existing AZLA is never refreshed.
+Initialization seeds a missing AZLA from the complete BOOT tree using the
+same structural checks for every boot type, without validating loader-specific
+completeness. An existing AZLA is never refreshed. Legacy shared files outside
+BOOT do not establish slot-owned mode.
 
 ## Updates, Fallback, and Rollback
 
@@ -147,8 +147,8 @@ boot-file definition hardcodes x64 filenames. TPM/PCR-bound encryption is
 rejected.
 
 These restrictions apply to file-based ESP deployment; streamed images do
-not use this file-copy path. Offline initialization validates detected MSHV
-boot components and seeds AZLA when needed.
+not use this file-copy path. Offline initialization seeds AZLA when needed,
+without MSHV-specific completeness checks.
 
 ### Changing the Boot Layout
 

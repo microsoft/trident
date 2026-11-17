@@ -4,8 +4,6 @@ use std::{fs, io::ErrorKind, path::Path};
 
 use anyhow::{ensure, Context, Error};
 
-use trident_api::constants::{EFI_DEFAULT_BIN_RELATIVE_PATH, ESP_EFI_DIRECTORY};
-
 use super::files;
 
 const MSHV_BOOT_FILES: &[&str] = &["HvLoader.efi", "lxhvloader.dll"];
@@ -60,25 +58,6 @@ pub(crate) fn validate_boot_components(boot_dir: &Path) -> Result<(), Error> {
         }
         Err(error) if error.kind() == ErrorKind::NotFound => {}
         Err(error) => return Err(error).context("Failed to inspect MSHV boot component directory"),
-    }
-    Ok(())
-}
-
-/// Validates MSHV components used to seed or adopt the initial AZLA slot.
-///
-/// MSHV markers in EFI/BOOT trigger fallback validation and, if EFI/AZLA already
-/// exists, validation of its required loaders and optional Windows tree. A missing
-/// AZLA is left for the caller to bootstrap. Without BOOT markers, this check
-/// returns without inspecting AZLA.
-///
-/// This is read-only and limited to BOOT/AZLA, not AZLB or numbered installations.
-/// It checks filesystem structure, not runtime hypervisor identity.
-pub(crate) fn validate_mshv_bootstrap_components(esp: &Path) -> Result<(), Error> {
-    if has_slot_mshv_boot_components(&esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH))? {
-        let installed = esp.join(ESP_EFI_DIRECTORY).join("AZLA");
-        if installed.try_exists()? {
-            validate_boot_components(&installed)?;
-        }
     }
     Ok(())
 }

@@ -29,7 +29,7 @@ use trident_api::{
 };
 use uuid::Uuid;
 
-use crate::{datastore::DataStore, engine::boot::mshv, subsystems::esp};
+use crate::{datastore::DataStore, subsystems::esp};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 struct PrismPartition {
@@ -457,7 +457,7 @@ fn parse_lazy_partitions(
 
 /// Given a path to a Host Status file, initializes the datastore with the Host Status.
 /// This command can be executed offline in a chroot environment as part of MIC image customization.
-/// Seeds a missing AZLA from the installed fallback, validating any detected MSHV boot components.
+/// Seeds a missing AZLA by copying the installed fallback boot tree.
 pub fn execute(
     hs_path: Option<&Path>,
     lazy_partitions: &[String],
@@ -534,9 +534,6 @@ pub fn execute(
             "Failed to find ESP filesystem in Host Status, validation should have failed if this was the case",
         )))?;
 
-    mshv::validate_mshv_bootstrap_components(esp_path)
-        .structured(InvalidInputError::InvalidBootConfiguration)
-        .message("Invalid installed MSHV boot components")?;
     esp::bootstrap_azla_from_fallback(esp_path)
         .structured(InvalidInputError::InvalidBootConfiguration)
         .message("Failed to bootstrap AZLA from fallback")?;

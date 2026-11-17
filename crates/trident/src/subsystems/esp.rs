@@ -653,8 +653,8 @@ fn copy_boot_files_for_uefi_fallback(
 /// before the first A/B update or manual rollback assumes AZLA already exists.
 ///
 /// Copies the complete BOOT tree and publishes it via a staged directory
-/// rename only after copying succeeds. Existing AZLA is never refreshed; image-specific
-/// completeness checks belong to initialization, not tree relocation.
+/// rename only after copying succeeds. Existing AZLA is never refreshed. All boot
+/// types use the same tree-structure checks, without loader-specific completeness validation.
 pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
     let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
     let boot_esp_path = esp_path.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
@@ -2010,7 +2010,6 @@ mod tests {
         fs::remove_file(azla.join("lxhvloader.dll")).unwrap();
         bootstrap_azla_from_fallback(esp.path()).unwrap();
         assert!(!azla.join("lxhvloader.dll").exists());
-        assert!(boot_mshv::validate_mshv_bootstrap_components(esp.path()).is_err());
     }
 
     /// Failed source validation leaves AZLA unpublished and permits a clean retry.
@@ -2051,20 +2050,6 @@ mod tests {
         for name in FILES {
             assert!(files_are_identical(&boot.join(name), &azla.join(name)));
         }
-    }
-
-    /// Incomplete marked fallback cannot publish AZLA.
-    #[test]
-    fn test_initialization_rejects_incomplete_mshv_before_bootstrap() {
-        let esp = TempDir::new().unwrap();
-        let boot = esp.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-        let azla = esp.path().join(ESP_EFI_DIRECTORY).join("AZLA");
-        fs::create_dir_all(&boot).unwrap();
-        fs::write(boot.join(BOOT_EFI), "shim").unwrap();
-        fs::write(boot.join("HvLoader.efi"), "loader").unwrap();
-        boot_mshv::validate_mshv_bootstrap_components(esp.path()).unwrap_err();
-        assert!(!azla.exists());
-        assert_eq!(fs::read_to_string(boot.join(BOOT_EFI)).unwrap(), "shim");
     }
 
     /// Validates that copy_boot_files() correctly copies boot files from temp_mount_dir to esp_dir

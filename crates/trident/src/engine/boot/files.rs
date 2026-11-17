@@ -1,6 +1,6 @@
 //! Copies complete installed boot trees without interpreting their bootloader.
 //!
-//! Image-specific completeness belongs to staging and initialization. Relocation
+//! Image-specific completeness belongs to staging. Relocation
 //! preserves unfamiliar files and directories while enforcing structural safety.
 //! Replacement owns the destination's entire contents, not individual filenames.
 //! Space exhaustion is reported by copying, not a separate capacity estimate.
