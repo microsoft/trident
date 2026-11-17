@@ -369,6 +369,8 @@ fn copy_file_artifacts(
     // Call helper func to copy files from mounted img dir to esp_dir_path
     debug!("Writing boot files to directory {}", esp_dir_path.display());
 
+    // Select and validate boot files by image capability before clearing the slot.
+    // Preparation also cleans target-slot UKIs after source validation succeeds.
     let boot_files = prepare_boot_files_for_staging(temp_mount_dir, ctx, mount_point)?;
 
     // Clear esp_dir_path if it exists
