@@ -248,7 +248,16 @@ pub fn cleanup_ukis_before_staging(
     Ok(())
 }
 
-/// Lists cleanup candidates without mutation.
+/// Selects UKIs to discard before staging, without modifying the ESP.
+///
+/// Candidates include all generations of the target slot/install and interrupted
+/// staging. Managed UKIs for the active slot and other installations are retained.
+/// Original-image UKIs are eligible only for install 0, once a managed active-slot
+/// UKI exists to retain as rollback.
+///
+/// Returns UKI paths; the caller also removes their companion addon directories.
+/// The temporary UKI path may be absent, allowing cleanup of orphaned staging
+/// addons. A missing UKI directory yields no candidates.
 pub(crate) fn find_ukis_to_remove_before_staging(
     ctx: &EngineContext,
     esp_uki_directory: &Path,
