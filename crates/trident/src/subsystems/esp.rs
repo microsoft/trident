@@ -846,6 +846,11 @@ fn generate_boot_filepaths(
 }
 
 /// Selects and validates efitreeloader's second stage, without requiring MSHV.
+///
+/// Example output for `source_boot_dir = /image/EFI/BOOT`:
+/// ```text
+/// ["/image/EFI/BOOT/second.efi"]
+/// ```
 fn generate_efitreeloader_boot_filepaths(source_boot_dir: &Path) -> Result<Vec<PathBuf>, Error> {
     let second = source_boot_dir.join(ETL_SECOND_STAGE_EFI_FILENAME);
     ensure!(
@@ -858,6 +863,15 @@ fn generate_efitreeloader_boot_filepaths(source_boot_dir: &Path) -> Result<Vec<P
 
 /// Validates required MSHV loaders and selects additional BOOT files for staging.
 /// Supporting loaders/configs remain the responsibility of ordinary discovery.
+///
+/// Example output for `/image/EFI/BOOT` containing an optional Windows component:
+/// ```text
+/// [
+///     "/image/EFI/BOOT/HvLoader.efi",
+///     "/image/EFI/BOOT/Windows/System32/component.dll",
+///     "/image/EFI/BOOT/lxhvloader.dll",
+/// ]
+/// ```
 fn generate_mshv_boot_filepaths(source_boot_dir: &Path) -> Result<Vec<PathBuf>, Error> {
     // Require HvLoader.efi and lxhvloader.dll as regular files, and validate
     // the optional Windows tree's structure before any target-slot cleanup.
