@@ -451,7 +451,23 @@ fn copy_file_artifacts(
     Ok(())
 }
 
-/// Validates source boot files and prepares target UKIs before boot-file copies.
+/// Prepares file-based ESP staging, validating sources before target cleanup.
+///
+/// `temp_mount_dir` is the mounted COSI ESP image. `mount_point` and
+/// `ctx.esp_mount_path` locate the destination ESP. Returns source paths rooted
+/// at `temp_mount_dir` for the staging copier: shim/main loader, capability-specific
+/// efitreeloader/MSHV files, and GRUB config for non-UKI images. UKI payloads are
+/// staged separately and are not included in the returned list.
+///
+/// Checks MSHV layout compatibility for A/B updates, selects files by image
+/// capability, and verifies that selected sources are regular files. Only after
+/// validation succeeds does UKI-mode cleanup reclaim old UKIs and addons under
+/// its ownership rules, preserving the active slot and other installations.
+/// This function neither copies boot files nor clears the target boot directory.
+///
+/// Validation failures leave the destination ESP unchanged. Cleanup can partially
+/// succeed before returning an error; subsequent copy failures do not restore
+/// deleted target-slot UKIs.
 fn prepare_boot_files_for_staging(
     temp_mount_dir: &Path,
     ctx: &EngineContext,
