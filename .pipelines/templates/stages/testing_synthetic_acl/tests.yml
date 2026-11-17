@@ -1,0 +1,76 @@
+parameters:
+  - name: micBuildType
+    type: string
+    default: release
+  - name: micVersion
+    type: string
+    default: '*.*.*'
+
+stages:
+  - stage: BuildSyntheticAclImages
+    displayName: Build synthetic ACL images (regular kernel and MSHV)
+    dependsOn:
+      - GetTridentBinaries_rpms_amd64
+      - PrepareSSHKeys
+      - BuildingTools
+    jobs:
+      - template: prepare-image.yml
+        parameters:
+          variant: standard
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+      - template: prepare-image.yml
+        parameters:
+          variant: mshv
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+
+  - stage: TestSyntheticAcl
+    displayName: Synthetic ACL manual A/B updates (Linux QEMU)
+    dependsOn: BuildSyntheticAclImages
+    jobs:
+      - ${{ each variant in split('standard,mshv', ',') }}:
+          - job: AclQemu_${{ variant }}
+            displayName: Boot ${{ variant }} ACL image and update with COSI
+            timeoutInMinutes: 90
+            pool:
+              type: linux
+              name: trident-ubuntu-1es-pool-eastus2
+              hostArchitecture: amd64
+            variables:
+              ob_outputDirectory: $(Pipeline.Workspace)/synthetic-acl-${{ variant }}-results
+              ob_artifactBaseName: synthetic-acl-${{ variant }}-results
+            steps:
+              - template: ../common_tasks/checkout_trident.yml
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              - task: DownloadPipelineArtifact@2
+                displayName: Download synthetic ACL ${{ variant }} image and COSI
+                inputs:
+                  buildType: current
+                  artifactName: synthetic-acl-${{ variant }}
+                  targetPath: $(Build.ArtifactStagingDirectory)/synthetic-acl
+              - task: DownloadPipelineArtifact@2
+                displayName: Download storm tool
+                inputs:
+                  buildType: current
+                  artifactName: go-tools
+                  patterns: storm-trident
+                  targetPath: $(TRIDENT_SOURCE_DIR)/bin
+              - task: Bash@3
+                displayName: Run manual ACL A/B update, commit and persisted reboot
+                inputs:
+                  targetType: inline
+                  workingDirectory: $(TRIDENT_SOURCE_DIR)
+                  script: |
+                    set -euo pipefail
+                    chmod +x ./bin/storm-trident
+                    chmod 600 '$(Build.ArtifactStagingDirectory)/synthetic-acl/id_rsa'
+                    mkdir -p '$(ob_outputDirectory)'
+                    sudo ./bin/storm-trident run synthetic-acl -a -- \
+                      --variant '${{ variant }}' \
+                      --artifacts-dir '$(Build.ArtifactStagingDirectory)/synthetic-acl' \
+                      --output-path '$(ob_outputDirectory)'
+              - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+                parameters:
+                  outputDir: $(ob_outputDirectory)
+                  condition: always()

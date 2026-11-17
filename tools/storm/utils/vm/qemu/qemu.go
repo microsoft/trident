@@ -2,6 +2,7 @@
 package qemu
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -19,14 +20,38 @@ import (
 )
 
 type QemuConfig struct {
-	SecureBoot   bool   `help:"Enable secure boot for the VM" default:"false"`
-	SerialLog    string `help:"Path to the serial log file" default:"/tmp/trident-vm-verity-test.log"`
-	ImagePattern string `help:"Regex pattern used to find the base VM image (.qcow2) in the artifacts directory" default:"^trident-vm-.*-testimage\\.qcow2$"`
+	NestedVirtualization bool   `help:"Require nested KVM and pass through host CPU virtualization features" default:"false"`
+	SecureBoot           bool   `help:"Enable secure boot for the VM" default:"false"`
+	SerialLog            string `help:"Path to the serial log file" default:"/tmp/trident-vm-verity-test.log"`
+	ImagePattern         string `help:"Regex pattern used to find the base VM image (.qcow2) in the artifacts directory" default:"^trident-vm-.*-testimage\\.qcow2$"`
 }
 
 func (cfg QemuConfig) DeployQemuVM(vmName string, artifactsDir string, outputPath string, verbose bool) error {
 	logrus.Tracef("Deploying VM on QEMU platform with name '%s'", vmName)
 
+	if err := cfg.DeployQemuVMWithoutWaiting(context.Background(), vmName, artifactsDir); err != nil {
+		return err
+	}
+
+	// Wait for serial log
+	for {
+		if _, err := os.Stat(cfg.SerialLog); err == nil {
+			break
+		}
+	}
+
+	logrus.Tracef("Check if VM is ready for login")
+	err := cfg.WaitForLogin(vmName, outputPath, verbose, 0)
+	if err != nil {
+		return fmt.Errorf("failed to wait for login after reboot: %w", err)
+	}
+
+	return nil
+}
+
+// DeployQemuVMWithoutWaiting starts a VM without requiring a serial login prompt.
+// Callers must wait for guest readiness and clean up even when deployment fails.
+func (cfg QemuConfig) DeployQemuVMWithoutWaiting(ctx context.Context, vmName, artifactsDir string) error {
 	// Destroy and undefine any existing VM
 	if err := cfg.deleteLibvirtDomain(vmName); err != nil {
 		return fmt.Errorf("failed to delete existing domain '%s': %w", vmName, err)
@@ -40,30 +65,22 @@ func (cfg QemuConfig) DeployQemuVM(vmName string, artifactsDir string, outputPat
 	logrus.Tracef("Found image file: %s", imageFile)
 
 	bootImage := artifactsDir + "/booted.qcow2"
-	if err := exec.Command("cp", imageFile, bootImage).Run(); err != nil {
+	if err := exec.CommandContext(ctx, "cp", imageFile, bootImage).Run(); err != nil {
 		return fmt.Errorf("failed to copy image: %w", err)
 	}
 	logrus.Tracef("Copied image to boot image: %s", bootImage)
 
-	err = cfg.createQemuVM(vmName, bootImage, true)
+	err = cfg.createQemuVM(ctx, vmName, bootImage, true)
 	if err != nil {
 		return fmt.Errorf("failed to create VM: %w", err)
 	}
 
-	// Wait for serial log
-	for {
-		if _, err := os.Stat(cfg.SerialLog); err == nil {
-			break
-		}
-	}
-
-	logrus.Tracef("Check if VM is ready for login")
-	err = cfg.WaitForLogin(vmName, outputPath, verbose, 0)
-	if err != nil {
-		return fmt.Errorf("failed to wait for login after reboot: %w", err)
-	}
-
 	return nil
+}
+
+// GetVmIPAddresses queries the current DHCP leases once without retrying.
+func (cfg QemuConfig) GetVmIPAddresses(vmName string) ([]string, error) {
+	return cfg.getQemuVmIpAddresses(vmName)
 }
 
 func (cfg QemuConfig) CleanupQemuVM(vmName string) error {
@@ -132,6 +149,7 @@ func (cfg QemuConfig) getQemuVmIpAddresses(vmName string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup domain by name '%s': %w", vmName, err)
 	}
+	defer lv.Disconnect()
 	logrus.Tracef("Found libvirt domain '%s' with ID %v", vmName, domain)
 
 	ifaces, err := lv.DomainInterfaceAddresses(domain, uint32(libvirt.DomainInterfaceAddressesSrcLease), 0) // VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT retrieves info from the guest agent
@@ -239,7 +257,7 @@ func (cfg QemuConfig) deleteLibvirtDomain(vmName string) error {
 	return nil
 }
 
-func (cfg QemuConfig) createQemuVM(name string, bootImage string, useVirtInstall bool) error {
+func (cfg QemuConfig) createQemuVM(ctx context.Context, name string, bootImage string, useVirtInstall bool) error {
 
 	// TODO: migrate to use virtdeploy
 
@@ -257,16 +275,30 @@ func (cfg QemuConfig) createQemuVM(name string, bootImage string, useVirtInstall
 			"--noautoconsole",
 			"--serial", fmt.Sprintf("file,path=%s", cfg.SerialLog),
 		}
+		if cfg.NestedVirtualization {
+			cpuInfo, err := os.ReadFile("/proc/cpuinfo")
+			if err != nil {
+				return fmt.Errorf("nested virtualization preflight: %w", err)
+			}
+			cpu, err := nestedVirtualizationCPU(cpuInfo, os.ReadFile)
+			if err != nil {
+				return err
+			}
+			virtInstallArgs = append(virtInstallArgs, "--virt-type", "kvm", "--cpu", cpu)
+		}
 		if cfg.SecureBoot {
 			virtInstallArgs = append(virtInstallArgs, "--machine", "q35", "--boot", "uefi,loader_secure=yes")
 		} else {
 			virtInstallArgs = append(virtInstallArgs, "--boot", "uefi,loader_secure=no")
 		}
 		logrus.Tracef("Running virt-install command: %s", strings.Join(virtInstallArgs, " "))
-		if err := exec.Command("sudo", virtInstallArgs...).Run(); err != nil {
+		if err := exec.CommandContext(ctx, "sudo", virtInstallArgs...).Run(); err != nil {
 			return fmt.Errorf("failed to create QEMU VM '%s': %w", name, err)
 		}
 	} else {
+		if cfg.NestedVirtualization {
+			return fmt.Errorf("nested virtualization requires the virt-install deployment path")
+		}
 		logrus.Tracef("Using libvirt to create QEMU VM '%s'", name)
 		uri, _ := url.Parse(string(libvirt.QEMUSession))
 		lv, err := libvirt.ConnectToURI(uri)
@@ -508,4 +540,39 @@ func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSer
 	// A normal Azure Linux boot takes 10-30 seconds; the extra margin accounts for
 	// host CPU contention from other processes or parallel pipeline tasks.
 	return stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, verbose, iteration, localSerialLog, time.Second*180)
+}
+
+func nestedVirtualizationCPU(cpuInfo []byte, readFile func(string) ([]byte, error)) (string, error) {
+	feature, module := "", ""
+	for _, line := range strings.Split(string(cpuInfo), "\n") {
+		key, value, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(key) != "flags" {
+			continue
+		}
+		for _, flag := range strings.Fields(value) {
+			switch flag {
+			case "vmx":
+				feature, module = "vmx", "kvm_intel"
+			case "svm":
+				feature, module = "svm", "kvm_amd"
+			}
+		}
+		if feature != "" {
+			break
+		}
+	}
+	if feature == "" {
+		return "", fmt.Errorf("MSHV requires nested virtualization: host /proc/cpuinfo exposes neither VMX nor SVM; use a nested-virtualization-capable Linux pool")
+	}
+	path := "/sys/module/" + module + "/parameters/nested"
+	enabled, err := readFile(path)
+	if err != nil {
+		return "", fmt.Errorf("MSHV requires nested virtualization: cannot read %s: %w", path, err)
+	}
+	switch strings.ToLower(strings.TrimSpace(string(enabled))) {
+	case "y", "yes", "1":
+		return "host-passthrough,+" + feature, nil
+	default:
+		return "", fmt.Errorf("MSHV requires nested virtualization: %s is %q; enable %s nested=1 on the Linux host", path, strings.TrimSpace(string(enabled)), module)
+	}
 }

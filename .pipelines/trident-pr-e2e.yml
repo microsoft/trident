@@ -18,6 +18,12 @@ trigger: none
 
 resources:
   repositories:
+    - repository: efitreeloader
+      type: github
+      name: microsoft/efitreeloader
+      endpoint: microsoft
+      ref: bf02d4e3f4b9a4b61e838fd4d3705a50573d1ce9
+
     - repository: platform-tests
       type: git
       name: platform-tests
