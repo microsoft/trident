@@ -716,6 +716,8 @@ fn copy_boot_files(
             boot_file.display()
         ))?;
 
+        // Preserve paths beneath EFI/BOOT, including nested MSHV components.
+        // Files selected elsewhere, such as GRUB config, still copy by filename.
         let boot_root = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
         let relative = source_path
             .strip_prefix(&boot_root)
@@ -739,7 +741,7 @@ fn copy_boot_files(
             destination_path.display()
         ))?;
 
-        // Rename grub-noprefix efi to grub efi
+        // Normalize only the root GRUB loader, not similarly named nested files.
         if relative
             .to_str()
             .is_some_and(|name| name.eq_ignore_ascii_case(GRUB_NOPREFIX_EFI))
