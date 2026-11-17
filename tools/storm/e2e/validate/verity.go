@@ -10,7 +10,7 @@ import (
 	tridentutil "tridenttools/storm/utils/trident"
 )
 
-// VerityDevice describes a verity device declared in the Host Status spec.
+// VerityDevice describes a verity device declared in the Host Configuration.
 type VerityDevice struct {
 	ID           string
 	Name         string
@@ -23,8 +23,7 @@ type VerityDevice struct {
 // verity_test.py::test_verity_root, which only validates root verity: configs
 // where verity protects a non-root path (e.g. usr-verity) are intentionally not
 // selected (they receive only base validation, as under pytest).
-func HasVerity(hs tridentutil.HostStatus) bool {
-	spec := hs.Spec()
+func HasVerity(spec hostconfig.HostConfig) bool {
 	rootID, ok := RootFilesystemDeviceID(spec)
 	if !ok {
 		return false
@@ -57,11 +56,9 @@ func verityForRoot(spec hostconfig.HostConfig, rootDeviceID string) (VerityDevic
 func ValidateVerity(
 	sa *SoftAsserter,
 	client *ssh.Client,
-	hs tridentutil.HostStatus,
+	spec hostconfig.HostConfig,
 	abActive tridentutil.AbVolumeSelection,
 ) {
-	spec := hs.Spec()
-
 	blkid, err := sysinspect.Blkid(client)
 	if err != nil {
 		sa.Fail("verity/blkid", err)
@@ -71,10 +68,10 @@ func ValidateVerity(
 		sa.Failf("verity/mapper", "/dev/mapper/root not present in blkid output")
 	}
 
-	// Locate the root verity device from the Host Status.
+	// Locate the configured root verity device.
 	rootDeviceID, ok := RootFilesystemDeviceID(spec)
 	if !ok {
-		sa.Failf("verity/root-mount", "root mount point not found in Host Status spec")
+		sa.Failf("verity/root-mount", "root mount point not found in Host Configuration")
 		return
 	}
 	verity, ok := verityForRoot(spec, rootDeviceID)

@@ -7,6 +7,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/sysinspect"
 	tridentutil "tridenttools/storm/utils/trident"
@@ -19,11 +20,11 @@ var extensionKinds = map[string]string{
 	"confexts": "confext",
 }
 
-// HasExtensions reports whether the Host Status spec declares any system
+// HasExtensions reports whether the Host Configuration declares any system
 // extensions (sysexts or confexts), used to self-select the extensions
 // validation.
-func HasExtensions(hs tridentutil.HostStatus) bool {
-	os := hs.Spec().S("os")
+func HasExtensions(config hostconfig.HostConfig) bool {
+	os := config.S("os")
 	for key := range extensionKinds {
 		if os.Exists(key) {
 			return true
@@ -35,12 +36,52 @@ func HasExtensions(hs tridentutil.HostStatus) bool {
 // ValidateExtensions ports extensions_test.py::test_extensions. For each
 // configured sysext/confext it confirms the extension path exists on the host
 // and that the extension is active per `systemd-<type> status`.
-func ValidateExtensions(sa *SoftAsserter, client *ssh.Client, hs tridentutil.HostStatus) {
+func ValidateExtensions(sa *SoftAsserter, client *ssh.Client, hs tridentutil.HostStatus, expected hostconfig.HostConfig) {
 	os := hs.Spec().S("os")
 
 	for listKey, extType := range extensionKinds {
+		requested := expected.S("os", listKey).Data()
+		if requested == nil {
+			continue
+		}
+		entries, ok := requested.([]any)
+		if !ok {
+			sa.Failf(fmt.Sprintf("extensions/%s-config", extType), "expected %s must be a list", listKey)
+			continue
+		}
+		if len(entries) == 0 {
+			continue
+		}
+
+		reported, ok := os.S(listKey).Data().([]any)
+		if !ok {
+			sa.Failf(fmt.Sprintf("extensions/%s-list", extType), "Host Status is missing a valid %s list", listKey)
+			continue
+		}
+		if len(reported) != len(entries) {
+			sa.Failf(fmt.Sprintf("extensions/%s-count", extType),
+				"expected %d %s entries, Host Status reports %d", len(entries), listKey, len(reported))
+			continue
+		}
+
 		configured := os.S(listKey).Children()
-		if len(configured) == 0 {
+		paths := make([]string, 0, len(configured))
+		seen := make(map[string]bool)
+		for _, ext := range configured {
+			path, ok := ext.S("path").Data().(string)
+			if !ok || !filepath.IsAbs(path) || filepath.Ext(path) != ".raw" {
+				sa.Failf(fmt.Sprintf("extensions/%s-path", extType),
+					"reported %s entry has no valid absolute .raw path", extType)
+				continue
+			}
+			if seen[path] {
+				sa.Failf(fmt.Sprintf("extensions/%s-path", extType), "duplicate %s path %q", extType, path)
+				continue
+			}
+			seen[path] = true
+			paths = append(paths, path)
+		}
+		if len(paths) != len(entries) {
 			continue
 		}
 
@@ -50,14 +91,7 @@ func ValidateExtensions(sa *SoftAsserter, client *ssh.Client, hs tridentutil.Hos
 			continue
 		}
 
-		for _, ext := range configured {
-			path, ok := ext.S("path").Data().(string)
-			if !ok {
-				sa.Failf(fmt.Sprintf("extensions/%s-path", extType),
-					"configured %s entry has no path", extType)
-				continue
-			}
-
+		for _, path := range paths {
 			// Verify the extension path exists on the target OS.
 			out, err := sshutils.RunCommand(client, fmt.Sprintf("test -e %s", sshutils.ShellQuote(path)))
 			if err != nil {

@@ -95,8 +95,9 @@ steps:
       inlineScript: |
         set -e
         az account show
+        set +x
         azToken=$(az account get-access-token --resource "https://api.kusto.windows.net" | jq -r '.accessToken')
-        echo "##vso[task.setvariable variable=AZ_TOKEN]$azToken"
+        echo "##vso[task.setvariable variable=AZ_TOKEN;issecret=true]$azToken"
     condition: and(succeededOrFailed(), eq(variables['UploadMetrics'], 'True'))
     retryCountOnTaskFailure: 3
 
@@ -122,6 +123,8 @@ steps:
       done < "$(Agent.TempDirectory)/storm-metrics-files.txt"
     displayName: "📈 Upload storm E2E metrics to Kusto"
     condition: and(succeededOrFailed(), eq(variables['UploadMetrics'], 'True'))
+    env:
+      AZ_TOKEN: $(AZ_TOKEN)
     # upload_metrics.sh builds a venv from the internal package feed, which
     # intermittently times out. Without this, a transient feed blip marks a job
     # whose tests all passed as failed. Matches the retry on the sibling steps.

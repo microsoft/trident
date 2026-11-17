@@ -109,6 +109,11 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 		return err
 	}
 
+	s.validationConfig, err = s.config.Clone()
+	if err != nil {
+		return fmt.Errorf("failed to preserve the validation Host Configuration: %w", err)
+	}
+
 	// Publish the fully-edited configuration last, so it reflects exactly what
 	// gets deployed. Only the testing user's *public* key was added above, so
 	// this carries no secret.

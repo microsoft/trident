@@ -59,7 +59,7 @@ func TestHasRollbackIntent(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse host status: %v", err)
 			}
-			if got := HasRollbackIntent(hs); got != tc.want {
+			if got := HasRollbackIntent(hs.Spec()); got != tc.want {
 				t.Errorf("HasRollbackIntent = %v, want %v", got, tc.want)
 			}
 		})

@@ -23,8 +23,8 @@ const (
 
 // HasEncryption reports whether the spec declares encryption volumes, used to
 // self-select the encryption validation.
-func HasEncryption(hs tridentutil.HostStatus) bool {
-	return hs.Spec().Exists("storage", "encryption")
+func HasEncryption(config hostconfig.HostConfig) bool {
+	return config.Exists("storage", "encryption")
 }
 
 // ValidateEncryption ports encryption_test.py::test_encryption. For each
@@ -34,12 +34,10 @@ func HasEncryption(hs tridentutil.HostStatus) bool {
 func ValidateEncryption(
 	sa *SoftAsserter,
 	client *ssh.Client,
-	hs tridentutil.HostStatus,
+	spec hostconfig.HostConfig,
 	isUki bool,
 	abActive tridentutil.AbVolumeSelection,
 ) {
-	spec := hs.Spec()
-
 	blockDevs, err := sysinspect.BlkidExport(client)
 	if err != nil {
 		sa.Fail("encryption/blkid-export", err)

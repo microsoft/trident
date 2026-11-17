@@ -2,6 +2,7 @@ package scenario
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/microsoft/storm"
@@ -28,6 +29,10 @@ func (s *TridentE2EScenario) hasRollbackIntent() bool {
 // soft-assert approach) so a single case reports every mismatch it finds; the
 // case fails once at the end if any sub-check failed.
 func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
+	if s.validationConfig.Container == nil {
+		return fmt.Errorf("validation Host Configuration has not been prepared")
+	}
+
 	connCtx, cancel := context.WithTimeout(tc.Context(), time.Minute)
 	defer cancel()
 	if err := s.populateSshClient(connCtx); err != nil {
@@ -43,7 +48,7 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 
 	var sa validate.SoftAsserter
 
-	if validate.HasRollbackIntent(hs) {
+	if validate.HasRollbackIntent(s.validationConfig) {
 		// Health-check rollback scenarios (e.g. health-checks-install) replace
 		// base validation with rollback validation and expect the host to have
 		// rolled back rather than reached the provisioned state.
@@ -51,24 +56,24 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 			trident.ServicingStateNotProvisioned, s.expectedActiveVolume)
 	} else {
 		// `base` validation always applies.
-		validate.ValidateBase(&sa, s.sshClient, hs, trident.ServicingStateProvisioned, s.expectedActiveVolume)
+		validate.ValidateBase(&sa, s.sshClient, hs, s.validationConfig, trident.ServicingStateProvisioned, s.expectedActiveVolume)
 
 		// `extensions` validation self-selects when the Host Config declares
 		// sysexts/confexts.
-		if validate.HasExtensions(hs) {
-			validate.ValidateExtensions(&sa, s.sshClient, hs)
+		if validate.HasExtensions(s.validationConfig) {
+			validate.ValidateExtensions(&sa, s.sshClient, hs, s.validationConfig)
 		}
 
 		// `verity` validation self-selects when the Host Config declares a
 		// verity device.
-		if validate.HasVerity(hs) {
-			validate.ValidateVerity(&sa, s.sshClient, hs, s.expectedActiveVolume)
+		if validate.HasVerity(s.validationConfig) {
+			validate.ValidateVerity(&sa, s.sshClient, s.validationConfig, s.expectedActiveVolume)
 		}
 
 		// `encryption` validation self-selects when the Host Config declares
 		// encryption volumes.
-		if validate.HasEncryption(hs) {
-			validate.ValidateEncryption(&sa, s.sshClient, hs, s.configParams.IsUki, s.expectedActiveVolume)
+		if validate.HasEncryption(s.validationConfig) {
+			validate.ValidateEncryption(&sa, s.sshClient, s.validationConfig, s.configParams.IsUki, s.expectedActiveVolume)
 		}
 	}
 

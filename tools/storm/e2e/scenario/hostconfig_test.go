@@ -1,13 +1,97 @@
 package scenario
 
 import (
+	"bytes"
 	"encoding/json"
 	"reflect"
 	"testing"
 
 	"tridenttools/pkg/hostconfig"
+	"tridenttools/storm/e2e/validate"
 	"tridenttools/storm/utils/trident"
+
+	"github.com/microsoft/storm"
+	"github.com/microsoft/storm/pkg/storm/artifacts"
 )
+
+type configTestCase struct {
+	storm.TestCase
+	broker artifacts.ArtifactBroker
+}
+
+func (tc configTestCase) ArtifactBroker() artifacts.ArtifactBroker { return tc.broker }
+
+func TestValidationConfigSurvivesServicingChanges(t *testing.T) {
+	s := newScenarioForTest(t, `
+image:
+  url: http://test/regular.cosi
+storage:
+  disks:
+  - id: os
+    partitions:
+    - id: root-luks
+      size: grow
+  encryption:
+    volumes:
+    - id: root-data
+      deviceName: root
+      deviceId: root-luks
+  verity:
+  - id: root
+    name: root
+    dataDeviceId: root-data
+    hashDeviceId: root-hash
+  filesystems:
+  - deviceId: root
+    mountPoint: /
+os:
+  users:
+  - name: alice
+`)
+	broker := failureTestBroker{t: t, dir: t.TempDir()}
+	if err := s.prepareHostConfig(configTestCase{broker: broker}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := s.validationConfig.ToYaml()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !s.validationConfig.Exists("os", "uefiFallback") || len(s.validationConfig.S("os", "users").Children()) != 2 {
+		t.Fatal("baseline was captured before the HC was fully prepared")
+	}
+	if s.originalConfig.Exists("os", "uefiFallback") {
+		t.Fatal("preparing the working HC changed the original template")
+	}
+
+	if _, err := s.config.S("os", "users").Children()[0].Set("bob", "name"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.config.Delete("storage"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.validationConfig.ToYaml()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("servicing mutations changed the validation baseline")
+	}
+
+	s.config, err = hostconfig.NewHostConfigFromYaml([]byte("storage: {}\nos: {}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err = s.validationConfig.ToYaml()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("replacing the working HC changed the validation baseline")
+	}
+	if !validate.HasEncryption(s.validationConfig) || !validate.HasVerity(s.validationConfig) {
+		t.Fatal("configured validation was disabled by the working HC")
+	}
+}
 
 func newInjectScenario(t *testing.T) *TridentE2EScenario {
 	t.Helper()

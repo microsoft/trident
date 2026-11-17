@@ -38,8 +38,8 @@ const (
 // HasRollbackIntent reports whether the scenario is expected to trigger a
 // health-check rollback. Such scenarios replace `base` validation with rollback
 // validation.
-func HasRollbackIntent(hs tridentutil.HostStatus) bool {
-	return HasFailingHealthChecks(hs.Spec())
+func HasRollbackIntent(config hostconfig.HostConfig) bool {
+	return HasFailingHealthChecks(config)
 }
 
 // HasFailingHealthChecks reports whether a Host Configuration declares health

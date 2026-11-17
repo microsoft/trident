@@ -23,12 +23,12 @@ spec:
 func TestHasVerity(t *testing.T) {
 	// Root is a verity device -> selected.
 	hs, _ := tridentutil.NewHostStatusFromYaml([]byte(verityStatusYaml))
-	if !HasVerity(hs) {
+	if !HasVerity(hs.Spec()) {
 		t.Error("expected HasVerity=true when root is a verity device")
 	}
 	// No verity at all -> not selected.
 	plain, _ := tridentutil.NewHostStatusFromYaml([]byte("spec:\n  storage:\n    disks: []\n"))
-	if HasVerity(plain) {
+	if HasVerity(plain.Spec()) {
 		t.Error("expected HasVerity=false without verity")
 	}
 	// usr-verity: verity exists but protects /usr, not root -> NOT selected
@@ -47,7 +47,7 @@ spec:
     - deviceId: usr
       mountPoint: /usr
 `))
-	if HasVerity(usrVerity) {
+	if HasVerity(usrVerity.Spec()) {
 		t.Error("expected HasVerity=false for usr-verity (root is not a verity device)")
 	}
 }

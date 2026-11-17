@@ -26,14 +26,35 @@ func ValidateBase(
 	sa *SoftAsserter,
 	client *ssh.Client,
 	hs tridentutil.HostStatus,
+	expected hostconfig.HostConfig,
 	expectedState tridentutil.ServicingState,
 	abActive tridentutil.AbVolumeSelection,
 ) {
-	spec := hs.Spec()
+	if !validateReportedConfig(sa, hs, expected) {
+		return
+	}
+	ValidatePartitions(sa, client, hs, expected, expectedState, abActive)
+	ValidateUsers(sa, client, expected)
+	ValidateUefiFallback(sa, client, expected)
+}
 
-	ValidatePartitions(sa, client, hs, expectedState, abActive)
-	ValidateUsers(sa, client, spec)
-	ValidateUefiFallback(sa, client, spec)
+func validateReportedConfig(sa *SoftAsserter, hs tridentutil.HostStatus, expected hostconfig.HostConfig) bool {
+	spec := hs.S("spec")
+	if _, ok := spec.Data().(map[string]any); !ok {
+		sa.Failf("host-status/spec", "Host Status spec must be an object")
+		return false
+	}
+	valid := true
+	for _, section := range []string{"storage", "os"} {
+		if !expected.Exists(section) {
+			continue
+		}
+		if _, ok := spec.S(section).Data().(map[string]any); !ok {
+			sa.Failf("host-status/"+section, "Host Status spec.%s must be an object", section)
+			valid = false
+		}
+	}
+	return valid
 }
 
 // ValidatePartitions ports base_test.py::test_partitions. It confirms the
@@ -44,11 +65,10 @@ func ValidatePartitions(
 	sa *SoftAsserter,
 	client *ssh.Client,
 	hs tridentutil.HostStatus,
+	spec hostconfig.HostConfig,
 	expectedState tridentutil.ServicingState,
 	abActive tridentutil.AbVolumeSelection,
 ) {
-	spec := hs.Spec()
-
 	// Gather system state.
 	blkid, err := sysinspect.Blkid(client)
 	if err != nil {

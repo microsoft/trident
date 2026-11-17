@@ -2,6 +2,7 @@ package scenario
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 
@@ -60,6 +61,9 @@ type testVmHostInfo interface {
 	// at the same path/size, and powers the VM back on. diskIndex is the 0-based
 	// disk index (disk 0 is the OS disk; RAID member disks start at 1).
 	FailAndReplaceDataDisk(diskIndex uint) error
+
+	// Stops the VM and streams its OS disk before resource cleanup.
+	WriteOSDisk(io.Writer) error
 }
 
 func (s *TridentE2EScenario) setupTestHost(tc storm.TestCase) error {
@@ -199,6 +203,19 @@ func (t *testHostVirtDeploy) storagePoolName() string {
 	return t.namespace + "-pool"
 }
 
+func (t *testHostVirtDeploy) diskVolume(diskIndex uint) (libvirt.StoragePool, libvirt.StorageVol, error) {
+	volName := fmt.Sprintf("%s-volume-%d.qcow2", t.vm.Name, diskIndex)
+	pool, err := t.lv.StoragePoolLookupByName(t.storagePoolName())
+	if err != nil {
+		return libvirt.StoragePool{}, libvirt.StorageVol{}, fmt.Errorf("failed to look up storage pool %q: %w", t.storagePoolName(), err)
+	}
+	vol, err := t.lv.StorageVolLookupByName(pool, volName)
+	if err != nil {
+		return pool, libvirt.StorageVol{}, fmt.Errorf("failed to look up disk volume %q: %w", volName, err)
+	}
+	return pool, vol, nil
+}
+
 // FailAndReplaceDataDisk simulates a failed RAID member disk: it forcibly
 // powers off the VM, deletes the data disk volume at diskIndex, recreates it
 // blank at the same path and size, and powers the VM back on. This drives the
@@ -208,14 +225,9 @@ func (t *testHostVirtDeploy) FailAndReplaceDataDisk(diskIndex uint) error {
 	// virtdeploy names disk volumes "<vmName>-volume-<index>.qcow2".
 	volName := fmt.Sprintf("%s-volume-%d.qcow2", t.vm.Name, diskIndex)
 
-	pool, err := t.lv.StoragePoolLookupByName(t.storagePoolName())
+	pool, vol, err := t.diskVolume(diskIndex)
 	if err != nil {
-		return fmt.Errorf("failed to look up storage pool %q: %w", t.storagePoolName(), err)
-	}
-
-	vol, err := t.lv.StorageVolLookupByName(pool, volName)
-	if err != nil {
-		return fmt.Errorf("failed to look up disk volume %q: %w", volName, err)
+		return err
 	}
 	volPath, err := t.lv.StorageVolGetPath(vol)
 	if err != nil {

@@ -49,11 +49,11 @@ func encSpec(t *testing.T) hostconfig.HostConfig {
 
 func TestHasEncryption(t *testing.T) {
 	hs, _ := tridentutil.NewHostStatusFromYaml([]byte("spec:\n" + indent(encSpecYaml)))
-	if !HasEncryption(hs) {
+	if !HasEncryption(hs.Spec()) {
 		t.Error("expected HasEncryption=true")
 	}
 	plain, _ := tridentutil.NewHostStatusFromYaml([]byte("spec:\n  storage:\n    disks: []\n"))
-	if HasEncryption(plain) {
+	if HasEncryption(plain.Spec()) {
 		t.Error("expected HasEncryption=false")
 	}
 }

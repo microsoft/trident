@@ -118,6 +118,9 @@ type TridentE2EScenario struct {
 	// Working copy of the host configuration, modified during test execution to
 	// reflect changes such as AB updates.
 	config hostconfig.HostConfig
+
+	// Prepared install HC; never modified by servicing or validators.
+	validationConfig hostconfig.HostConfig
 }
 
 func NewTridentE2EScenario(
@@ -220,6 +223,7 @@ func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	// Host-only SELinux + tracing diagnostics, scoped to the clean install
 	// (mirrors legacy check-selinux/check-tracing). Self-skips on container.
 	r.RegisterTestCase("validate-host-diagnostics", s.validateHostDiagnostics)
+	r.RegisterTestCase("collect-container-logs", s.collectContainerLogs)
 	// Parity with legacy's "Capture screenshot: clean install". Registered as
 	// its own case so the capture is visible in the report; it never fails.
 	r.RegisterTestCase("capture-install-screenshot", func(tc storm.TestCase) error {
