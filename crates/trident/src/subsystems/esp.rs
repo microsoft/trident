@@ -644,18 +644,13 @@ fn copy_boot_files_for_uefi_fallback(
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     );
-    let result = replace_boot_files(&source_esp_dir_path, &uefi_fallback_path);
+    let result = boot_files::replace_boot_files(&source_esp_dir_path, &uefi_fallback_path);
     result.context(format!(
         "Failed to copy boot files from directory '{}' to directory '{}'",
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     ))?;
     Ok(())
-}
-
-/// Replaces the complete fallback boot tree, including nested files.
-pub fn replace_boot_files(from_dir: &Path, to_dir: &Path) -> Result<(), Error> {
-    boot_files::replace_boot_files(from_dir, to_dir)
 }
 
 /// Ensures `EFI/AZLA` exists on the ESP, seeding it from the `EFI/BOOT` fallback
@@ -1739,7 +1734,7 @@ mod tests {
         }
 
         // Call the function to copy files
-        replace_boot_files(from_dir.path(), to_dir.path()).unwrap();
+        boot_files::replace_boot_files(from_dir.path(), to_dir.path()).unwrap();
 
         // Verify that files have been copied and renamed correctly
         for (file_name, _content) in &file_infos {
@@ -1775,7 +1770,7 @@ mod tests {
             fs::create_dir_all(&secondary).unwrap();
             fs::write(secondary.join("image-specific.dll"), b"previous payload").unwrap();
 
-            replace_boot_files(source.path(), destination.path()).unwrap();
+            boot_files::replace_boot_files(source.path(), destination.path()).unwrap();
 
             assert_eq!(
                 fs::read(destination.path().join(BOOT_EFI)).unwrap(),
@@ -1792,7 +1787,7 @@ mod tests {
         fs::write(source.path().join(BOOT_EFI), b"ordinary loader").unwrap();
         fs::create_dir_all(destination.path().join("retired")).unwrap();
         fs::write(destination.path().join("retired/old"), b"retired data").unwrap();
-        replace_boot_files(source.path(), destination.path()).unwrap();
+        boot_files::replace_boot_files(source.path(), destination.path()).unwrap();
         assert!(!destination.path().join("retired").exists());
         assert_eq!(
             fs::read(destination.path().join(BOOT_EFI)).unwrap(),
