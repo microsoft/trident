@@ -122,7 +122,10 @@ Fallback replacement stages each top-level file or complete subtree as `.new`,
 renames existing entries to `.old`, publishes the staged entries and removes
 backups. Retries discard partial staging and reconcile backups. Replacement
 across entries remains non-atomic. Bootstrap publishes its complete temporary
-directory by rename. Both paths retain capacity preflight; staging does not.
+directory by rename. Neither path predicts free space: copy errors, including
+space exhaustion, propagate before publication. Fallback leaves current entries
+in place until every replacement entry has been staged; bootstrap leaves AZLA
+absent until its temporary copy is complete.
 Links, special files and source names ending in `.new` or `.old` are rejected.
 
 [UEFI fallback modes](./UEFI-Fallback.md) apply to all BOOT files:

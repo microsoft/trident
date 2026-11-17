@@ -658,8 +658,8 @@ fn copy_boot_files_for_uefi_fallback(
 /// a freshly derived HostStatus is backed by the expected on-disk ESP layout
 /// before the first A/B update or manual rollback assumes AZLA already exists.
 ///
-/// Preflights the complete BOOT tree and publishes a copy via a staged
-/// directory rename. Existing AZLA is never refreshed; image-specific
+/// Copies the complete BOOT tree and publishes it via a staged directory
+/// rename only after copying succeeds. Existing AZLA is never refreshed; image-specific
 /// completeness checks belong to initialization, not tree relocation.
 pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
     let azla_esp_path = esp_path.join(ESP_EFI_DIRECTORY).join("AZLA");
@@ -682,8 +682,6 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
                 azla_tmp_path.display()
             ))?;
         }
-        // Check capacity after reclaiming stale staging contents.
-        boot_files::preflight_bootstrap(&boot_esp_path, esp_path)?;
         let copy_result = boot_files::copy_boot_files(&boot_esp_path, &azla_tmp_path);
         copy_result.context(format!(
             "Failed to copy boot files from '{}' to temporary AZLA bootstrap path '{}'",
@@ -888,12 +886,7 @@ fn generate_efi_bin_base_dir_path(
 mod tests {
     use super::*;
 
-    use std::{
-        fs::{File, OpenOptions},
-        io::Write,
-    };
-
-    use nix::sys::statvfs;
+    use std::{fs::File, io::Write};
 
     use trident_api::{
         config::{HostConfiguration, Os},
@@ -1961,9 +1954,9 @@ mod tests {
         assert!(boot_mshv::validate_installed_boot_files(esp.path()).is_err());
     }
 
-    /// Failed preflight follows stale-copy cleanup and leaves BOOT untouched.
+    /// Failed source validation leaves AZLA unpublished and permits a clean retry.
     #[test]
-    fn test_bootstrap_azla_cleans_stale_mshv_copy_before_capacity_check() {
+    fn test_bootstrap_azla_cleans_stale_copy_before_source_validation() {
         let esp = TempDir::new().unwrap();
         let boot = esp.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
         let azla = esp.path().join(ESP_EFI_DIRECTORY).join("AZLA");
@@ -1978,23 +1971,27 @@ mod tests {
         }
         fs::create_dir_all(&temporary).unwrap();
         fs::write(temporary.join("stale"), b"abandoned copy").unwrap();
-
-        // Force preflight failure with a sparse file, without filling the filesystem.
-        let stats = statvfs::statvfs(esp.path()).unwrap();
-        let length = stats.blocks_available() * stats.fragment_size() + 1;
-        OpenOptions::new()
-            .write(true)
-            .open(boot.join(BOOT_EFI))
-            .unwrap()
-            .set_len(length)
-            .unwrap();
+        let invalid = boot.join("component.new");
+        fs::write(&invalid, b"reserved source name").unwrap();
 
         let error = bootstrap_azla_from_fallback(esp.path()).unwrap_err();
-        assert!(error.to_string().contains("Insufficient ESP capacity"));
+        assert!(error
+            .root_cause()
+            .to_string()
+            .contains("Reserved boot file name"));
         assert!(!temporary.exists());
         assert!(!azla.exists());
-        assert_eq!(fs::metadata(boot.join(BOOT_EFI)).unwrap().len(), length);
-        assert_eq!(fs::read(boot.join("HvLoader.efi")).unwrap(), b"retained");
+        for name in FILES {
+            assert_eq!(fs::read(boot.join(name)).unwrap(), b"retained");
+        }
+
+        fs::remove_file(invalid).unwrap();
+        bootstrap_azla_from_fallback(esp.path()).unwrap();
+        assert!(!temporary.exists());
+        assert!(!azla.join("stale").exists());
+        for name in FILES {
+            assert!(files_are_identical(&boot.join(name), &azla.join(name)));
+        }
     }
 
     /// Incomplete marked fallback cannot publish AZLA.

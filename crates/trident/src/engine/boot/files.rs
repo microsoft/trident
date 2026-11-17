@@ -3,6 +3,7 @@
 //! Image-specific completeness belongs to staging and initialization. Relocation
 //! preserves unfamiliar files and directories while enforcing structural safety.
 //! Replacement owns the destination's entire contents, not individual filenames.
+//! Space exhaustion is reported by copying, not a separate capacity estimate.
 
 use std::{
     fs,
@@ -11,10 +12,6 @@ use std::{
 };
 
 use anyhow::{ensure, Context, Error};
-use nix::sys::statvfs;
-
-// Leave headroom for directory growth beyond the per-directory estimate.
-const SPACE_RESERVE: u64 = 1024 * 1024;
 
 /// Validates the whole tree, including empty directories, and collects relative file paths.
 /// `temporary` permits replacement suffixes in destinations left by interrupted work.
@@ -138,53 +135,9 @@ pub(crate) fn copy_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
     copy_entry(from, to)
 }
 
-/// Estimates cluster-rounded file bytes plus one cluster per directory.
-/// Missing paths contribute zero; links and special files are rejected.
-fn allocation(path: &Path, cluster: u64) -> Result<u64, Error> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(0),
-        Err(error) => return Err(error.into()),
-    };
-    if metadata.is_file() {
-        return Ok(metadata.len().div_ceil(cluster) * cluster);
-    }
-    ensure!(
-        metadata.is_dir(),
-        "Not a regular file or directory: {}",
-        path.display()
-    );
-    let mut total = cluster;
-    for entry in fs::read_dir(path)? {
-        total += allocation(&entry?.path(), cluster)?;
-    }
-    Ok(total)
-}
-
-/// Checks the estimated copy budget without reclaiming current entries or backups.
-/// `reclaimed` counts only matching `.new` entries that retries will discard.
-fn check_space(available: u64, reclaimed: u64, required: u64) -> Result<(), Error> {
-    ensure!(available.saturating_add(reclaimed) >= required.saturating_add(SPACE_RESERVE),
-        "Insufficient ESP capacity: need {required} bytes plus {SPACE_RESERVE} bytes reserve, have {available} bytes free and {reclaimed} bytes reclaimable");
-    Ok(())
-}
-
-/// Checks room for a complete new boot tree without reclaiming ESP contents.
-/// `esp` identifies the destination filesystem; stale bootstrap staging is removed by the caller.
-pub(crate) fn preflight_bootstrap(from: &Path, esp: &Path) -> Result<(), Error> {
-    boot_files(from, false)?;
-    let stats = statvfs::statvfs(esp)?;
-    let cluster = stats.fragment_size();
-    ensure!(cluster > 0, "Invalid ESP allocation unit");
-    check_space(
-        stats.blocks_available() * cluster,
-        0,
-        allocation(from, cluster)?,
-    )
-}
-
 /// Replaces an owned directory's complete contents, including nested and empty
 /// directories. Destination-only entries are retired after the new tree is staged.
+/// Copy failures propagate before current entries are renamed; retries discard partial staging.
 ///
 /// Each top-level entry is staged as `.new`, backed up as `.old`, then published.
 /// Directories move with their complete subtrees. Publication across entries is
@@ -201,22 +154,6 @@ pub(crate) fn replace_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
         .map(|entry| entry.map(|entry| entry.file_name()))
         .collect::<Result<Vec<_>, _>>()?;
     entries.sort();
-
-    // Budget the new tree alongside current entries and backups. Only matching
-    // abandoned `.new` entries are credited; other temporary entries stay in place
-    // until publication succeeds.
-    let stats = statvfs::statvfs(to.parent().context("Missing fallback parent")?)?;
-    let cluster = stats.fragment_size();
-    ensure!(cluster > 0, "Invalid ESP allocation unit");
-    let mut reclaimed = 0;
-    for name in &entries {
-        reclaimed += allocation(&to.join(format!("{}.new", name.to_string_lossy())), cluster)?;
-    }
-    check_space(
-        stats.blocks_available() * cluster,
-        reclaimed,
-        allocation(from, cluster)?,
-    )?;
 
     // Rebuild all incoming staging while leaving current entries available.
     fs::create_dir_all(to)?;
@@ -277,7 +214,7 @@ pub(crate) fn replace_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
 mod tests {
     use super::*;
 
-    use std::{fs::File, os::unix::fs as unix_fs};
+    use std::os::unix::fs as unix_fs;
 
     use nix::{sys::stat::Mode, unistd};
     use tempfile::TempDir;
@@ -526,41 +463,6 @@ mod tests {
         filepaths(&fallback).unwrap();
     }
 
-    #[test]
-    fn budgets_all_files_including_nested_subdirectories() {
-        let temp = TempDir::new().unwrap();
-        let source_esp = temp.path().join("source");
-        let source = source_esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-        let esp = temp.path().join("esp");
-        let fallback = esp.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
-        create_boot_files(&source, b"new");
-        create_boot_files(&fallback, b"retained");
-        let secondary = source.join("Windows/System32");
-        fs::create_dir_all(&secondary).unwrap();
-        let large = secondary.join("image-specific.bin");
-        let stats = statvfs::statvfs(&esp).unwrap();
-        File::create(&large)
-            .unwrap()
-            .set_len(stats.blocks_available() * stats.fragment_size() + SPACE_RESERVE)
-            .unwrap();
-        assert!(preflight_bootstrap(&source, &esp).is_err());
-        assert!(replace_boot_files(&source, &fallback).is_err());
-        assert_eq!(
-            fs::read(fallback.join("HvLoader.efi")).unwrap(),
-            b"retained"
-        );
-
-        fs::create_dir(secondary.join("ignored")).unwrap();
-        fs::rename(&large, secondary.join("ignored/large.bin")).unwrap();
-        assert!(preflight_bootstrap(&source, &esp).is_err());
-        assert!(replace_boot_files(&source, &fallback).is_err());
-        fs::remove_file(secondary.join("ignored/large.bin")).unwrap();
-        preflight_bootstrap(&source, &esp).unwrap();
-        replace_boot_files(&source, &fallback).unwrap();
-        assert_eq!(fs::read(fallback.join("HvLoader.efi")).unwrap(), b"new");
-        assert!(fallback.join("Windows/System32/ignored").is_dir());
-    }
-
     /// Temporary suffixes are reserved regardless of filename casing.
     #[test]
     fn accepts_additional_files_but_rejects_temporary_source_names() {
@@ -635,16 +537,6 @@ mod tests {
             assert!(!fallback.join(format!("{name}.old")).exists());
         }
         assert!(replace_boot_files(&source, &source).is_err());
-    }
-
-    /// Capacity includes cluster rounding, reclamation, and a reserve.
-    #[test]
-    fn capacity_accounts_for_clusters_and_preserves_a_reserve() {
-        let temp = TempDir::new().unwrap();
-        fs::write(temp.path().join("file"), b"x").unwrap();
-        assert_eq!(allocation(&temp.path().join("file"), 4096).unwrap(), 4096);
-        assert!(check_space(SPACE_RESERVE, 0, 1).is_err());
-        assert!(check_space(SPACE_RESERVE, 4096, 4096).is_ok());
     }
 
     /// Enabled fallback policies copy all slot boot files and preserve the retained slot.
