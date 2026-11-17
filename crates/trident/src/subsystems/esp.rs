@@ -644,7 +644,7 @@ fn copy_boot_files_for_uefi_fallback(
         source_esp_dir_path.display(),
         uefi_fallback_path.display()
     );
-    let result = boot_files::replace_boot_files(&source_esp_dir_path, &uefi_fallback_path);
+    let result = boot_files::replace_fallback_boot_files(&source_esp_dir_path, &uefi_fallback_path);
     result.context(format!(
         "Failed to copy boot files from directory '{}' to directory '{}'",
         source_esp_dir_path.display(),
@@ -682,7 +682,7 @@ pub fn bootstrap_azla_from_fallback(esp_path: &Path) -> Result<(), Error> {
                 azla_tmp_path.display()
             ))?;
         }
-        let copy_result = boot_files::copy_boot_files(&boot_esp_path, &azla_tmp_path);
+        let copy_result = boot_files::copy_fallback_for_bootstrap(&boot_esp_path, &azla_tmp_path);
         copy_result.context(format!(
             "Failed to copy boot files from '{}' to temporary AZLA bootstrap path '{}'",
             boot_esp_path.display(),
@@ -1699,7 +1699,7 @@ mod tests {
     }
 
     #[test]
-    fn test_replace_boot_files() {
+    fn test_replace_fallback_boot_files() {
         let from_dir = TempDir::new().unwrap();
         let to_dir = TempDir::new().unwrap();
 
@@ -1729,7 +1729,7 @@ mod tests {
         }
 
         // Call the function to copy files
-        boot_files::replace_boot_files(from_dir.path(), to_dir.path()).unwrap();
+        boot_files::replace_fallback_boot_files(from_dir.path(), to_dir.path()).unwrap();
 
         // Verify that files have been copied and renamed correctly
         for (file_name, _content) in &file_infos {
@@ -1765,7 +1765,7 @@ mod tests {
             fs::create_dir_all(&secondary).unwrap();
             fs::write(secondary.join("image-specific.dll"), b"previous payload").unwrap();
 
-            boot_files::replace_boot_files(source.path(), destination.path()).unwrap();
+            boot_files::replace_fallback_boot_files(source.path(), destination.path()).unwrap();
 
             assert_eq!(
                 fs::read(destination.path().join(BOOT_EFI)).unwrap(),
@@ -1782,7 +1782,7 @@ mod tests {
         fs::write(source.path().join(BOOT_EFI), b"ordinary loader").unwrap();
         fs::create_dir_all(destination.path().join("retired")).unwrap();
         fs::write(destination.path().join("retired/old"), b"retired data").unwrap();
-        boot_files::replace_boot_files(source.path(), destination.path()).unwrap();
+        boot_files::replace_fallback_boot_files(source.path(), destination.path()).unwrap();
         assert!(!destination.path().join("retired").exists());
         assert_eq!(
             fs::read(destination.path().join(BOOT_EFI)).unwrap(),

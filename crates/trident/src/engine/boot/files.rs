@@ -123,10 +123,10 @@ fn remove_entry(path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-/// Copies a validated tree without retiring destination-only entries.
+/// Copies the fallback boot tree into temporary slot-bootstrap staging.
 /// An exact copy requires an empty destination. Copy failures may leave partial
 /// contents for the caller to discard, as bootstrap does with its staging directory.
-pub(crate) fn copy_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
+pub(crate) fn copy_fallback_for_bootstrap(from: &Path, to: &Path) -> Result<(), Error> {
     boot_files(from, false)?;
     if to.try_exists()? {
         boot_files(to, true)?;
@@ -135,7 +135,7 @@ pub(crate) fn copy_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
     copy_entry(from, to)
 }
 
-/// Replaces an owned directory's complete contents, including nested and empty
+/// Replaces the UEFI fallback's complete boot tree, including nested and empty
 /// directories. Destination-only entries are retired after the new tree is staged.
 /// Copy failures propagate before current entries are renamed; retries discard partial staging.
 ///
@@ -143,7 +143,7 @@ pub(crate) fn copy_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
 /// Directories move with their complete subtrees. Publication across entries is
 /// not atomic: failure can leave a mix of current, staged and backup entries.
 /// Retries rebuild staging and recover selected backups whose current entry is absent.
-pub(crate) fn replace_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
+pub(crate) fn replace_fallback_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
     // Reject malformed or overlapping trees before modifying destination entries.
     boot_files(from, false)?;
     if to.try_exists()? {
@@ -272,7 +272,7 @@ mod tests {
                 ..Default::default()
             };
             ctx.spec.os.uefi_fallback = mode;
-            copy_boot_files(&source, &target).unwrap();
+            copy_fallback_for_bootstrap(&source, &target).unwrap();
             for _ in 0..2 {
                 esp::set_uefi_fallback_contents(&ctx, ServicingState::CleanInstallStaged, &esp)
                     .unwrap();
@@ -300,7 +300,7 @@ mod tests {
         for name in ["grub.cfg", "grubx64-noprefix.efi", "future-loader.efi"] {
             fs::write(source.join(name), name).unwrap();
         }
-        copy_boot_files(&source, &target).unwrap();
+        copy_fallback_for_bootstrap(&source, &target).unwrap();
         for name in ["grub.cfg", "grubx64-noprefix.efi", "future-loader.efi"] {
             assert_eq!(
                 fs::read(source.join(name)).unwrap(),
@@ -328,7 +328,7 @@ mod tests {
                 "fifo" => unistd::mkfifo(&ordinary, Mode::S_IRUSR).unwrap(),
                 _ => unreachable!(),
             }
-            replace_boot_files(&source, &fallback).unwrap_err();
+            replace_fallback_boot_files(&source, &fallback).unwrap_err();
             assert_eq!(fs::read(fallback.join("bootx64.efi")).unwrap(), b"retained");
             assert_eq!(fs::read(&outside).unwrap(), b"outside");
         }
@@ -343,7 +343,7 @@ mod tests {
         let target = temp.path().join("AZLB");
         create_boot_files(&source, b"new");
         create_boot_files(&active, b"retained");
-        copy_boot_files(&source, &target).unwrap();
+        copy_fallback_for_bootstrap(&source, &target).unwrap();
         for name in FILES {
             assert_eq!(fs::read(target.join(name)).unwrap(), b"new");
             assert_eq!(fs::read(active.join(name)).unwrap(), b"retained");
@@ -361,7 +361,7 @@ mod tests {
         fs::write(secondary.join("image-specific.bin"), b"\0\xffpayload").unwrap();
         fs::write(secondary.join("drivers/ignored.dll"), b"ignored").unwrap();
 
-        copy_boot_files(&source, &target).unwrap();
+        copy_fallback_for_bootstrap(&source, &target).unwrap();
         assert_eq!(
             fs::read(target.join("Windows/System32/image-specific.bin")).unwrap(),
             b"\0\xffpayload"
@@ -374,11 +374,11 @@ mod tests {
 
         fs::remove_dir_all(source.join("Windows")).unwrap();
         let without_secondary = temp.path().join("without-secondary");
-        copy_boot_files(&source, &without_secondary).unwrap();
+        copy_fallback_for_bootstrap(&source, &without_secondary).unwrap();
         assert!(!without_secondary.join("Windows").exists());
         fs::create_dir_all(&secondary).unwrap();
         let empty_secondary = temp.path().join("empty-secondary");
-        copy_boot_files(&source, &empty_secondary).unwrap();
+        copy_fallback_for_bootstrap(&source, &empty_secondary).unwrap();
         assert!(empty_secondary.join("Windows/System32").is_dir());
 
         for name in ["payload.dll.new", "payload.dll.old"] {
@@ -389,7 +389,7 @@ mod tests {
         }
         unix_fs::symlink(temp.path().join("outside"), secondary.join("linked.dll")).unwrap();
         let rejected = temp.path().join("rejected");
-        assert!(copy_boot_files(&source, &rejected).is_err());
+        assert!(copy_fallback_for_bootstrap(&source, &rejected).is_err());
         assert!(!rejected.exists());
     }
 
@@ -406,13 +406,13 @@ mod tests {
         fs::write(target.join("component"), b"old file").unwrap();
         fs::write(target.join("component.new/retired"), b"partial").unwrap();
         fs::write(target.join("loader.old/retired"), b"old directory").unwrap();
-        replace_boot_files(&source, &target).unwrap();
-        replace_boot_files(&source, &target).unwrap();
+        replace_fallback_boot_files(&source, &target).unwrap();
+        replace_fallback_boot_files(&source, &target).unwrap();
         assert_eq!(fs::read(target.join("component/current")).unwrap(), b"new");
         assert_eq!(fs::read(target.join("loader")).unwrap(), b"loader");
         assert!(!target.join("component/retired").exists());
         assert!(!target.join("loader.old").exists());
-        assert!(replace_boot_files(&source, &source.join("child")).is_err());
+        assert!(replace_fallback_boot_files(&source, &source.join("child")).is_err());
         assert!(!source.join("child").exists());
     }
 
@@ -441,8 +441,8 @@ mod tests {
             fs::write(fallback.join(secondary).join(name), b"obsolete").unwrap();
         }
 
-        replace_boot_files(&source, &fallback).unwrap();
-        replace_boot_files(&source, &fallback).unwrap();
+        replace_fallback_boot_files(&source, &fallback).unwrap();
+        replace_fallback_boot_files(&source, &fallback).unwrap();
         assert_eq!(
             fs::read(fallback.join(secondary).join("current.dll")).unwrap(),
             b"current"
@@ -458,7 +458,7 @@ mod tests {
         }
 
         fs::remove_dir_all(source.join("Windows")).unwrap();
-        replace_boot_files(&source, &fallback).unwrap();
+        replace_fallback_boot_files(&source, &fallback).unwrap();
         assert!(!fallback.join(secondary).join("current.dll").exists());
         filepaths(&fallback).unwrap();
     }
@@ -491,7 +491,7 @@ mod tests {
         fs::create_dir_all(&source).unwrap();
         fs::write(source.join("future-loader.efi"), b"loader").unwrap();
         unistd::mkfifo(&source.join("unsafe"), Mode::S_IRUSR).unwrap();
-        copy_boot_files(&source, &target).unwrap_err();
+        copy_fallback_for_bootstrap(&source, &target).unwrap_err();
         assert!(!target.exists());
     }
 
@@ -505,11 +505,11 @@ mod tests {
         create_boot_files(&source, b"new");
         fs::create_dir(&outside).unwrap();
         unix_fs::symlink(&outside, &target).unwrap();
-        assert!(replace_boot_files(&source, &target).is_err());
+        assert!(replace_fallback_boot_files(&source, &target).is_err());
         fs::remove_file(&target).unwrap();
         fs::remove_file(source.join("lxhvloader.dll")).unwrap();
         unix_fs::symlink(outside.join("dll"), source.join("lxhvloader.dll")).unwrap();
-        assert!(copy_boot_files(&source, &target).is_err());
+        assert!(copy_fallback_for_bootstrap(&source, &target).is_err());
         assert!(fs::read_dir(&outside).unwrap().next().is_none());
     }
 
@@ -528,15 +528,15 @@ mod tests {
         .unwrap();
         fs::write(fallback.join("second.efi.new"), b"partial").unwrap();
         fs::write(fallback.join("lxhvloader.dll.old"), b"stale").unwrap();
-        replace_boot_files(&source, &fallback).unwrap();
-        replace_boot_files(&source, &fallback).unwrap();
+        replace_fallback_boot_files(&source, &fallback).unwrap();
+        replace_fallback_boot_files(&source, &fallback).unwrap();
         filepaths(&fallback).unwrap();
         for name in FILES {
             assert_eq!(fs::read(fallback.join(name)).unwrap(), b"new");
             assert!(!fallback.join(format!("{name}.new")).exists());
             assert!(!fallback.join(format!("{name}.old")).exists());
         }
-        assert!(replace_boot_files(&source, &source).is_err());
+        assert!(replace_fallback_boot_files(&source, &source).is_err());
     }
 
     /// Enabled fallback policies copy all slot boot files and preserve the retained slot.
