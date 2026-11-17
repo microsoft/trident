@@ -854,21 +854,16 @@ impl Trident {
             )
         });
 
-        // Report success only after provisioning, not when rollback is required.
-        if matches!(
-            rollback_result,
-            Ok(BootValidationResult::ValidBootProvisioned)
-        ) {
-            if let Some(ref orchestrator) = self.orchestrator {
-                orchestrator.report_success(Some(
-                    serde_yaml::to_string(&datastore.host_status())
-                        .unwrap_or("Failed to serialize Host Status".into()),
-                ))
-            }
-        }
-
         match rollback_result {
-            Ok(BootValidationResult::ValidBootProvisioned) => Ok((ExitKind::Done, servicing_type)),
+            Ok(BootValidationResult::ValidBootProvisioned) => {
+                if let Some(ref orchestrator) = self.orchestrator {
+                    orchestrator.report_success(Some(
+                        serde_yaml::to_string(&datastore.host_status())
+                            .unwrap_or("Failed to serialize Host Status".into()),
+                    ))
+                }
+                Ok((ExitKind::Done, servicing_type))
+            }
             Ok(BootValidationResult::InvalidHypervisor(e))
             | Ok(BootValidationResult::ValidBootHealthCheckFailed(e)) => {
                 // The caller must reboot to complete automatic recovery.
