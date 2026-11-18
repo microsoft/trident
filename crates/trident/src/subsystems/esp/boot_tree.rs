@@ -7,12 +7,13 @@
 
 use std::{
     fs,
-    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
 use anyhow::{ensure, Context, Error};
 use walkdir::WalkDir;
+
+use osutils::files;
 
 /// Returns sorted root-relative file paths, validating empty directories without listing them.
 /// `temporary` permits replacement suffixes in destinations left by interrupted work.
@@ -66,67 +67,6 @@ fn is_temporary(name: &str) -> bool {
     })
 }
 
-/// Resolves existing ancestors so overlap checks also cover destinations not yet created.
-fn canonical_path(path: &Path) -> Result<PathBuf, Error> {
-    match fs::canonicalize(path) {
-        Ok(path) => Ok(path),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(canonical_path(
-            path.parent().context("Missing boot directory parent")?,
-        )?
-        .join(path.file_name().context("Missing boot directory name")?)),
-        Err(error) => Err(error.into()),
-    }
-}
-
-/// Prevents recursive copying into the source or retiring entries that contain the source.
-fn ensure_disjoint(from: &Path, to: &Path) -> Result<(), Error> {
-    let from = canonical_path(from)?;
-    let to = canonical_path(to)?;
-    ensure!(
-        !from.starts_with(&to) && !to.starts_with(&from),
-        "Source and destination boot trees overlap"
-    );
-    Ok(())
-}
-
-/// Copies an already-validated entry, creating even empty directories.
-/// Existing destination-only entries are not retired, and failure can leave a partial copy.
-fn copy_entry(from: &Path, to: &Path) -> Result<(), Error> {
-    for entry in WalkDir::new(from)
-        .follow_links(false)
-        .follow_root_links(false)
-    {
-        let entry = entry?;
-        let destination = if entry.depth() == 0 {
-            to.to_path_buf()
-        } else {
-            to.join(entry.path().strip_prefix(from)?)
-        };
-        if entry.file_type().is_dir() {
-            fs::create_dir_all(destination)?;
-        } else {
-            ensure!(
-                entry.file_type().is_file(),
-                "Not a regular boot file: {}",
-                entry.path().display()
-            );
-            fs::copy(entry.path(), destination)?;
-        }
-    }
-    Ok(())
-}
-
-/// Removes an owned entry; missing entries are expected during retry cleanup.
-fn remove_entry(path: &Path) -> Result<(), Error> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(path)?,
-        Ok(_) => fs::remove_file(path)?,
-        Err(error) if error.kind() == ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
-    }
-    Ok(())
-}
-
 /// Copies the fallback boot tree into temporary slot-bootstrap staging.
 /// An exact copy requires an empty destination. Copy failures may leave partial
 /// contents for the caller to discard, as bootstrap does with its staging directory.
@@ -135,8 +75,8 @@ pub(crate) fn copy_fallback_for_bootstrap(from: &Path, to: &Path) -> Result<(), 
     if to.try_exists()? {
         boot_files(to, true)?;
     }
-    ensure_disjoint(from, to)?;
-    copy_entry(from, to)
+    files::ensure_disjoint_paths(from, to)?;
+    files::copy_regular_entry(from, to)
 }
 
 /// Replaces the UEFI fallback's complete boot tree, including nested and empty
@@ -153,7 +93,7 @@ pub(crate) fn replace_fallback_boot_files(from: &Path, to: &Path) -> Result<(), 
     if to.try_exists()? {
         boot_files(to, true)?;
     }
-    ensure_disjoint(from, to)?;
+    files::ensure_disjoint_paths(from, to)?;
     let mut entries = fs::read_dir(from)?
         .map(|entry| entry.map(|entry| entry.file_name()))
         .collect::<Result<Vec<_>, _>>()?;
@@ -168,15 +108,15 @@ pub(crate) fn replace_fallback_boot_files(from: &Path, to: &Path) -> Result<(), 
         // before risking another copy; otherwise the current entry wins.
         if previous.try_exists()? {
             if destination.try_exists()? {
-                remove_entry(&previous)?;
+                files::remove_entry_if_exists(&previous)?;
             } else {
                 fs::rename(&previous, &destination)?;
             }
         }
         // Never merge a partial staged directory: it may contain retired files.
         let staged = to.join(format!("{}.new", name.to_string_lossy()));
-        remove_entry(&staged)?;
-        copy_entry(&from.join(name), &staged)?;
+        files::remove_entry_if_exists(&staged)?;
+        files::copy_regular_entry(from.join(name), &staged)?;
     }
 
     // Snapshot before renaming so directory iteration cannot skip changed entries.
@@ -186,7 +126,7 @@ pub(crate) fn replace_fallback_boot_files(from: &Path, to: &Path) -> Result<(), 
         let name = name.to_str().context("Non-UTF-8 boot file name")?;
         if !is_temporary(name) {
             let previous = to.join(format!("{name}.old"));
-            remove_entry(&previous)?;
+            files::remove_entry_if_exists(&previous)?;
             fs::rename(entry.path(), previous)?;
         }
     }
@@ -208,7 +148,7 @@ pub(crate) fn replace_fallback_boot_files(from: &Path, to: &Path) -> Result<(), 
                 .to_str()
                 .context("Non-UTF-8 boot file name")?,
         ) {
-            remove_entry(&entry.path())?;
+            files::remove_entry_if_exists(entry.path())?;
         }
     }
     Ok(())

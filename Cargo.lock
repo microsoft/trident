@@ -2304,6 +2304,7 @@ dependencies = [
  "thiserror 1.0.69",
  "trident_api",
  "uuid",
+ "walkdir",
  "which",
  "xattr",
 ]
