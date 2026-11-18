@@ -91,6 +91,9 @@ the test controller must explicitly commit the staged update.
 
 ## Manual QEMU servicing test
 
+See [Synthetic ACL Tests](../../../docs/Development/Testing/Synthetic-ACL-Tests.md)
+for local setup, fixture preparation, controller builds and diagnostics.
+
 Both variants use the same storm scenario on a Linux KVM/libvirt worker:
 
 ```bash
