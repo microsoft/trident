@@ -6,12 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -126,174 +124,6 @@ func TestRejectInvalidStandardArtifacts(t *testing.T) {
 	})
 }
 
-type fakeGuest struct {
-	failErr          error
-	pendingVolume    string
-	calls            []string
-	failCommand      string
-	failOccurrence   int
-	commandMatches   int
-	failBoot         int
-	boots            int
-	disconnect       bool
-	volume           string
-	status           string
-	statusCheckpoint string
-	statusOutput     string
-}
-
-func (f *fakeGuest) command(command string) (string, error) {
-	f.calls = append(f.calls, command)
-	if f.failCommand != "" && strings.Contains(command, f.failCommand) {
-		f.commandMatches++
-		if f.failOccurrence == 0 || f.commandMatches == f.failOccurrence {
-			if f.failErr != nil {
-				return "", f.failErr
-			}
-			return "", errors.New("guest assertion or operation failed")
-		}
-	}
-	if f.volume == "" {
-		f.volume, f.status = "volume-a", "provisioned"
-	}
-	if strings.Contains(command, "--allowed-operations stage") {
-		f.status = "ab-update-staged"
-	}
-	rebooting := strings.Contains(command, "--allowed-operations finalize") || strings.HasPrefix(command, "trident rollback")
-	if rebooting {
-		if f.volume == "volume-a" {
-			f.pendingVolume = "volume-b"
-		} else {
-			f.pendingVolume = "volume-a"
-		}
-		f.status = "ab-update-finalized"
-	}
-	if strings.HasPrefix(command, "trident commit") {
-		f.status = "provisioned"
-	}
-	if strings.HasPrefix(command, "cat /var/lib/trident/test-evidence/") {
-		if f.statusCheckpoint != "" && strings.Contains(command, "/"+f.statusCheckpoint+"/status") {
-			return f.statusOutput, nil
-		}
-		return fmt.Sprintf("servicingState: %s\nabActiveVolume: %s\n", f.status, f.volume), nil
-	}
-	if f.disconnect && (strings.HasPrefix(command, "trident rollback") || command == "systemctl reboot") {
-		return "", errDisconnected
-	}
-	return "", nil
-}
-func (f *fakeGuest) waitBoot(previous string) (string, error) {
-	f.boots++
-	f.calls = append(f.calls, "wait:"+previous)
-	if f.boots == f.failBoot {
-		return "", errors.New("no new boot")
-	}
-	if f.pendingVolume != "" {
-		f.volume = f.pendingVolume
-		f.pendingVolume = ""
-	}
-	return fmt.Sprintf("boot-%d", f.boots), nil
-}
-func TestManualServicingUpdatesRollsBackAndUpdatesBothSlots(t *testing.T) {
-	g := &fakeGuest{disconnect: true}
-	if err := service(g, artifactInfo{Variant: "standard"}); err != nil {
-		t.Fatal(err)
-	}
-	calls := strings.Join(g.calls, "\n")
-	steps := []string{
-		"guest-test.sh baseline standard",
-		"--allowed-operations stage",
-		"guest-test.sh update-1-staged standard",
-		"--allowed-operations finalize",
-		"systemctl reboot",
-		"wait:boot-1",
-		"trident commit",
-		"guest-test.sh update-1 standard",
-		"cat /var/lib/trident/test-evidence/update-1/status",
-		"trident rollback --ab",
-		"wait:boot-2",
-		"trident commit",
-		"guest-test.sh rollback standard",
-		"cat /var/lib/trident/test-evidence/rollback/status",
-		"--allowed-operations stage",
-		"guest-test.sh update-2-staged standard",
-		"--allowed-operations finalize",
-		"systemctl reboot",
-		"wait:boot-3",
-		"trident commit",
-		"guest-test.sh update-2 standard",
-		"cat /var/lib/trident/test-evidence/update-2/status",
-		"--allowed-operations stage",
-		"guest-test.sh update-3-staged standard",
-		"--allowed-operations finalize",
-		"systemctl reboot",
-		"wait:boot-4",
-		"trident commit",
-		"guest-test.sh update-3 standard",
-		"cat /var/lib/trident/test-evidence/update-3/status",
-		"systemctl reboot",
-		"wait:boot-5",
-		"guest-test.sh persisted standard",
-	}
-	remaining := calls
-	for _, step := range steps {
-		i := strings.Index(remaining, step)
-		if i < 0 {
-			t.Fatalf("missing/out-of-order step %q: %s", step, calls)
-		}
-		remaining = remaining[i+len(step):]
-	}
-	if strings.Count(calls, "trident commit") != 4 || g.boots != 6 {
-		t.Fatalf("missing explicit commits or verified boots: %s", calls)
-	}
-	if strings.Contains(calls, "test-evidence/baseline/status") {
-		t.Fatal("queried initial status before native ACL adoption")
-	}
-}
-func TestManualServicingRejectsFinalizeDisconnectBeforeExplicitReboot(t *testing.T) {
-	g := &fakeGuest{failCommand: "--allowed-operations finalize", failErr: errDisconnected}
-	if err := service(g, artifactInfo{Variant: "standard"}); !errors.Is(err, errDisconnected) {
-		t.Fatalf("unexpected finalize disconnect accepted: %v", err)
-	}
-	if strings.Contains(strings.Join(g.calls, "\n"), "systemctl reboot") || g.boots != 1 {
-		t.Fatalf("rebooted after incomplete finalize: %v", g.calls)
-	}
-}
-func TestManualServicingStopsOnFailure(t *testing.T) {
-	tests := []struct {
-		name, command string
-		boot          int
-		occurrence    int
-		absent        string
-	}{
-		{name: "stage", command: "--allowed-operations stage", absent: "--allowed-operations finalize"},
-		{name: "staged evidence", command: "guest-test.sh update-1-staged", absent: "--allowed-operations finalize"},
-		{name: "finalize operation failure", command: "--allowed-operations finalize", absent: "trident commit"},
-		{name: "manual reboot operation failure", command: "systemctl reboot", absent: "wait:boot-1"},
-		{name: "finalize does not reboot", boot: 2, absent: "trident commit"},
-		{name: "wrong updated identity", command: "guest-test.sh update-1 standard", absent: "trident rollback"},
-		{name: "explicit commit", command: "trident commit", absent: "trident rollback"},
-		{name: "rollback command", command: "trident rollback", absent: "guest-test.sh rollback"},
-		{name: "rollback reboot missing", boot: 3, absent: "guest-test.sh rollback"},
-		{name: "rollback commit", command: "trident commit", occurrence: 2, absent: "guest-test.sh rollback"},
-		{name: "post rollback update", command: "/update-2-stage.log", absent: "guest-test.sh update-2-staged"},
-		{name: "final update", command: "/update-3-finalize.log", absent: "guest-test.sh update-3 standard"},
-		{name: "persisted reboot missing", boot: 6, absent: "guest-test.sh persisted"},
-		{name: "persisted evidence", command: "guest-test.sh persisted"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := &fakeGuest{failCommand: tt.command, failBoot: tt.boot, failOccurrence: tt.occurrence}
-			if err := service(g, artifactInfo{Variant: "standard"}); err == nil {
-				t.Fatal("scenario passed despite required operation or evidence failure")
-			}
-			if tt.absent != "" && strings.Contains(strings.Join(g.calls, "\n"), tt.absent) {
-				t.Fatalf("continued after failure: %v", g.calls)
-			}
-		})
-	}
-}
-
 func TestCleanupPreservesBootDiskOnlyOnFailure(t *testing.T) {
 	for _, successful := range []bool{false, true} {
 		name := "failure"
@@ -363,48 +193,6 @@ func TestVariantMetadataAndManifestMustAgree(t *testing.T) {
 	}
 }
 
-func TestMSHVUsesSharedManualLifecycleAndVariantAssertions(t *testing.T) {
-	g := &fakeGuest{disconnect: true}
-	if err := service(g, artifactInfo{Variant: "mshv"}); err != nil {
-		t.Fatal(err)
-	}
-	for _, phase := range []string{"baseline", "update-1-staged", "update-1", "rollback", "update-2-staged", "update-2", "update-3-staged", "update-3", "persisted"} {
-		if !strings.Contains(strings.Join(g.calls, "\n"), "guest-test.sh "+phase+" mshv ") {
-			t.Fatalf("missing MSHV assertion for phase %s: %v", phase, g.calls)
-		}
-	}
-}
-
-func TestLocalKeepsSSHBannerOutOfBootID(t *testing.T) {
-	dir := fixture(t, []byte(testMetadata))
-	logPath := filepath.Join(dir, "controller.log")
-	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer log.Close()
-	r := &runner{log: log}
-	const bootID = "05c4ce22-b11d-45de-91f3-b3b73e88a4aa"
-	const banner = "Welcome to Microsoft Azure Linux 3.0 (x86_64)"
-	output, err := r.local(5*time.Second, "sh", "-c", "printf '%s\\n' '"+banner+"' >&2; printf '%s\\n' '"+bootID+"'")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = uuid.Parse(output); err != nil || output != bootID {
-		t.Fatalf("stdout boot ID contaminated: %q, %v", output, err)
-	}
-	data, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "stderr:\n"+banner+"\n") {
-		t.Fatalf("stderr banner missing from controller log: %s", data)
-	}
-	if !strings.Contains(string(data), "stdout:\n"+bootID+"\n") {
-		t.Fatalf("stdout boot ID missing from controller log: %s", data)
-	}
-}
-
 func TestEvidenceFailureStillSyncsWithoutMaskingErrors(t *testing.T) {
 	evidenceErr := errors.New("tar missing")
 	syncErr := errors.New("sync SSH disconnected")
@@ -415,24 +203,5 @@ func TestEvidenceFailureStillSyncsWithoutMaskingErrors(t *testing.T) {
 	}
 	if !errors.Is(err, evidenceErr) || !errors.Is(err, syncErr) {
 		t.Fatalf("diagnostic failure masked: %v", err)
-	}
-}
-
-func TestManualServicingRejectsUnprovisionedOrWrongVolumeAtEveryCheckpoint(t *testing.T) {
-	for _, checkpoint := range []string{"update-1", "rollback", "update-2", "update-3", "persisted"} {
-		for _, invalidStatus := range []string{
-			"servicingState: ab-update-finalized\nabActiveVolume: volume-a\n",
-			"servicingState: provisioned\nabActiveVolume: volume-c\n",
-		} {
-			t.Run(checkpoint+"/"+invalidStatus, func(t *testing.T) {
-				g := &fakeGuest{statusCheckpoint: checkpoint, statusOutput: invalidStatus}
-				if err := service(g, artifactInfo{Variant: "standard"}); err == nil {
-					t.Fatal("accepted incorrect Host Status")
-				}
-				if !strings.HasSuffix(g.calls[len(g.calls)-1], "/"+checkpoint+"/status") {
-					t.Fatalf("continued servicing after invalid status: %v", g.calls)
-				}
-			})
-		}
 	}
 }

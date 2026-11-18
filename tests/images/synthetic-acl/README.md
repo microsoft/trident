@@ -110,6 +110,14 @@ status; the first update adopts the native ACL installation.
 Each update separately stages and finalizes. Slot identity, image generation,
 verity and retained boot-tree hashes are checked throughout, including one
 further reboot after the last commit.
+The scenario and assertions are Go code under `tools/storm/acl`. VM creation,
+graceful shutdown/start, SSH/SFTP, Trident invocation and Host Status parsing
+reuse storm's shared helpers. Both update and rollback separate staging from
+finalization; staged checks require the running slot and boot ID to remain
+unchanged. Go hashes slot boot files through privileged SFTP rather than
+running guest shell assertions. Checkpoint measurements and complete command
+output are saved on the controller before reboot and archived as
+`guest-evidence.tar.gz`, so a failed boot cannot discard earlier evidence.
 Updates use `internalParams.noTransition: true`; their complete command output
 is captured in the controller log before an explicit reboot. Native rollback
 restores the derived baseline configuration, which has no `noTransition`

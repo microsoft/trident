@@ -35,12 +35,17 @@ func CheckActiveVolume(cfg stormvmconfig.VMConfig, vmIP string, expectedVolume s
 
 // ValidateHostStatus checks a captured Host Status independently of its SSH transport.
 func ValidateHostStatus(hostStatusStr, expectedVolume string) error {
+	return ValidateHostStatusState(hostStatusStr, expectedVolume, "provisioned")
+}
+
+// ValidateHostStatusState also supports staged checkpoints before a reboot or commit.
+func ValidateHostStatusState(hostStatusStr, expectedVolume, expectedState string) error {
 	hostStatus := make(map[string]interface{})
 	if err := yaml.Unmarshal([]byte(hostStatusStr), &hostStatus); err != nil {
 		return fmt.Errorf("failed to unmarshal YAML output: %w", err)
 	}
-	if hostStatus["servicingState"] != "provisioned" {
-		return fmt.Errorf("trident state is not 'provisioned': %v", hostStatus["servicingState"])
+	if hostStatus["servicingState"] != expectedState {
+		return fmt.Errorf("trident state is not '%s': %v", expectedState, hostStatus["servicingState"])
 	}
 	hsActiveVol := hostStatus["abActiveVolume"]
 	if hsActiveVol != expectedVolume {

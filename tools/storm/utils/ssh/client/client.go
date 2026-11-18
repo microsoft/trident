@@ -1,10 +1,13 @@
 package client
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"time"
+	"tridenttools/storm/utils/sshutils"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
@@ -44,9 +47,27 @@ func OpenSshClient(settings stormsshconfig.SshCliSettings) (*ssh.Client, error) 
 }
 
 func RunCommand(client *ssh.Client, command string) (*stormsshconfig.SshCmdOutput, error) {
+	return RunCommandContext(context.Background(), client, command)
+}
+
+func OpenSshClientContext(ctx context.Context, settings stormsshconfig.SshCliSettings) (*ssh.Client, error) {
+	cfg, err := settings.IntoClientConfig()
+	if err != nil {
+		return nil, err
+	}
+	return sshutils.CreateSshClient(ctx, *cfg)
+}
+
+// RunCommandContext preserves separate output streams and cancels by closing the connection.
+func RunCommandContext(ctx context.Context, client *ssh.Client, command string) (*stormsshconfig.SshCmdOutput, error) {
 	if client == nil {
 		return nil, fmt.Errorf("SSH client is nil")
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = client.Close() })
+	defer stop()
 
 	session, err := client.NewSession()
 	if err != nil {
@@ -54,38 +75,18 @@ func RunCommand(client *ssh.Client, command string) (*stormsshconfig.SshCmdOutpu
 	}
 	defer session.Close()
 
-	stdout, err := session.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
-
-	stderr, err := session.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-
-	err = session.Start(command)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start command: %w", err)
-	}
-
-	output, err := io.ReadAll(stdout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read stdout: %w", err)
-	}
-
-	errOutput, err := io.ReadAll(stderr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read stderr: %w", err)
-	}
-
+	var stdout, stderr bytes.Buffer
+	session.Stdout, session.Stderr = &stdout, &stderr
+	err = session.Run(command)
 	out := &stormsshconfig.SshCmdOutput{
-		Stdout: string(output),
-		Stderr: string(errOutput),
+		Stdout: stdout.String(),
+		Stderr: stderr.String(),
 		Status: 0,
 	}
-
-	err = session.Wait()
+	if ctx.Err() != nil {
+		out.Status = -1
+		return out, ctx.Err()
+	}
 	if err != nil {
 		if exitErr, ok := err.(*ssh.ExitError); ok {
 			// If we failed with an exit error, capture the exit status and set

@@ -1,0 +1,215 @@
+package acl
+
+import (
+	"encoding/json"
+	"fmt"
+	"maps"
+	"regexp"
+	"slices"
+	"strings"
+
+	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
+	stormactivevolume "tridenttools/storm/utils/trident/activevolume"
+)
+
+type fileDigest struct {
+	SHA256 string
+	Size   int64
+}
+
+type snapshot struct {
+	BootID, Kernel, OSRelease, Generation, TridentSHA                      string
+	UsrUUID, RootHash, Verity, Source, Options, Ancestors, Bootctl, Status string
+	MSHVPresent, MSHVCharacter                                             bool
+	Trees                                                                  map[string]map[string]fileDigest
+}
+
+func checksum(output string) (string, error) {
+	fields := strings.Fields(output)
+	if len(fields) < 1 || !isDigest(fields[0], 32) {
+		return "", fmt.Errorf("invalid SHA256 output: %q", output)
+	}
+	return strings.ToLower(fields[0]), nil
+}
+
+func verityRootHash(output string) (string, error) {
+	for _, line := range strings.Split(output, "\n") {
+		key, value, found := strings.Cut(strings.TrimSpace(line), ":")
+		if found && key == "root hash" {
+			hash := strings.TrimSpace(value)
+			if isDigest(hash, 32) {
+				return strings.ToLower(hash), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("verity status has no SHA256 root hash")
+}
+
+func validateSnapshot(current, baseline, reference snapshot, expected checkpoint, info artifactInfo) error {
+	if expected.Slot != "a" && expected.Slot != "b" {
+		return fmt.Errorf("invalid expected slot %q", expected.Slot)
+	}
+	partition, slot, other := "sda2", "AZLA", "AZLB"
+	if expected.Slot == "b" {
+		partition, slot, other = "sda4", "AZLB", "AZLA"
+	}
+	id, err := uuid.Parse(strings.TrimSpace(current.BootID))
+	if err != nil || id == uuid.Nil {
+		return fmt.Errorf("invalid boot ID %q", current.BootID)
+	}
+	if !slices.Contains(strings.Fields(current.Ancestors), partition) {
+		return fmt.Errorf("/usr is not backed by expected slot partition %s", partition)
+	}
+	if current.Source != "/dev/mapper/usr" || !slices.Contains(strings.Split(current.Options, ","), "ro") || !strings.Contains(strings.ToLower(current.Verity), "verity") || !isDigest(current.RootHash, 32) {
+		return fmt.Errorf("/usr must be read-only and verity-backed")
+	}
+	if current.Generation != expected.Generation || !slices.Contains(strings.Split(current.OSRelease, "\n"), "VARIANT_ID=azurecontainerlinux") {
+		return fmt.Errorf("expected ACL generation %q, got %q", expected.Generation, current.Generation)
+	}
+	if current.TridentSHA != info.TridentSHA256 {
+		return fmt.Errorf("Trident binary does not match artifact provenance")
+	}
+	if info.Variant == "mshv" {
+		if !strings.Contains(current.Kernel, "mshv") || !current.MSHVPresent || !current.MSHVCharacter {
+			return fmt.Errorf("MSHV kernel and character device /dev/mshv required")
+		}
+	} else if strings.Contains(current.Kernel, "mshv") || current.MSHVPresent {
+		return fmt.Errorf("regular kernel must not expose MSHV")
+	}
+	if expected.Phase == "baseline" {
+		if len(current.Trees["BOOT"]) == 0 {
+			return fmt.Errorf("baseline fallback boot tree is empty")
+		}
+		return nil
+	}
+	if err := stormactivevolume.ValidateHostStatusState(current.Status, "volume-"+expected.Slot, expected.State); err != nil {
+		return err
+	}
+	var status map[string]any
+	if err := yaml.Unmarshal([]byte(current.Status), &status); err != nil {
+		return err
+	}
+	if _, exists := status["lastError"]; exists {
+		return fmt.Errorf("Trident status contains lastError: %v", status["lastError"])
+	}
+	if current.TridentSHA != baseline.TridentSHA {
+		return fmt.Errorf("Trident binary changed during servicing")
+	}
+	expectedUUID, expectedHash := info.TargetUUID, info.TargetHash
+	if expected.Generation == "base" {
+		expectedUUID, expectedHash = baseline.UsrUUID, baseline.RootHash
+	}
+	if current.UsrUUID != expectedUUID || current.RootHash != expectedHash {
+		return fmt.Errorf("slot %s /usr UUID or verity hash does not match %s image", expected.Slot, expected.Generation)
+	}
+	referenceSlot := slot
+	if expected.Previous == "baseline" {
+		referenceSlot = "BOOT"
+	}
+	if len(current.Trees[slot]) == 0 || !maps.Equal(current.Trees[slot], reference.Trees[referenceSlot]) {
+		return fmt.Errorf("%s boot tree changed unexpectedly", slot)
+	}
+	if strings.HasSuffix(expected.Phase, "-staged") {
+		if current.BootID != reference.BootID || !maps.Equal(current.Trees["BOOT"], reference.Trees["BOOT"]) {
+			return fmt.Errorf("staging changed the running boot or fallback tree")
+		}
+		if len(current.Trees[other]) == 0 {
+			return fmt.Errorf("inactive %s boot tree missing", other)
+		}
+		if expected.State == "manual-rollback-ab-staged" && !maps.Equal(current.Trees[other], reference.Trees[other]) {
+			return fmt.Errorf("rollback staging modified retained %s", other)
+		}
+		return nil
+	}
+	if !maps.Equal(current.Trees[other], reference.Trees[other]) || !maps.Equal(current.Trees["BOOT"], current.Trees[slot]) {
+		return fmt.Errorf("inactive tree changed or committed fallback does not match %s", slot)
+	}
+	bootFile := `[^/]+\.efi`
+	if info.Variant == "mshv" {
+		bootFile = `second\.efi`
+		for _, name := range []string{"bootx64.efi", "grubx64.efi", "second.efi", "HvLoader.efi", "lxhvloader.dll", "Windows/System32/hvix64.exe", "Windows/System32/hvax64.exe", "Windows/System32/kdstub.dll"} {
+			if current.Trees[slot][strings.ToLower(name)].Size <= 0 {
+				return fmt.Errorf("%s/%s missing or empty", slot, name)
+			}
+		}
+	} else if _, exists := current.Trees[slot]["hvloader.efi"]; exists {
+		return fmt.Errorf("standard slot unexpectedly contains HvLoader")
+	}
+	if !regexp.MustCompile(`(?im)^\s*File: .*EFI/` + slot + `/` + bootFile + `\s*$`).MatchString(current.Bootctl) {
+		return fmt.Errorf("bootctl does not identify %s loader", slot)
+	}
+	return nil
+}
+
+func (r *runner) check(expected checkpoint, info artifactInfo) error {
+	out := snapshot{Trees: make(map[string]map[string]fileDigest)}
+	partition := "sda2"
+	if expected.Slot == "b" {
+		partition = "sda4"
+	}
+	measurements := []struct {
+		name, command string
+		target        *string
+	}{
+		{"boot-id", "cat /proc/sys/kernel/random/boot_id", &out.BootID},
+		{"cmdline", "cat /proc/cmdline", nil},
+		{"os-release", "cat /usr/lib/os-release", &out.OSRelease},
+		{"generation", "cat /usr/lib/synthetic-acl-generation", &out.Generation},
+		{"kernel", "uname -r", &out.Kernel},
+		{"usr-source", "findmnt -rn -o SOURCE /usr", &out.Source},
+		{"usr-options", "findmnt -rn -o OPTIONS /usr", &out.Options},
+		{"verity", "veritysetup status usr", &out.Verity},
+		{"usr-ancestors", "lsblk -s -rno NAME /dev/mapper/usr", &out.Ancestors},
+		{"usr-uuid", "blkid -s UUID -o value /dev/" + partition, &out.UsrUUID},
+		{"partitions", "lsblk -o NAME,SIZE,FSTYPE,PARTLABEL,UUID,MOUNTPOINTS", nil},
+		{"bootctl", "bootctl status --no-pager", &out.Bootctl},
+		{"journal", "journalctl -b --no-pager", nil},
+		{"trident.sha256", "sha256sum /usr/bin/trident", &out.TridentSHA},
+	}
+	for _, measurement := range measurements {
+		value, err := r.command(measurement.command)
+		if writeErr := r.save(expected.Phase+"/"+measurement.name, []byte(value)); writeErr != nil {
+			return writeErr
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", measurement.name, err)
+		}
+		if measurement.target != nil {
+			*measurement.target = strings.TrimSpace(value)
+		}
+	}
+	var err error
+	out.TridentSHA, err = checksum(out.TridentSHA)
+	if err != nil {
+		return err
+	}
+	out.RootHash, err = verityRootHash(out.Verity)
+	if err != nil {
+		return err
+	}
+	if err := r.readBootTrees(&out); err != nil {
+		return err
+	}
+	if expected.Phase != "baseline" {
+		out.Status, err = r.trident("--verbosity error get status", expected.Phase+"-status", false)
+		if err != nil {
+			return err
+		}
+		if err := r.save(expected.Phase+"/status", []byte(out.Status)); err != nil {
+			return err
+		}
+	}
+	raw, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := r.save(expected.Phase+"/snapshot.json", raw); err != nil {
+		return err
+	}
+	if err := validateSnapshot(out, r.snapshots["baseline"], r.snapshots[expected.Previous], expected, info); err != nil {
+		return err
+	}
+	r.snapshots[expected.Phase] = out
+	return nil
+}
