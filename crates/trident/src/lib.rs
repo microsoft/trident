@@ -309,17 +309,16 @@ impl Trident {
     where
         F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
-        // AbUpdateHealthCheckFailed is a special case where we would like
-        // to preserve the last error across any recovery. This aids in
-        // surfacing the original error.
+        // Preserve the original candidate rejection across failed recovery attempts.
         debug!(
             "Execute and record error with servicing state: {:?} and last error: {:?}",
             datastore.host_status().servicing_state,
             datastore.host_status().last_error
         );
-        let last_error_to_preserve = if datastore.host_status().servicing_state
-            == ServicingState::AbUpdateHealthCheckFailed
-        {
+        let last_error_to_preserve = if matches!(
+            datastore.host_status().servicing_state,
+            ServicingState::AbUpdateHealthCheckFailed | ServicingState::CommitFailed
+        ) {
             datastore.host_status().last_error.clone()
         } else {
             None
@@ -823,7 +822,7 @@ impl Trident {
         &mut self,
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
-        // Re-evaluate finalized or health-check-failed servicing to validate
+        // Re-evaluate finalized or rejected servicing to validate
         // either the target boot or the recovery boot.
         let servicing_state = datastore.host_status().servicing_state;
         if !matches!(
@@ -831,6 +830,7 @@ impl Trident {
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
+                | ServicingState::CommitFailed
                 | ServicingState::ManualRollbackAbFinalized
         ) {
             info!(
@@ -841,9 +841,9 @@ impl Trident {
         }
 
         let servicing_type = match servicing_state {
-            ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
-                ServicingType::AbUpdate
-            }
+            ServicingState::AbUpdateFinalized
+            | ServicingState::AbUpdateHealthCheckFailed
+            | ServicingState::CommitFailed => ServicingType::AbUpdate,
             ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
             ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
             _ => ServicingType::NoActiveServicing,
@@ -865,7 +865,8 @@ impl Trident {
                 }
                 Ok((ExitKind::Done, servicing_type))
             }
-            Ok(BootValidationResult::ValidBootHealthCheckFailed(e)) => {
+            Ok(BootValidationResult::InvalidHypervisor(e))
+            | Ok(BootValidationResult::ValidBootHealthCheckFailed(e)) => {
                 // The caller must reboot to complete automatic recovery.
                 debug!("Boot validation requires rollback: {e:?}");
                 Ok((ExitKind::NeedsReboot, servicing_type))
@@ -985,6 +986,51 @@ mod tests {
         config::{Disk, DiskSelector, HostConfigurationStaticValidationError, Operation, Storage},
         error::ErrorKind,
     };
+
+    #[test]
+    fn failed_recovery_preserves_original_validation_error() {
+        for state in [
+            ServicingState::CommitFailed,
+            ServicingState::AbUpdateHealthCheckFailed,
+        ] {
+            let directory = TempDir::new().unwrap();
+            let mut datastore =
+                DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
+            let original_error = serde_yaml::to_value(TridentError::new(
+                ServicingError::ValidateAbActiveHypervisor {
+                    expected_slot: "AZLB".into(),
+                    observed_slot: Some("AZLA".into()),
+                },
+            ))
+            .unwrap();
+            datastore
+                .with_host_status(|status| {
+                    status.servicing_state = state;
+                    status.last_error = Some(original_error.clone());
+                })
+                .unwrap();
+            let mut trident = Trident {
+                host_config: None,
+                orchestrator: None,
+                is_stream_image: false,
+            };
+
+            let error = trident
+                .execute_and_record_error(&mut datastore, |_| {
+                    Err::<(), _>(TridentError::new(InternalError::SerializeError))
+                })
+                .unwrap_err();
+            assert_eq!(
+                error.kind(),
+                &ErrorKind::Internal(InternalError::SerializeError)
+            );
+            assert_eq!(
+                datastore.host_status().last_error.as_ref(),
+                Some(&original_error)
+            );
+            assert_eq!(datastore.host_status().servicing_state, state);
+        }
+    }
 
     #[test]
     fn finalize_only_rejects_saved_selectors() {

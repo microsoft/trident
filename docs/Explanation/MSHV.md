@@ -165,10 +165,21 @@ slot's files, not a recorded configuration flag.
 
 ### Hypervisor Identity
 
-**Hypervisor identity validation is not implemented.** Commit and rollback
-do not query `/dev/mshv` or inspect ESP files to establish hypervisor identity.
+**Hypervisor identity validation is not implemented.** Boot validation calls an
+expected-slot identity hook when `/dev/mshv` appears present. This best-effort
+presence gate skips missing or uninspectable paths; the hook currently logs the
+expected slot and always succeeds. It does not inspect ESP contents or establish
+the identity of the running hypervisor.
 
-Commit and rollback do not yet identify the running hypervisor or detect a
-mixed hypervisor/OS boot. Root-device validation and health checks still
-apply; passing them does not establish hypervisor/OS consistency or
-production readiness.
+The recovery scaffolding reserves `CommitFailed` (stored as `commit-failed`) for
+a rejected A/B trial that requires returning to the retained OS. An identity-hook
+failure persists this state and the original error before requesting a reboot.
+Recovery validates the retained configuration and slot, preserves the original
+failure if recovery fails, and does not request another rollback on an identity
+failure during recovery. Health-check rejection remains the separate
+`AbUpdateHealthCheckFailed` state.
+
+The always-success stub cannot detect a mixed hypervisor/OS boot or trigger
+`CommitFailed` in production. Root-device validation and health checks still
+apply; passing them does not establish hypervisor/OS consistency or production
+readiness.

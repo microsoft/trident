@@ -50,6 +50,7 @@ mod preview {
             ServicingState::AbUpdateHealthCheckFailed => {
                 ProtoServicingState::UpdateAbHealthCheckFailed
             }
+            ServicingState::CommitFailed => ProtoServicingState::CommitFailed,
         }
     }
 
@@ -111,6 +112,10 @@ mod preview {
                 (
                     ServicingState::AbUpdateHealthCheckFailed,
                     ProtoServicingState::UpdateAbHealthCheckFailed,
+                ),
+                (
+                    ServicingState::CommitFailed,
+                    ProtoServicingState::CommitFailed,
                 ),
             ];
 
