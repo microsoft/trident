@@ -98,34 +98,69 @@ class SyntheticAclTests(unittest.TestCase):
             ):
                 PREPARE.split_verity_cmdline(cmdline)
 
-    def test_variants_keep_layout_but_select_their_kernel(self):
-        expected = ["EFI-SYSTEM", "USR-A", "HASH-A", "USR-B", "HASH-B", "OEM", "ROOT"]
+    def test_stages_static_recipes_and_pins_pipeline_rpm(self):
         for variant in ("standard", "mshv"):
             with self.subTest(variant=variant):
-                config = PREPARE.config(variant, "base", "trident-pipeline-1.x86_64")
-                self.assertEqual(
-                    expected,
-                    [p["label"] for p in config["storage"]["disks"][0]["partitions"]],
+                work = self.directory / variant
+                work.mkdir()
+                PREPARE.prepare_inputs(
+                    work, variant, "trident-pipeline-1.x86_64", set(), self.directory
                 )
-                packages = config["os"]["packages"]
-                kernel = "kernel-mshv" if variant == "mshv" else "kernel"
-                other = "kernel" if variant == "mshv" else "kernel-mshv"
-                self.assertIn(kernel, packages["install"])
-                self.assertIn(other, packages["remove"])
-                self.assertIn("trident-pipeline-1.x86_64", packages["install"])
-                verity = config["storage"]["verity"][0]
-                self.assertEqual("usr", verity["name"])
-                self.assertEqual("part-label", verity["hashDeviceMountIdType"])
+                for name in (f"{variant}.yaml", "common.yaml", "configure.sh"):
+                    self.assertEqual(
+                        (PREPARE.HERE / name).read_bytes(), (work / name).read_bytes()
+                    )
+                self.assertEqual(
+                    {"packages": ["trident-pipeline-1.x86_64"]},
+                    json.loads((work / "trident-packages.json").read_text()),
+                )
 
     def test_removes_only_packages_present_in_base(self):
-        standard = PREPARE.config(
-            "standard", "base", "trident-pipeline", {"kernel", "grub2-efi-binary"}
+        for variant, installed, expected in (
+            ("standard", {"kernel", "grub2-efi-binary"}, ["grub2-efi-binary"]),
+            ("mshv", {"kernel", "shim"}, ["kernel", "shim"]),
+            ("standard", set(), []),
+        ):
+            with self.subTest(variant=variant, installed=installed):
+                work = self.directory / str(len(list(self.directory.iterdir())))
+                work.mkdir()
+                PREPARE.prepare_inputs(
+                    work, variant, "trident-pipeline", installed, self.directory
+                )
+                self.assertEqual(
+                    {"packages": expected},
+                    json.loads((work / "remove-packages.json").read_text()),
+                )
+
+    def test_generation_input_accepts_only_base_or_update(self):
+        generation = self.directory / "generation"
+        setup = (PREPARE.HERE / "configure.sh").read_text().split("mkdir -p", 1)[0]
+        setup = setup.replace("/usr/lib/synthetic-acl-generation", str(generation))
+        for phase in ("base", "update", "", "unexpected"):
+            with self.subTest(phase=phase):
+                generation.write_text(phase + "\n")
+                result = subprocess.run(
+                    ["bash", "-s", "--", "standard"],
+                    input=setup + 'printf "%s" "$phase"\n',
+                    text=True,
+                    capture_output=True,
+                )
+                if phase in ("base", "update"):
+                    self.assertEqual(0, result.returncode, result.stderr)
+                    self.assertEqual(phase, result.stdout)
+                else:
+                    self.assertNotEqual(0, result.returncode)
+
+    def test_stages_optional_mshv_license_tree(self):
+        licenses = self.directory / "licenses" / "package"
+        licenses.mkdir(parents=True)
+        (licenses / "EULA").write_text("payload license")
+        work = self.directory / "work"
+        work.mkdir()
+        PREPARE.prepare_inputs(work, "mshv", "trident-pipeline", set(), self.directory)
+        self.assertEqual(
+            "payload license", (work / "mshv-licenses/package/EULA").read_text()
         )
-        mshv = PREPARE.config("mshv", "base", "trident-pipeline", {"kernel", "shim"})
-        self.assertEqual(["grub2-efi-binary"], standard["os"]["packages"]["remove"])
-        self.assertEqual(["kernel", "shim"], mshv["os"]["packages"]["remove"])
-        empty = PREPARE.config("standard", "base", "trident-pipeline", set())
-        self.assertEqual([], empty["os"]["packages"]["remove"])
 
     def test_ssh_override_precedes_azure_linux_defaults(self):
         etc = self.directory / "etc"
@@ -133,6 +168,9 @@ class SyntheticAclTests(unittest.TestCase):
         setup = (
             (PREPARE.HERE / "configure.sh").read_text().split("passwd -d root", 1)[0]
         )
+        generation = self.directory / "generation"
+        generation.write_text("base\n")
+        setup = setup.replace("/usr/lib/synthetic-acl-generation", str(generation))
         setup = setup.replace("/etc/", str(etc) + "/")
         setup = setup.replace("/var/lib/trident", str(self.directory / "trident"))
         setup = setup.replace("/oem", str(self.directory / "oem"))
@@ -143,7 +181,7 @@ class SyntheticAclTests(unittest.TestCase):
                 config.write_text(initial)
                 for _ in range(2):
                     subprocess.run(
-                        ["bash", "-s", "--", "standard", "base"],
+                        ["bash", "-s", "--", "standard"],
                         input=setup,
                         text=True,
                         check=True,
@@ -153,12 +191,6 @@ class SyntheticAclTests(unittest.TestCase):
                 self.assertEqual(include, lines[0])
                 self.assertEqual(1, lines.count(include))
                 self.assertIn("PermitRootLogin no", lines)
-
-    def test_generations_distinguish_usr_content_without_changing_trident(self):
-        base = PREPARE.config("standard", "base", "trident-pipeline")
-        update = PREPARE.config("standard", "update", "trident-pipeline")
-        self.assertEqual(base["os"], update["os"])
-        self.assertNotEqual(base["scripts"], update["scripts"])
 
     def test_mshv_metadata_upgrade_preserves_payload_and_exact_export(self):
         path = self.cosi()

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 variant=${1:?variant is required}
-phase=${2:?phase is required}
+phase=$(cat /usr/lib/synthetic-acl-generation)
 case "$variant" in standard|mshv) ;; *) exit 1 ;; esac
 case "$phase" in base|update) ;; *) exit 1 ;; esac
 

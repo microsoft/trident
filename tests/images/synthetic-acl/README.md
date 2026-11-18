@@ -6,6 +6,21 @@ uses the regular AZL kernel and systemd-boot. `mshv` uses `kernel-mshv` and
 the EFI Tree Loader/HvLoader chain. Both variants use IPv4 DHCP so their
 networking does not depend on a particular VM controller or static subnet.
 
+## Image Customizer recipes
+
+`standard.yaml` and `mshv.yaml` are static Image Customizer configurations.
+Both inherit shared OS settings from `common.yaml` using IC's `base-configs`
+preview feature. Storage stays in each variant because IC does not allow
+inherited storage configuration.
+
+The Python helper copies the recipes unchanged into `.work/`. It supplies
+runtime inputs separately: the SSH key, exact pipeline Trident NEVRA in
+`trident-packages.json`, installed conflicting packages in
+`remove-packages.json`, and the `base` or `update` generation marker.
+The same variant recipe builds both generations. Python still performs the
+ACL disk/UKI normalization, COSI conversion and provenance checks; it does not
+generate or rewrite YAML.
+
 Run on a Linux image-build worker with sudo, Docker, libguestfs (`guestfish`),
 RPM, OpenSSH and binutils (`objcopy`, `objdump`) installed. The pinned
 ImageCustomizer image must provide `/usr/bin/ukify`; the helper checks it

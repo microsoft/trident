@@ -148,6 +148,9 @@ ssh-keygen -q -t rsa -b 3072 -N '' -f "$WORK/id_rsa"
 
 The RPM directory must contain exactly one x86-64 `trident` RPM. The helper
 builds both generations from that RPM and records its binary hash.
+Image configuration lives in `tests/images/synthetic-acl/standard.yaml` and
+`mshv.yaml`, with shared OS settings in `common.yaml`. The helper stages these
+files unchanged and supplies runtime keys, package lists and generation input.
 
 #### Standard Variant
 

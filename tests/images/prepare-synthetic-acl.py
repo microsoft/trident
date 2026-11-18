@@ -38,125 +38,31 @@ def provenance(path):
     return {"path": str(path), "sha256": sha256(path)}
 
 
-def config(variant, phase, trident_nevra, installed_packages=None):
-    # AZL's builder needs /boot/efi. normalize_disk relocates the mount,
-    # not the EFI files, to ACL's /boot after UKI generation completes.
-    partitions = [
-        ("esp", "EFI-SYSTEM", "esp", "512M"),
-        ("usr-a", "USR-A", "usr", "3G"),
-        ("hash-a", "HASH-A", "usr-verity", "128M"),
-        ("usr-b", "USR-B", "usr", "3G"),
-        ("hash-b", "HASH-B", "usr-verity", "128M"),
-        ("oem", "OEM", "linux-generic", "128M"),
-        ("root", "ROOT", "root", "4G"),
-    ]
-    packages = [
-        trident_nevra,
-        "device-mapper",
-        "dracut",
-        "efibootmgr",
-        "iproute",
-        "jq",
-        "openssh-server",
-        "systemd-boot",
-        "systemd-networkd",
-        "systemd-udev",
-        "tar",
-        "veritysetup",
-        "kernel-mshv" if variant == "mshv" else "kernel",
-    ]
-    # Azure Linux's official MSHV image uses shim 15.8: shim 16.1 is
-    # incompatible with mshv-bootloader-lx (AZL work item 63139272).
-    if variant == "mshv":
-        packages.append("shim-15.8-6.azl3.x86_64")
+def prepare_inputs(work, variant, trident_nevra, installed_packages, payload=None):
+    for name in (
+        f"{variant}.yaml",
+        "common.yaml",
+        "configure.sh",
+        "99-synthetic-acl.conf",
+    ):
+        shutil.copy2(HERE / name, work / name)
     removals = (
         ["grub2-efi-binary", "kernel", "shim"]
         if variant == "mshv"
         else ["grub2-efi-binary", "kernel-mshv"]
     )
-    if installed_packages is not None:
-        removals = [name for name in removals if name in installed_packages]
-    return {
-        "storage": {
-            "bootType": "efi",
-            "disks": [
-                {
-                    "partitionTableType": "gpt",
-                    "partitions": [
-                        {"id": i, "label": label, "type": kind, "size": size}
-                        for i, label, kind, size in partitions
-                    ],
-                }
-            ],
-            "verity": [
-                {
-                    "id": "usrverity",
-                    "name": "usr",
-                    "dataDeviceId": "usr-a",
-                    "hashDeviceId": "hash-a",
-                    "dataDeviceMountIdType": "part-label",
-                    "hashDeviceMountIdType": "part-label",
-                    "corruptionOption": "panic",
-                }
-            ],
-            "filesystems": [
-                {
-                    "deviceId": "esp",
-                    "type": "fat32",
-                    "mountPoint": {
-                        "idType": "uuid",
-                        "path": "/boot/efi",
-                        "options": "umask=0077",
-                    },
-                },
-                {
-                    "deviceId": "usrverity",
-                    "type": "ext4",
-                    "mountPoint": {"path": "/usr", "options": "defaults,ro"},
-                },
-                {
-                    "deviceId": "oem",
-                    "type": "ext4",
-                    "mountPoint": {"idType": "uuid", "path": "/oem"},
-                },
-                {
-                    "deviceId": "root",
-                    "type": "ext4",
-                    "mountPoint": {"idType": "uuid", "path": "/"},
-                },
-            ],
-        },
-        "os": {
-            "bootloader": {"resetType": "hard-reset"},
-            "hostname": "synthetic-acl-" + variant,
-            "selinux": {"mode": "disabled"},
-            "uki": {"mode": "create"},
-            "kernelCommandLine": {
-                "extraCommandLine": [
-                    "console=ttyS0,115200",
-                    "console=tty0",
-                    "rd.hostonly=0",
-                    "mount.usr=/dev/mapper/usr",
-                    "mount.usrflags=ro",
-                ]
-            },
-            "packages": {"install": packages, "remove": removals},
-            "users": [{"name": "root", "sshPublicKeyPaths": ["id_rsa.pub"]}],
-            "services": {"enable": ["sshd", "systemd-networkd", "tridentd.socket"]},
-            "additionalFiles": [
-                {
-                    "source": "99-synthetic-acl.conf",
-                    "destination": "/etc/dracut.conf.d/99-synthetic-acl.conf",
-                }
-            ],
-        },
-        "scripts": {
-            "postCustomization": [
-                {"path": "configure.sh", "arguments": [variant, phase]}
-            ]
-        },
-        "previewFeatures": ["uki"],
-    }
+    # Keep runtime package selection out of the checked-in IC configuration.
+    for name, packages in (
+        ("trident-packages.json", [trident_nevra]),
+        ("remove-packages.json", [p for p in removals if p in installed_packages]),
+    ):
+        (work / name).write_text(json.dumps({"packages": packages}, indent=2) + "\n")
+    if variant == "mshv":
+        licenses = payload / "licenses"
+        if licenses.is_dir():
+            shutil.copytree(licenses, work / "mshv-licenses")
+        else:
+            (work / "mshv-licenses").mkdir()
 
 
 def guestfish(image, commands, env, readonly=False):
@@ -521,10 +427,13 @@ def main(argv=None):
     local_rpms.mkdir()
     for rpm in rpms:
         shutil.copy2(rpm, local_rpms / rpm.name)
-    for name in ("configure.sh", "99-synthetic-acl.conf"):
-        shutil.copy2(HERE / name, work / name)
-    if args.variant == "mshv" and (args.mshv_payload / "licenses").is_dir():
-        shutil.copytree(args.mshv_payload / "licenses", work / "mshv-licenses")
+    prepare_inputs(
+        work,
+        args.variant,
+        f"trident-{version}-{release}.{arch}",
+        installed_packages,
+        args.mshv_payload,
+    )
     image_id = run(
         ["docker", "image", "inspect", "--format", "{{.Id}}", args.image_customizer],
         capture_output=True,
@@ -542,23 +451,7 @@ def main(argv=None):
         env=env,
     )
     for phase in ("base", "update"):
-        configuration = config(
-            args.variant,
-            phase,
-            f"trident-{version}-{release}.{arch}",
-            installed_packages,
-        )
-        if (work / "mshv-licenses").is_dir():
-            for license_file in sorted((work / "mshv-licenses").rglob("*")):
-                if license_file.is_file():
-                    relative = license_file.relative_to(work / "mshv-licenses")
-                    configuration["os"]["additionalFiles"].append(
-                        {
-                            "source": str(Path("mshv-licenses") / relative),
-                            "destination": str(Path("/usr/share/licenses") / relative),
-                        }
-                    )
-        (work / f"{phase}.yaml").write_text(json.dumps(configuration, indent=2) + "\n")
+        (work / "generation").write_text(phase + "\n")
         image = work / f"{phase}.qcow2"
         run(
             [
@@ -575,7 +468,7 @@ def main(argv=None):
                 image_id,
                 "customize",
                 "--config-file",
-                f"/work/{phase}.yaml",
+                f"/work/{args.variant}.yaml",
                 "--build-dir",
                 f"/work/build-{phase}",
                 "--image-file",
