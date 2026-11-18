@@ -258,7 +258,7 @@ pub fn cleanup_ukis_before_staging(
 /// Returns UKI paths; the caller also removes their companion addon directories.
 /// The temporary UKI path may be absent, allowing cleanup of orphaned staging
 /// addons. A missing UKI directory yields no candidates.
-pub(crate) fn find_ukis_to_remove_before_staging(
+fn find_ukis_to_remove_before_staging(
     ctx: &EngineContext,
     esp_uki_directory: &Path,
 ) -> Result<Vec<PathBuf>, Error> {

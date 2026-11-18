@@ -33,8 +33,7 @@ use trident_api::{
 use crate::{
     engine::{
         boot::{
-            self, boot_tree, mshv as boot_mshv, uki, ESP_EXTRACTION_DIRECTORY,
-            ESP_EXTRACTION_DIRECTORY_MODE,
+            self, mshv as boot_mshv, uki, ESP_EXTRACTION_DIRECTORY, ESP_EXTRACTION_DIRECTORY_MODE,
         },
         EngineContext, Subsystem,
     },
@@ -46,6 +45,7 @@ use crate::{
     osimage::bootloader::Bootloader,
 };
 
+pub(crate) mod boot_tree;
 mod mshv;
 
 const ETL_SECOND_STAGE_EFI_FILENAME: &str = "second.efi";
@@ -816,11 +816,6 @@ fn generate_boot_filepaths(
     // Add MSHV components without changing ordinary loader/config selection.
     if bootloader.is_some_and(Bootloader::uses_mshv) {
         paths.extend(generate_mshv_boot_filepaths(&source_boot_dir)?);
-    } else {
-        ensure!(
-            !source_boot_dir.join("HvLoader.efi").try_exists()?,
-            "An MSHV image must declare COSI bootloader type 'efitreeloader-mshv-systemd-boot'"
-        );
     }
 
     for path in &paths {
@@ -2171,11 +2166,37 @@ mod tests {
             paths.sort();
             assert_eq!(paths, expected);
 
-            let ordinary = Bootloader::new(BootloaderType::SystemdBoot, None);
-            assert!(generate_boot_filepaths(source.path(), is_uki, Some(&ordinary)).is_err());
-
             fs::remove_file(boot.join("lxhvloader.dll")).unwrap();
             assert!(generate_boot_filepaths(source.path(), is_uki, ctx.bootloader()).is_err());
+        }
+    }
+
+    #[test]
+    fn test_generate_boot_filepaths_ignores_undeclared_mshv_components() {
+        for is_uki in [false, true] {
+            let (source, _esp, _ctx) = boot_file_staging_fixture(true, is_uki);
+            let boot = source.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
+            let ordinary = Bootloader::new(BootloaderType::SystemdBoot, None);
+            let mut expected = vec![boot.join(GRUB_EFI), boot.join(BOOT_EFI)];
+            if !is_uki {
+                expected.push(boot.join(GRUB2_CONFIG_FILENAME));
+            }
+            expected.sort();
+
+            for complete_components in [true, false] {
+                if !complete_components {
+                    fs::remove_file(boot.join("lxhvloader.dll")).unwrap();
+                }
+                for bootloader in [None, Some(&ordinary)] {
+                    let mut paths =
+                        generate_boot_filepaths(source.path(), is_uki, bootloader).unwrap();
+                    paths.sort();
+                    assert_eq!(
+                        paths, expected,
+                        "is_uki={is_uki}, complete_components={complete_components}, bootloader={bootloader:?}"
+                    );
+                }
+            }
         }
     }
 

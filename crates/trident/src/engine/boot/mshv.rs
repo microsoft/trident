@@ -4,7 +4,7 @@ use std::{fs, io::ErrorKind, path::Path};
 
 use anyhow::{ensure, Context, Error};
 
-use super::boot_tree;
+use crate::subsystems::esp::boot_tree;
 
 const MSHV_BOOT_FILES: &[&str] = &["HvLoader.efi", "lxhvloader.dll"];
 const MSHV_BOOT_COMPONENTS_DIR: &str = "Windows";
