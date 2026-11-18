@@ -12,43 +12,40 @@ use std::{
 };
 
 use anyhow::{ensure, Context, Error};
+use walkdir::WalkDir;
 
-/// Validates the whole tree, including empty directories, and collects relative file paths.
+/// Returns sorted root-relative file paths, validating empty directories without listing them.
 /// `temporary` permits replacement suffixes in destinations left by interrupted work.
-fn scan(root: &Path, directory: &Path, temporary: bool) -> Result<Vec<PathBuf>, Error> {
-    ensure!(
-        fs::symlink_metadata(directory)?.is_dir(),
-        "Invalid boot directory: {}",
-        directory.display()
-    );
+fn boot_files(root: &Path, temporary: bool) -> Result<Vec<PathBuf>, Error> {
     let mut files = Vec::new();
-    for entry in fs::read_dir(directory)? {
+    for entry in WalkDir::new(root)
+        .follow_links(false)
+        .follow_root_links(false)
+    {
         let entry = entry?;
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_str().context("Non-UTF-8 boot file name")?;
+        let kind = entry.file_type();
+        if entry.depth() == 0 {
+            ensure!(kind.is_dir(), "Invalid boot directory: {}", root.display());
+            continue;
+        }
+        let name = entry
+            .file_name()
+            .to_str()
+            .context("Non-UTF-8 boot file name")?;
         ensure!(
             temporary || !is_temporary(name),
             "Reserved boot file name: {name}"
         );
-        let kind = entry.file_type()?;
-        if kind.is_dir() {
-            files.extend(scan(root, &path, temporary)?);
+        if kind.is_file() {
+            files.push(entry.path().strip_prefix(root)?.to_path_buf());
         } else {
             ensure!(
-                kind.is_file(),
+                kind.is_dir(),
                 "Not a regular boot file: {}",
-                path.display()
+                entry.path().display()
             );
-            files.push(path.strip_prefix(root)?.to_path_buf());
         }
     }
-    Ok(files)
-}
-
-/// Returns sorted root-relative file paths; empty directories are validated but not listed.
-fn boot_files(root: &Path, temporary: bool) -> Result<Vec<PathBuf>, Error> {
-    let mut files = scan(root, root, temporary)?;
     files.sort();
     Ok(files)
 }
@@ -95,14 +92,26 @@ fn ensure_disjoint(from: &Path, to: &Path) -> Result<(), Error> {
 /// Copies an already-validated entry, creating even empty directories.
 /// Existing destination-only entries are not retired, and failure can leave a partial copy.
 fn copy_entry(from: &Path, to: &Path) -> Result<(), Error> {
-    if fs::symlink_metadata(from)?.is_dir() {
-        fs::create_dir_all(to)?;
-        for entry in fs::read_dir(from)? {
-            let entry = entry?;
-            copy_entry(&entry.path(), &to.join(entry.file_name()))?;
+    for entry in WalkDir::new(from)
+        .follow_links(false)
+        .follow_root_links(false)
+    {
+        let entry = entry?;
+        let destination = if entry.depth() == 0 {
+            to.to_path_buf()
+        } else {
+            to.join(entry.path().strip_prefix(from)?)
+        };
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(destination)?;
+        } else {
+            ensure!(
+                entry.file_type().is_file(),
+                "Not a regular boot file: {}",
+                entry.path().display()
+            );
+            fs::copy(entry.path(), destination)?;
         }
-    } else {
-        fs::copy(from, to)?;
     }
     Ok(())
 }
@@ -491,6 +500,30 @@ mod tests {
     }
 
     /// Validation rejects source and destination symlinks.
+    #[test]
+    fn rejects_source_root_symlinks_before_destination_creation() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        let linked_source = temp.path().join("linked-source");
+        let target = temp.path().join("target");
+        create_boot_files(&source, b"source");
+        unix_fs::symlink(&source, &linked_source).unwrap();
+        filepaths(&linked_source).unwrap_err();
+        copy_fallback_for_bootstrap(&linked_source, &target).unwrap_err();
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn rejects_reserved_empty_directories_before_destination_creation() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        let target = temp.path().join("target");
+        fs::create_dir_all(source.join("nested/component.OLD")).unwrap();
+        filepaths(&source).unwrap_err();
+        copy_fallback_for_bootstrap(&source, &target).unwrap_err();
+        assert!(!target.exists());
+    }
+
     #[test]
     fn rejects_source_and_destination_symlinks() {
         let temp = TempDir::new().unwrap();
