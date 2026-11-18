@@ -9,11 +9,9 @@ use uuid::Uuid;
 
 use osutils::{
     lsblk::{self, BlockDevice},
-    osrelease::OsRelease,
     sfdisk::SfDisk,
 };
 use sysdefs::acl::ACL_ESP_MOUNT_POINT;
-
 use trident_api::{
     config::{
         AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
@@ -23,13 +21,6 @@ use trident_api::{
     status::{AbVolumeSelection, HostStatus, ServicingState},
     BlockDeviceId,
 };
-
-/// Returns whether the host is running the ACL image.
-pub fn is_acl() -> Result<bool, Error> {
-    let os_release = OsRelease::read().context("Failed to read OS release information")?;
-
-    Ok(os_release.get_distro().is_acl())
-}
 
 /// An expected partition on the ACL root disk, identified by label, along
 /// with its partition type, the actual `Partition` discovered on disk (if

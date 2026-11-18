@@ -31,6 +31,13 @@ pub fn is_azl3() -> Result<bool, Error> {
     Ok(OsRelease::read()?.get_distro().is_azl3())
 }
 
+/// Returns whether the host is running the ACL image.
+pub fn is_acl() -> Result<bool, Error> {
+    let os_release = OsRelease::read().context("Failed to read OS release information")?;
+
+    Ok(os_release.get_distro().is_acl())
+}
+
 /// Splits one os-release-style `KEY=VALUE` line into its key and
 /// unquoted/trimmed value, or `None` for a blank, comment, or malformed
 /// line. Shared by [`read_key`], [`OsRelease::parse`], and

@@ -170,13 +170,13 @@ mod tests {
     };
 
     use crate::{
-        engine::{boot::mshv::FILES, EngineContext},
+        engine::{boot::mshv::MSHV_SLOT_BOOT_FILES, EngineContext},
         subsystems::esp,
     };
 
     /// Creates all required slot boot files for tests.
     fn create_boot_files(root: &Path, contents: &[u8]) {
-        for name in FILES {
+        for name in MSHV_SLOT_BOOT_FILES {
             let path = root.join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, contents).unwrap();
@@ -222,13 +222,16 @@ mod tests {
                     .unwrap();
             }
             filepaths(&fallback).unwrap();
-            for name in FILES {
+            for name in MSHV_SLOT_BOOT_FILES {
                 assert_eq!(fs::read(fallback.join(name)).unwrap(), b"mshv");
             }
             for entry in fs::read_dir(&retained).unwrap() {
                 let entry = entry.unwrap();
                 assert_eq!(fs::read(entry.path()).unwrap(), b"ordinary");
-                if !FILES.iter().any(|name| entry.file_name() == *name) {
+                if !MSHV_SLOT_BOOT_FILES
+                    .iter()
+                    .any(|name| entry.file_name() == *name)
+                {
                     assert!(!fallback.join(entry.file_name()).exists());
                 }
             }
@@ -288,7 +291,7 @@ mod tests {
         create_boot_files(&source, b"new");
         create_boot_files(&active, b"retained");
         copy_fallback_for_bootstrap(&source, &target).unwrap();
-        for name in FILES {
+        for name in MSHV_SLOT_BOOT_FILES {
             assert_eq!(fs::read(target.join(name)).unwrap(), b"new");
             assert_eq!(fs::read(active.join(name)).unwrap(), b"retained");
         }
@@ -411,7 +414,7 @@ mod tests {
     #[test]
     fn accepts_additional_files_but_rejects_temporary_source_names() {
         let temp = TempDir::new().unwrap();
-        for name in FILES {
+        for name in MSHV_SLOT_BOOT_FILES {
             let path = temp.path().join(name.to_ascii_uppercase());
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, b"payload").unwrap();
@@ -499,7 +502,7 @@ mod tests {
         replace_fallback_boot_files(&source, &fallback).unwrap();
         replace_fallback_boot_files(&source, &fallback).unwrap();
         filepaths(&fallback).unwrap();
-        for name in FILES {
+        for name in MSHV_SLOT_BOOT_FILES {
             assert_eq!(fs::read(fallback.join(name)).unwrap(), b"new");
             assert!(!fallback.join(format!("{name}.new")).exists());
             assert!(!fallback.join(format!("{name}.old")).exists());
@@ -543,7 +546,7 @@ mod tests {
             ctx.spec.os.uefi_fallback = mode;
             esp::set_uefi_fallback_contents(&ctx, ServicingState::AbUpdateStaged, temp.path())
                 .unwrap();
-            for name in FILES.iter().copied().chain([secondary]) {
+            for name in MSHV_SLOT_BOOT_FILES.iter().copied().chain([secondary]) {
                 let expected = if mode == UefiFallbackMode::Optimistic {
                     b"candidate".as_slice()
                 } else {
@@ -553,7 +556,7 @@ mod tests {
             }
             esp::set_uefi_fallback_contents(&ctx, ServicingState::AbUpdateFinalized, temp.path())
                 .unwrap();
-            for name in FILES.iter().copied().chain([secondary]) {
+            for name in MSHV_SLOT_BOOT_FILES.iter().copied().chain([secondary]) {
                 let expected = if mode == UefiFallbackMode::Disabled {
                     b"retained".as_slice()
                 } else {
@@ -570,7 +573,7 @@ mod tests {
                 temp.path(),
             )
             .unwrap();
-            for name in FILES.iter().copied().chain([secondary]) {
+            for name in MSHV_SLOT_BOOT_FILES.iter().copied().chain([secondary]) {
                 assert_eq!(fs::read(fallback.join(name)).unwrap(), b"retained");
             }
         }

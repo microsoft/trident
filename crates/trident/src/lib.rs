@@ -12,7 +12,11 @@ use semver::Version;
 use url::Url;
 
 use engine::{bootentries, EngineContext, EngineContextParams};
-use osutils::{block_devices, container, dependencies::Dependency, osrelease::OsRelease};
+use osutils::{
+    block_devices, container,
+    dependencies::Dependency,
+    osrelease::{self, OsRelease},
+};
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationSource, ImageSha384, Operations,
@@ -305,17 +309,17 @@ impl Trident {
     where
         F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
-        // Preserve the original health-check failure across failed recovery attempts
-        // instead of replacing it with a secondary recovery error.
+        // AbUpdateHealthCheckFailed is a special case where we would like
+        // to preserve the last error across any recovery. This aids in
+        // surfacing the original error.
         debug!(
             "Execute and record error with servicing state: {:?} and last error: {:?}",
             datastore.host_status().servicing_state,
             datastore.host_status().last_error
         );
-        let last_error_to_preserve = if matches!(
-            datastore.host_status().servicing_state,
-            ServicingState::AbUpdateHealthCheckFailed
-        ) {
+        let last_error_to_preserve = if datastore.host_status().servicing_state
+            == ServicingState::AbUpdateHealthCheckFailed
+        {
             datastore.host_status().last_error.clone()
         } else {
             None
@@ -634,7 +638,7 @@ impl Trident {
         self.execute_and_record_error(datastore, |datastore| {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
-                if acl::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
+                if osrelease::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
                     // For ACL, initialize datastore with known initial state when
                     // the datastore is not already created.
                     let initial_host_status = acl::initial_host_status()

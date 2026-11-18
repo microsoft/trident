@@ -63,7 +63,7 @@ pub(crate) fn validate_boot_components(boot_dir: &Path) -> Result<(), Error> {
 }
 
 #[cfg(test)]
-pub(crate) const FILES: &[&str] = &[
+pub(crate) const MSHV_SLOT_BOOT_FILES: &[&str] = &[
     "bootx64.efi",
     "grubx64.efi",
     "second.efi",

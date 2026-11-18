@@ -906,7 +906,9 @@ mod tests {
 
     use crate::{
         engine::{
-            boot::{get_update_esp_dir_name, make_esp_dir_name_candidates, mshv::FILES},
+            boot::{
+                get_update_esp_dir_name, make_esp_dir_name_candidates, mshv::MSHV_SLOT_BOOT_FILES,
+            },
             install_index,
         },
         osimage::bootloader::BootloaderType,
@@ -1083,7 +1085,7 @@ mod tests {
             ..Default::default()
         };
         let names = if is_mshv {
-            FILES
+            MSHV_SLOT_BOOT_FILES
         } else {
             &[BOOT_EFI, GRUB_EFI, GRUB2_CONFIG_FILENAME]
         };
@@ -1696,7 +1698,7 @@ mod tests {
             let source = TempDir::new().unwrap();
             let destination = TempDir::new().unwrap();
             fs::write(source.path().join(BOOT_EFI), b"ordinary loader").unwrap();
-            for name in FILES {
+            for name in MSHV_SLOT_BOOT_FILES {
                 fs::write(destination.path().join(name), b"previous loader").unwrap();
             }
             let secondary = destination.path().join(directory).join("System32");
@@ -1857,7 +1859,7 @@ mod tests {
             .path()
             .join(ESP_EFI_DIRECTORY)
             .join("AZLA.bootstrap-tmp");
-        for name in FILES {
+        for name in MSHV_SLOT_BOOT_FILES {
             let path = boot.join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, name).unwrap();
@@ -1869,7 +1871,7 @@ mod tests {
         fs::write(temporary.join("stale"), "incomplete").unwrap();
 
         bootstrap_azla_from_fallback(esp.path()).unwrap();
-        for name in FILES {
+        for name in MSHV_SLOT_BOOT_FILES {
             assert!(files_are_identical(&boot.join(name), &azla.join(name)));
         }
         assert!(files_are_identical(
@@ -1903,7 +1905,7 @@ mod tests {
             .path()
             .join(ESP_EFI_DIRECTORY)
             .join("AZLA.bootstrap-tmp");
-        for name in FILES {
+        for name in MSHV_SLOT_BOOT_FILES {
             let path = boot.join(name);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, b"retained").unwrap();
@@ -1920,7 +1922,7 @@ mod tests {
             .contains("Reserved boot file name"));
         assert!(!temporary.exists());
         assert!(!azla.exists());
-        for name in FILES {
+        for name in MSHV_SLOT_BOOT_FILES {
             assert_eq!(fs::read(boot.join(name)).unwrap(), b"retained");
         }
 
@@ -1928,7 +1930,7 @@ mod tests {
         bootstrap_azla_from_fallback(esp.path()).unwrap();
         assert!(!temporary.exists());
         assert!(!azla.join("stale").exists());
-        for name in FILES {
+        for name in MSHV_SLOT_BOOT_FILES {
             assert!(files_are_identical(&boot.join(name), &azla.join(name)));
         }
     }
@@ -2155,7 +2157,10 @@ mod tests {
             }
             fs::write(boot.join(GRUB_NOPREFIX_EFI), b"unrelated GRUB").unwrap();
             fs::write(boot.join(GRUB2_CONFIG_FILENAME), b"configuration").unwrap();
-            let mut expected = FILES.iter().map(|name| boot.join(name)).collect::<Vec<_>>();
+            let mut expected = MSHV_SLOT_BOOT_FILES
+                .iter()
+                .map(|name| boot.join(name))
+                .collect::<Vec<_>>();
             expected.extend([boot.join(&nested), boot.join(future)]);
             if !is_uki {
                 expected.push(boot.join(GRUB2_CONFIG_FILENAME));

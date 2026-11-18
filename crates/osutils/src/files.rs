@@ -228,9 +228,12 @@ pub fn ensure_disjoint_paths(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Re
 
 /// Copies a regular file or directory tree, preserving empty directories.
 ///
-/// Rejects overlapping paths, source links and special files. The destination tree
-/// must be link-free. Extra destination entries are retained; errors can leave a
-/// partial copy, so callers needing preflight validation must perform it separately.
+/// Rejects overlapping paths, source links and special files. Callers must ensure
+/// that the destination tree and its ancestors contain no symlinks, and that no
+/// destination file is a hard link to a source file. These conditions are not
+/// checked: destination symlinks are followed, and hard-linked aliases can truncate
+/// source files. Extra destination entries are retained; errors can leave a partial
+/// copy, so callers needing preflight validation must perform it separately.
 pub fn copy_recursively(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<(), Error> {
     let from = from.as_ref();
     let to = to.as_ref();
@@ -246,14 +249,25 @@ pub fn copy_recursively(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<
             to.join(entry.path().strip_prefix(from)?)
         };
         if entry.file_type().is_dir() {
-            fs::create_dir_all(destination)?;
+            fs::create_dir_all(&destination).with_context(|| {
+                format!(
+                    "Failed to create destination directory: {}",
+                    destination.display()
+                )
+            })?;
         } else {
             ensure!(
                 entry.file_type().is_file(),
                 "Not a regular file: {}",
                 entry.path().display()
             );
-            fs::copy(entry.path(), destination)?;
+            fs::copy(entry.path(), &destination).with_context(|| {
+                format!(
+                    "Failed to copy '{}' to '{}'",
+                    entry.path().display(),
+                    destination.display()
+                )
+            })?;
         }
     }
     Ok(())
@@ -432,6 +446,23 @@ mod tests {
         assert_eq!(fs::read(&file).unwrap(), b"payload");
         copy_recursively(&source, source.join("child")).unwrap_err();
         assert!(!source.join("child").exists());
+    }
+
+    #[test]
+    fn test_copy_recursively_reports_failed_file_paths() {
+        let temp = tempdir().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir_all(destination.join("payload")).unwrap();
+        fs::write(source.join("payload"), b"payload").unwrap();
+
+        let error = copy_recursively(&source, &destination).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains(source.join("payload").to_str().unwrap()));
+        assert!(message.contains(destination.join("payload").to_str().unwrap()));
+        assert_eq!(fs::read(source.join("payload")).unwrap(), b"payload");
+        assert!(destination.join("payload").is_dir());
     }
 
     #[test]

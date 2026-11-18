@@ -104,7 +104,7 @@ mod tests {
     use trident_api::{config::Encryption, status::AbVolumeSelection};
 
     use crate::{
-        engine::{boot::mshv::FILES, Subsystem},
+        engine::{boot::mshv::MSHV_SLOT_BOOT_FILES, Subsystem},
         osimage::{bootloader::BootloaderType, mock::MockOsImage},
         subsystems::esp::EspSubsystem,
     };
@@ -154,7 +154,7 @@ mod tests {
         for retained_mshv in [false, true] {
             let esp = TempDir::new().unwrap();
             if retained_mshv {
-                for name in FILES {
+                for name in MSHV_SLOT_BOOT_FILES {
                     let path = esp.path().join("EFI/AZL2B").join(name);
                     fs::create_dir_all(path.parent().unwrap()).unwrap();
                     fs::write(path, b"payload").unwrap();
