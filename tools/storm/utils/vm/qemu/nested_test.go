@@ -65,3 +65,30 @@ func TestVirtInstallResourceOverridesPreserveDiskBus(t *testing.T) {
 		})
 	}
 }
+
+func TestNestedFirmwareUsesPlainOVMFOnlyWithoutSecureBoot(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      QemuConfig
+		wantBoot string
+	}{
+		{name: "standard unchanged", wantBoot: "uefi,loader_secure=no"},
+		{name: "standard Secure Boot unchanged", cfg: QemuConfig{SecureBoot: true}, wantBoot: "uefi,loader_secure=yes"},
+		{name: "nested plain OVMF", cfg: QemuConfig{NestedVirtualization: true}, wantBoot: "loader=/usr/share/OVMF/OVMF_CODE_4M.fd,loader.readonly=yes,loader.type=pflash,loader.secure=no,nvram.template=/usr/share/OVMF/OVMF_VARS_4M.fd"},
+		{name: "nested Secure Boot unchanged", cfg: QemuConfig{NestedVirtualization: true, SecureBoot: true}, wantBoot: "uefi,loader_secure=yes"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := tt.cfg.virtInstallBaseArgs("synthetic-acl-test", "booted.qcow2")
+			var bootArgs []string
+			for i := 0; i+1 < len(args); i++ {
+				if args[i] == "--boot" {
+					bootArgs = append(bootArgs, args[i+1])
+				}
+			}
+			if len(bootArgs) != 1 || bootArgs[0] != tt.wantBoot {
+				t.Fatalf("unexpected firmware selection: %v", bootArgs)
+			}
+		})
+	}
+}

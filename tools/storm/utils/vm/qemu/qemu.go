@@ -290,6 +290,14 @@ func (cfg QemuConfig) virtInstallBaseArgs(name, bootImage string) []string {
 	if cfg.NestedVirtualization && !cfg.SecureBoot {
 		args = append(args, "--machine", "q35")
 	}
+	if cfg.SecureBoot {
+		args = append(args, "--machine", "q35", "--boot", "uefi,loader_secure=yes")
+	} else if cfg.NestedVirtualization {
+		// Automatic Q35 firmware selection can enroll Secure Boot keys despite loader.secure=no.
+		args = append(args, "--boot", "loader=/usr/share/OVMF/OVMF_CODE_4M.fd,loader.readonly=yes,loader.type=pflash,loader.secure=no,nvram.template=/usr/share/OVMF/OVMF_VARS_4M.fd")
+	} else {
+		args = append(args, "--boot", "uefi,loader_secure=no")
+	}
 	return args
 }
 
@@ -310,11 +318,6 @@ func (cfg QemuConfig) createQemuVM(ctx context.Context, name string, bootImage s
 				return err
 			}
 			virtInstallArgs = append(virtInstallArgs, "--virt-type", "kvm", "--cpu", cpu)
-		}
-		if cfg.SecureBoot {
-			virtInstallArgs = append(virtInstallArgs, "--machine", "q35", "--boot", "uefi,loader_secure=yes")
-		} else {
-			virtInstallArgs = append(virtInstallArgs, "--boot", "uefi,loader_secure=no")
 		}
 		logrus.Tracef("Running virt-install command: %s", strings.Join(virtInstallArgs, " "))
 		if err := exec.CommandContext(ctx, "sudo", virtInstallArgs...).Run(); err != nil {
