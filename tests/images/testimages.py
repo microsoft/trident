@@ -9,6 +9,7 @@ from builder import (
     BaseImageManifest,
     ImageConfig,
     OutputFormat,
+    PipelineArtifactBaseImageManifest,
     SystemArchitecture,
     cli,
 )
@@ -126,6 +127,25 @@ DEFINED_IMAGES: List[ImageConfig] = [
     ),
     # VM test images
     ImageConfig(
+        "acl",
+        base_image=BaseImage.ACL_T,
+        config_file="acl.yaml",
+        output_format=OutputFormat.QCOW2,
+        ssh_key="files/id_rsa.pub",
+        extra_rpm_sources=[Path("tests/images/acl/rpms.repo")],
+        disable_base_image_rpm_repos=True,
+    ),
+    ImageConfig(
+        "acl-mshv",
+        base_image=BaseImage.ACL_T,
+        config="acl",
+        config_file="acl-mshv.yaml",
+        output_format=OutputFormat.QCOW2,
+        ssh_key="files/id_rsa.pub",
+        extra_rpm_sources=[Path("tests/images/acl/rpms.repo")],
+        disable_base_image_rpm_repos=True,
+    ),
+    ImageConfig(
         "trident-vm-grub-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",
@@ -229,6 +249,15 @@ ARTIFACTS = ArtifactManifest(
     customizer_version=DEFAULT_IMAGE_CUSTOMIZER_VERSION,
     customizer_container="mcr.microsoft.com/azurelinux/imagecustomizer",
     base_images=[
+        PipelineArtifactBaseImageManifest(
+            image=BaseImage.ACL_T,
+            run_id=1260474,
+            artifact_name="drop_build_acl_template_amd64_customize_and_sign",
+            filename="acl_template_image.vhdx",
+            sha256=(
+                "e639ce68de0c60544994aff33e059add6" "ac68406fa383a9d69c2a1d192b2d1d5"
+            ),
+        ),
         BaseImageManifest(
             image=BaseImage.BAREMETAL,
             package_name="baremetal_vhdx-3.0-stable",

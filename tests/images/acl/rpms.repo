@@ -1,0 +1,23 @@
+[acl-test-azurelinux]
+name=Azure Linux 3.0
+baseurl=https://packages.microsoft.com/azurelinux/3.0/prod/base/x86_64
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+exclude=trident*
+
+[acl-test-ms-oss]
+name=Azure Linux 3.0 MS OSS
+baseurl=https://packages.microsoft.com/azurelinux/3.0/prod/ms-oss/x86_64
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+exclude=trident*
+
+[acl-test-ms-non-oss]
+name=Azure Linux 3.0 MS Non-OSS
+baseurl=https://packages.microsoft.com/azurelinux/3.0/prod/ms-non-oss/x86_64
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/MICROSOFT-RPM-GPG-KEY
+exclude=trident*

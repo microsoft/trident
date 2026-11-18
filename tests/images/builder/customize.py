@@ -20,6 +20,7 @@ def build_config(
     rpm_sources: List[Path] = [],
     image_architecture: Optional[str] = None,
     dry_run: bool = False,
+    disable_base_image_rpm_repos: bool = False,
 ):
     """
     Build a custom image using AZL Image Customizer via Docker container.
@@ -35,8 +36,9 @@ def build_config(
         base_image: Path to the base image file to customize
         img_format: Output image format
         output_file: Path where the customized image will be saved
-        rpm_sources: List of paths to additional RPM source directories
+        rpm_sources: Additional RPM directories or .repo files
         dry_run: If True, only log the command without executing it
+        disable_base_image_rpm_repos: Ignore repositories embedded in the base image
 
     Raises:
         Exception: If the Image Customizer container execution fails
@@ -76,6 +78,9 @@ def build_config(
             utils.build_path(output_file),
         ]
     )
+
+    if disable_base_image_rpm_repos:
+        base_cmd.append("--disable-base-image-rpm-repos")
 
     for _, rpm in enumerate(rpm_sources):
         base_cmd.append("--rpm-source")

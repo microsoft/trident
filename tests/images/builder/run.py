@@ -110,7 +110,7 @@ def build(
             dry_run,
         )
     else:
-        rpm_sources: List[Path] = []
+        rpm_sources: List[Path] = list(image.extra_rpm_sources)
         if image.requires_trident:
             rpm_sources.append(RpmSources.TRIDENT.path())
         if image.requires_dhcp:
@@ -126,6 +126,8 @@ def build(
                     f"Downloading base image to '{image.base_image.path}'"
                     " (use --no-download to skip this step)"
                 )
+                if not dry_run:
+                    download_base_image(artifacts=artifacts, name=image.base_image.name)
 
             else:
                 log.error(f"Base image '{image.base_image.path}' does not exist.")
