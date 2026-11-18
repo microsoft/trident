@@ -70,7 +70,7 @@ fn is_temporary(name: &str) -> bool {
 /// Copies the fallback boot tree into temporary slot-bootstrap staging.
 /// An exact copy requires an empty destination. Copy failures may leave partial
 /// contents for the caller to discard, as bootstrap does with its staging directory.
-pub(crate) fn copy_fallback_for_bootstrap(from: &Path, to: &Path) -> Result<(), Error> {
+pub(super) fn copy_fallback_for_bootstrap(from: &Path, to: &Path) -> Result<(), Error> {
     boot_files(from, false)?;
     if to.try_exists()? {
         boot_files(to, true)?;
@@ -87,7 +87,7 @@ pub(crate) fn copy_fallback_for_bootstrap(from: &Path, to: &Path) -> Result<(), 
 /// Directories move with their complete subtrees. Publication across entries is
 /// not atomic: failure can leave a mix of current, staged and backup entries.
 /// Retries rebuild staging and recover selected backups whose current entry is absent.
-pub(crate) fn replace_fallback_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
+pub(super) fn replace_fallback_boot_files(from: &Path, to: &Path) -> Result<(), Error> {
     // Reject malformed or overlapping trees before modifying destination entries.
     boot_files(from, false)?;
     if to.try_exists()? {

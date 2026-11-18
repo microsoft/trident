@@ -36,8 +36,9 @@ pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
             || !ctx.image_distro().is_acl()
             || !ctx.is_uki()?
         {
-            return Err(unsupported(
-                "Slot-owned MSHV requires an x86-64 ACL UKI image",
+            return Err(TridentError::with_source(
+                InvalidInputError::InvalidBootConfiguration,
+                anyhow!("Slot-owned MSHV requires an x86-64 ACL UKI image"),
             ));
         }
         if ctx
@@ -47,8 +48,9 @@ pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
             .as_ref()
             .is_some_and(|encryption| !encryption.pcrs.is_empty())
         {
-            return Err(unsupported(
-                "Slot-owned MSHV TPM/PCR-bound encryption is not validated",
+            return Err(TridentError::with_source(
+                InvalidInputError::InvalidBootConfiguration,
+                anyhow!("Slot-owned MSHV TPM/PCR-bound encryption is not validated"),
             ));
         }
     }
@@ -82,13 +84,6 @@ fn validate_transition(ctx: &EngineContext, esp_path: &Path) -> Result<(), Error
         "Changing slot-owned MSHV mode on an existing installation is not supported"
     );
     Ok(())
-}
-
-fn unsupported(reason: &str) -> TridentError {
-    TridentError::with_source(
-        InvalidInputError::InvalidBootConfiguration,
-        anyhow!("{reason}"),
-    )
 }
 
 #[cfg(test)]
