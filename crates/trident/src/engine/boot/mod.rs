@@ -1,17 +1,12 @@
-use log::debug;
 use strum::IntoEnumIterator;
 
 use trident_api::{
     constants::{AB_VOLUME_A_NAME, AB_VOLUME_B_NAME, AZURE_LINUX_INSTALL_ID_PREFIX, VAR_TMP_PATH},
-    error::{ReportError, ServicingError, TridentError},
     status::AbVolumeSelection,
 };
 
-use crate::engine::Subsystem;
-
 use super::EngineContext;
 
-pub(super) mod grub;
 pub mod uki;
 
 pub(crate) const ESP_EXTRACTION_DIRECTORY: &str = VAR_TMP_PATH;
@@ -20,31 +15,6 @@ pub(crate) const ESP_EXTRACTION_DIRECTORY: &str = VAR_TMP_PATH;
 /// ship it. `/var/tmp` is world-writable with the sticky bit set on a
 /// conventional system, and systemd-tmpfiles expects to find it that way.
 pub(crate) const ESP_EXTRACTION_DIRECTORY_MODE: u32 = 0o1777;
-
-#[derive(Default, Debug)]
-pub(super) struct BootSubsystem;
-impl Subsystem for BootSubsystem {
-    fn name(&self) -> &'static str {
-        "boot"
-    }
-
-    #[tracing::instrument(name = "boot_configuration", skip_all)]
-    fn configure(&mut self, ctx: &EngineContext) -> Result<(), TridentError> {
-        if ctx.is_uki()? {
-            debug!("Skipping grub configuration because UKI is in use");
-            return Ok(());
-        }
-
-        if ctx.is_stream_image {
-            debug!("Skipping bootloader configuration during stream-image");
-            return Ok(());
-        }
-
-        grub::update_configs(ctx).structured(ServicingError::UpdateGrubConfigs)?;
-
-        Ok(())
-    }
-}
 
 /// Returns the ESP directory name of the current install's update volume.
 ///
@@ -149,6 +119,8 @@ mod tests {
     use const_format::formatcp;
 
     use trident_api::status::ServicingType;
+
+    use crate::engine::EngineContext;
 
     #[test]
     fn test_make_install_id() {
