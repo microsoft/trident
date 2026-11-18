@@ -63,7 +63,7 @@ jobs:
           script: |
             set -euo pipefail
             sudo apt-get update
-            sudo apt-get install -y libguestfs-tools qemu-utils rpm rpm2cpio cpio
+            sudo apt-get install -y binutils libguestfs-tools qemu-utils rpm rpm2cpio cpio
             sudo systemctl start docker
             docker image inspect '$(ACL_CUSTOMIZER)' >/dev/null 2>&1 || docker pull '$(ACL_CUSTOMIZER)'
             mkdir -p '$(ACL_INPUT_DIR)/rpms' '$(ob_outputDirectory)'
