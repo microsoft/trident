@@ -63,7 +63,7 @@ jobs:
           script: |
             set -euo pipefail
             sudo apt-get update
-            sudo apt-get install -y binutils libguestfs-tools qemu-utils rpm rpm2cpio cpio
+            sudo apt-get install -y binutils libguestfs-tools qemu-utils rpm rpm2cpio cpio curl jq
             sudo systemctl start docker
             docker image inspect '$(ACL_CUSTOMIZER)' >/dev/null 2>&1 || docker pull '$(ACL_CUSTOMIZER)'
             mkdir -p '$(ACL_INPUT_DIR)/rpms' '$(ob_outputDirectory)'
@@ -108,7 +108,7 @@ jobs:
               script: |
                 set -euo pipefail
                 cargo build --locked --target x86_64-unknown-uefi --release
-                '$(TRIDENT_SOURCE_DIR)/tests/images/synthetic-acl/fetch-mshv-payload.py' \
+                '$(TRIDENT_SOURCE_DIR)/tests/images/synthetic-acl/fetch-mshv-payload.sh' \
                   --output-dir '$(ACL_INPUT_DIR)/mshv-payload'
       - task: Bash@3
         displayName: Build synthetic ACL ${{ parameters.variant }} images
@@ -133,7 +133,7 @@ jobs:
                 --mshv-payload '$(ACL_INPUT_DIR)/mshv-payload'
                 --loader-provenance "bf02d4e3f4b9a4b61e838fd4d3705a50573d1ce9; profile-sha256=$profile")
             fi
-            sudo env LIBGUESTFS_BACKEND=direct ./tests/images/prepare-synthetic-acl.py "${args[@]}"
+            sudo env LIBGUESTFS_BACKEND=direct ./tests/images/prepare-synthetic-acl.sh "${args[@]}"
             sudo chown -R "$(id -u):$(id -g)" '$(ACL_BUILD_DIR)'
             for name in base.qcow2 update.cosi metadata.json manifest.json id_rsa; do
               cp -- '$(ACL_BUILD_DIR)'/"$name" '$(ob_outputDirectory)'/

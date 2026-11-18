@@ -8,21 +8,19 @@ networking does not depend on a particular VM controller or static subnet.
 
 ## Image Customizer recipes
 
-`standard.yaml` and `mshv.yaml` are static Image Customizer configurations.
-Both inherit shared OS settings from `common.yaml` using IC's `base-configs`
-preview feature. Storage stays in each variant because IC does not allow
-inherited storage configuration.
+`standard-base.yaml`, `standard-update.yaml`, `mshv-base.yaml` and
+`mshv-update.yaml` are complete, static Image Customizer configurations.
+Layout and OS settings are duplicated deliberately; no inheritance, YAML
+generation or generation-marker input is needed.
 
-The Python helper copies the recipes unchanged into `.work/`. It supplies
-runtime inputs separately: the SSH key, exact pipeline Trident NEVRA in
-`trident-packages.json`, installed conflicting packages in
-`remove-packages.json`, and the `base` or `update` generation marker.
-The same variant recipe builds both generations. Python still performs the
-ACL disk/UKI normalization, COSI conversion and provenance checks; it does not
-generate or rewrite YAML.
+`prepare-synthetic-acl.sh` copies the recipes unchanged and supplies the
+SSH key, exact pipeline Trident NEVRA and installed-package removal list.
+Bash, guestfish, binutils, jq and GNU tar handle the ACL partition identities,
+slot-specific UKI addons, COSI metadata and provenance. Payload downloads
+also use Bash. Neither build entry point runs repository Python code.
 
 Run on a Linux image-build worker with sudo, Docker, libguestfs (`guestfish`),
-RPM, OpenSSH and binutils (`objcopy`, `objdump`) installed. The pinned
+RPM, OpenSSH, jq, GNU tar and binutils (`objcopy`, `objdump`) installed. The pinned
 ImageCustomizer image must provide `/usr/bin/ukify`; the helper checks it
 before building. Supply a **plain AZL 3.0 x86-64** base image and
 the pipeline's RPM directory. The local ImageCustomizer Docker image must
@@ -38,7 +36,7 @@ Image construction checks host keys and effective root public-key-only login
 with `sshd -t` and `sshd -T`; it does not enable root password login.
 
 ```bash
-sudo tests/images/prepare-synthetic-acl.py \
+sudo tests/images/prepare-synthetic-acl.sh \
   --variant standard --base-image /inputs/azurelinux.qcow2 \
   --rpm-dir /inputs/trident-binaries \
   --ssh-public-key /inputs/ssh-keys/id_rsa.pub \
@@ -151,10 +149,10 @@ packages using the exact URLs/SHA-256 in `mshv-packages.json` and preserves
 their license/EULA files. No authentication or nightly image is required:
 
 ```bash
-tests/images/synthetic-acl/fetch-mshv-payload.py --output-dir /inputs/mshv-payload
+tests/images/synthetic-acl/fetch-mshv-payload.sh --output-dir /inputs/mshv-payload
 ```
 
-Host helper dependencies: Python 3, `rpm2cpio`, `cpio`, HTTPS access to
+Payload helper dependencies: Bash, curl, jq, `sha256sum`, `rpm2cpio`, `cpio`, HTTPS access to
 packages.microsoft.com. Package bytes were downloaded and SHA-256 verified;
 RPM payload paths were inspected. The main command's `--mshv-payload` points
 at this directory; its manifest records every package, license and binary hash.

@@ -125,7 +125,7 @@ Install the image-building dependencies and pull the same Image Customizer
 digest used by the synthetic-image pipeline:
 
 ```bash
-sudo apt-get install -y binutils libguestfs-tools rpm rpm2cpio cpio
+sudo apt-get install -y binutils libguestfs-tools rpm rpm2cpio cpio curl jq
 IC=mcr.microsoft.com/azurelinux/imagecustomizer@sha256:db7bcb75be27cbab4face6dbaedd3b6e6c63c65c369f5763d81499ed843ccd44
 docker pull "$IC"
 ```
@@ -148,14 +148,14 @@ ssh-keygen -q -t rsa -b 3072 -N '' -f "$WORK/id_rsa"
 
 The RPM directory must contain exactly one x86-64 `trident` RPM. The helper
 builds both generations from that RPM and records its binary hash.
-Image configuration lives in `tests/images/synthetic-acl/standard.yaml` and
-`mshv.yaml`, with shared OS settings in `common.yaml`. The helper stages these
-files unchanged and supplies runtime keys, package lists and generation input.
+Image configuration lives in the four self-contained
+`tests/images/synthetic-acl/{standard,mshv}-{base,update}.yaml` recipes.
+The Bash helper stages them unchanged; image and payload creation do not use Python helpers.
 
 #### Standard Variant
 
 ```bash
-sudo env LIBGUESTFS_BACKEND=direct ./tests/images/prepare-synthetic-acl.py \
+sudo env LIBGUESTFS_BACKEND=direct ./tests/images/prepare-synthetic-acl.sh \
     --variant standard \
     --base-image "$BASE_IMAGE" \
     --rpm-dir "$WORK/rpms" \
@@ -186,9 +186,9 @@ rustup toolchain install 1.97.1 --profile minimal --target x86_64-unknown-uefi
     cargo +1.97.1 build --locked --target x86_64-unknown-uefi --release
 )
 PROFILE_SHA256="$(sha256sum tests/images/synthetic-acl/load_entries.json | cut -d ' ' -f 1)"
-./tests/images/synthetic-acl/fetch-mshv-payload.py --output-dir "$WORK/mshv-payload"
+./tests/images/synthetic-acl/fetch-mshv-payload.sh --output-dir "$WORK/mshv-payload"
 
-sudo env LIBGUESTFS_BACKEND=direct ./tests/images/prepare-synthetic-acl.py \
+sudo env LIBGUESTFS_BACKEND=direct ./tests/images/prepare-synthetic-acl.sh \
     --variant mshv \
     --base-image "$BASE_IMAGE" \
     --rpm-dir "$WORK/rpms" \
