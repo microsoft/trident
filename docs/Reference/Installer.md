@@ -5,12 +5,21 @@ title: Trident Installer
 
 # Trident Installer
 
-`trident-installer` starts an installation immediately on a marked installer
-boot. It reads [installer TOML](./Installer-Configuration.md), then either sends
-a Host Configuration to Trident's **Install** operation or sends a COSI to
-**StreamDisk**. The terminal UI shows progress and offers recovery after a
-failure or interruption; it is **not** an initial source picker.
-`mode = "interactive"` is reserved and currently rejected.
+Install the optional `trident-installer` RPM on a full-OS installer ISO and add
+`trident.installer=1` to the **ISO boot kernel command line**. The packaged
+systemd service starts only when that argument is present; installing the RPM
+alone does not start an installation. See
+[Installer Configuration](./Installer-Configuration.md#building-an-installer-iso)
+for an ISO recipe.
+
+A [Host Configuration](./Host-Configuration/Host-Configuration.md) (HC) is YAML
+describing the OS image, disk layout, and settings for Trident's **Install**
+operation. A [Composable OS Image](./Composable-OS-Image.md) (COSI) contains
+the image data that **StreamDisk** writes to a disk. **Autorun** selects one
+of these operations from the available sources and starts without an initial
+confirmation or source picker. The terminal UI shows progress and offers
+recovery after a failure or interruption. `mode = "interactive"` is reserved
+and currently rejected.
 
 ## Choosing the installation source
 
@@ -18,7 +27,7 @@ failure or interruption; it is **not** an initial source picker.
 flowchart TD
   START(("START: installer boots")) --> CONFIG["Read installer TOML; require autorun"]
   CONFIG -->|Invalid| ERROR["ERROR"]
-  CONFIG --> SELF{"Complete live-OS or HTTP(S) Host Configuration without media-backed inputs?"}
+  CONFIG --> SELF{"Complete live-OS or HTTP(S) HC without media-backed inputs?"}
   SELF -->|Yes| INSTALL["Install with that HC; skip media overrides"]
   SELF -->|No| MEDIA["Find installer media; wait up to 60 seconds during autorun"]
   MEDIA --> OVERLAY["Apply media-local installer.toml, if present"]
@@ -46,9 +55,13 @@ Media is needed for a media-relative HC, a dangling HC symlink into the media,
 `installer://image`, or another file-backed HC input on the media (such as an
 additional file, script, extension, or recovery key). A self-contained HC takes
 precedence over media settings even if the media is already present. An invalid
-HC fails; it does not fall back to StreamDisk. Refer to
-[Installer Configuration](./Installer-Configuration.md) for accepted paths,
-filesystem labels, overrides, and ISO setup.
+HC fails; it does not fall back to StreamDisk.
+
+StreamDisk preflight reads the COSI's required disk size and metadata hash. It
+refuses a mounted or read-only disk that Trident could select as the smallest
+one that fits, then passes the hash to Trident so its fetch uses the checked
+metadata. See [Installer Configuration](./Installer-Configuration.md) for
+accepted paths, filesystem labels, and overrides.
 
 :::warning Reinstall on every installer boot
 
@@ -125,7 +138,9 @@ flowchart TD
 | Action | Behavior |
 | --- | --- |
 | Arrows, Tab, number keys, Enter | Select and activate an action. `V` changes only the display log filter; Page Up/Down scrolls logs or error details. |
-| Shell or `S` | Opens a root recovery shell from the current screen. Servicing continues and automatic reboot waits while the shell owns the terminal; `exit` returns to the latest screen. A nonzero shell exit is only a warning. |
+| Ctrl-C / Esc | On PROGRESS, open MENU without stopping work; MENU's Esc or Return returns to PROGRESS. On ERROR, Esc or Continue opens RECOVERY; Esc first closes full details if open. On a URL-entry screen, Esc returns to RECOVERY. On SUCCESS, Ctrl-C opens RECOVERY. |
+| `D` on ERROR | Toggle between the log panel and full error details. |
+| Shell or `S` | Opens a root recovery shell from PROGRESS, MENU, ERROR, RECOVERY, or SUCCESS. Servicing continues and automatic reboot waits while the shell owns the terminal; `exit` returns to the latest screen. A nonzero shell exit is only a warning. |
 | Stream COSI URL / Install HC URL | Recovery accepts HTTP(S) URLs without embedded username or password. A new attempt reloads installer TOML. Explicit StreamDisk recovery skips local media; recovery HC checks it once without waiting. |
 | Reboot / Shutdown | A running worker or uncertain outcome blocks power actions. Shutdown is not offered while the outcome is uncertain; a later attempt first checks Trident's servicing state before another write. |
 | Automatic reboot | Starts five seconds after success **only** when enabled, work was performed, and Trident says a reboot is required. |

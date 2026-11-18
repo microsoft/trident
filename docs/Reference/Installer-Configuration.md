@@ -30,13 +30,17 @@ There is **no implicit default for `mode`** in a TOML file: omitting it is an
 error, even though the packaged file sets it to `"autorun"`. All other fields
 may be omitted; unknown fields and invalid values are errors.
 
+The packaged file (or the file passed with `--config`) is the **bootstrap
+configuration**: it supplies media-discovery settings before an optional
+[media-local override](#optional-configuration-on-the-media) can be read.
+
 ## Selecting Install or StreamDisk
 
-`mode = "autorun"` means **start without an interactive source picker**. It
-does not choose the Trident operation; `mode = "install"` and `mode = "stream"`
-are not valid TOML settings. If the bootstrap configuration names a live-OS
-or HTTP(S) Host Configuration whose file-backed inputs do not need installer
-media, autorun uses it without looking for media or applying
+`mode = "autorun"` means **start without an interactive source picker**. The
+selected source, not `mode`, determines whether Trident performs Install or
+StreamDisk. If the bootstrap configuration names a live-OS or HTTP(S) Host
+Configuration whose file-backed inputs do not need installer media, autorun
+uses it without looking for media or applying
 [media-local overrides](#optional-configuration-on-the-media). Otherwise it
 discovers media, applies any overrides, and makes this choice:
 
