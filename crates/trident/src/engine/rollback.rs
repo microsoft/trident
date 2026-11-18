@@ -36,11 +36,14 @@ pub enum BootValidationResult {
     ValidBootHealthCheckFailed(TridentError),
 }
 
-/// Validates that the firmware did not perform a rollback, i.e. correctly booted from the updated
-/// target OS image.
+/// Validates that the firmware correctly booted from the expected target OS
+/// image rather than rolling back, and reconciles the Host Status accordingly.
 ///
-/// If the firmware did not boot from the expected boot device, this function will return an error.
-/// In either case, the function will update the Host Status.
+/// A successful finalized boot continues the commit process. An unexpected boot
+/// device returns an error, updating Host Status where rollback reconciliation
+/// requires it. Trial A/B health-check failures can request
+/// recovery; failed recovery returns an error without another rollback or
+/// changing Host Status.
 #[tracing::instrument(skip_all)]
 pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, TridentError> {
     info!("Validating whether host correctly booted from target OS image");
@@ -51,8 +54,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         ServicingState::AbUpdateFinalized
         | ServicingState::CleanInstallFinalized
         | ServicingState::ManualRollbackAbFinalized => datastore.host_status().ab_active_volume,
-        // For AbUpdateHealthCheckFailed, use the opposite active volume of the one
-        // set in Host Status
+        // For AbUpdateHealthCheckFailed, use
+        // the opposite of the active volume set in Host Status, so recovery
+        // validates the retained servicing OS rather than the failed candidate.
         ServicingState::AbUpdateHealthCheckFailed => {
             match datastore.host_status().ab_active_volume {
                 Some(AbVolumeSelection::VolumeB) => Some(AbVolumeSelection::VolumeA),
@@ -77,9 +81,19 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         _ => ServicingType::NoActiveServicing,
     };
 
+    // Recovery validates the retained OS, not the failed candidate.
+    let recovering = matches!(
+        current_servicing_state,
+        ServicingState::AbUpdateHealthCheckFailed
+    );
+    let expected_spec = if recovering {
+        datastore.host_status().spec_old.clone()
+    } else {
+        datastore.host_status().spec.clone()
+    };
     // Create an EngineContext based on the Host Status
     let ctx = EngineContext::new(EngineContextParams {
-        spec: datastore.host_status().spec.clone(),
+        spec: expected_spec,
         spec_old: datastore.host_status().spec_old.clone(),
         servicing_type,
         is_stream_image: false,
@@ -104,6 +118,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         compare_device_paths(current_device_path.clone(), expected_device_path.clone())
             .message("Host failed to boot from expected boot device")?;
 
+    // TODO: Validate the running hypervisor's identity against the expected OS slot.
     match (booted_to_expected_device, current_servicing_state) {
         (true, ServicingState::CleanInstallFinalized)
         | (true, ServicingState::AbUpdateFinalized)
@@ -122,9 +137,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         // Every case below will return an error.
         //
         (false, ServicingState::AbUpdateHealthCheckFailed) => {
-            // For A/B Update, when health checks previously failed and host
-            // failed to rollback, i.e boot from the servicing OS, report error
-            // and leave host status alone
+            // For an A/B update whose health checks failed,
+            // failure to boot back into the retained servicing OS is a failed
+            // recovery: report the error and leave Host Status unchanged.
             error!("Host failed to rollback into the servicing OS");
             return Err(TridentError::new(ServicingError::AbUpdateRebootCheck {
                 root_device_path: current_device_path.to_string_lossy().to_string(),

@@ -9,10 +9,9 @@ use uuid::Uuid;
 
 use osutils::{
     lsblk::{self, BlockDevice},
-    osrelease::OsRelease,
     sfdisk::SfDisk,
 };
-
+use sysdefs::acl::ACL_ESP_MOUNT_POINT;
 use trident_api::{
     config::{
         AbUpdate, AbVolumePair, Disk, FileSystem, FileSystemSource, HostConfiguration,
@@ -22,13 +21,6 @@ use trident_api::{
     status::{AbVolumeSelection, HostStatus, ServicingState},
     BlockDeviceId,
 };
-
-/// Returns whether the host is running the ACL image.
-pub fn is_acl() -> Result<bool, Error> {
-    let os_release = OsRelease::read().context("Failed to read OS release information")?;
-
-    Ok(os_release.variant_id == Some("azurecontainerlinux".to_string()))
-}
 
 /// An expected partition on the ACL root disk, identified by label, along
 /// with its partition type, the actual `Partition` discovered on disk (if
@@ -239,7 +231,7 @@ fn inner_initial_host_status(
                     FileSystem {
                         device_id: Some("efi-system".to_string()),
                         mount_point: Some(MountPoint {
-                            path: PathBuf::from("/boot"),
+                            path: PathBuf::from(ACL_ESP_MOUNT_POINT),
                             options: MountOptions("umask=0077".to_string()),
                         }),
                         source: FileSystemSource::Image,

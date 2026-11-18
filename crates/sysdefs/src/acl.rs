@@ -1,9 +1,12 @@
 //! Azure Container Linux (ACL) system definitions.
 //!
-//! Fixed PARTUUIDs and partition type UUIDs for the ACL UKI disk layout,
+//! ESP mount point, fixed PARTUUIDs and partition type UUIDs for the ACL UKI disk layout,
 //! sourced from acl-scripts disk_layout_uki.json.
 
 use uuid::{uuid, Uuid};
+
+/// ACL EFI System Partition mount point.
+pub const ACL_ESP_MOUNT_POINT: &str = "/boot";
 
 /// ACL USR partition A PARTUUID.
 pub const ACL_USR_A_PARTUUID: Uuid = uuid!("7130c94a-213a-4e5a-8e26-6cce9662f132");

@@ -12,7 +12,11 @@ use semver::Version;
 use url::Url;
 
 use engine::{bootentries, EngineContext, EngineContextParams};
-use osutils::{block_devices, container, dependencies::Dependency, osrelease::OsRelease};
+use osutils::{
+    block_devices, container,
+    dependencies::Dependency,
+    osrelease::{self, OsRelease},
+};
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationSource, ImageSha384, Operations,
@@ -69,7 +73,13 @@ pub use crate::{
 };
 
 use crate::{
-    engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
+    engine::{
+        ab_update,
+        rollback::{self, BootValidationResult},
+        runtime_update,
+        storage::rebuild,
+        SUBSYSTEMS,
+    },
     init::acl,
     osimage::OsImage,
     stream::DiskSelectionStrategy,
@@ -290,6 +300,7 @@ impl Trident {
         Ok(())
     }
 
+    /// Records operation errors, preserving the original A/B validation error if recovery fails.
     fn execute_and_record_error<F, T>(
         &mut self,
         datastore: &mut DataStore,
@@ -629,7 +640,7 @@ impl Trident {
         self.execute_and_record_error(datastore, |datastore| {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
-                if acl::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
+                if osrelease::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
                     // For ACL, initialize datastore with known initial state when
                     // the datastore is not already created.
                     let initial_host_status = acl::initial_host_status()
@@ -807,12 +818,13 @@ impl Trident {
         self.install(datastore, Operations::all(), false, Some(image))
     }
 
+    /// Validates finalized servicing/recovery and returns whether a reboot is needed.
     pub fn commit(
         &mut self,
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
-        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
-        // re-evaluate the current state of the host.
+        // Re-evaluate finalized or health-check-failed servicing to validate
+        // either the target boot or the recovery boot.
         let servicing_state = datastore.host_status().servicing_state;
         if !matches!(
             servicing_state,
@@ -843,21 +855,19 @@ impl Trident {
             )
         });
 
-        if rollback_result.is_ok() {
-            if let Some(ref orchestrator) = self.orchestrator {
-                orchestrator.report_success(Some(
-                    serde_yaml::to_string(&datastore.host_status())
-                        .unwrap_or("Failed to serialize Host Status".into()),
-                ))
-            }
-        }
-
         match rollback_result {
-            Ok(rollback::BootValidationResult::ValidBootProvisioned) => {
+            Ok(BootValidationResult::ValidBootProvisioned) => {
+                if let Some(ref orchestrator) = self.orchestrator {
+                    orchestrator.report_success(Some(
+                        serde_yaml::to_string(&datastore.host_status())
+                            .unwrap_or("Failed to serialize Host Status".into()),
+                    ))
+                }
                 Ok((ExitKind::Done, servicing_type))
             }
-            Ok(rollback::BootValidationResult::ValidBootHealthCheckFailed(e)) => {
-                debug!("Correct boot, but health check(s) failed: {e:?}");
+            Ok(BootValidationResult::ValidBootHealthCheckFailed(e)) => {
+                // The caller must reboot to complete automatic recovery.
+                debug!("Boot validation requires rollback: {e:?}");
                 Ok((ExitKind::NeedsReboot, servicing_type))
             }
             Err(e) => {

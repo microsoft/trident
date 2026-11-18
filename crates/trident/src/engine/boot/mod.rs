@@ -12,6 +12,7 @@ use crate::engine::Subsystem;
 use super::EngineContext;
 
 pub(super) mod grub;
+pub(crate) mod mshv;
 pub mod uki;
 
 pub(crate) const ESP_EXTRACTION_DIRECTORY: &str = VAR_TMP_PATH;

@@ -536,6 +536,8 @@ mod tests {
 
     use serde_json::{json, Value};
 
+    use crate::engine::EngineContext;
+
     const SAMPLE_SHA384: &str = "1d0f284efe3edea4b9ca3bd514fa134b17eae361ccc7a1eefeff801b9bd6604e01f21f6bf249ef030599f0c218f2ba8c";
 
     #[test]
@@ -554,21 +556,50 @@ mod tests {
     }
 
     #[test]
-    fn test_efitreeloader_mshv_systemd_boot_deserialization() {
-        let bootloader: Bootloader = serde_json::from_value(json!({
-            "type": "efitreeloader-mshv-systemd-boot",
-            "systemdBoot": {
-                "entries": [{
-                    "type": "uki-standalone",
-                    "kernel": "vmlinuz",
-                    "path": "EFI/Linux/image.efi",
-                    "cmdline": "quiet"
+    fn test_cosi_1_3_mshv_bootloader_context() {
+        let metadata: CosiMetadata = serde_json::from_value(json!({
+            "version": "1.3",
+            "osArch": "x86_64",
+            "osRelease": "ID=test\nNAME=Test\n",
+            "osPackages": [],
+            "images": [],
+            "compression": { "maxWindowLog": 27 },
+            "disk": {
+                "size": 1048576,
+                "lbaSize": 512,
+                "type": "gpt",
+                "gptRegions": [{
+                    "type": "primary-gpt",
+                    "image": {
+                        "path": "images/gpt.raw.zst",
+                        "compressedSize": 4096,
+                        "uncompressedSize": 17408,
+                        "sha384": SAMPLE_SHA384
+                    }
                 }]
+            },
+            "bootloader": {
+                "type": "efitreeloader-mshv-systemd-boot",
+                "systemdBoot": {
+                    "entries": [{
+                        "type": "uki-standalone",
+                        "kernel": "vmlinuz",
+                        "path": "EFI/Linux/image.efi",
+                        "cmdline": "quiet"
+                    }]
+                }
             }
         }))
         .unwrap();
+        metadata.validate().unwrap();
 
-        let exposed = OsImageBootloader::from(&bootloader);
+        let ctx = EngineContext {
+            bootloader: metadata.bootloader(),
+            ..Default::default()
+        };
+        let exposed = ctx.bootloader().unwrap();
+        assert!(exposed.uses_mshv());
+        assert!(metadata.is_uki());
         assert_eq!(
             exposed.bootloader_type(),
             &OsImageBootloaderType::EfitreeloaderMshvSystemdBoot

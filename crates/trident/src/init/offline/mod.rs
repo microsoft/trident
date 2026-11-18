@@ -457,6 +457,7 @@ fn parse_lazy_partitions(
 
 /// Given a path to a Host Status file, initializes the datastore with the Host Status.
 /// This command can be executed offline in a chroot environment as part of MIC image customization.
+/// Seeds a missing AZLA by copying the installed fallback boot tree.
 pub fn execute(
     hs_path: Option<&Path>,
     lazy_partitions: &[String],

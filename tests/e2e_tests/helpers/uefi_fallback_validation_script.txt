@@ -25,6 +25,9 @@ if [ "_REPLACE_FALLBACK_NODE_" == "disabled" ]; then
     fi
 else
     AZL_BOOT_NAME_TO_CHECK="$CURRENT_AZL_BOOT_NAME"
+    # This health check runs before commit refreshes fallback. Conservative
+    # updates must still match the retained slot here; this does not validate
+    # that commit subsequently copies the validated target slot into BOOT.
     if [ "_REPLACE_FALLBACK_NODE_" == "conservative" ] && _REPLACE_NOT_INSTALL_; then
         # if conservative, check that $FALLBACK_PATH == opposite of $EFI_PATH/$CURRENT_AZL_BOOT_NAME
         AZL_BOOT_NAME_TO_CHECK="$(echo "$CURRENT_AZL_BOOT_NAME" | sed "s/AZLA/AZLA_TMP/g; s/AZLB/AZLA/g; s/AZLA_TMP/AZLB/g")"

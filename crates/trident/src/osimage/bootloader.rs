@@ -7,7 +7,7 @@ pub(crate) struct Bootloader {
 }
 
 impl Bootloader {
-    pub(super) fn new(bootloader_type: BootloaderType, systemd_boot: Option<SystemdBoot>) -> Self {
+    pub(crate) fn new(bootloader_type: BootloaderType, systemd_boot: Option<SystemdBoot>) -> Self {
         Self {
             bootloader_type,
             systemd_boot,
