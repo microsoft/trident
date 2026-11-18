@@ -305,10 +305,8 @@ impl Trident {
     where
         F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
-        // AbUpdateHealthCheckFailed and CommitFailed are
-        // special cases where the last error must be preserved across failed
-        // recovery attempts. This keeps the original health/hypervisor failure
-        // visible instead of replacing it with a secondary recovery error.
+        // Preserve the original health-check failure across failed recovery attempts
+        // instead of replacing it with a secondary recovery error.
         debug!(
             "Execute and record error with servicing state: {:?} and last error: {:?}",
             datastore.host_status().servicing_state,
@@ -316,7 +314,7 @@ impl Trident {
         );
         let last_error_to_preserve = if matches!(
             datastore.host_status().servicing_state,
-            ServicingState::AbUpdateHealthCheckFailed | ServicingState::CommitFailed
+            ServicingState::AbUpdateHealthCheckFailed
         ) {
             datastore.host_status().last_error.clone()
         } else {
@@ -614,7 +612,6 @@ impl Trident {
         })
     }
 
-    /// Adopts untracked ACL hosts as needed, then stages/finalizes the update.
     pub fn update(
         &mut self,
         datastore: &mut DataStore,
@@ -820,16 +817,14 @@ impl Trident {
         &mut self,
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
-        // If the host's servicing state is *Finalized, AbUpdateHealthCheckFailed,
-        // or CommitFailed, re-evaluate the current state of
-        // the host to validate either the target boot or the recovery boot.
+        // Re-evaluate finalized or health-check-failed servicing to validate
+        // either the target boot or the recovery boot.
         let servicing_state = datastore.host_status().servicing_state;
         if !matches!(
             servicing_state,
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
-                | ServicingState::CommitFailed
                 | ServicingState::ManualRollbackAbFinalized
         ) {
             info!(
@@ -840,9 +835,9 @@ impl Trident {
         }
 
         let servicing_type = match servicing_state {
-            ServicingState::AbUpdateFinalized
-            | ServicingState::AbUpdateHealthCheckFailed
-            | ServicingState::CommitFailed => ServicingType::AbUpdate,
+            ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
+                ServicingType::AbUpdate
+            }
             ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
             ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
             _ => ServicingType::NoActiveServicing,
@@ -864,8 +859,7 @@ impl Trident {
                 }
                 Ok((ExitKind::Done, servicing_type))
             }
-            Ok(BootValidationResult::InvalidHypervisor(e))
-            | Ok(BootValidationResult::ValidBootHealthCheckFailed(e)) => {
+            Ok(BootValidationResult::ValidBootHealthCheckFailed(e)) => {
                 // The caller must reboot to complete automatic recovery.
                 debug!("Boot validation requires rollback: {e:?}");
                 Ok((ExitKind::NeedsReboot, servicing_type))

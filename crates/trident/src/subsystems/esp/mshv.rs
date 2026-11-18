@@ -4,10 +4,11 @@ use std::path::Path;
 
 use anyhow::{anyhow, ensure, Context, Error};
 
+use osutils::container;
 use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     constants::ESP_EFI_DIRECTORY,
-    error::{InvalidInputError, TridentError},
+    error::{InvalidInputError, ReportError, TridentError},
     status::ServicingType,
 };
 
@@ -19,33 +20,43 @@ use crate::{
     osimage::bootloader::Bootloader,
 };
 
-/// Enforces support restrictions for file-based deployment of MSHV images.
+/// Enforces file-based MSHV support and retained-slot compatibility before staging.
 pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentError> {
-    if ctx.is_stream_image || !ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
+    if ctx.is_stream_image {
         return Ok(());
     }
-    // The required bootloader files currently support only x86-64.
-    if !SystemArchitecture::current().is_x64() || !ctx.image_distro().is_acl() || !ctx.is_uki()? {
-        return Err(unsupported(
-            "Slot-owned MSHV requires an x86-64 ACL UKI image",
-        ));
+    if ctx.bootloader().is_some_and(Bootloader::uses_mshv) {
+        // The required bootloader files currently support only x86-64.
+        if !SystemArchitecture::current().is_x64()
+            || !ctx.image_distro().is_acl()
+            || !ctx.is_uki()?
+        {
+            return Err(unsupported(
+                "Slot-owned MSHV requires an x86-64 ACL UKI image",
+            ));
+        }
+        if ctx
+            .spec
+            .storage
+            .encryption
+            .as_ref()
+            .is_some_and(|encryption| !encryption.pcrs.is_empty())
+        {
+            return Err(unsupported(
+                "Slot-owned MSHV TPM/PCR-bound encryption is not validated",
+            ));
+        }
     }
-    if ctx
-        .spec
-        .storage
-        .encryption
-        .as_ref()
-        .is_some_and(|encryption| !encryption.pcrs.is_empty())
-    {
-        return Err(unsupported(
-            "Slot-owned MSHV TPM/PCR-bound encryption is not validated",
-        ));
+    if ctx.servicing_type == ServicingType::AbUpdate {
+        let esp_path = container::get_host_relative_path(ctx.esp_mount_path.clone())?;
+        validate_transition(ctx, &esp_path)
+            .structured(InvalidInputError::InvalidBootConfiguration)?;
     }
     Ok(())
 }
 
 /// Rejects A/B updates that change the retained slot's MSHV layout.
-pub(super) fn validate_transition(ctx: &EngineContext, esp_path: &Path) -> Result<(), Error> {
+fn validate_transition(ctx: &EngineContext, esp_path: &Path) -> Result<(), Error> {
     if ctx.servicing_type != ServicingType::AbUpdate {
         return Ok(());
     }
@@ -84,8 +95,9 @@ mod tests {
     use trident_api::{config::Encryption, status::AbVolumeSelection};
 
     use crate::{
-        engine::boot::mshv::FILES,
+        engine::{boot::mshv::FILES, Subsystem},
         osimage::{bootloader::BootloaderType, mock::MockOsImage},
+        subsystems::esp::EspSubsystem,
     };
 
     /// Only file-based deployment of metadata-declared MSHV images receives these restrictions.
@@ -143,8 +155,19 @@ mod tests {
                 servicing_type: ServicingType::AbUpdate,
                 install_index: 1,
                 ab_active_volume: Some(AbVolumeSelection::VolumeB),
+                esp_mount_path: esp.path().to_path_buf(),
+                is_uki: Some(true),
                 ..Default::default()
-            };
+            }
+            .with_image(MockOsImage {
+                os_release: OsRelease {
+                    id: Some(AZURE_LINUX_DISTRO_ID.into()),
+                    variant_id: Some(AZURE_CONTAINER_LINUX_VARIANT_ID.into()),
+                    ..Default::default()
+                },
+                is_uki: true,
+                ..MockOsImage::new()
+            });
             for requested_mshv in [false, true] {
                 let bootloader_type = if requested_mshv {
                     BootloaderType::EfitreeloaderMshvSystemdBoot
@@ -153,10 +176,17 @@ mod tests {
                 };
                 ctx.bootloader = Some(Bootloader::new(bootloader_type, None));
                 assert_eq!(
-                    validate_transition(&ctx, esp.path()).is_ok(),
+                    EspSubsystem.validate_host_config(&ctx).is_ok(),
                     retained_mshv == requested_mshv
+                        && (!requested_mshv || SystemArchitecture::current().is_x64())
                 );
             }
+            ctx.is_stream_image = true;
+            EspSubsystem.validate_host_config(&ctx).unwrap();
+            ctx.is_stream_image = false;
+            ctx.bootloader = Some(Bootloader::new(BootloaderType::SystemdBoot, None));
+            ctx.servicing_type = ServicingType::RuntimeUpdate;
+            EspSubsystem.validate_host_config(&ctx).unwrap();
         }
     }
 }

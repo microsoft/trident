@@ -145,9 +145,6 @@ Links, special files and source names ending in `.new` or `.old` are rejected.
 | `disabled` | BOOT is left unchanged. | No fallback copy is performed. |
 
 Rollback selects the retained OS slot and its corresponding MSHV boot components.
-If a trial A/B hypervisor-identity check fails, Trident records `CommitFailed`
-and requests a reboot to recover the retained OS, rather than treating it as
-a user health-check failure.
 
 ## Current Limitations
 
@@ -161,17 +158,15 @@ without MSHV-specific completeness checks.
 
 ### Changing the Boot Layout
 
-A/B staging compares the source COSI's bootloader type with the retained
+Before A/B staging, validation compares the source COSI's bootloader type with the retained
 slot's actual MSHV boot components. Converting between MSHV and ordinary boot
 layouts is not supported. Manual rollback and fallback use the selected
 slot's files, not a recorded configuration flag.
 
 ### Hypervisor Identity
 
-**Hypervisor identity validation currently assumes success.** A best-effort
-check for `/dev/mshv` gates a placeholder that logs the expected slot or
-fallback directory and returns success. A missing or uninspectable device
-path skips the placeholder successfully. No ESP files are inspected.
+**Hypervisor identity validation is not implemented.** Commit and rollback
+do not query `/dev/mshv` or inspect ESP files to establish hypervisor identity.
 
 Commit and rollback do not yet identify the running hypervisor or detect a
 mixed hypervisor/OS boot. Root-device validation and health checks still

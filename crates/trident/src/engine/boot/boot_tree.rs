@@ -15,17 +15,13 @@ use anyhow::{ensure, Context, Error};
 
 /// Validates the whole tree, including empty directories, and collects relative file paths.
 /// `temporary` permits replacement suffixes in destinations left by interrupted work.
-fn scan(
-    root: &Path,
-    directory: &Path,
-    temporary: bool,
-    files: &mut Vec<PathBuf>,
-) -> Result<(), Error> {
+fn scan(root: &Path, directory: &Path, temporary: bool) -> Result<Vec<PathBuf>, Error> {
     ensure!(
         fs::symlink_metadata(directory)?.is_dir(),
         "Invalid boot directory: {}",
         directory.display()
     );
+    let mut files = Vec::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let path = entry.path();
@@ -37,7 +33,7 @@ fn scan(
         );
         let kind = entry.file_type()?;
         if kind.is_dir() {
-            scan(root, &path, temporary, files)?;
+            files.extend(scan(root, &path, temporary)?);
         } else {
             ensure!(
                 kind.is_file(),
@@ -47,13 +43,12 @@ fn scan(
             files.push(path.strip_prefix(root)?.to_path_buf());
         }
     }
-    Ok(())
+    Ok(files)
 }
 
 /// Returns sorted root-relative file paths; empty directories are validated but not listed.
 fn boot_files(root: &Path, temporary: bool) -> Result<Vec<PathBuf>, Error> {
-    let mut files = Vec::new();
-    scan(root, root, temporary, &mut files)?;
+    let mut files = scan(root, root, temporary)?;
     files.sort();
     Ok(files)
 }

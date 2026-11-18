@@ -12,6 +12,7 @@ use osutils::{
     osrelease::OsRelease,
     sfdisk::SfDisk,
 };
+use sysdefs::acl::ACL_ESP_MOUNT_POINT;
 
 use trident_api::{
     config::{
@@ -23,13 +24,11 @@ use trident_api::{
     BlockDeviceId,
 };
 
-const ACL_ESP_MOUNT_POINT: &str = "/boot";
-
 /// Returns whether the host is running the ACL image.
 pub fn is_acl() -> Result<bool, Error> {
     let os_release = OsRelease::read().context("Failed to read OS release information")?;
 
-    Ok(os_release.variant_id == Some("azurecontainerlinux".to_string()))
+    Ok(os_release.get_distro().is_acl())
 }
 
 /// An expected partition on the ACL root disk, identified by label, along

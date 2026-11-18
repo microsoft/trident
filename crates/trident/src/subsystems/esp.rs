@@ -369,9 +369,13 @@ fn copy_file_artifacts(
     // Call helper func to copy files from mounted img dir to esp_dir_path
     debug!("Writing boot files to directory {}", esp_dir_path.display());
 
-    // Select and validate boot files by image capability before clearing the slot.
-    // Preparation also cleans target-slot UKIs after source validation succeeds.
-    let boot_files = prepare_boot_files_for_staging(temp_mount_dir, ctx, mount_point)?;
+    // Validate source files before removing target-slot UKIs or boot files.
+    let is_uki = ctx.is_uki().unstructured("UKI setting unknown")?;
+    let boot_files = generate_boot_filepaths(temp_mount_dir, is_uki, ctx.bootloader())
+        .context("Failed to generate boot filepaths")?;
+    if is_uki {
+        uki::cleanup_ukis_before_staging(ctx, mount_point, &ctx.esp_mount_path)?;
+    }
 
     // Clear esp_dir_path if it exists
     if esp_dir_path.exists() {
@@ -449,51 +453,6 @@ fn copy_file_artifacts(
     }
 
     Ok(())
-}
-
-/// Prepares file-based ESP staging, validating sources before target cleanup.
-///
-/// `temp_mount_dir` is the mounted COSI ESP image. `mount_point` and
-/// `ctx.esp_mount_path` locate the destination ESP. Returns source paths rooted
-/// at `temp_mount_dir` for the staging copier: shim/main loader, capability-specific
-/// efitreeloader/MSHV files, and GRUB config for non-UKI images. UKI payloads are
-/// staged separately and are not included in the returned list.
-///
-/// Checks MSHV layout compatibility for A/B updates, selects files by image
-/// capability, and verifies that selected sources are regular files. Only after
-/// validation succeeds does UKI-mode cleanup reclaim old UKIs and addons under
-/// its ownership rules, preserving the active slot and other installations.
-/// This function neither copies boot files nor clears the target boot directory.
-///
-/// Validation failures leave the destination ESP unchanged. Cleanup can partially
-/// succeed before returning an error; subsequent copy failures do not restore
-/// deleted target-slot UKIs.
-fn prepare_boot_files_for_staging(
-    temp_mount_dir: &Path,
-    ctx: &EngineContext,
-    mount_point: &Path,
-) -> Result<Vec<PathBuf>, Error> {
-    let is_uki = ctx.is_uki().unstructured("UKI setting unknown")?;
-    // Compare source metadata with the retained slot before any ESP writes.
-    mshv::validate_transition(ctx, &path::join_relative(mount_point, &ctx.esp_mount_path))?;
-    // Select shim and the main loader (GRUB or efitreeloader), plus second.efi
-    // for efitreeloader and grub.cfg for non-UKI images. UKI payloads are staged
-    // separately; declared MSHV components are included by discovery.
-    let boot_files = generate_boot_filepaths(temp_mount_dir, is_uki, ctx.bootloader())
-        .context("Failed to generate boot filepaths")?;
-    for path in &boot_files {
-        ensure!(
-            fs::symlink_metadata(path)?.is_file(),
-            "Not a regular boot file: {}",
-            path.display()
-        );
-    }
-    if is_uki {
-        // Reclaim target-slot space before copying, preserving the active slot.
-        // A failed copy can leave the target without its previous UKI.
-        uki::cleanup_ukis_before_staging(ctx, mount_point, &ctx.esp_mount_path)?;
-    }
-    Ok(boot_files)
 }
 
 /// Determines the source directory to copy UEFI fallback boot files from.
@@ -845,7 +804,13 @@ fn generate_boot_filepaths(
     let source_boot_dir = temp_mount_dir.join(EFI_DEFAULT_BIN_RELATIVE_PATH);
     // Efitreeloader's second stage is required independently of MSHV.
     if uses_efitreeloader {
-        paths.extend(generate_efitreeloader_boot_filepaths(&source_boot_dir)?);
+        let second = source_boot_dir.join(ETL_SECOND_STAGE_EFI_FILENAME);
+        ensure!(
+            fs::symlink_metadata(&second)?.is_file(),
+            "Invalid efitreeloader second stage: {}",
+            second.display()
+        );
+        paths.push(second);
     }
 
     // Add MSHV components without changing ordinary loader/config selection.
@@ -858,23 +823,14 @@ fn generate_boot_filepaths(
         );
     }
 
+    for path in &paths {
+        ensure!(
+            fs::symlink_metadata(path)?.is_file(),
+            "Not a regular boot file: {}",
+            path.display()
+        );
+    }
     Ok(paths)
-}
-
-/// Selects and validates efitreeloader's second stage, without requiring MSHV.
-///
-/// Example output for `source_boot_dir = /image/EFI/BOOT`:
-/// ```text
-/// ["/image/EFI/BOOT/second.efi"]
-/// ```
-fn generate_efitreeloader_boot_filepaths(source_boot_dir: &Path) -> Result<Vec<PathBuf>, Error> {
-    let second = source_boot_dir.join(ETL_SECOND_STAGE_EFI_FILENAME);
-    ensure!(
-        fs::symlink_metadata(&second)?.is_file(),
-        "Invalid efitreeloader second stage: {}",
-        second.display()
-    );
-    Ok(vec![second])
 }
 
 /// Validates required MSHV loaders and selects additional BOOT files for staging.
@@ -993,7 +949,7 @@ mod tests {
             b"unrelated GRUB binary",
         )
         .unwrap();
-        let files = prepare_boot_files_for_staging(source.path(), &ctx, esp.path()).unwrap();
+        let files = generate_boot_filepaths(source.path(), true, ctx.bootloader()).unwrap();
         assert!(files
             .iter()
             .any(|path| path.ends_with(ETL_SECOND_STAGE_EFI_FILENAME)));
@@ -1034,20 +990,15 @@ mod tests {
     #[test]
     fn test_boot_tree_staging_requires_second_stage_only_for_etl() {
         for name in [ETL_SECOND_STAGE_EFI_FILENAME, BOOT_EFI, GRUB_EFI] {
-            let (source, esp, ctx) = boot_file_staging_fixture(true, true);
+            let (source, _esp, ctx) = boot_file_staging_fixture(true, true);
             let boot = source.path().join(EFI_DEFAULT_BIN_RELATIVE_PATH);
             fs::remove_file(boot.join(name)).unwrap();
             fs::create_dir(boot.join(name)).unwrap();
             boot_mshv::validate_boot_components(&boot).unwrap();
-            prepare_boot_files_for_staging(source.path(), &ctx, esp.path()).unwrap_err();
-            assert!(esp
-                .path()
-                .join(uki::UKI_DIRECTORY)
-                .join("vmlinuz-100-azlb1.efi")
-                .is_file());
+            generate_boot_filepaths(source.path(), true, ctx.bootloader()).unwrap_err();
         }
 
-        let (source, esp, ctx) = boot_file_staging_fixture(false, true);
+        let (source, _esp, ctx) = boot_file_staging_fixture(false, true);
         fs::create_dir(
             source
                 .path()
@@ -1055,7 +1006,7 @@ mod tests {
                 .join(ETL_SECOND_STAGE_EFI_FILENAME),
         )
         .unwrap();
-        let paths = prepare_boot_files_for_staging(source.path(), &ctx, esp.path()).unwrap();
+        let paths = generate_boot_filepaths(source.path(), true, ctx.bootloader()).unwrap();
         assert!(!paths
             .iter()
             .any(|path| path.ends_with(ETL_SECOND_STAGE_EFI_FILENAME)));
@@ -1155,72 +1106,7 @@ mod tests {
                 fs::write(root.join(GRUB2_CONFIG_FILENAME), b"configuration").unwrap();
             }
         }
-        let ukis = esp.path().join(uki::UKI_DIRECTORY);
-        fs::create_dir_all(&ukis).unwrap();
-        for name in ["vmlinuz-100-azla1.efi", "vmlinuz-100-azlb1.efi"] {
-            fs::write(ukis.join(name), b"kernel").unwrap();
-            let addons = ukis.join(format!("{name}.extra.d"));
-            fs::create_dir(&addons).unwrap();
-            fs::write(addons.join("payload.addon.efi"), b"addon").unwrap();
-        }
         (source, esp, ctx)
-    }
-
-    #[test]
-    fn test_prepare_boot_files_for_staging_skips_cleanup_for_non_uki_images() {
-        // MSHV and UKI are independent predicates, despite current deployment restrictions.
-        for is_mshv in [false, true] {
-            let (source, esp, ctx) = boot_file_staging_fixture(is_mshv, false);
-            prepare_boot_files_for_staging(source.path(), &ctx, esp.path()).unwrap();
-            let ukis = esp.path().join(uki::UKI_DIRECTORY);
-            for name in ["vmlinuz-100-azla1.efi", "vmlinuz-100-azlb1.efi"] {
-                assert_eq!(fs::read(ukis.join(name)).unwrap(), b"kernel");
-                assert_eq!(
-                    fs::read(ukis.join(format!("{name}.extra.d/payload.addon.efi"))).unwrap(),
-                    b"addon"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn test_prepare_boot_files_for_staging_cleans_target_ukis_for_uki_images() {
-        for is_mshv in [false, true] {
-            let (source, esp, ctx) = boot_file_staging_fixture(is_mshv, true);
-            prepare_boot_files_for_staging(source.path(), &ctx, esp.path()).unwrap();
-            let ukis = esp.path().join(uki::UKI_DIRECTORY);
-            assert!(!ukis.join("vmlinuz-100-azlb1.efi").exists());
-            assert!(!ukis.join("vmlinuz-100-azlb1.efi.extra.d").exists());
-            assert_eq!(
-                fs::read(ukis.join("vmlinuz-100-azla1.efi")).unwrap(),
-                b"kernel"
-            );
-            assert_eq!(
-                fs::read(ukis.join("vmlinuz-100-azla1.efi.extra.d/payload.addon.efi")).unwrap(),
-                b"addon"
-            );
-        }
-    }
-
-    #[test]
-    fn test_prepare_boot_files_for_staging_validates_source_before_cleanup() {
-        let (source, esp, ctx) = boot_file_staging_fixture(true, true);
-        fs::remove_file(
-            source
-                .path()
-                .join(EFI_DEFAULT_BIN_RELATIVE_PATH)
-                .join("lxhvloader.dll"),
-        )
-        .unwrap();
-        assert!(prepare_boot_files_for_staging(source.path(), &ctx, esp.path()).is_err());
-        let ukis = esp.path().join(uki::UKI_DIRECTORY);
-        for name in ["vmlinuz-100-azla1.efi", "vmlinuz-100-azlb1.efi"] {
-            assert_eq!(fs::read(ukis.join(name)).unwrap(), b"kernel");
-            assert_eq!(
-                fs::read(ukis.join(format!("{name}.extra.d/payload.addon.efi"))).unwrap(),
-                b"addon"
-            );
-        }
     }
 
     #[test]
