@@ -17,7 +17,10 @@ generation or generation-marker input is needed.
 SSH key, exact pipeline Trident NEVRA and installed-package removal list.
 Bash, guestfish, binutils, jq and GNU tar handle the ACL partition identities,
 slot-specific UKI addons, COSI metadata and provenance. Payload downloads
-also use Bash. Neither build entry point runs repository Python code.
+also use Bash. `testimages.py` registers `synthetic-acl-standard` and
+`synthetic-acl-mshv` as bundle targets and only dispatches to this Bash helper;
+image configuration and post-processing remain outside Python. The CLI
+requires Python 3, PyYAML and cryptography, like the existing VM image targets.
 
 Run on a Linux image-build worker with sudo, Docker, libguestfs (`guestfish`),
 RPM, OpenSSH, jq, GNU tar and binutils (`objcopy`, `objdump`) installed. The pinned
@@ -36,16 +39,26 @@ Image construction checks host keys and effective root public-key-only login
 with `sshd -t` and `sshd -T`; it does not enable root password login.
 
 ```bash
-sudo tests/images/prepare-synthetic-acl.sh \
-  --variant standard --base-image /inputs/azurelinux.qcow2 \
+sudo tests/images/testimages.py build synthetic-acl-standard \
+  --output-dir /outputs --no-download \
+  --build-script-args \
+  --base-image /inputs/azurelinux.qcow2 \
   --rpm-dir /inputs/trident-binaries \
   --ssh-public-key /inputs/ssh-keys/id_rsa.pub \
-  --ssh-private-key /inputs/ssh-keys/id_rsa \
-  --image-customizer mcr.microsoft.com/azurelinux/imagecustomizer:1.6 \
-  --output-dir /outputs/standard
+  --ssh-private-key /inputs/ssh-keys/id_rsa
 ```
 
-The output directory must be empty. It contains `base.qcow2`, `update.cosi`,
+Bundle outputs go under `/outputs/synthetic-acl-standard/` or
+`/outputs/synthetic-acl-mshv/`. `list --filter-type bundle`, `dependencies`,
+`show-image`, `list-files` and `build --dry-run` recognize both targets.
+`--container` overrides the pinned IC 1.6 default. Put common CLI options
+before `--build-script-args`; everything after it is passed unchanged to Bash.
+Without overrides, the base and RPM paths remain `artifacts/baremetal.vhdx`
+and `bin/RPMS`, as for other testimages targets. Supply the SSH key pair and,
+for MSHV, the loader inputs described below. Cloning and force rebuilds are
+not supported for bundles; use a fresh output directory.
+
+The bundle directory must be empty. It contains `base.qcow2`, `update.cosi`,
 the **exact** `metadata.json` stored in that COSI, `id_rsa` (0600), and
 `manifest.json`. `.work/` retains build diagnostics/intermediates, not public
 artifacts. Publish only the named artifacts, with private-key access restricted.
@@ -54,7 +67,8 @@ artifacts. Publish only the named artifacts, with private-key access restricted.
 Both images pin the same pipeline RPM NEVRA; generation markers distinguish
 the base and update's `/usr` contents. No ISO is produced.
 
-For `mshv`, additionally supply `--efitreeloader /inputs/efitreeloader.efi`,
+For `mshv`, select `build synthetic-acl-mshv` and additionally supply
+`--efitreeloader /inputs/efitreeloader.efi`,
 `--mshv-payload /inputs/hypervisor`, and `--loader-provenance 'source SHA; profile SHA256'`.
 The payload directory requires regular `HvLoader.efi`, `lxhvloader.dll` and
 a nonempty `Windows/` component tree, copied without following links.

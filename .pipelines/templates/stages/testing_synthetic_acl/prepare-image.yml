@@ -22,6 +22,7 @@ jobs:
       ob_artifactBaseName: synthetic-acl-${{ parameters.variant }}
       ACL_INPUT_DIR: $(Pipeline.Workspace)/synthetic-acl-inputs-${{ parameters.variant }}
       ACL_BUILD_DIR: $(Pipeline.Workspace)/synthetic-acl-build-${{ parameters.variant }}-$(Build.BuildId)-$(System.JobAttempt)
+      ACL_IMAGE_DIR: $(ACL_BUILD_DIR)/synthetic-acl-${{ parameters.variant }}
       ${{ if eq(parameters.micBuildType, 'dev') }}:
         ACL_CUSTOMIZER: imagecustomizer:dev
       ${{ else }}:
@@ -63,7 +64,7 @@ jobs:
           script: |
             set -euo pipefail
             sudo apt-get update
-            sudo apt-get install -y binutils libguestfs-tools qemu-utils rpm rpm2cpio cpio curl jq
+            sudo apt-get install -y binutils libguestfs-tools qemu-utils rpm rpm2cpio cpio curl jq python3-yaml python3-cryptography
             sudo systemctl start docker
             docker image inspect '$(ACL_CUSTOMIZER)' >/dev/null 2>&1 || docker pull '$(ACL_CUSTOMIZER)'
             mkdir -p '$(ACL_INPUT_DIR)/rpms' '$(ob_outputDirectory)'
@@ -122,21 +123,22 @@ jobs:
               echo 'Expected exactly one plain Azure Linux base image' >&2
               exit 1
             fi
-            args=(--variant '${{ parameters.variant }}' --base-image "${base_images[0]}"
+            args=(--base-image "${base_images[0]}"
               --rpm-dir '$(ACL_INPUT_DIR)/rpms'
               --ssh-public-key '$(ACL_INPUT_DIR)/ssh/id_rsa.pub'
-              --ssh-private-key '$(ACL_INPUT_DIR)/ssh/id_rsa'
-              --image-customizer '$(ACL_CUSTOMIZER)' --output-dir '$(ACL_BUILD_DIR)')
+              --ssh-private-key '$(ACL_INPUT_DIR)/ssh/id_rsa')
             if [[ '${{ parameters.variant }}' = mshv ]]; then
               profile=$(sha256sum tests/images/synthetic-acl/load_entries.json | cut -d ' ' -f 1)
               args+=(--efitreeloader '$(ACL_INPUT_DIR)/loader/target/x86_64-unknown-uefi/release/efitreeloader.efi'
                 --mshv-payload '$(ACL_INPUT_DIR)/mshv-payload'
                 --loader-provenance "bf02d4e3f4b9a4b61e838fd4d3705a50573d1ce9; profile-sha256=$profile")
             fi
-            sudo env LIBGUESTFS_BACKEND=direct ./tests/images/prepare-synthetic-acl.sh "${args[@]}"
-            sudo chown -R "$(id -u):$(id -g)" '$(ACL_BUILD_DIR)'
+            sudo env LIBGUESTFS_BACKEND=direct ./tests/images/testimages.py build \
+              'synthetic-acl-${{ parameters.variant }}' --output-dir '$(ACL_BUILD_DIR)' \
+              --container '$(ACL_CUSTOMIZER)' --no-download --build-script-args "${args[@]}"
+            sudo chown -R "$(id -u):$(id -g)" '$(ACL_IMAGE_DIR)'
             for name in base.qcow2 update.cosi metadata.json manifest.json id_rsa; do
-              cp -- '$(ACL_BUILD_DIR)'/"$name" '$(ob_outputDirectory)'/
+              cp -- '$(ACL_IMAGE_DIR)'/"$name" '$(ob_outputDirectory)'/
             done
       - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
         parameters:

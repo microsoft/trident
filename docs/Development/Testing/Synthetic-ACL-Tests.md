@@ -150,22 +150,26 @@ The RPM directory must contain exactly one x86-64 `trident` RPM. The helper
 builds both generations from that RPM and records its binary hash.
 Image configuration lives in the four self-contained
 `tests/images/synthetic-acl/{standard,mshv}-{base,update}.yaml` recipes.
-The Bash helper stages them unchanged; image and payload creation do not use Python helpers.
+The Bash helper stages them unchanged; image and payload creation do not use
+Python helpers. The shared `testimages.py` CLI only dispatches to Bash and
+requires Python 3, PyYAML and cryptography.
 
 #### Standard Variant
 
 ```bash
-sudo env LIBGUESTFS_BACKEND=direct ./tests/images/prepare-synthetic-acl.sh \
-    --variant standard \
+sudo env LIBGUESTFS_BACKEND=direct ./tests/images/testimages.py build synthetic-acl-standard \
+    --output-dir "$WORK" \
+    --container "$IC" --no-download \
+    --build-script-args \
     --base-image "$BASE_IMAGE" \
     --rpm-dir "$WORK/rpms" \
     --ssh-public-key "$WORK/id_rsa.pub" \
-    --ssh-private-key "$WORK/id_rsa" \
-    --image-customizer "$IC" \
-    --output-dir "$WORK/standard"
+    --ssh-private-key "$WORK/id_rsa"
 ```
 
-The output directory must be empty or absent. Failed builds retain diagnostics
+The bundle is written to `$WORK/synthetic-acl-standard`; its directory must
+be empty or absent. Put all common CLI options before `--build-script-args`,
+which forwards the remaining options unchanged to Bash. Failed builds retain diagnostics
 under `.work/`; use a new output directory rather than mixing build attempts.
 
 #### MSHV Variant
@@ -188,17 +192,17 @@ rustup toolchain install 1.97.1 --profile minimal --target x86_64-unknown-uefi
 PROFILE_SHA256="$(sha256sum tests/images/synthetic-acl/load_entries.json | cut -d ' ' -f 1)"
 ./tests/images/synthetic-acl/fetch-mshv-payload.sh --output-dir "$WORK/mshv-payload"
 
-sudo env LIBGUESTFS_BACKEND=direct ./tests/images/prepare-synthetic-acl.sh \
-    --variant mshv \
+sudo env LIBGUESTFS_BACKEND=direct ./tests/images/testimages.py build synthetic-acl-mshv \
+    --output-dir "$WORK" \
+    --container "$IC" --no-download \
+    --build-script-args \
     --base-image "$BASE_IMAGE" \
     --rpm-dir "$WORK/rpms" \
     --ssh-public-key "$WORK/id_rsa.pub" \
     --ssh-private-key "$WORK/id_rsa" \
-    --image-customizer "$IC" \
     --efitreeloader "$ETL_SOURCE/target/x86_64-unknown-uefi/release/efitreeloader.efi" \
     --mshv-payload "$WORK/mshv-payload" \
-    --loader-provenance "bf02d4e3f4b9a4b61e838fd4d3705a50573d1ce9; profile-sha256=$PROFILE_SHA256" \
-    --output-dir "$WORK/mshv"
+    --loader-provenance "bf02d4e3f4b9a4b61e838fd4d3705a50573d1ce9; profile-sha256=$PROFILE_SHA256"
 ```
 
 The payload helper fetches hash-pinned official Azure Linux packages, including
@@ -208,14 +212,14 @@ their license files. It does not extract a nightly ACL image. See
 ## Run the Scenario
 
 ```bash
-sudo chmod 600 "$WORK/standard/id_rsa"
+sudo chmod 600 "$WORK/synthetic-acl-standard/id_rsa"
 sudo ./bin/storm-trident run synthetic-acl -- \
     --variant standard \
-    --artifacts-dir "$WORK/standard" \
+    --artifacts-dir "$WORK/synthetic-acl-standard" \
     --output-path "$WORK/results-standard"
 ```
 
-For MSHV, use `--variant mshv`, `--artifacts-dir "$WORK/mshv"` and a distinct
+For MSHV, use `--variant mshv`, `--artifacts-dir "$WORK/synthetic-acl-mshv"` and a distinct
 `--output-path "$WORK/results-mshv"`; protect its `id_rsa` in the same way.
 Do not pass the other scenarios' `--uki`, `--platform` or
 `--ssh-private-key-path` flags. This scenario uses QEMU and the artifact's key.

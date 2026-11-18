@@ -22,6 +22,8 @@ from builder import (
 # # # # # # # # # # # # # # # # # # #
 DEFAULT_IMAGE_CUSTOMIZER_VERSION = "latest"
 
+SYNTHETIC_ACL_CUSTOMIZER = "mcr.microsoft.com/azurelinux/imagecustomizer@sha256:db7bcb75be27cbab4face6dbaedd3b6e6c63c65c369f5763d81499ed843ccd44"
+
 
 DEFINED_IMAGES: List[ImageConfig] = [
     # Installer images
@@ -125,6 +127,24 @@ DEFINED_IMAGES: List[ImageConfig] = [
         ],
     ),
     # VM test images
+    ImageConfig(
+        "synthetic-acl-standard",
+        config="synthetic-acl",
+        config_file="standard-base.yaml",
+        output_format=OutputFormat.BUNDLE,
+        build_script=Path("tests/images/prepare-synthetic-acl.sh"),
+        build_script_args=["--variant", "standard"],
+        customizer_container=SYNTHETIC_ACL_CUSTOMIZER,
+    ),
+    ImageConfig(
+        "synthetic-acl-mshv",
+        config="synthetic-acl",
+        config_file="mshv-base.yaml",
+        output_format=OutputFormat.BUNDLE,
+        build_script=Path("tests/images/prepare-synthetic-acl.sh"),
+        build_script_args=["--variant", "mshv"],
+        customizer_container=SYNTHETIC_ACL_CUSTOMIZER,
+    ),
     ImageConfig(
         "trident-vm-grub-testimage",
         base_image=BaseImage.QEMU_GUEST,
