@@ -228,7 +228,7 @@ pub fn ensure_disjoint_paths(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Re
 /// Rejects overlapping paths, source links and special files. The destination tree
 /// must be link-free. Extra destination entries are retained; errors can leave a
 /// partial copy, so callers needing preflight validation must perform it separately.
-pub fn copy_regular_entry(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<(), Error> {
+pub fn copy_recursively(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<(), Error> {
     let from = from.as_ref();
     let to = to.as_ref();
     ensure_disjoint_paths(from, to)?;
@@ -258,7 +258,7 @@ pub fn copy_regular_entry(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Resul
 
 /// Removes a file, link or directory tree without following a root link.
 /// Missing entries are ignored.
-pub fn remove_entry_if_exists(path: impl AsRef<Path>) -> Result<(), Error> {
+pub fn remove_recursively_if_exists(path: impl AsRef<Path>) -> Result<(), Error> {
     let path = path.as_ref();
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(path)?,
@@ -409,7 +409,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn test_copy_regular_entry_preserves_empty_directories_and_root_files() {
+    fn test_copy_recursively_preserves_empty_directories_and_root_files() {
         let temp = tempdir().unwrap();
         let source = temp.path().join("source");
         let destination = temp.path().join("destination");
@@ -417,7 +417,7 @@ mod tests {
         fs::write(source.join("nested/payload.new"), b"payload").unwrap();
         fs::create_dir_all(&destination).unwrap();
         fs::write(destination.join("retained"), b"retained").unwrap();
-        copy_regular_entry(&source, &destination).unwrap();
+        copy_recursively(&source, &destination).unwrap();
         assert!(destination.join("nested/empty").is_dir());
         assert_eq!(
             fs::read(destination.join("nested/payload.new")).unwrap(),
@@ -425,14 +425,14 @@ mod tests {
         );
         assert_eq!(fs::read(destination.join("retained")).unwrap(), b"retained");
         let file = temp.path().join("file");
-        copy_regular_entry(source.join("nested/payload.new"), &file).unwrap();
+        copy_recursively(source.join("nested/payload.new"), &file).unwrap();
         assert_eq!(fs::read(&file).unwrap(), b"payload");
-        copy_regular_entry(&source, source.join("child")).unwrap_err();
+        copy_recursively(&source, source.join("child")).unwrap_err();
         assert!(!source.join("child").exists());
     }
 
     #[test]
-    fn test_copy_regular_entry_rejects_source_links_and_special_files() {
+    fn test_copy_recursively_rejects_source_links_and_special_files() {
         let temp = tempdir().unwrap();
         let outside = temp.path().join("outside");
         fs::create_dir(&outside).unwrap();
@@ -445,7 +445,7 @@ mod tests {
         unistd::mkfifo(&fifo, Mode::S_IRUSR).unwrap();
         for source in [&file_link, &directory_link, &fifo] {
             let destination = temp.path().join("destination");
-            copy_regular_entry(source, &destination).unwrap_err();
+            copy_recursively(source, &destination).unwrap_err();
             assert!(!destination.exists());
         }
         assert_eq!(fs::read(outside.join("payload")).unwrap(), b"outside");
@@ -465,23 +465,23 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_entry_if_exists_preserves_link_targets() {
+    fn test_remove_recursively_if_exists_preserves_link_targets() {
         let temp = tempdir().unwrap();
         let outside = temp.path().join("outside");
         fs::create_dir(&outside).unwrap();
         fs::write(outside.join("payload"), b"outside").unwrap();
         let link = temp.path().join("link");
         unix_fs::symlink(&outside, &link).unwrap();
-        remove_entry_if_exists(&link).unwrap();
-        remove_entry_if_exists(&link).unwrap();
+        remove_recursively_if_exists(&link).unwrap();
+        remove_recursively_if_exists(&link).unwrap();
         assert!(!link.exists());
         assert_eq!(fs::read(outside.join("payload")).unwrap(), b"outside");
         let entry = temp.path().join("entry");
         fs::create_dir_all(entry.join("nested")).unwrap();
         fs::write(entry.join("nested/payload"), b"payload").unwrap();
-        remove_entry_if_exists(&entry).unwrap();
+        remove_recursively_if_exists(&entry).unwrap();
         fs::write(&entry, b"file").unwrap();
-        remove_entry_if_exists(&entry).unwrap();
+        remove_recursively_if_exists(&entry).unwrap();
         assert!(!entry.exists());
     }
 

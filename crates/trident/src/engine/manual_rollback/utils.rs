@@ -247,8 +247,6 @@ impl ManualRollbackContext {
     /// * an operation that cannot be rolled back is found
     /// * a HostStatus entry is None
     ///
-    /// Health/hypervisor automatic rollback ends parsing, excluding the rejected candidate.
-    ///
     /// Once the Operations have been parsed, the ManualRollback operations (both
     /// A/B and runtime) and the operations that they undo (both A/B and runtime
     /// updates) are pruned from the list of Operations.
@@ -353,7 +351,6 @@ impl ManualRollbackContext {
                         current_operation.operation_host_status = Some(current_hs.clone());
                     }
                     ServicingState::AbUpdateHealthCheckFailed => {
-                        // Do not offer the rejected candidate as a rollback target.
                         current_operation.kind = OperationKind::AbUpdateAutoRollback;
                         trace!("Detected AbUpdateAutoRollback operation, ending parsing here.");
                         break;

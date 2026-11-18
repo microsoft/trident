@@ -76,7 +76,7 @@ pub(crate) fn copy_fallback_for_bootstrap(from: &Path, to: &Path) -> Result<(), 
         boot_files(to, true)?;
     }
     files::ensure_disjoint_paths(from, to)?;
-    files::copy_regular_entry(from, to)
+    files::copy_recursively(from, to)
 }
 
 /// Replaces the UEFI fallback's complete boot tree, including nested and empty
@@ -108,15 +108,15 @@ pub(crate) fn replace_fallback_boot_files(from: &Path, to: &Path) -> Result<(), 
         // before risking another copy; otherwise the current entry wins.
         if previous.try_exists()? {
             if destination.try_exists()? {
-                files::remove_entry_if_exists(&previous)?;
+                files::remove_recursively_if_exists(&previous)?;
             } else {
                 fs::rename(&previous, &destination)?;
             }
         }
         // Never merge a partial staged directory: it may contain retired files.
         let staged = to.join(format!("{}.new", name.to_string_lossy()));
-        files::remove_entry_if_exists(&staged)?;
-        files::copy_regular_entry(from.join(name), &staged)?;
+        files::remove_recursively_if_exists(&staged)?;
+        files::copy_recursively(from.join(name), &staged)?;
     }
 
     // Snapshot before renaming so directory iteration cannot skip changed entries.
@@ -126,7 +126,7 @@ pub(crate) fn replace_fallback_boot_files(from: &Path, to: &Path) -> Result<(), 
         let name = name.to_str().context("Non-UTF-8 boot file name")?;
         if !is_temporary(name) {
             let previous = to.join(format!("{name}.old"));
-            files::remove_entry_if_exists(&previous)?;
+            files::remove_recursively_if_exists(&previous)?;
             fs::rename(entry.path(), previous)?;
         }
     }
@@ -148,7 +148,7 @@ pub(crate) fn replace_fallback_boot_files(from: &Path, to: &Path) -> Result<(), 
                 .to_str()
                 .context("Non-UTF-8 boot file name")?,
         ) {
-            files::remove_entry_if_exists(entry.path())?;
+            files::remove_recursively_if_exists(entry.path())?;
         }
     }
     Ok(())
