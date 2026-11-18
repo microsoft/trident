@@ -51,9 +51,11 @@ flowchart TD
   class ERROR error
 ```
 
-Media is needed for a media-relative HC, a dangling HC symlink into the media,
-`installer://image`, or another file-backed HC input on the media (such as an
-additional file, script, extension, or recovery key). A self-contained HC takes
+`installer://image` is a reserved HC image URL meaning "use the first COSI
+found on installer media," not a filename. Media is also needed for a
+media-relative HC, a dangling HC symlink into the media, or another file-backed
+HC input on the media (such as an additional file, script, extension, or
+recovery key). A self-contained HC takes
 precedence over media settings even if the media is already present. An invalid
 HC fails; it does not fall back to StreamDisk.
 

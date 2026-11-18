@@ -67,10 +67,12 @@ reboot = false
 ```
 
 Put `installer/host.yaml` on the ISO filesystem (not only in the live OS).
-If its `image.url` is `installer://image`, also put a COSI in `cosi/`; the
-marker resolves to the first discovered COSI, but the operation remains
-**Install**, with disk layout taken from the Host Configuration. An explicit
-image URL in the Host Configuration does not require a media COSI. See the
+If its `image.url` is `installer://image`, also put a COSI in `cosi/`.
+`installer://image` is a reserved installer-only URL meaning "use the first
+regular COSI in `media.cosiDirectory`, sorted by filename"; it does not name
+an image file. The operation remains **Install**, with disk layout taken from
+the Host Configuration. An explicit image URL in the Host Configuration does
+not require a media COSI. See the
 [Host Configuration reference](./Host-Configuration/Host-Configuration.md)
 for its YAML schema. To **StreamDisk** instead, leave
 `autorun.hostConfiguration` unset *and* ensure
