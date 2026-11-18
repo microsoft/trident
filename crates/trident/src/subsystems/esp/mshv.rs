@@ -1,4 +1,4 @@
-//! Slot-owned MSHV validation and efitreeloader (ETL) ESP definitions.
+//! Validates file-based MSHV support and retained-slot compatibility.
 
 use std::path::Path;
 
@@ -20,7 +20,12 @@ use crate::{
     osimage::bootloader::Bootloader,
 };
 
-/// Enforces file-based MSHV support and retained-slot compatibility before staging.
+/// Checks file-based MSHV support and A/B layout compatibility before staging.
+///
+/// Streamed deployments are skipped. Declared MSHV images require an x86-64
+/// build, an ACL UKI, and no PCR-bound encryption. All file-based A/B updates
+/// must match the retained slot's MSHV mode, using the host ESP when containerized.
+/// Does not modify boot files or validate the running hypervisor.
 pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentError> {
     if ctx.is_stream_image {
         return Ok(());
@@ -55,7 +60,12 @@ pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
     Ok(())
 }
 
-/// Rejects A/B updates that change the retained slot's MSHV layout.
+/// Requires an A/B candidate's MSHV metadata to match the retained boot tree.
+///
+/// `esp_path` must identify the host ESP. The retained directory comes from
+/// the installation index and active A/B volume, not the fallback BOOT tree.
+/// Non-A/B operations are skipped; missing volume selection, malformed MSHV
+/// components, inspection errors or a mode change fail validation.
 fn validate_transition(ctx: &EngineContext, esp_path: &Path) -> Result<(), Error> {
     if ctx.servicing_type != ServicingType::AbUpdate {
         return Ok(());
@@ -74,7 +84,6 @@ fn validate_transition(ctx: &EngineContext, esp_path: &Path) -> Result<(), Error
     Ok(())
 }
 
-/// Reports unsupported MSHV boot configurations.
 fn unsupported(reason: &str) -> TridentError {
     TridentError::with_source(
         InvalidInputError::InvalidBootConfiguration,
