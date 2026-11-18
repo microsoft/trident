@@ -199,11 +199,14 @@ where
         })
 }
 
-/// Resolves existing ancestors, retaining the suffix of paths not yet created.
-fn canonical_path(path: &Path) -> Result<PathBuf, Error> {
+/// Canonicalizes the longest existing prefix, then appends any missing components.
+///
+/// Resolves symlinks in the existing prefix without requiring the full path to
+/// exist. Errors other than "not found" are propagated.
+fn canonicalize_allow_missing(path: &Path) -> Result<PathBuf, Error> {
     match fs::canonicalize(path) {
         Ok(path) => Ok(path),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(canonical_path(
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(canonicalize_allow_missing(
             path.parent().context("Missing path parent")?,
         )?
         .join(path.file_name().context("Missing path name")?)),
@@ -214,8 +217,8 @@ fn canonical_path(path: &Path) -> Result<PathBuf, Error> {
 /// Rejects equal paths or either path containing the other.
 /// Resolves existing ancestors, including links, even when a suffix does not exist yet.
 pub fn ensure_disjoint_paths(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<(), Error> {
-    let from = canonical_path(&path::absolute(from)?)?;
-    let to = canonical_path(&path::absolute(to)?)?;
+    let from = canonicalize_allow_missing(&path::absolute(from)?)?;
+    let to = canonicalize_allow_missing(&path::absolute(to)?)?;
     ensure!(
         !from.starts_with(&to) && !to.starts_with(&from),
         "Source and destination paths overlap"
