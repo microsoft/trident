@@ -128,15 +128,9 @@ def setup_parser_build(
     )
     parser_build.add_argument(
         "--container",
-        default=None,
+        default=artifacts.customizer_container_full,
         type=str,
         help="Configure Prism container image",
-    )
-    parser_build.add_argument(
-        "--build-script-args",
-        nargs=argparse.REMAINDER,
-        default=[],
-        help="Pass remaining arguments to a bundle's Bash builder; must be the last option.",
     )
     parser_build.add_argument(
         "--image-architecture",
@@ -270,7 +264,6 @@ def run_cmd(
             configs=configs,
             name=args.image,
             container_name=args.container,
-            build_script_args=args.build_script_args,
             output_dir=args.output_dir,
             clones=args.clones,
             image_architecture=args.image_architecture,

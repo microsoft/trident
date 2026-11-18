@@ -61,7 +61,6 @@ class BaseImageManifest:
 
 
 class OutputFormat(Enum):
-    BUNDLE = "bundle"
     BAREMETAL_IMAGE = "baremetal-image"
     COSI = "cosi"
     VHDX = "vhdx"
@@ -143,11 +142,6 @@ class ImageConfig:
     # Use ImageCustomizer convert command rather than customize
     image_customizer_convert: bool = False
 
-    # Optional Bash entry point producing a directory of related artifacts.
-    build_script: Optional[Path] = None
-    build_script_args: List[str] = field(default_factory=list)
-    customizer_container: Optional[str] = None
-
     @classmethod
     def kebab_fields(cls) -> List[str]:
         """Return a list of fields in kebab-case."""
@@ -165,11 +159,6 @@ class ImageConfig:
         # Update config_file to be a Path object if it's a string
         if isinstance(self.config_file, str):
             self.config_file = Path(self.config_file)
-
-        if (self.output_format == OutputFormat.BUNDLE) != (
-            self.build_script is not None
-        ):
-            raise ValueError("Bundle images require a build_script, and vice versa")
 
         # Automatically set the architecture to arm64 if the base image is ARM64
         if self.base_image == BaseImage.CORE_ARM64:
@@ -199,8 +188,6 @@ class ImageConfig:
 
     def dependencies(self) -> List[Path]:
         deps = [self.base_image.path]
-        if self.build_script:
-            deps.append(self.build_script)
         if not self.image_customizer_convert:
             deps.append(self.full_yaml_path())
         for file in self.base_dir().rglob("*"):
@@ -220,8 +207,6 @@ class ImageConfig:
         """
         Returns the file name for the image.
         """
-        if self.output_format == OutputFormat.BUNDLE:
-            return self.id
         return f"{self.id}.{self.output_format.ext()}"
 
     def file_name_unsigned_raw(self) -> str:

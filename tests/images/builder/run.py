@@ -1,8 +1,6 @@
 import logging
 from pathlib import Path
 import json
-import shlex
-import subprocess
 from typing import List, Optional
 
 from builder import ImageConfig, RpmSources, ArtifactManifest
@@ -91,45 +89,14 @@ def build(
     force: bool,
     image_architecture: Optional[str] = None,
     download: bool = True,
-    build_script_args: Optional[List[str]] = None,
 ) -> None:
     image = find_image(configs, name)
     log.info(f"Building image '{image.name}'")
 
-    container_image = (
-        container_name
-        or image.customizer_container
-        or artifacts.customizer_container_full
-    )
+    container_image: Optional[str] = container_name
     if container_image is None:
         log.error("Image Customizer container image is required")
         exit(1)
-
-    if image.build_script:
-        if clones != 1 or force or image_architecture not in (None, "amd64"):
-            raise ValueError(
-                "Bundle builds do not support clones, force or cross-architecture overrides"
-            )
-        command = [
-            str(image.build_script),
-            *image.build_script_args,
-            "--base-image",
-            str(image.base_image.path),
-            "--rpm-dir",
-            str(RpmSources.TRIDENT.path()),
-            "--image-customizer",
-            container_image,
-            "--output-dir",
-            str(output_dir / image.file_name()),
-            *(build_script_args or []),
-        ]
-        if dry_run:
-            print(shlex.join(command))
-        else:
-            subprocess.run(command, check=True)
-        return
-    if build_script_args:
-        raise ValueError("--build-script-args requires an image with a Bash builder")
 
     if image.image_customizer_convert:
         # If 'convert' is requested, run Image Customizer convert subcommand
