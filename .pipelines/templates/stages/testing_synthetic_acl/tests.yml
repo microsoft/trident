@@ -42,7 +42,7 @@ stages:
               ob_artifactBaseName: synthetic-acl-${{ variant }}-results
             steps:
               - template: ../common_tasks/checkout_trident.yml
-              - template: ../common_tasks/avoid-pypi-usage.yml
+              - template: ../testing_vm/netlaunch-prep.yml
               - task: DownloadPipelineArtifact@2
                 displayName: Download synthetic ACL ${{ variant }} image and COSI
                 inputs:

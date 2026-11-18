@@ -38,3 +38,30 @@ func TestNestedVirtualizationCPU(t *testing.T) {
 		})
 	}
 }
+
+func TestVirtInstallResourceOverridesPreserveDiskBus(t *testing.T) {
+	tests := []struct {
+		name                  string
+		cfg                   QemuConfig
+		memory, cpus, machine string
+	}{
+		{name: "existing defaults", memory: "2048", cpus: "2"},
+		{name: "MSHV resources", cfg: QemuConfig{NestedVirtualization: true, MemoryMiB: 16 * 1024, VCPUs: 4}, memory: "16384", cpus: "4", machine: "q35"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := tt.cfg.virtInstallBaseArgs("synthetic-acl-test", "booted.qcow2")
+			options := make(map[string]string)
+			for i := 0; i+1 < len(args); i++ {
+				if strings.HasPrefix(args[i], "--") {
+					options[args[i]] = args[i+1]
+				}
+			}
+			for option, want := range map[string]string{"--memory": tt.memory, "--vcpus": tt.cpus, "--disk": "booted.qcow2,bus=sata", "--machine": tt.machine} {
+				if got := options[option]; got != want {
+					t.Fatalf("%s=%q want %q", option, got, want)
+				}
+			}
+		})
+	}
+}

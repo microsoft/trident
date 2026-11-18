@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 )
 
 type QemuConfig struct {
+	MemoryMiB            uint   `name:"memory-mib" help:"Guest memory in MiB" default:"2048"`
+	VCPUs                uint   `help:"Number of guest virtual CPUs" default:"2"`
 	NestedVirtualization bool   `help:"Require nested KVM and pass through host CPU virtualization features" default:"false"`
 	SecureBoot           bool   `help:"Enable secure boot for the VM" default:"false"`
 	SerialLog            string `help:"Path to the serial log file" default:"/tmp/trident-vm-verity-test.log"`
@@ -138,6 +141,7 @@ func getLibvirtDomainByname(vmName string) (lv *libvirt.Libvirt, domain libvirt.
 
 	domain, err = lv.DomainLookupByName(vmName)
 	if err != nil {
+		_ = lv.Disconnect()
 		return lv, domain, fmt.Errorf("failed to lookup domain by name '%s': %w", vmName, err)
 	}
 
@@ -234,6 +238,7 @@ func (cfg QemuConfig) deleteLibvirtDomain(vmName string) error {
 		logrus.Tracef("Failed to lookup domain by name '%s': %v", vmName, err)
 		return nil
 	}
+	defer lv.Disconnect()
 
 	domainState, _, err := lv.DomainGetState(domain, 0)
 	if err != nil {
@@ -257,24 +262,44 @@ func (cfg QemuConfig) deleteLibvirtDomain(vmName string) error {
 	return nil
 }
 
+func (cfg QemuConfig) resources() (memoryMiB, vcpus uint) {
+	memoryMiB, vcpus = cfg.MemoryMiB, cfg.VCPUs
+	if memoryMiB == 0 {
+		memoryMiB = 2048
+	}
+	if vcpus == 0 {
+		vcpus = 2
+	}
+	return
+}
+
+func (cfg QemuConfig) virtInstallBaseArgs(name, bootImage string) []string {
+	memoryMiB, vcpus := cfg.resources()
+	args := []string{
+		"virt-install",
+		"--name", name,
+		"--memory", strconv.FormatUint(uint64(memoryMiB), 10),
+		"--vcpus", strconv.FormatUint(uint64(vcpus), 10),
+		"--os-variant", "generic",
+		"--import",
+		"--disk", fmt.Sprintf("%s,bus=sata", bootImage),
+		"--network", "default",
+		"--noautoconsole",
+		"--serial", fmt.Sprintf("file,path=%s", cfg.SerialLog),
+	}
+	if cfg.NestedVirtualization && !cfg.SecureBoot {
+		args = append(args, "--machine", "q35")
+	}
+	return args
+}
+
 func (cfg QemuConfig) createQemuVM(ctx context.Context, name string, bootImage string, useVirtInstall bool) error {
 
 	// TODO: migrate to use virtdeploy
 
 	if useVirtInstall {
 		logrus.Tracef("Using virt-install to create QEMU VM '%s'", name)
-		virtInstallArgs := []string{
-			"virt-install",
-			"--name", name,
-			"--memory", "2048",
-			"--vcpus", "2",
-			"--os-variant", "generic",
-			"--import",
-			"--disk", fmt.Sprintf("%s,bus=sata", bootImage),
-			"--network", "default",
-			"--noautoconsole",
-			"--serial", fmt.Sprintf("file,path=%s", cfg.SerialLog),
-		}
+		virtInstallArgs := cfg.virtInstallBaseArgs(name, bootImage)
 		if cfg.NestedVirtualization {
 			cpuInfo, err := os.ReadFile("/proc/cpuinfo")
 			if err != nil {
@@ -311,11 +336,12 @@ func (cfg QemuConfig) createQemuVM(ctx context.Context, name string, bootImage s
 			loaderPath = "/usr/share/OVMF/OVMF_CODE.fd"
 		}
 
+		cfgMemory, cfgVCPUs := cfg.resources()
 		domainXML := fmt.Sprintf(`
 <domain type='kvm'>
 	<name>%s</name>
-	<memory unit='MiB'>2048</memory>
-	<vcpu>2</vcpu>
+	<memory unit='MiB'>%d</memory>
+	<vcpu>%d</vcpu>
 	<os>
 	<type arch='x86_64' machine='q35'>hvm</type>
 	<loader readonly='yes' type='pflash'>%s</loader>
@@ -345,7 +371,7 @@ func (cfg QemuConfig) createQemuVM(ctx context.Context, name string, bootImage s
 	</console>
 	</devices>
 </domain>`,
-			name, loaderPath, bootImage, cfg.SerialLog, cfg.SerialLog)
+			name, cfgMemory, cfgVCPUs, loaderPath, bootImage, cfg.SerialLog, cfg.SerialLog)
 
 		logrus.Tracef("Defining libvirt domain with XML: %s", domainXML)
 		domain, err := lv.DomainDefineXML(domainXML)

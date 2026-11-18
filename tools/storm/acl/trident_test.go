@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -272,5 +273,48 @@ func TestMSHVUsesSharedManualLifecycleAndVariantAssertions(t *testing.T) {
 		if !strings.Contains(strings.Join(g.calls, "\n"), "guest-test.sh "+phase+" mshv ") {
 			t.Fatalf("missing MSHV assertion for phase %s: %v", phase, g.calls)
 		}
+	}
+}
+
+func TestLocalKeepsSSHBannerOutOfBootID(t *testing.T) {
+	dir := fixture(t, []byte(testMetadata))
+	logPath := filepath.Join(dir, "controller.log")
+	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+	r := &runner{log: log}
+	const bootID = "05c4ce22-b11d-45de-91f3-b3b73e88a4aa"
+	const banner = "Welcome to Microsoft Azure Linux 3.0 (x86_64)"
+	output, err := r.local(5*time.Second, "sh", "-c", "printf '%s\\n' '"+banner+"' >&2; printf '%s\\n' '"+bootID+"'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = uuid.Parse(output); err != nil || output != bootID {
+		t.Fatalf("stdout boot ID contaminated: %q, %v", output, err)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "stderr:\n"+banner+"\n") {
+		t.Fatalf("stderr banner missing from controller log: %s", data)
+	}
+	if !strings.Contains(string(data), "stdout:\n"+bootID+"\n") {
+		t.Fatalf("stdout boot ID missing from controller log: %s", data)
+	}
+}
+
+func TestEvidenceFailureStillSyncsWithoutMaskingErrors(t *testing.T) {
+	evidenceErr := errors.New("tar missing")
+	syncErr := errors.New("sync SSH disconnected")
+	var calls []string
+	err := collectAndSync(func() error { calls = append(calls, "evidence"); return evidenceErr }, func() error { calls = append(calls, "sync"); return syncErr })
+	if strings.Join(calls, ",") != "evidence,sync" {
+		t.Fatalf("unexpected diagnostic order: %v", calls)
+	}
+	if !errors.Is(err, evidenceErr) || !errors.Is(err, syncErr) {
+		t.Fatalf("diagnostic failure masked: %v", err)
 	}
 }

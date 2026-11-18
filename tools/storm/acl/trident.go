@@ -248,8 +248,10 @@ func (r *runner) local(timeout time.Duration, name string, args ...string) (stri
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
-	output, err := cmd.CombinedOutput()
-	if _, logErr := fmt.Fprintf(r.log, "$ %s %s\n%s\nerror: %v\n", name, strings.Join(args, " "), output, err); logErr != nil {
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	output, err := cmd.Output()
+	if _, logErr := fmt.Fprintf(r.log, "$ %s %s\nstdout:\n%s\nstderr:\n%s\nerror: %v\n", name, strings.Join(args, " "), output, stderr.Bytes(), err); logErr != nil {
 		return string(output), errors.Join(err, logErr)
 	}
 	if ctx.Err() != nil {
@@ -314,6 +316,13 @@ func (r *runner) evidence() error {
 	return errors.Join(errs...)
 }
 
+// Flush writes even if evidence collection failed, before destroying the domain.
+func collectAndSync(collect, sync func() error) error {
+	evidenceErr := collect()
+	syncErr := sync()
+	return errors.Join(evidenceErr, syncErr)
+}
+
 // Preserve failed guests' disks for diagnosis after their domain is removed.
 func cleanupVMFiles(runDir string, successful bool) error {
 	names := []string{"base.qcow2"}
@@ -365,8 +374,18 @@ func (s *SyntheticACLScenario) run() (result error) {
 	defer log.Close()
 	r := &runner{args: s.args, vmName: s.args.VMName + "-" + uuid.NewString(), log: log}
 	r.qemu = qemu.QemuConfig{NestedVirtualization: s.args.Variant == "mshv", SecureBoot: false, SerialLog: filepath.Join(runDir, "serial-console.log"), ImagePattern: `^base\.qcow2$`}
+	if s.args.Variant == "mshv" {
+		r.qemu.MemoryMiB = 16 * 1024
+		r.qemu.VCPUs = 4
+	}
 	defer func() {
-		evidenceErr := r.evidence()
+		evidenceErr := collectAndSync(r.evidence, func() error {
+			if r.ip == "" {
+				return nil
+			}
+			_, err := r.local(min(r.args.OperationTimeout, 30*time.Second), "ssh", append(r.sshOptions(), "root@"+r.ip, "sync")...)
+			return err
+		})
 		cleanupErr := r.qemu.CleanupQemuVM(r.vmName)
 		result = errors.Join(result, evidenceErr, cleanupErr)
 		if cleanupErr == nil {
