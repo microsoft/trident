@@ -31,10 +31,17 @@ def main():
         urllib.request.urlretrieve(package["url"], rpm)
         if hashlib.sha256(rpm.read_bytes()).hexdigest() != package["sha256"]:
             raise ValueError(f"RPM SHA-256 mismatch: {package['name']}")
-        with subprocess.Popen(["rpm2cpio", str(rpm)], stdout=subprocess.PIPE) as producer:
-            subprocess.run(["cpio", "--extract", "--make-directories", "--no-absolute-filenames"],
-                           stdin=producer.stdout, cwd=extraction, check=True,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        with subprocess.Popen(
+            ["rpm2cpio", str(rpm)], stdout=subprocess.PIPE
+        ) as producer:
+            subprocess.run(
+                ["cpio", "--extract", "--make-directories", "--no-absolute-filenames"],
+                stdin=producer.stdout,
+                cwd=extraction,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
             producer.stdout.close()
             if producer.wait() != 0:
                 raise ValueError(f"RPM extraction failed: {package['name']}")
