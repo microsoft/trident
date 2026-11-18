@@ -4,6 +4,9 @@
 autorun wrapper around Trident's gRPC API through the shared `trident-client`
 crate, not a partitioning engine.
 
+See the [Installer reference](../../docs/Reference/Installer.md) for the
+source-selection and screen flows.
+
 ## Configuration
 
 Read `/etc/trident/installer.toml` or the path supplied with `--config`.

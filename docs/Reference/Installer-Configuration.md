@@ -1,5 +1,5 @@
 ---
-sidebar_position: 7
+sidebar_position: 8
 title: Installer Configuration
 ---
 
@@ -9,7 +9,8 @@ title: Installer Configuration
 `--config PATH` to use another file. This TOML file controls the **installer**;
 the [Host Configuration](./Host-Configuration/Host-Configuration.md) is a
 separate YAML document describing what Trident installs. Installation requires
-a readable TOML file.
+a readable TOML file. See [Trident Installer](./Installer.md) for the
+source-selection and recovery-screen flows.
 
 The packaged `/etc/trident/installer.toml` explicitly sets:
 
