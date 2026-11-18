@@ -31,7 +31,7 @@ stages:
     jobs:
       - ${{ each variant in split('standard,mshv', ',') }}:
           - job: AclQemu_${{ variant }}
-            displayName: Boot ${{ variant }} ACL image and update with COSI
+            displayName: Boot ${{ variant }} ACL image and exercise update/rollback cycle
             timeoutInMinutes: 90
             pool:
               type: linux
@@ -57,7 +57,7 @@ stages:
                   patterns: storm-trident
                   targetPath: $(TRIDENT_SOURCE_DIR)/bin
               - task: Bash@3
-                displayName: Run manual ACL A/B update, commit and persisted reboot
+                displayName: Run ACL update, rollback, update, update with explicit commits
                 inputs:
                   targetType: inline
                   workingDirectory: $(TRIDENT_SOURCE_DIR)

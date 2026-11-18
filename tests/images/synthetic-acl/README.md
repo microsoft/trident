@@ -101,8 +101,19 @@ sudo ./bin/storm-trident run synthetic-acl -a -- \
 Use `--variant standard` for the regular kernel. MSHV requires exposed
 VMX/SVM and enabled nested KVM; the scenario requests host CPU passthrough.
 The guest must expose a character device at `/dev/mshv`, not merely boot a
-`kernel-mshv` kernel. Both tests verify stage, finalize, explicit commit,
-and a further reboot, including slot identity, verity and boot-tree hashes.
+`kernel-mshv` kernel. Both tests run A/B update, A/B rollback, A/B update,
+then another A/B update, explicitly committing after each operation.
+After each commit, `trident get status` must report `provisioned` and active
+volumes B, A, B and A, respectively, using storm's shared status validator.
+The initial boot checks slot A and the base image without querying Trident
+status; the first update adopts the native ACL installation.
+Each update separately stages and finalizes. Slot identity, image generation,
+verity and retained boot-tree hashes are checked throughout, including one
+further reboot after the last commit.
+Updates use `internalParams.noTransition: true`; their complete command output
+is captured in the controller log before an explicit reboot. Native rollback
+restores the derived baseline configuration, which has no `noTransition`
+override, so rollback retains its automatic reboot.
 Failed runs retain the working disk and diagnostic output but remove the
 owned VM. These prerequisites do not by themselves establish that a given
 worker can boot the complete MSHV loader chain.

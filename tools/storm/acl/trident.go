@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/microsoft/storm"
 	metadata "tridenttools/cmd/mkcosi/metadata"
+	stormtridentactivevolume "tridenttools/storm/utils/trident/activevolume"
 	qemu "tridenttools/storm/utils/vm/qemu"
 )
 
@@ -175,7 +176,7 @@ func isDigest(value string, length int) bool {
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 
 func updateConfig(info artifactInfo) string {
-	return fmt.Sprintf("image:\n  url: file://%s/update.cosi\n  sha384: %s\ninternalParams:\n  forceAbUpdate: true\nos:\n  uefiFallback: conservative\n", guestDir, info.MetadataSHA384)
+	return fmt.Sprintf("image:\n  url: file://%s/update.cosi\n  sha384: %s\ninternalParams:\n  forceAbUpdate: true\n  noTransition: true\nos:\n  uefiFallback: conservative\n", guestDir, info.MetadataSHA384)
 }
 
 type guest interface {
@@ -186,51 +187,88 @@ type guest interface {
 // Manual invocations deliberately separate stage, finalize and explicit commit.
 // A rebooting SSH command may disconnect; only a new verified boot proves success.
 func service(g guest, info artifactInfo) error {
-	assert := func(phase string) error {
-		_, err := g.command(fmt.Sprintf("bash %s/guest-test.sh %s %s %s %s %s", guestDir, phase, info.Variant, info.TargetUUID, info.TargetHash, info.TridentSHA256))
+	runLogged := func(command, name string) error {
+		_, err := g.command(fmt.Sprintf("%s > %s/%s.log 2>&1; result=$?; cat %s/%s.log; exit \"$result\"", command, guestDir, name, guestDir, name))
 		return err
 	}
-	baseline, err := g.waitBoot("")
+	assert := func(phase, slot, generation, previous string, provisioned bool) error {
+		if _, err := g.command(fmt.Sprintf("bash %s/guest-test.sh %s %s %s %s %s %s %s %s", guestDir, phase, info.Variant, info.TargetUUID, info.TargetHash, info.TridentSHA256, slot, generation, previous)); err != nil {
+			return err
+		}
+		if provisioned {
+			status, err := g.command(fmt.Sprintf("cat /var/lib/trident/test-evidence/%s/status", phase))
+			if err != nil {
+				return err
+			}
+			return stormtridentactivevolume.ValidateHostStatus(status, "volume-"+slot)
+		}
+		return nil
+	}
+	bootID, err := g.waitBoot("")
 	if err != nil {
 		return fmt.Errorf("baseline SSH: %w", err)
-	}
-	if err = assert("baseline"); err != nil {
-		return fmt.Errorf("baseline: %w", err)
 	}
 	if _, err = g.command(fmt.Sprintf("test \"$(sha256sum %s/update.cosi | cut -d ' ' -f 1)\" = %s", guestDir, quote(info.CosiSHA256))); err != nil {
 		return err
 	}
-	if _, err = g.command(fmt.Sprintf("trident update %s/update.yaml --allowed-operations stage > %s/stage.log 2>&1", guestDir, guestDir)); err != nil {
-		return fmt.Errorf("stage: %w", err)
+	if err = assert("baseline", "a", "base", "none", false); err != nil {
+		return fmt.Errorf("baseline: %w", err)
 	}
-	if err = assert("staged"); err != nil {
-		return fmt.Errorf("staged: %w", err)
-	}
-	_, finalizeErr := g.command(fmt.Sprintf("trident update %s/update.yaml --allowed-operations finalize > %s/finalize.log 2>&1", guestDir, guestDir))
-	if finalizeErr != nil && !errors.Is(finalizeErr, errDisconnected) {
-		return fmt.Errorf("finalize: %w", finalizeErr)
-	}
-	updated, err := g.waitBoot(baseline)
-	if err != nil {
-		return errors.Join(fmt.Errorf("finalize boot: %w", err), finalizeErr)
-	}
-	if err = assert("updated"); err != nil {
-		return fmt.Errorf("updated: %w", err)
-	}
-	if _, err = g.command(fmt.Sprintf("trident commit > %s/commit.log 2>&1", guestDir)); err != nil {
-		return fmt.Errorf("commit: %w", err)
-	}
-	if err = assert("committed"); err != nil {
-		return fmt.Errorf("committed: %w", err)
+	previous, activeSlot, generation := "baseline", "a", "base"
+	for _, step := range []struct {
+		name, slot, generation string
+		rollback               bool
+	}{
+		{name: "update-1", slot: "b", generation: "update"},
+		{name: "rollback", slot: "a", generation: "base", rollback: true},
+		{name: "update-2", slot: "b", generation: "update"},
+		{name: "update-3", slot: "a", generation: "update"},
+	} {
+		reference := previous
+		if !step.rollback {
+			if err := runLogged(fmt.Sprintf("trident update %s/update.yaml --allowed-operations stage", guestDir), step.name+"-stage"); err != nil {
+				return fmt.Errorf("%s stage: %w", step.name, err)
+			}
+			reference = step.name + "-staged"
+			if err := assert(reference, activeSlot, generation, previous, false); err != nil {
+				return fmt.Errorf("%s: %w", reference, err)
+			}
+			if err := runLogged(fmt.Sprintf("trident update %s/update.yaml --allowed-operations finalize", guestDir), step.name+"-finalize"); err != nil {
+				return fmt.Errorf("%s finalize: %w", step.name, err)
+			}
+		} else {
+			// Native rollback restores a derived config without noTransition.
+			if err := runLogged("trident rollback --ab", step.name); err != nil && !errors.Is(err, errDisconnected) {
+				return fmt.Errorf("%s operation: %w", step.name, err)
+			}
+		}
+		var operationErr error
+		if !step.rollback {
+			_, operationErr = g.command("systemctl reboot")
+			if operationErr != nil && !errors.Is(operationErr, errDisconnected) {
+				return fmt.Errorf("%s reboot: %w", step.name, operationErr)
+			}
+		}
+		bootID, err = g.waitBoot(bootID)
+		if err != nil {
+			return errors.Join(fmt.Errorf("%s boot: %w", step.name, err), operationErr)
+		}
+		if err := runLogged("trident commit", step.name+"-commit"); err != nil {
+			return fmt.Errorf("%s commit: %w", step.name, err)
+		}
+		if err := assert(step.name, step.slot, step.generation, reference, true); err != nil {
+			return fmt.Errorf("%s: %w", step.name, err)
+		}
+		previous, activeSlot, generation = step.name, step.slot, step.generation
 	}
 	_, rebootErr := g.command("systemctl reboot")
 	if rebootErr != nil && !errors.Is(rebootErr, errDisconnected) {
 		return fmt.Errorf("persisted reboot: %w", rebootErr)
 	}
-	if _, err = g.waitBoot(updated); err != nil {
+	if _, err = g.waitBoot(bootID); err != nil {
 		return errors.Join(fmt.Errorf("persisted boot: %w", err), rebootErr)
 	}
-	if err = assert("persisted"); err != nil {
+	if err = assert("persisted", activeSlot, generation, previous, true); err != nil {
 		return fmt.Errorf("persisted: %w", err)
 	}
 	return nil

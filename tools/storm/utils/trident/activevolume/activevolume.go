@@ -24,22 +24,28 @@ func CheckActiveVolume(cfg stormvmconfig.VMConfig, vmIP string, expectedVolume s
 				return nil, fmt.Errorf("failed to get host status: %w", err)
 			}
 			logrus.Tracef("Retrieved host status")
-			hostStatus := make(map[string]interface{})
-			if err = yaml.Unmarshal([]byte(hostStatusStr), &hostStatus); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal YAML output: %w", err)
+			if err := ValidateHostStatus(hostStatusStr, expectedVolume); err != nil {
+				return nil, err
 			}
-			logrus.Tracef("Parsed host status")
-			if hostStatus["servicingState"] != "provisioned" {
-				return nil, fmt.Errorf("trident state is not 'provisioned'")
-			}
-			logrus.Tracef("Host status servicingState is 'provisioned'")
-			hsActiveVol := hostStatus["abActiveVolume"]
-			if hsActiveVol != expectedVolume {
-				return nil, fmt.Errorf("expected active volume '%s', got '%s'", expectedVolume, hsActiveVol)
-			}
-			logrus.Infof("Active volume '%s' matches expected volume '%s'", hsActiveVol, expectedVolume)
 			return nil, nil
 		},
 	)
 	return err
+}
+
+// ValidateHostStatus checks a captured Host Status independently of its SSH transport.
+func ValidateHostStatus(hostStatusStr, expectedVolume string) error {
+	hostStatus := make(map[string]interface{})
+	if err := yaml.Unmarshal([]byte(hostStatusStr), &hostStatus); err != nil {
+		return fmt.Errorf("failed to unmarshal YAML output: %w", err)
+	}
+	if hostStatus["servicingState"] != "provisioned" {
+		return fmt.Errorf("trident state is not 'provisioned': %v", hostStatus["servicingState"])
+	}
+	hsActiveVol := hostStatus["abActiveVolume"]
+	if hsActiveVol != expectedVolume {
+		return fmt.Errorf("expected active volume '%s', got '%v'", expectedVolume, hsActiveVol)
+	}
+	logrus.Infof("Active volume '%s' matches expected volume '%s'", hsActiveVol, expectedVolume)
+	return nil
 }

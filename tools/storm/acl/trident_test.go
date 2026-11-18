@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -82,8 +83,8 @@ func TestMetadataHashUsesExactRawBytes(t *testing.T) {
 	if info.MetadataSHA384 != hex.EncodeToString(sum[:]) {
 		t.Fatal("checksum did not preserve metadata whitespace")
 	}
-	if !strings.Contains(updateConfig(info), "sha384: "+info.MetadataSHA384) || !strings.Contains(updateConfig(info), "forceAbUpdate: true") {
-		t.Fatal("adoption config missing metadata checksum or forced A/B update")
+	if !strings.Contains(updateConfig(info), "sha384: "+info.MetadataSHA384) || !strings.Contains(updateConfig(info), "forceAbUpdate: true") || !strings.Contains(updateConfig(info), "noTransition: true") {
+		t.Fatal("adoption config missing checksum, forced A/B update or manual transition")
 	}
 	// Same JSON document but different raw bytes is a different COSI checksum.
 	archive(t, dir, []byte(testMetadata))
@@ -126,19 +127,57 @@ func TestRejectInvalidStandardArtifacts(t *testing.T) {
 }
 
 type fakeGuest struct {
-	calls       []string
-	failCommand string
-	failBoot    int
-	boots       int
-	disconnect  bool
+	failErr          error
+	pendingVolume    string
+	calls            []string
+	failCommand      string
+	failOccurrence   int
+	commandMatches   int
+	failBoot         int
+	boots            int
+	disconnect       bool
+	volume           string
+	status           string
+	statusCheckpoint string
+	statusOutput     string
 }
 
 func (f *fakeGuest) command(command string) (string, error) {
 	f.calls = append(f.calls, command)
 	if f.failCommand != "" && strings.Contains(command, f.failCommand) {
-		return "", errors.New("guest assertion or operation failed")
+		f.commandMatches++
+		if f.failOccurrence == 0 || f.commandMatches == f.failOccurrence {
+			if f.failErr != nil {
+				return "", f.failErr
+			}
+			return "", errors.New("guest assertion or operation failed")
+		}
 	}
-	if f.disconnect && (strings.Contains(command, "--allowed-operations finalize") || command == "systemctl reboot") {
+	if f.volume == "" {
+		f.volume, f.status = "volume-a", "provisioned"
+	}
+	if strings.Contains(command, "--allowed-operations stage") {
+		f.status = "ab-update-staged"
+	}
+	rebooting := strings.Contains(command, "--allowed-operations finalize") || strings.HasPrefix(command, "trident rollback")
+	if rebooting {
+		if f.volume == "volume-a" {
+			f.pendingVolume = "volume-b"
+		} else {
+			f.pendingVolume = "volume-a"
+		}
+		f.status = "ab-update-finalized"
+	}
+	if strings.HasPrefix(command, "trident commit") {
+		f.status = "provisioned"
+	}
+	if strings.HasPrefix(command, "cat /var/lib/trident/test-evidence/") {
+		if f.statusCheckpoint != "" && strings.Contains(command, "/"+f.statusCheckpoint+"/status") {
+			return f.statusOutput, nil
+		}
+		return fmt.Sprintf("servicingState: %s\nabActiveVolume: %s\n", f.status, f.volume), nil
+	}
+	if f.disconnect && (strings.HasPrefix(command, "trident rollback") || command == "systemctl reboot") {
 		return "", errDisconnected
 	}
 	return "", nil
@@ -149,42 +188,102 @@ func (f *fakeGuest) waitBoot(previous string) (string, error) {
 	if f.boots == f.failBoot {
 		return "", errors.New("no new boot")
 	}
-	return []string{"baseline-id", "updated-id", "persisted-id"}[f.boots-1], nil
+	if f.pendingVolume != "" {
+		f.volume = f.pendingVolume
+		f.pendingVolume = ""
+	}
+	return fmt.Sprintf("boot-%d", f.boots), nil
 }
-func TestManualServicingRequiresBothNewBootsAndExplicitCommit(t *testing.T) {
+func TestManualServicingUpdatesRollsBackAndUpdatesBothSlots(t *testing.T) {
 	g := &fakeGuest{disconnect: true}
 	if err := service(g, artifactInfo{Variant: "standard"}); err != nil {
 		t.Fatal(err)
 	}
 	calls := strings.Join(g.calls, "\n")
-	positions := []string{"wait:", "guest-test.sh baseline", "--allowed-operations stage", "guest-test.sh staged", "--allowed-operations finalize", "wait:baseline-id", "guest-test.sh updated", "trident commit", "guest-test.sh committed", "systemctl reboot", "wait:updated-id", "guest-test.sh persisted"}
-	previous := -1
-	for _, step := range positions {
-		i := strings.Index(calls, step)
-		if i <= previous {
+	steps := []string{
+		"guest-test.sh baseline standard",
+		"--allowed-operations stage",
+		"guest-test.sh update-1-staged standard",
+		"--allowed-operations finalize",
+		"systemctl reboot",
+		"wait:boot-1",
+		"trident commit",
+		"guest-test.sh update-1 standard",
+		"cat /var/lib/trident/test-evidence/update-1/status",
+		"trident rollback --ab",
+		"wait:boot-2",
+		"trident commit",
+		"guest-test.sh rollback standard",
+		"cat /var/lib/trident/test-evidence/rollback/status",
+		"--allowed-operations stage",
+		"guest-test.sh update-2-staged standard",
+		"--allowed-operations finalize",
+		"systemctl reboot",
+		"wait:boot-3",
+		"trident commit",
+		"guest-test.sh update-2 standard",
+		"cat /var/lib/trident/test-evidence/update-2/status",
+		"--allowed-operations stage",
+		"guest-test.sh update-3-staged standard",
+		"--allowed-operations finalize",
+		"systemctl reboot",
+		"wait:boot-4",
+		"trident commit",
+		"guest-test.sh update-3 standard",
+		"cat /var/lib/trident/test-evidence/update-3/status",
+		"systemctl reboot",
+		"wait:boot-5",
+		"guest-test.sh persisted standard",
+	}
+	remaining := calls
+	for _, step := range steps {
+		i := strings.Index(remaining, step)
+		if i < 0 {
 			t.Fatalf("missing/out-of-order step %q: %s", step, calls)
 		}
-		previous = i
+		remaining = remaining[i+len(step):]
+	}
+	if strings.Count(calls, "trident commit") != 4 || g.boots != 6 {
+		t.Fatalf("missing explicit commits or verified boots: %s", calls)
+	}
+	if strings.Contains(calls, "test-evidence/baseline/status") {
+		t.Fatal("queried initial status before native ACL adoption")
+	}
+}
+func TestManualServicingRejectsFinalizeDisconnectBeforeExplicitReboot(t *testing.T) {
+	g := &fakeGuest{failCommand: "--allowed-operations finalize", failErr: errDisconnected}
+	if err := service(g, artifactInfo{Variant: "standard"}); !errors.Is(err, errDisconnected) {
+		t.Fatalf("unexpected finalize disconnect accepted: %v", err)
+	}
+	if strings.Contains(strings.Join(g.calls, "\n"), "systemctl reboot") || g.boots != 1 {
+		t.Fatalf("rebooted after incomplete finalize: %v", g.calls)
 	}
 }
 func TestManualServicingStopsOnFailure(t *testing.T) {
 	tests := []struct {
 		name, command string
 		boot          int
+		occurrence    int
 		absent        string
 	}{
 		{name: "stage", command: "--allowed-operations stage", absent: "--allowed-operations finalize"},
-		{name: "staged evidence", command: "guest-test.sh staged", absent: "--allowed-operations finalize"},
+		{name: "staged evidence", command: "guest-test.sh update-1-staged", absent: "--allowed-operations finalize"},
 		{name: "finalize operation failure", command: "--allowed-operations finalize", absent: "trident commit"},
+		{name: "manual reboot operation failure", command: "systemctl reboot", absent: "wait:boot-1"},
 		{name: "finalize does not reboot", boot: 2, absent: "trident commit"},
-		{name: "wrong updated identity", command: "guest-test.sh updated", absent: "trident commit"},
-		{name: "explicit commit", command: "trident commit", absent: "systemctl reboot"},
-		{name: "second reboot missing", boot: 3, absent: "guest-test.sh persisted"},
+		{name: "wrong updated identity", command: "guest-test.sh update-1 standard", absent: "trident rollback"},
+		{name: "explicit commit", command: "trident commit", absent: "trident rollback"},
+		{name: "rollback command", command: "trident rollback", absent: "guest-test.sh rollback"},
+		{name: "rollback reboot missing", boot: 3, absent: "guest-test.sh rollback"},
+		{name: "rollback commit", command: "trident commit", occurrence: 2, absent: "guest-test.sh rollback"},
+		{name: "post rollback update", command: "/update-2-stage.log", absent: "guest-test.sh update-2-staged"},
+		{name: "final update", command: "/update-3-finalize.log", absent: "guest-test.sh update-3 standard"},
+		{name: "persisted reboot missing", boot: 6, absent: "guest-test.sh persisted"},
 		{name: "persisted evidence", command: "guest-test.sh persisted"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := &fakeGuest{failCommand: tt.command, failBoot: tt.boot}
+			g := &fakeGuest{failCommand: tt.command, failBoot: tt.boot, failOccurrence: tt.occurrence}
 			if err := service(g, artifactInfo{Variant: "standard"}); err == nil {
 				t.Fatal("scenario passed despite required operation or evidence failure")
 			}
@@ -269,7 +368,7 @@ func TestMSHVUsesSharedManualLifecycleAndVariantAssertions(t *testing.T) {
 	if err := service(g, artifactInfo{Variant: "mshv"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, phase := range []string{"baseline", "staged", "updated", "committed", "persisted"} {
+	for _, phase := range []string{"baseline", "update-1-staged", "update-1", "rollback", "update-2-staged", "update-2", "update-3-staged", "update-3", "persisted"} {
 		if !strings.Contains(strings.Join(g.calls, "\n"), "guest-test.sh "+phase+" mshv ") {
 			t.Fatalf("missing MSHV assertion for phase %s: %v", phase, g.calls)
 		}
@@ -316,5 +415,24 @@ func TestEvidenceFailureStillSyncsWithoutMaskingErrors(t *testing.T) {
 	}
 	if !errors.Is(err, evidenceErr) || !errors.Is(err, syncErr) {
 		t.Fatalf("diagnostic failure masked: %v", err)
+	}
+}
+
+func TestManualServicingRejectsUnprovisionedOrWrongVolumeAtEveryCheckpoint(t *testing.T) {
+	for _, checkpoint := range []string{"update-1", "rollback", "update-2", "update-3", "persisted"} {
+		for _, invalidStatus := range []string{
+			"servicingState: ab-update-finalized\nabActiveVolume: volume-a\n",
+			"servicingState: provisioned\nabActiveVolume: volume-c\n",
+		} {
+			t.Run(checkpoint+"/"+invalidStatus, func(t *testing.T) {
+				g := &fakeGuest{statusCheckpoint: checkpoint, statusOutput: invalidStatus}
+				if err := service(g, artifactInfo{Variant: "standard"}); err == nil {
+					t.Fatal("accepted incorrect Host Status")
+				}
+				if !strings.HasSuffix(g.calls[len(g.calls)-1], "/"+checkpoint+"/status") {
+					t.Fatalf("continued servicing after invalid status: %v", g.calls)
+				}
+			})
+		}
 	}
 }
