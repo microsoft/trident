@@ -20,6 +20,7 @@ hex = { workspace = true }
 k8s-openapi = { workspace = true }
 kube = { workspace = true }
 log = { workspace = true }
+openssl = { workspace = true }
 quick-xml = { workspace = true, features = ["serialize"] }
 reqwest = { workspace = true }
 semver = { workspace = true }
@@ -27,6 +28,8 @@ serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 serde_path_to_error = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
 systemd-journal-logger = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

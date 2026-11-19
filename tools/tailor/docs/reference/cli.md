@@ -47,6 +47,8 @@ Each positional may be an **image name** or a **cell slug**. A slug (e.g.
 name the image and pass `--cell` — `tailor build <slug>` is shorthand for
 `tailor build <image> --cell <slug>`. Run `tailor slugs` to list cells.
 
+With `--cell`, name the owning image: an unqualified flag can fail on other workspace images.
+
 | Flag | Meaning |
 | --- | --- |
 | `-s`, `--select AXIS=VALUE` | Constrain matrix axes. Repeatable. Comma-separated axis pairs are accepted, for example `-s variant=full,arch=amd64`. |
@@ -91,7 +93,7 @@ JSON entries contain `image`, `slug`, `axes`, and `format`, plus `baseImage` whe
 | Flag | Meaning |
 | --- | --- |
 | `--format json` | JSON array of cell objects (default). |
-| `--format slugs` | One cell slug per line — feeds `tailor build --cell <slug>` directly. |
+| `--format slugs` | One cell slug per line — feeds `tailor build <slug>` directly. |
 | `--format ado` | The bare Azure DevOps matrix object (`{ leg: { var: string, … } }`) for a pipeline `strategy.matrix`. |
 | `--ado VAR_NAME` | Emit the ADO matrix wrapped in a `##vso[task.setvariable]` logging command that sets `VAR_NAME` (e.g. `BUILD_MATRIX`). Implies `--format ado` and conflicts with `--format`. An empty selection exits non-zero. |
 

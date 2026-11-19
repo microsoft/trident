@@ -1,0 +1,9 @@
+mode = "autorun"
+serialMode = "logs"
+serialVerbosity = "debug"
+
+[media]
+cosiDirectory = "cosi/"
+
+[autorun]
+reboot = true

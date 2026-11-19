@@ -312,8 +312,10 @@ extension; tailor derives the extension (and appends `.zst` if that output is co
 optional only when the producer declares a single output.
 
 `dependsOn: [<image>, …]` declares an **order-only** dependency: the listed images build first, but
-they contribute nothing to this image's fingerprint. Use it when an image must run after another but
-references none of its output. (An `image` base or input already implies the edge — don't restate it.)
+they contribute nothing to this image's fingerprint. Their enabled cells build without the
+consumer's axis/slug filters, including for `tailor build <consumer>`; fragment-skipped cells
+stay excluded. Use it when an image must run after another but references none of its output.
+(An `image` base or input already implies the edge — don't restate it.)
 
 ### Embedding an artifact with `inputs:`
 

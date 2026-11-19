@@ -53,7 +53,7 @@ impl HostConfigBlockDevice {
     /// kind.
     pub(super) fn basic_check(&self) -> Result<(), Error> {
         match self {
-            Self::Disk(disk) => {
+            Self::Disk(disk) if disk.selector.is_none() => {
                 ensure!(
                     disk.device.is_absolute(),
                     HostConfigurationStaticValidationError::PathNotAbsolute {
@@ -61,6 +61,7 @@ impl HostConfigBlockDevice {
                     }
                 );
             }
+            Self::Disk(_) => (),
             Self::Partition(Partition {
                 size: PartitionSize::Fixed(size),
                 ..
@@ -305,7 +306,11 @@ impl BlkDevKind {
             Self::Disk => Some(vec![(
                 "device",
                 Box::new(|blkdev: &HostConfigBlockDevice| {
-                    Ok(Some(blkdev.unwrap_disk()?.device.as_os_str().as_bytes()))
+                    let disk = blkdev.unwrap_disk()?;
+                    Ok(disk
+                        .selector
+                        .is_none()
+                        .then(|| disk.device.as_os_str().as_bytes()))
                 }),
             )]),
             Self::Partition => Some(vec![(

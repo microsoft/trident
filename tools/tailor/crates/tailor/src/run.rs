@@ -1465,16 +1465,21 @@ async fn build(
     // drops (or errors on) a producer's paired cell (`inter-image-dependencies.md` §4).
     let requested: BTreeSet<String> = targets.iter().map(|t| t.name().to_owned()).collect();
     let mut required: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut scheduled_targets = Vec::new();
     for node in ordered.iter().rev() {
         let apply_selector = requested.contains(node.name());
         let node_cells =
             select_node_cells(node, &selection, apply_selector, required.get(node.name()))?;
+        if !node_cells.is_empty() {
+            scheduled_targets.push(Arc::clone(node));
+        }
         for cell in &node_cells {
             for (producer, slug) in imagedep::required_producers(cell, &all_members)? {
                 required.entry(producer).or_default().insert(slug);
             }
         }
     }
+    scheduled_targets.reverse();
     let build_selection = BuildSelection {
         selector: &selection,
         requested,
@@ -1501,7 +1506,7 @@ async fn build(
             .get_or_insert_with(Runtime::default)
             .build_dir_base = Some(output_dir.join(TAILOR_STATE_DIR).join(BUILD_DIR));
     }
-    let signing = signing_requirements(&targets, tool.signing.as_ref())?;
+    let signing = signing_requirements(&scheduled_targets, tool.signing.as_ref())?;
     ensure_signing_preview(&tool, &signing)?;
     // Build one signer per required profile (a shared CA per build); `signer_for` resolves a cell to
     // its signer via the image name (meta/docs/2026-06-29-signing.md §6). Empty when nothing signs.

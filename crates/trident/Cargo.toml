@@ -1,9 +1,9 @@
 [package]
 name = "trident"
-version = "0.30.0"
+version = "0.31.0"
 edition = "2024"
 publish = false
-rust-version = "1.85.0"
+rust-version = "1.87.0"
 license = "MIT"
 default-run = "trident"
 
@@ -57,6 +57,7 @@ tracing-journald = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
+walkdir = { workspace = true }
 zstd = { workspace = true }
 
 # gRPC API Dependencies

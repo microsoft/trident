@@ -52,13 +52,24 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 
 	// When enabled, set up RCP listener.
 	var rcpListener *rcpclient.RcpListener
+	// RCP TLS certificates for this specific test session. Generated fresh
+	// below (not embedded in the binary) so no two test sessions -- or two
+	// different builds -- ever share the same key material. See
+	// tlscerts.NewEphemeralSession for details.
+	var rcpClientCertPEM, rcpClientKeyPEM, rcpServerCertPEM []byte
 	if config.Rcp != nil && config.Rcp.GrpcMode {
 		port := uint16(0)
 		if config.Rcp.ListenPort != nil {
 			port = *config.Rcp.ListenPort
 		}
 
-		rcpListener, err = rcpclient.ListenAndAccept(ctx, tlscerts.ServerCertProvider, port)
+		var serverProvider tlscerts.CertProvider
+		serverProvider, rcpClientCertPEM, rcpClientKeyPEM, rcpServerCertPEM, err = tlscerts.NewEphemeralSession()
+		if err != nil {
+			return fmt.Errorf("failed to generate ephemeral RCP TLS session: %w", err)
+		}
+
+		rcpListener, err = rcpclient.ListenAndAccept(ctx, serverProvider, port)
 		if err != nil {
 			return fmt.Errorf("failed to start RCP listener: %w", err)
 		}
@@ -70,7 +81,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	// If we have a specified port, we assume that the intent is that Trident will reach back.
 	enable_phonehome_listening := config.ListenPort != 0
 
-	result := make(chan phonehome.PhoneHomeResult)
+	result := make(chan phonehome.PhoneHomeResult, 1)
 	mux := http.NewServeMux()
 	server := &http.Server{Handler: mux}
 
@@ -172,7 +183,7 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			// Populate RCP agent config into the ISO. This handles both CLI and
 			// GRPC modes, where rcpListener == nil and rcpListener != nil
 			// respectively.
-			err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp, extraRcpAgentFiles...)
+			err = injectRcpAgentConfig(mux, announceIp, announceAddress, iso, rcpListener, *config.Rcp, rcpClientCertPEM, rcpClientKeyPEM, rcpServerCertPEM, extraRcpAgentFiles...)
 			if err != nil {
 				return fmt.Errorf("failed to inject RCP agent config into ISO: %w", err)
 			}
@@ -227,7 +238,9 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 		if err != nil {
 			return fmt.Errorf("failed to setup tracestream: %w", err)
 		}
-		defer traceFile.Close()
+		if traceFile != nil {
+			defer traceFile.Close()
+		}
 
 	}
 
@@ -390,10 +403,13 @@ func injectRcpAgentConfig(
 	iso []byte,
 	rcpListener *rcpclient.RcpListener,
 	localRcpConf RcpConfiguration,
+	rcpClientCertPEM []byte,
+	rcpClientKeyPEM []byte,
+	rcpServerCertPEM []byte,
 	extraFiles ...rcpAgentFileDownload,
 ) error {
 	// Create an empty RcpAgentConfiguration
-	rcpAgentConfBuilder := newRcpAgentConfigBuilder(mux, announceIp, announceHttpAddress, rcpListener)
+	rcpAgentConfBuilder := newRcpAgentConfigBuilder(mux, announceIp, announceHttpAddress, rcpListener, rcpClientCertPEM, rcpClientKeyPEM, rcpServerCertPEM)
 
 	if err := registerNamedRcpFile(rcpAgentConfBuilder, "trident", "/usr/bin/trident", localRcpConf.LocalTridentPath); err != nil {
 		return err

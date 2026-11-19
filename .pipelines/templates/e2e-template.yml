@@ -77,6 +77,11 @@ parameters:
     type: number
     default: 3
 
+  - name: aclAgentTestParallelJobs
+    displayName: Number of parallel ACL-agent test jobs
+    type: number
+    default: 1
+
   - name: baremetalTestsEnabled
     type: boolean
     default: true
@@ -119,6 +124,7 @@ stages:
   - template: stages/testing_e2e/storm_e2e.yml
     parameters:
       stageType: ${{ parameters.stageType }}
+      acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   # Makefile validation, only for CI
   - ${{ if eq(parameters.stageType, 'ci') }}:
@@ -274,6 +280,7 @@ stages:
   - template: stages/testing_acl_agent/trident-acl-agent-test.yml
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      aclAgentTestParallelJobs: ${{ parameters.aclAgentTestParallelJobs }}
       acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}

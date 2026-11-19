@@ -1,3 +1,4 @@
+use crate::telemetry::events;
 use std::{
     path::{Path, PathBuf},
     time::Instant,
@@ -187,7 +188,7 @@ pub(crate) fn finalize_update(
     // Metric for update time in seconds
     if let Some(start_time) = update_start_time {
         tracing::info!(
-            metric_name = "update_time_secs",
+            metric_name = events::UPDATE_TIME_SECS,
             value = start_time.elapsed().as_secs_f64(),
             servicing_type = format!("{:?}", ServicingType::AbUpdate)
         );

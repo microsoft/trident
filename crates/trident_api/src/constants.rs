@@ -8,7 +8,8 @@ pub const PARTITION_SIZE_GROW: &str = "grow";
 /// Default interpreter to use for scripts if not specified.
 pub const DEFAULT_SCRIPT_INTERPRETER: &str = "/bin/sh";
 
-/// Ignore the checksum of the image.
+/// Disables image checksum verification. Host Configurations should provide
+/// the COSI metadata checksum instead.
 pub const IMAGE_CHECKSUM_IGNORED: &str = "ignored";
 
 /// Name of the swap filesystem.

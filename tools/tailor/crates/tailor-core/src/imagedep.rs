@@ -21,7 +21,8 @@ use tailor_config::{BaseSource, OutputFormat, render_image};
 use crate::{
     domain::{Cell, Target},
     error::CoreError,
-    orchestrator::{cells, published_artifact_name},
+    orchestrator::{cells, cells_selected, published_artifact_name},
+    selector::Selector,
 };
 
 /// The dependency-closed set of `selected` images: `selected` plus every workspace image reachable
@@ -297,17 +298,7 @@ fn resolve_producer(
     members: &[Arc<Target>],
 ) -> Result<(String, Cell), CoreError> {
     let image_name = consumer.target.name().to_owned();
-    let producer = members.iter().find(|t| t.name() == image).ok_or_else(|| {
-        CoreError::UnknownDependencyImage {
-            image: image_name.clone(),
-            dependency: image.to_owned(),
-            known: members
-                .iter()
-                .map(|t| t.name())
-                .collect::<Vec<_>>()
-                .join(", "),
-        }
-    })?;
+    let producer = dependency_target(&image_name, image, members)?;
     let producer_cells = cells(producer)?;
 
     let format = resolve_output(&image_name, image, output, &producer_cells)?;
@@ -332,10 +323,27 @@ fn resolve_producer(
     }
 }
 
-/// The `(producer image name, producer cell slug)` pairs that `consumer` requires — one per
-/// `base: { image }` and per declared `inputs:` entry. The scheduler unions these into each
-/// producer's build set so a dependency is always built even when a `-s/--cell` selection would
-/// otherwise exclude it (or the producer lacks the selected axis entirely).
+fn dependency_target<'a>(
+    image: &str,
+    dependency: &str,
+    members: &'a [Arc<Target>],
+) -> Result<&'a Arc<Target>, CoreError> {
+    members
+        .iter()
+        .find(|target| target.name() == dependency)
+        .ok_or_else(|| CoreError::UnknownDependencyImage {
+            image: image.to_owned(),
+            dependency: dependency.to_owned(),
+            known: members
+                .iter()
+                .map(|t| t.name())
+                .collect::<Vec<_>>()
+                .join(", "),
+        })
+}
+
+/// Required producer cells: paired base/input cells and all enabled `dependsOn` cells.
+/// These are scheduled independently of the consumer's CLI filters.
 pub fn required_producers(
     consumer: &Cell,
     members: &[Arc<Target>],
@@ -354,6 +362,12 @@ pub fn required_producers(
         let (producer, matched) =
             resolve_producer(consumer, &spec.image, spec.output, &spec.cell, members)?;
         required.push((producer, matched.slug.as_ref().to_owned()));
+    }
+    for name in &consumer.target.definition.depends_on {
+        let prerequisite = dependency_target(consumer.target.name(), name, members)?;
+        for cell in cells_selected(prerequisite, &Selector::default())? {
+            required.push((name.clone(), cell.slug.to_string()));
+        }
     }
     Ok(required)
 }
@@ -880,5 +894,28 @@ mod tests {
                 "consumer must require both its base and input producer cells"
             );
         }
+    }
+
+    #[test]
+    fn order_only_prerequisites_select_all_enabled_cells() {
+        let tmp = TempDir::new().unwrap();
+        let prerequisite = producer(tmp.path(), "prerequisite", true);
+        fs::create_dir(prerequisite.dir.join("by-arch")).unwrap();
+        fs::write(prerequisite.dir.join("by-arch/arm64.yaml"), "skip: true\n").unwrap();
+        let consumer = target(
+            tmp.path(),
+            "consumer",
+            "name: consumer\ndependsOn: [prerequisite]\nbase: { path: ./base.img }\nconfig: {}\n",
+        );
+        let members = vec![prerequisite, Arc::clone(&consumer)];
+        let cell = cells(&consumer).unwrap().remove(0);
+
+        assert_eq!(
+            required_producers(&cell, &members).unwrap(),
+            [(
+                "prerequisite".to_owned(),
+                "prerequisite_amd64_cosi".to_owned()
+            )]
+        );
     }
 }

@@ -58,6 +58,9 @@ config:
 
 Tailor substitutes the paired artifact path, hashes its contents for incremental rebuilds, and
 builds its producer first. Use `dependsOn: [base-os]` only when you need build ordering **without**
-consuming its bytes; order-only edges do not change the consumer's fingerprint.
+consuming its bytes. `tailor build appliance` then builds all enabled `base-os` cells first,
+without applying appliance's axis/slug filters; fragment-skipped prerequisite cells stay excluded.
+Transitive prerequisites are included, and shared cells build once. Order-only outputs do not
+change the consumer's fingerprint.
 
 See [Inter-image dependencies](../reference/image-yaml.md#inter-image-dependencies).

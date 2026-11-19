@@ -951,6 +951,7 @@ mod functional_test {
                                 match_uuid: None,
                             },
                         ],
+                        selector: None,
                     },
                     Disk {
                         id: "disk2".to_string(),

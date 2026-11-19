@@ -26,6 +26,11 @@ impl SystemArchitecture {
             SystemArchitecture::Aarch64
         }
     }
+
+    /// Returns whether this is the 64-bit x86 architecture.
+    pub const fn is_x64(&self) -> bool {
+        matches!(self, Self::Amd64)
+    }
 }
 
 impl<'de> Deserialize<'de> for SystemArchitecture {

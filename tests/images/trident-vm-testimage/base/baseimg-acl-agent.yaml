@@ -179,10 +179,11 @@ os:
     # Pins this scenario's expected annotation prefix/current-version key
     # (see proxies/constants.go) to the AKS-era values it has always
     # exercised, now that trident-acl-agent's compiled-in defaults are the
-    # generic acl.microsoft.com/VERSION_ID. Baked into both the base and
-    # update image builds directly, since a drop-in written at runtime
-    # under /etc/systemd/system does not survive this usr-verity image's
-    # A/B root swap.
+    # generic acl.microsoft.com/VERSION_ID. COSI SHA-384 uses the agent's
+    # default labels source, supplied by the Nebraska response adapter.
+    # Baked into both the base and update image builds directly, since a
+    # drop-in written at runtime under /etc/systemd/system does not survive
+    # this usr-verity image's A/B root swap.
     - source: files/trident-acl-agent-override.conf
       destination: /etc/systemd/system/trident-acl-agent.service.d/override.conf
 

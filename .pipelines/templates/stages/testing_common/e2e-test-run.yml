@@ -73,6 +73,9 @@ steps:
       # internal feed replacing PyPI
       sudo -E pip3 install pytest -vvv
       sudo -E pip3 install fabric -vvv
+      # Explicit floor, independent of whatever fabric/paramiko pull in
+      # transitively: PyYAML < 5.4 is affected by CVE-2020-14343.
+      sudo -E pip3 install "pyyaml>=5.4" -vvv
     displayName: "Installing dependencies for E2E tests"
 
   - bash: |

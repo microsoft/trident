@@ -8,7 +8,8 @@ tailor matrix appliance --format slugs -s arch=amd64
 ```
 
 JSON cells contain `image`, `slug`, `axes`, `format`, and (for a catalogue-backed cell)
-`baseImage`. A slug can be fed to `tailor build <slug>` or `tailor build --cell <slug>`.
+`baseImage`. Build one with `tailor build <slug>` or `tailor build <image> --cell <slug>`.
+In a multi-image workspace, bare `--cell` may fail on an unrelated image.
 
 For Azure DevOps, generate the matrix object:
 

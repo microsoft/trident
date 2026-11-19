@@ -48,7 +48,9 @@ load-bearing — treat a regression in them as a serious bug:
   `crates/tailor-exec/src/guard.rs`.
 - **Single build per output directory.** A build takes an advisory lock on its
   output directory, so two concurrent builds cannot race on the shared stamp,
-  hash-cache, and artifact writes. See `crates/tailor-exec/src/lock.rs`.
+  hash-cache, and artifact writes. Separate output directories do not isolate
+  image-local working files; overlapping cells require separate worktrees.
+  See `crates/tailor-exec/src/lock.rs`.
 - **Atomic state writes.** Build stamps, the hash cache, and the published
   artifact are written to a temporary file and renamed into place, so an
   interrupted build cannot leave torn state a later run would trust. See

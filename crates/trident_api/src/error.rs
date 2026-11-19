@@ -156,6 +156,12 @@ pub enum InternalError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum InvalidInputError {
+    #[error("Failed to prepare disk selection")]
+    DiskSelectionPreparation,
+
+    #[error("Failed to resolve disk selector for '{disk_id}'")]
+    DiskSelection { disk_id: String },
+
     #[error("Allowed operations must be passed via command line, not in Host Configuration")]
     AllowedOperationsInHostConfiguration,
 
@@ -252,6 +258,11 @@ pub enum InvalidInputError {
 
     #[error("Failed to load COSI file from '{url}'")]
     LoadCosi { url: Url },
+
+    #[error(
+        "Failed to parse COSI metadata version '{version}'; it may contain features unsupported by this version of Trident"
+    )]
+    UnsupportedCosiFeatures { version: String },
 
     #[error("Failed to derive Host Configuration from OS image")]
     DeriveHostConfiguration,
@@ -742,11 +753,26 @@ pub enum DatastoreError {
     #[error("Failed to read from datastore")]
     ReadDatastore,
 
+    #[error("Failed to read from datastore as it is closed")]
+    ReadFromClosedDatastore,
+
+    #[error("Failed to read key '{key}' from datastore")]
+    ReadKeyValue { key: String },
+
+    #[error("Failed to serialize value for datastore key '{key}'")]
+    SerializeValue { key: String },
+
+    #[error("Failed to deserialize value for datastore key '{key}'")]
+    DeserializeValue { key: String },
+
     #[error("Failed to write to datastore as it is closed")]
     WriteToClosedDatastore,
 
     #[error("Failed to write to datastore")]
     WriteToDatastore,
+
+    #[error("Failed to write key '{key}' to datastore")]
+    WriteKeyValue { key: String },
 }
 
 impl ServicingError {

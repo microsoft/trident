@@ -24,7 +24,10 @@ pub struct OsImage {
     /// `oci://`. COSI files stored as an OCI image must allow for anonymous pulls.
     pub url: Url,
 
-    /// The Sha384 of the metadata in the COSI file.
+    /// The SHA384 checksum of `metadata.json` in the COSI file, as a
+    /// 96-character hexadecimal string.
+    ///
+    /// Always provide the checksum to verify the image's integrity.
     #[cfg_attr(
         feature = "schemars",
         schemars(schema_with = "unit_enum_with_untagged_variant::<ImageSha384, Sha384Hash>")
@@ -32,20 +35,24 @@ pub struct OsImage {
     pub sha384: ImageSha384,
 }
 
-/// Image SHA384 checksum.
+/// SHA384 checksum of the COSI metadata.
+///
+/// Use the 96-character hexadecimal checksum of `metadata.json` from the
+/// COSI file to verify the image's integrity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 pub enum ImageSha384 {
     /// # Ignored
     ///
-    /// You can pass `{{ IMAGE_CHECKSUM_IGNORED }}` to skip the checksum
-    /// verification.
+    /// Disables checksum verification. Do not use this value in Host
+    /// Configurations: without verification, Trident cannot detect tampered
+    /// COSI metadata. Provide the metadata checksum instead.
     Ignored,
 
     /// # Checksum
     ///
-    /// The SHA384 checksum of the image.
+    /// The SHA384 checksum of `metadata.json` in the COSI file.
     #[serde(untagged)]
     Checksum(Sha384Hash),
 }

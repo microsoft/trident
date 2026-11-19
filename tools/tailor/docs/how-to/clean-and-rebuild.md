@@ -17,8 +17,11 @@ or a custom `build --output-dir` tree. Remove those separately if needed. `--for
 if a remaining stamp says the cell is current.
 
 A real `build` acquires an advisory lock at `<output-dir>/.tailor/build.lock`. A second build
-targeting that output directory fails promptly; use a distinct `--output-dir` for parallel runs.
-On interruption, tailor stops the running container and releases the lock. Builds process cells
-sequentially; parallel `--jobs` scheduling is not shipped.
+targeting that output directory fails promptly. Separate output directories alone do not make
+overlapping builds safe: cells share image-local working configs and staging. Use separate
+worktrees and separate output/build directories when cells or their producers overlap; do not
+share writable caches, logs, or RPM-farm locations. On interruption, tailor stops the running
+container and releases the lock. Builds process cells sequentially; parallel `--jobs` scheduling
+is not shipped.
 
 See [CLI reference](../reference/cli.md#tailor-clean-images).

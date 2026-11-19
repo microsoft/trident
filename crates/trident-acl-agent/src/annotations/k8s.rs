@@ -30,9 +30,13 @@ use kube::{
     },
     Api, Client, Config, Error as KubeError,
 };
+use log::warn;
 use reqwest::StatusCode;
 use serde_json::json;
 use thiserror::Error;
+
+use osutils::dmi;
+use sysdefs::osuuid::OsUuid;
 
 use crate::core::config::KubernetesConfig;
 
@@ -59,6 +63,10 @@ pub struct NodeClient {
     api: Api<Node>,
     poll_interval: Duration,
     cluster_url: String,
+    /// Mirrors [`KubernetesConfig::validate_node_uuid`]: enables
+    /// [`verify_node_identity`]'s `systemUUID`-vs-local-hardware check in
+    /// both [`NodeClient::get_node`] and [`NodeClient::watch_node`].
+    validate_identity: bool,
 }
 
 impl NodeClient {
@@ -70,6 +78,7 @@ impl NodeClient {
             api: Api::all(client),
             poll_interval: config.watch_poll_interval,
             cluster_url,
+            validate_identity: config.validate_node_uuid,
         })
     }
 
@@ -78,7 +87,11 @@ impl NodeClient {
     }
 
     pub async fn get_node(&self, name: &str) -> Result<Node, K8sClientError> {
-        self.api.get(name).await.map_err(map_kube_error)
+        let node = self.api.get(name).await.map_err(map_kube_error)?;
+        if self.validate_identity {
+            verify_node_identity(&node, name, dmi::read_product_uuid())?;
+        }
+        Ok(node)
     }
 
     pub async fn patch_node_labels(
@@ -143,10 +156,26 @@ impl NodeClient {
             .fields(&format!("metadata.name={name}"))
             .timeout(timeout_secs);
 
+        // Applied per watch event below, mirroring get_node: a Node emitted
+        // by the watch whose systemUUID doesn't match this machine is just
+        // as stale/wrong as one returned by a direct get, and must be routed
+        // into the same NodeGone handling rather than silently reconciling
+        // against the wrong node.
+        let validate_identity = self.validate_identity;
+
         watcher::watcher(self.api.clone(), watcher_config)
             .default_backoff()
             .touched_objects()
             .map_err(map_watch_error)
+            .and_then(move |node| {
+                let name = name.clone();
+                async move {
+                    if validate_identity {
+                        verify_node_identity(&node, &name, dmi::read_product_uuid())?;
+                    }
+                    Ok(node)
+                }
+            })
             .boxed()
     }
 }
@@ -159,6 +188,71 @@ fn is_not_found_response(resp: &ErrorResponse) -> bool {
 /// True if `err` is a Kubernetes API error wrapping a 404 (Not Found).
 fn is_not_found(err: &KubeError) -> bool {
     matches!(err, KubeError::Api(resp) if is_not_found_response(resp))
+}
+
+/// Confirms `node`'s reported `status.nodeInfo.systemUUID` matches this
+/// machine's own hardware product UUID from [`dmi::read_product_uuid`].
+/// A mismatch means the Node object we
+/// fetched by name does not describe this machine - e.g. the Node name was
+/// recycled onto different hardware - so it's treated identically to the
+/// Node not existing ([`K8sClientError::NodeGone`]).
+///
+/// If the local product UUID can't be read, the check is skipped (logged at
+/// warn) rather than failing closed, so a host without DMI data (e.g. some
+/// VM/container test environments) doesn't lose all Node access.
+///
+/// Likewise, if the Node's reported `systemUUID` is empty, the check is
+/// skipped. kubelet populates this field via cadvisor reading the same
+/// `product_uuid` file; if that read ever fails on the kubelet's side,
+/// cadvisor logs an error but still lets node registration proceed with an
+/// empty `systemUUID` rather than surfacing the error. An empty value is
+/// therefore evidence kubelet couldn't determine the UUID - not evidence the
+/// node is a different machine - so treating it as a mismatch would risk a
+/// false positive that locks us out of an otherwise-healthy node forever.
+fn verify_node_identity(
+    node: &Node,
+    name: &str,
+    local_uuid: Result<OsUuid, Error>,
+) -> Result<(), K8sClientError> {
+    let local_uuid = match local_uuid {
+        Ok(uuid) => uuid,
+        Err(err) => {
+            warn!(
+                "failed to read local product uuid, skipping Node {name:?} identity verification: {err:#}"
+            );
+            return Ok(());
+        }
+    };
+
+    let local_uuid = local_uuid.to_string();
+    if local_uuid.trim().is_empty() {
+        warn!("Local product uuid is empty, skipping Node {name:?} identity verification");
+        return Ok(());
+    }
+
+    let node_uuid = node
+        .status
+        .as_ref()
+        .and_then(|status| status.node_info.as_ref())
+        .map(|node_info| node_info.system_uuid.as_str())
+        .unwrap_or_default();
+
+    if node_uuid.is_empty() {
+        warn!("Node {name:?} status.nodeInfo.systemUUID is empty, skipping identity verification");
+        return Ok(());
+    }
+
+    if !OsUuid::from(node_uuid)
+        .to_string()
+        .eq_ignore_ascii_case(&local_uuid)
+    {
+        warn!(
+            "Node {name:?} status.nodeInfo.systemUUID {node_uuid:?} does not match local product uuid {local_uuid:?}; treating node as not found"
+        );
+        return Err(K8sClientError::NodeGone);
+    }
+
+    Ok(())
 }
 
 fn map_kube_error(err: KubeError) -> K8sClientError {
@@ -272,5 +366,72 @@ mod tests {
         let err = WatchError::WatchFailed(KubeError::Api(error_response(403)));
 
         assert!(matches!(map_watch_error(err), K8sClientError::Watch(_)));
+    }
+
+    fn node_with_system_uuid(uuid: &str) -> Node {
+        use k8s_openapi::api::core::v1::{NodeStatus, NodeSystemInfo};
+
+        Node {
+            status: Some(NodeStatus {
+                node_info: Some(NodeSystemInfo {
+                    system_uuid: uuid.to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn matching_system_uuid_is_ok() {
+        let node = node_with_system_uuid("1234-ABCD");
+        verify_node_identity(&node, "n", Ok(OsUuid::from("1234-ABCD"))).unwrap();
+    }
+
+    #[test]
+    fn matching_system_uuid_is_case_insensitive() {
+        for (local, remote) in [
+            ("1234-abcd", "1234-ABCD"),
+            (
+                "6BA7B810-9DAD-11D1-80B4-00C04FD430C8",
+                "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+            ),
+        ] {
+            let node = node_with_system_uuid(remote);
+            verify_node_identity(&node, "n", Ok(OsUuid::from(local))).unwrap();
+        }
+    }
+
+    #[test]
+    fn mismatched_system_uuid_is_node_gone() {
+        let node = node_with_system_uuid("5678-EFGH");
+        let error = verify_node_identity(&node, "n", Ok(OsUuid::from("1234-ABCD"))).unwrap_err();
+        assert!(matches!(error, K8sClientError::NodeGone), "got {error:?}");
+    }
+
+    #[test]
+    fn missing_node_system_info_skips_verification() {
+        verify_node_identity(&Node::default(), "n", Ok(OsUuid::from("1234-ABCD"))).unwrap();
+    }
+
+    #[test]
+    fn empty_node_system_uuid_skips_verification() {
+        let node = node_with_system_uuid("");
+        verify_node_identity(&node, "n", Ok(OsUuid::from("1234-ABCD"))).unwrap();
+    }
+
+    #[test]
+    fn unreadable_local_uuid_skips_verification() {
+        let node = node_with_system_uuid("5678-EFGH");
+        verify_node_identity(&node, "n", Err(Error::msg("UUID file unavailable"))).unwrap();
+    }
+
+    #[test]
+    fn empty_local_uuid_skips_verification() {
+        let node = node_with_system_uuid("1234-ABCD");
+        for local in ["", "  \n"] {
+            verify_node_identity(&node, "n", Ok(OsUuid::from(local))).unwrap();
+        }
     }
 }

@@ -8,6 +8,10 @@ The Trident Agent Configuration file contains configuration details for Trident.
 
 > In most cases, the default values of Agent Configuration are sufficient and should not need to be changed.
 
+If the Agent Configuration file is not found, Trident uses the default settings.
+Other read failures, including permission errors and invalid UTF-8, return an
+error instead of silently falling back to defaults.
+
 ## Setting Custom Datastore Path
 
 By default, Trident will use `/var/lib/trident/datastore.sqlite` as the path for the datastore. To configure a non-default path, the Agent Configuration file must contain a line defining the path like this:

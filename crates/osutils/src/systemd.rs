@@ -42,6 +42,41 @@ where
         .with_context(|| format!("Failed to restart unit: {}", unit.as_ref()))
 }
 
+/// Stops the named systemd unit, reporting failures with the unit name.
+pub fn stop_unit(unit: impl AsRef<str>) -> Result<(), Error> {
+    let unit = unit.as_ref();
+    Dependency::Systemctl
+        .cmd()
+        .args(["stop", unit])
+        .run_and_check()
+        .with_context(|| format!("Failed to stop unit '{unit}'"))
+}
+
+/// Starts the named systemd unit and waits for its start job to finish.
+pub fn start_unit(unit: impl AsRef<str>) -> Result<(), Error> {
+    let unit = unit.as_ref();
+    Dependency::Systemctl
+        .cmd()
+        .args(["start", unit])
+        .run_and_check()
+        .with_context(|| format!("Failed to start unit '{unit}'"))
+}
+
+/// Requests a reboot through systemd and reports command failures.
+pub fn reboot() -> Result<(), Error> {
+    Dependency::Systemctl.cmd().arg("reboot").run_and_check()?;
+    Ok(())
+}
+
+/// Requests a power-off through systemd and reports command failures.
+pub fn poweroff() -> Result<(), Error> {
+    Dependency::Systemctl
+        .cmd()
+        .arg("poweroff")
+        .run_and_check()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

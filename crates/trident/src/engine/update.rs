@@ -1,3 +1,4 @@
+use crate::telemetry::events;
 use std::time::Instant;
 
 use log::{debug, info, warn};
@@ -106,7 +107,7 @@ pub(crate) fn update(
 
     let update_start_time = Instant::now();
     tracing::info!(
-        metric_name = "update_start",
+        metric_name = events::UPDATE_START,
         servicing_type = format!("{:?}", servicing_type),
         servicing_state = format!("{:?}", state.host_status().servicing_state),
     );

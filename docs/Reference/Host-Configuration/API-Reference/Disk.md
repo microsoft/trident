@@ -14,14 +14,6 @@ Per disk configuration.
 
 ## Properties
 
-### `device` **<span>(required)</span>**
-
-The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name).
-
-| Characteristic | Value    |
-| -------------- | -------- |
-| Type           | `string` |
-
 ### `id` **<span>(required)</span>**
 
 A unique identifier for the disk. This is a user defined string that allows to link the disk to what is consuming it and also to results in the Host Status. The identifier needs to be unique across all types of devices, not just disks.
@@ -61,6 +53,8 @@ A list of partitions that will be created on the disk.
 
 A list of pre-existing partitions that will be adopted from the disk.
 
+Adopting partitions requires an explicit `device` and cannot be combined with a disk selector.
+
 Several options are available to match a partition to adopt. If more than one option is specified, ALL the provided criteria will be used to match the partition.
 
 | Characteristic | Value   |
@@ -73,4 +67,21 @@ Several options are available to match a partition to adopt. If more than one op
    | -------------- | ----------------------------------------- |
    | Type           | `AdoptedPartition`                        |
    | Link           | [AdoptedPartition](./AdoptedPartition.md) |
+
+### `device` (optional)
+
+The device path of the disk. Points to the disk device in the host. It is recommended to use stable paths, such as the ones under `/dev/disk/by-path/` or [WWNs](https://en.wikipedia.org/wiki/World_Wide_Name). Specify exactly one of `device` or `selector`.
+
+| Characteristic | Value    |
+| -------------- | -------- |
+| Type           | `string` |
+
+### `selector` (optional)
+
+Select a disk during installation instead of specifying a device path.
+
+| Characteristic | Value                             |
+| -------------- | --------------------------------- |
+| Type           | `DiskSelector`                    |
+| Link           | [DiskSelector](./DiskSelector.md) |
 
