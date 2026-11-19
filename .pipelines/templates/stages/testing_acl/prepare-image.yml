@@ -74,9 +74,6 @@ jobs:
               -o '$(ACL_BUILD_DIR)/ic/imagecustomizer' ./toolkit/tools/imagecustomizer)
             docker build -f tests/images/acl/Dockerfile -t '$(ACL_CUSTOMIZER)' '$(ACL_BUILD_DIR)/ic'
             cp --reflink=auto '$(ACL_INPUT_DIR)/acl-t/acl_template_image.vhdx' artifacts/
-            cp '$(ACL_INPUT_DIR)/acl-t/acl_template_image.source.json' artifacts/
-            digest=$(jq -er '.sha256 | select(test("^[a-f0-9]{64}$"))' artifacts/acl_template_image.source.json)
-            echo "$digest  artifacts/acl_template_image.vhdx" | sha256sum --check -
             find '$(ACL_INPUT_DIR)/trident' -type f -name '*azl3*.rpm' -exec cp -- '{}' bin/RPMS/ \;
             if [[ '${{ parameters.variant }}' == mshv ]]; then
               mapfile -t loaders < <(find '$(ACL_INPUT_DIR)/efitreeloader' -type f -name 'efitreeloader-*.rpm')

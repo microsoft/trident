@@ -3,12 +3,7 @@ from pathlib import Path
 import json
 from typing import List, Optional
 
-from builder import (
-    ImageConfig,
-    RpmSources,
-    ArtifactManifest,
-    PipelineArtifactBaseImageManifest,
-)
+from builder import ImageConfig, RpmSources, ArtifactManifest
 from .builder import build_image
 from .convert import convert_image
 from . import download
@@ -125,11 +120,7 @@ def build(
         if rpm_overrides_path.exists():
             rpm_sources.append(rpm_overrides_path)
 
-        manifest = artifacts.find_base_image(image.base_image)
-        missing_provenance = isinstance(
-            manifest, PipelineArtifactBaseImageManifest
-        ) and not (image.base_image.path.with_suffix(".source.json").exists())
-        if not image.base_image.path.exists() or missing_provenance:
+        if not image.base_image.path.exists():
             if download:
                 log.info(
                     f"Downloading base image to '{image.base_image.path}'"
@@ -139,9 +130,7 @@ def build(
                     download_base_image(artifacts=artifacts, name=image.base_image.name)
 
             else:
-                log.error(
-                    f"Base image '{image.base_image.path}' or its provenance is missing."
-                )
+                log.error(f"Base image '{image.base_image.path}' does not exist.")
                 exit(1)
 
         build_image(

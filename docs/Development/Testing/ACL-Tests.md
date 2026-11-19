@@ -65,8 +65,7 @@ sudo ./bin/storm-trident run acl -a -- --variant "$VARIANT" \
   --artifacts-dir "$WORK/published" --output-path "$WORK/results"
 ```
 
-Refresh ACL-T once before building all variants. Builds retain the selected
-source in adjacent `.source.json` files; keep those with the QCOW2/COSI outputs.
+Refresh ACL-T once before building all variants.
 
 Packaging verifies matching candidate binaries, native ACL identity, distinct
 `/usr` UUIDs and compressed payload hashes. Its MSHV-only metadata correction
@@ -80,7 +79,7 @@ CI, prerelease and full-validation entrypoints. Jobs use the Linux KVM pool;
 there is no Windows/Hyper-V dependency. `ResolveAclTemplate` selects and downloads
 ACL-T once from pipeline **5304**: latest completed/successful **scheduled** run,
 `acl-pipelines` at `main` and resolved `azure_container_linux` at `aclmain`.
-Both image jobs consume the same image/provenance artifact. They download the
+Both image jobs consume the same ACL-T image artifact. They download the
 pinned producer efitreeloader artifact, build the pinned IC revision,
 and invoke ordinary `testimages.py` targets with the pipeline Trident RPMs
 and SSH keys. Generic pipeline MIC version parameters do not override the

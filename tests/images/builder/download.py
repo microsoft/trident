@@ -1,4 +1,3 @@
-import hashlib
 import json
 import logging
 from pathlib import Path
@@ -49,14 +48,6 @@ def download_base_image(image: BaseImageSource) -> None:
 
         # Copy the .vhdx file to the target location
         shutil.copy2(vhdx_files[0], image.image.path)
-
-
-def file_sha256(path: Path) -> str:
-    checksum = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            checksum.update(chunk)
-    return checksum.hexdigest()
 
 
 def _az_json(image: PipelineArtifactBaseImageManifest, args: list):
@@ -139,22 +130,7 @@ def select_pipeline_run(image: PipelineArtifactBaseImageManifest) -> dict:
             )
         ):
             continue
-        return {
-            "pipelineId": image.pipeline_id,
-            "runId": build["id"],
-            "buildNumber": build["buildNumber"],
-            "reason": build["reason"],
-            "status": build["status"],
-            "result": build["result"],
-            "repository": build["repository"]["name"],
-            "sourceBranch": build["sourceBranch"],
-            "artifactName": image.artifact_name,
-            "filename": image.filename,
-            "repositories": {
-                name: {"refName": repo["refName"], "version": repo["version"]}
-                for name, repo in repositories.items()
-            },
-        }
+        return build
     raise RuntimeError(
         f"No successful scheduled run returned for pipeline {image.pipeline_id} "
         f"with repository {image.repository_name} and refs {image.repository_refs}"
@@ -162,13 +138,13 @@ def select_pipeline_run(image: PipelineArtifactBaseImageManifest) -> dict:
 
 
 def download_pipeline_artifact(image: PipelineArtifactBaseImageManifest) -> None:
-    source = select_pipeline_run(image)
-    run_id = source["runId"]
+    build = select_pipeline_run(image)
+    run_id = build["id"]
     logging.getLogger(__name__).info(
         "Selected scheduled pipeline %s run %s (%s)",
         image.pipeline_id,
         run_id,
-        source["buildNumber"],
+        build["buildNumber"],
     )
     image.image.path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=image.image.path.parent) as tempdir:
@@ -198,8 +174,4 @@ def download_pipeline_artifact(image: PipelineArtifactBaseImageManifest) -> None
                 f"Expected exactly one {image.filename} in pipeline run "
                 f"{run_id}, found {len(matches)}"
             )
-        source["sha256"] = file_sha256(matches[0])
-        provenance = Path(tempdir) / "source.json"
-        provenance.write_text(json.dumps(source, indent=2, sort_keys=True) + "\n")
         matches[0].replace(image.image.path)
-        provenance.replace(image.image.path.with_suffix(".source.json"))

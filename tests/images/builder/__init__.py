@@ -204,9 +204,6 @@ class ImageConfig:
 
     def dependencies(self) -> List[Path]:
         deps = [self.base_image.path]
-        provenance = self.base_image.path.with_suffix(".source.json")
-        if provenance.exists():
-            deps.append(provenance)
         if not self.image_customizer_convert:
             deps.append(self.full_yaml_path())
         for file in self.base_dir().rglob("*"):

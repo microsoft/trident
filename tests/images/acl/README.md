@@ -14,9 +14,7 @@ ACL-T comes from the latest completed, successful **scheduled** run of
 `refs/heads/main` and resolved `azure_container_linux` resource is
 `refs/heads/aclmain`. Manual runs and other branches are excluded. The artifact is
 `drop_build_acl_template_amd64_customize_and_sign`, file
-`acl_template_image.vhdx`. The downloader records the actual run, repository
-refs/commits and SHA256 in `artifacts/acl_template_image.source.json`.
-These are native
+`acl_template_image.vhdx`. These are native
 ACL Btrfs/verity/OverlayFS images, not ordinary AZL images with altered identities.
 All seven original partition GUIDs and sizes are retained. Image Customizer
 regenerates the `/usr` UUID, verity, UKI and native addons on every build.
@@ -61,12 +59,9 @@ python3 tests/images/testimages.py build acl --container acl-ic:local --output-d
 python3 tests/images/testimages.py build acl-mshv --container acl-ic:local --output-dir artifacts/acl-mshv
 ```
 
-`download-image acl-t` refreshes the cached image and provenance together.
-A missing image/provenance pair is downloaded automatically; subsequent builds
-reuse it. Refresh once before building all base/update variants, not between
-them. Each QCOW2/COSI receives a matching `.source.json` sidecar; keep these files
-with their images. Builds verify the cached image hash and rebuild cached outputs
-whose source provenance is missing or changed.
+`download-image acl-t` refreshes the cached image. A missing image is downloaded
+automatically; subsequent builds reuse it. Refresh once before building all
+base/update variants, not between them.
 The images enable `testuser` public-key SSH with passwordless sudo and DHCP,
 select OEM `metal`, and disable the ACL agent. ACL's root-login denial remains.
 Generated private keys are `key_acl_private.pem` and `key_acl-mshv_private.pem`.
@@ -82,9 +77,6 @@ IC directly creates each COSI. `publish-servicing-artifacts.sh` packages the
 already-built QCOW2/COSI and SSH key for Storm; it does not customize images.
 It verifies native ACL identity, distinct `/usr` UUIDs, identical candidate
 Trident binaries and the compressed `/usr` hash, and records RPM/input hashes.
-Base and update source sidecars must match and satisfy both branch filters.
-The published manifest records their resolved ACL-T run, repository revisions
-and image hash, rather than a fixed producer run.
 For MSHV it corrects IC's hardcoded `systemd-boot` metadata tag to COSI 1.3
 `efitreeloader-mshv-systemd-boot`, preserving compressed partition bytes.
 This workaround is restricted to these unsigned test artifacts.

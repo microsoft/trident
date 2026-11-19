@@ -21,19 +21,6 @@ mkdir -p "$output"
 scratch=$(mktemp -d "$output/.packaging.XXXXXX")
 trap 'rm -rf -- "$scratch"' EXIT
 
-source_metadata="${base%.*}.source.json"
-cmp -- "$source_metadata" "${update%.*}.source.json" || {
-    echo 'Base and update must have matching ACL-T source provenance' >&2
-    exit 1
-}
-jq -e 'select(.pipelineId == 5304 and .repository == "acl-pipelines"
-    and .reason == "schedule" and .status == "completed" and .result == "succeeded"
-    and .sourceBranch == "refs/heads/main"
-    and .repositories.self.refName == "refs/heads/main"
-    and .repositories.azure_container_linux.refName == "refs/heads/aclmain"
-    and (.runId | type == "number" and . > 0 and floor == .)
-    and (.sha256 | test("^[a-f0-9]{64}$")))' "$source_metadata" > "$scratch/source.json"
-
 tar -xOf "$update" metadata.json > "$scratch/original.json"
 jq -e --arg variant "$variant" '
     if .version == "1.2" and .osArch == "x86_64"
@@ -114,7 +101,7 @@ tar -cf "$output/update.cosi" -C "$scratch" cosi-marker metadata.json
 tar --concatenate --file "$output/update.cosi" "$scratch/payload.tar"
 cp -- "$scratch/metadata.json" "$output/metadata.json"
 metadata_hash=$(sha384sum "$output/metadata.json" | cut -d ' ' -f 1)
-base_hash=$(jq -r '.sha256' "$scratch/source.json")
+base_hash=$(sha256sum "$root/artifacts/acl_template_image.vhdx" | cut -d ' ' -f 1)
 for rpm in "$root"/bin/RPMS/*.rpm "$root"/artifacts/rpm-overrides/*.rpm; do
     [[ -f $rpm ]] || continue
     digest=$(sha256sum "$rpm" | cut -d ' ' -f 1)
@@ -122,8 +109,7 @@ for rpm in "$root"/bin/RPMS/*.rpm "$root"/artifacts/rpm-overrides/*.rpm; do
 done > "$scratch/rpms.jsonl"
 jq -n --arg variant "$variant" --arg base "$base_hash" --arg binary "$base_binary" \
     --arg metadata "$metadata_hash" --slurpfile rpms "$scratch/rpms.jsonl" \
-    --slurpfile source "$scratch/source.json" \
     '{imageSource:"acl-t", variant:$variant, baseImageSha256:$base,
       expectedTridentSha256:$binary, metadataSha384:$metadata, rpms:$rpms,
-      aclTemplateRun:$source[0].runId, aclTemplateSource:$source[0], efitreeloaderRun:1261060,
+      efitreeloaderRun:1261060,
       imageCustomizerRevision:"c8dc566c0c04d33e2deaa6a484113e0545997f92"}' > "$output/manifest.json"

@@ -32,7 +32,6 @@ stages:
                 python3 tests/images/testimages.py download-image acl-t
                 mkdir -p '$(ob_outputDirectory)'
                 cp --reflink=auto artifacts/acl_template_image.vhdx '$(ob_outputDirectory)/'
-                cp artifacts/acl_template_image.source.json '$(ob_outputDirectory)/'
             env:
               AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
           - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
