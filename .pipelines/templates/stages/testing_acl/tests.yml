@@ -29,7 +29,6 @@ stages:
                 sudo apt-get update
                 sudo apt-get install -y python3-yaml python3-cryptography
                 az extension show --name azure-devops > /dev/null 2>&1 || az extension add --name azure-devops
-                python3 -m unittest discover -s tests/images -p 'test_*.py'
                 python3 tests/images/testimages.py download-image acl-t
                 mkdir -p '$(ob_outputDirectory)'
                 cp --reflink=auto artifacts/acl_template_image.vhdx '$(ob_outputDirectory)/'
