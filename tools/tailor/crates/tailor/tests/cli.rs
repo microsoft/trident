@@ -10,10 +10,14 @@
 //!   list append, `$set`/`$replace`/`$remove`/`$include`, parameter interpolation, base override,
 //!   rpm sources, opaque IC passthrough).
 
-use std::path::PathBuf;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use tempfile::TempDir;
 
 fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
@@ -107,6 +111,116 @@ fn build_rejects_an_unknown_positional_with_a_clear_error() {
         .stderr(predicate::str::contains(
             "no matching image or cell slug: `not-a-real-slug`",
         ));
+}
+
+fn order_only_workspace() -> TempDir {
+    let tmp = TempDir::new().unwrap();
+    fs::write(
+        tmp.path().join("tailor.yaml"),
+        "schemaVersion: 1\ntoolchains:\n  default: ic\n  entries:\n    - name: ic\n      container: registry.example/ic\n",
+    )
+    .unwrap();
+    for (name, definition) in [
+        (
+            "foundation",
+            "skip: true\nmatrix:\n  arch: [amd64, arm64]\n",
+        ),
+        ("prepare", "dependsOn: [foundation]\n"),
+        (
+            "consumer",
+            "dependsOn: [prepare, foundation]\nmatrix:\n  channel: [stable, edge]\n",
+        ),
+    ] {
+        let dir = tmp.path().join(name);
+        fs::create_dir(&dir).unwrap();
+        fs::write(
+            dir.join("image.yaml"),
+            format!("name: {name}\n{definition}base: {{ path: ./base.img }}\nconfig: {{}}\n"),
+        )
+        .unwrap();
+    }
+    tmp
+}
+
+fn dry_run_in(dir: &Path, args: &[&str]) -> String {
+    let output = tailor()
+        .current_dir(dir)
+        .args(["build", "--dry-run"])
+        .args(args)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    String::from_utf8(output).unwrap()
+}
+
+#[test]
+fn depends_on_builds_transitive_prerequisites_before_a_selected_consumer_once() {
+    let ws = order_only_workspace();
+    for args in [
+        vec!["consumer", "-s", "channel=stable"],
+        vec!["consumer_stable_amd64_cosi"],
+    ] {
+        let output = dry_run_in(ws.path(), &args);
+        assert!(output.contains("4 cell(s) (dry-run)"), "{output}");
+        assert_eq!(output.matches("docker run").count(), 4, "{output}");
+        let foundation = output.find("foundation_amd64_cosi.cosi").unwrap();
+        let arm = output.find("foundation_arm64_cosi.cosi").unwrap();
+        let prepare = output.find("prepare_amd64_cosi.cosi").unwrap();
+        let consumer = output.find("consumer_stable_amd64_cosi.cosi").unwrap();
+        assert!(
+            foundation < prepare && arm < prepare && prepare < consumer,
+            "{output}"
+        );
+        assert!(!output.contains("consumer_edge_amd64_cosi"), "{output}");
+    }
+}
+
+#[test]
+fn depends_on_keeps_a_prerequisites_signing_profile() {
+    let ws = order_only_workspace();
+    let manifest = ws.path().join("tailor.yaml");
+    let original = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        manifest,
+        format!(
+            "{original}previewFeatures: [signing]\nsigning:\n  default: test-ca\n  profiles:\n    test-ca:\n      backend: local-test-ca\n"
+        ),
+    )
+    .unwrap();
+    let image = ws.path().join("prepare/image.yaml");
+    let original = fs::read_to_string(&image).unwrap();
+    fs::write(image, format!("{original}signing: true\n")).unwrap();
+
+    let output = dry_run_in(ws.path(), &["consumer_stable_amd64_cosi"]);
+    assert!(
+        output.contains("# prepare_amd64_cosi — signed 3-pass"),
+        "{output}"
+    );
+    assert_eq!(output.matches("— signed 3-pass").count(), 1, "{output}");
+}
+
+#[test]
+fn depends_on_also_builds_prerequisites_of_an_input_producer() {
+    let ws = order_only_workspace();
+    let image = ws.path().join("consumer/image.yaml");
+    let original = fs::read_to_string(&image).unwrap();
+    fs::write(
+        image,
+        original.replace(
+            "dependsOn: [prepare, foundation]",
+            "inputs:\n  - name: payload\n    image: prepare",
+        ),
+    )
+    .unwrap();
+
+    let output = dry_run_in(ws.path(), &["consumer_stable_amd64_cosi"]);
+    assert!(output.contains("4 cell(s) (dry-run)"), "{output}");
+    let foundation = output.find("foundation_arm64_cosi.cosi").unwrap();
+    let prepare = output.find("prepare_amd64_cosi.cosi").unwrap();
+    let consumer = output.find("consumer_stable_amd64_cosi.cosi").unwrap();
+    assert!(foundation < prepare && prepare < consumer, "{output}");
 }
 
 // ───────────────────────────── standalone: built-in default toolchain ─────────────────────────────
