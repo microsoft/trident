@@ -5,6 +5,7 @@ parameters:
 
 jobs:
   - job: PrepareAcl_${{ parameters.variant }}
+    dependsOn: ResolveAclTemplate
     displayName: Build native ACL ${{ parameters.variant }} QCOW2 and COSI
     timeoutInMinutes: 60
     pool:
@@ -39,15 +40,10 @@ jobs:
           artifactName: ssh-keys
           targetPath: $(ACL_INPUT_DIR)/ssh
       - task: DownloadPipelineArtifact@2
-        displayName: Download ACL-T selected by acl-baremetal-devel
+        displayName: Download shared resolved ACL-T source
         inputs:
-          buildType: specific
-          project: ACL
-          definition: '5304'
-          buildVersionToDownload: specific
-          pipelineId: '1260474'
-          artifactName: drop_build_acl_template_amd64_customize_and_sign
-          itemPattern: '**/acl_template_image.vhdx'
+          buildType: current
+          artifactName: acl-template-source
           targetPath: $(ACL_INPUT_DIR)/acl-t
       - ${{ if eq(parameters.variant, 'mshv') }}:
           - task: DownloadPipelineArtifact@2
@@ -77,10 +73,10 @@ jobs:
             (cd "$source" && CGO_ENABLED=0 go build -mod=readonly -tags prod \
               -o '$(ACL_BUILD_DIR)/ic/imagecustomizer' ./toolkit/tools/imagecustomizer)
             docker build -f tests/images/acl/Dockerfile -t '$(ACL_CUSTOMIZER)' '$(ACL_BUILD_DIR)/ic'
-            mapfile -t bases < <(find '$(ACL_INPUT_DIR)/acl-t' -type f -name acl_template_image.vhdx)
-            test "${#bases[@]}" -eq 1
-            echo "e639ce68de0c60544994aff33e059add6ac68406fa383a9d69c2a1d192b2d1d5  ${bases[0]}" | sha256sum --check -
-            cp --reflink=auto "${bases[0]}" artifacts/acl_template_image.vhdx
+            cp --reflink=auto '$(ACL_INPUT_DIR)/acl-t/acl_template_image.vhdx' artifacts/
+            cp '$(ACL_INPUT_DIR)/acl-t/acl_template_image.source.json' artifacts/
+            digest=$(jq -er '.sha256 | select(test("^[a-f0-9]{64}$"))' artifacts/acl_template_image.source.json)
+            echo "$digest  artifacts/acl_template_image.vhdx" | sha256sum --check -
             find '$(ACL_INPUT_DIR)/trident' -type f -name '*azl3*.rpm' -exec cp -- '{}' bin/RPMS/ \;
             if [[ '${{ parameters.variant }}' == mshv ]]; then
               mapfile -t loaders < <(find '$(ACL_INPUT_DIR)/efitreeloader' -type f -name 'efitreeloader-*.rpm')

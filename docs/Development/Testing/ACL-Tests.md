@@ -36,7 +36,7 @@ The controller retains checkpoints across guest reboots.
 
 ## Local execution
 
-See the image README for the pinned ACL-T, efitreeloader RPM and ACL-enabled IC
+See the image README for ACL-T selection and the pinned efitreeloader/ACL-enabled IC
 inputs. Stage AZL3 candidate RPMs in `bin/RPMS` and build `acl-ic:local`.
 The existing `requires_trident` setting supplies those RPMs; both recipes
 remove/install Trident and retain the base repositories for dependencies.
@@ -44,6 +44,7 @@ Run from the Trident root on a KVM/libvirt-capable Linux host. Artifact packagin
 also needs `libguestfs-tools`, `qemu-utils`, `jq` and `zstd`.
 
 ```bash
+python3 tests/images/testimages.py download-image acl-t
 WORK="$(pwd)/artifacts/acl-local-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$WORK"
 ssh-keygen -q -t rsa -b 2048 -N '' -f "$WORK/id_rsa"
@@ -64,6 +65,9 @@ sudo ./bin/storm-trident run acl -a -- --variant "$VARIANT" \
   --artifacts-dir "$WORK/published" --output-path "$WORK/results"
 ```
 
+Refresh ACL-T once before building all variants. Builds retain the selected
+source in adjacent `.source.json` files; keep those with the QCOW2/COSI outputs.
+
 Packaging verifies matching candidate binaries, native ACL identity, distinct
 `/usr` UUIDs and compressed payload hashes. Its MSHV-only metadata correction
 works around the pinned IC's hardcoded ACL bootloader tag; it neither rebuilds
@@ -73,12 +77,15 @@ partitions nor rewrites UKIs. Do not use it to relabel arbitrary production COSI
 
 `testing_acl` builds and tests both variants in the four existing PR-e2e,
 CI, prerelease and full-validation entrypoints. Jobs use the Linux KVM pool;
-there is no Windows/Hyper-V dependency. They download the pinned ACL-T and
-producer efitreeloader artifacts, build the producer's pinned IC revision,
+there is no Windows/Hyper-V dependency. `ResolveAclTemplate` selects and downloads
+ACL-T once from pipeline **5304**: latest completed/successful **scheduled** run,
+`acl-pipelines` at `main` and resolved `azure_container_linux` at `aclmain`.
+Both image jobs consume the same image/provenance artifact. They download the
+pinned producer efitreeloader artifact, build the pinned IC revision,
 and invoke ordinary `testimages.py` targets with the pipeline Trident RPMs
 and SSH keys. Generic pipeline MIC version parameters do not override the
 ACL-enabled IC pin.
-The pipeline build service needs read access to the pinned ACL-project artifacts
+The pipeline build service needs read access to ACL pipeline runs and artifacts
 and authorization for the `aclImageTools` repository resource.
 
 Published inputs are `acl-standard` and `acl-mshv`, each containing

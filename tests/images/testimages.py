@@ -263,12 +263,14 @@ ARTIFACTS = ArtifactManifest(
     base_images=[
         PipelineArtifactBaseImageManifest(
             image=BaseImage.ACL_T,
-            run_id=1260474,
+            pipeline_id=5304,
             artifact_name="drop_build_acl_template_amd64_customize_and_sign",
             filename="acl_template_image.vhdx",
-            sha256=(
-                "e639ce68de0c60544994aff33e059add6" "ac68406fa383a9d69c2a1d192b2d1d5"
-            ),
+            repository_name="acl-pipelines",
+            repository_refs={
+                "self": "refs/heads/main",
+                "azure_container_linux": "refs/heads/aclmain",
+            },
         ),
         BaseImageManifest(
             image=BaseImage.BAREMETAL,

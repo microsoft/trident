@@ -3,7 +3,7 @@ import yaml
 from dataclasses import dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 
 @dataclass
@@ -64,10 +64,11 @@ class BaseImageManifest:
 @dataclass
 class PipelineArtifactBaseImageManifest:
     image: BaseImage
-    run_id: int
+    pipeline_id: int
     artifact_name: str
     filename: str
-    sha256: str
+    repository_name: str
+    repository_refs: Dict[str, str]
     org: str = "https://dev.azure.com/mariner-org/"
     project: str = "ACL"
 
@@ -203,6 +204,9 @@ class ImageConfig:
 
     def dependencies(self) -> List[Path]:
         deps = [self.base_image.path]
+        provenance = self.base_image.path.with_suffix(".source.json")
+        if provenance.exists():
+            deps.append(provenance)
         if not self.image_customizer_convert:
             deps.append(self.full_yaml_path())
         for file in self.base_dir().rglob("*"):

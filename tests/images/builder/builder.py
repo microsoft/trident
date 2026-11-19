@@ -1,4 +1,5 @@
 import copy
+import json
 import logging
 import multiprocessing
 import multiprocessing.dummy
@@ -24,6 +25,7 @@ from builder import (
     sign,
 )
 from builder.context_managers import temp_dir, temp_file
+from builder.download import file_sha256
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -122,12 +124,23 @@ def build_one(
         if not dep.exists():
             raise FileNotFoundError(f"Dependency '{dep}' does not exist.")
 
+    source_path = image.base_image.path.with_suffix(".source.json")
+    provenance = source_path.read_bytes() if source_path.exists() else None
+    if provenance is not None:
+        if file_sha256(image.base_image.path) != json.loads(provenance)["sha256"]:
+            raise RuntimeError(f"Base image does not match provenance: {source_path}")
+
     # Check if final image output exists, to see if building is necessary
     output_file = output_dir / image.file_name()
+    output_source = output_file.with_suffix(".source.json")
     if output_file.exists():
         log.info(f"Output file {output_file} already exists.")
         if force:
             log.info(f"Force build requested for '{image.id}', rebuilding.")
+        elif provenance is not None and (
+            not output_source.exists() or output_source.read_bytes() != provenance
+        ):
+            log.info("Source provenance changed or missing; rebuilding.")
         else:
             dest_mod_time = output_file.stat().st_mtime
             for dep in image.dependencies():
@@ -196,6 +209,8 @@ def build_one(
                 )
 
     output_file = output_dir / image.file_name()
+    if provenance is not None and not dry_run:
+        output_source.write_bytes(provenance)
     log.info(f"Image '{image.id}' built successfully in {output_file}")
 
 
