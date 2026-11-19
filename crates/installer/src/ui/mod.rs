@@ -89,20 +89,7 @@ impl Display {
     /// Leaves raw mode and the alternate screen so an interactive shell can use the terminal.
     /// On Linux VTs, also clears the old UI and restores the original palette.
     fn suspend(&mut self) -> Result<(), Error> {
-        let restore = (|| -> Result<(), Error> {
-            terminal::disable_raw_mode()?;
-            execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
-            if self.linux_vt {
-                // Linux VT leaves the old TUI visible when exiting its alternate screen.
-                execute!(
-                    self.terminal.backend_mut(),
-                    ClearTerminal(ClearType::All),
-                    MoveTo(0, 0)
-                )?;
-            }
-            self.terminal.show_cursor()?;
-            Ok(())
-        })();
+        let restore = self.leave_screen();
         let palette = if self.linux_vt {
             installer_terminal::reset_vt_palette(&mut io::stdout())
         } else {
@@ -111,6 +98,22 @@ impl Display {
         self.active = false;
         restore?;
         palette?;
+        Ok(())
+    }
+
+    /// Releases the screen before palette cleanup, which must run even if this fails.
+    fn leave_screen(&mut self) -> Result<(), Error> {
+        terminal::disable_raw_mode()?;
+        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+        if self.linux_vt {
+            // Linux VT leaves the old TUI visible when exiting its alternate screen.
+            execute!(
+                self.terminal.backend_mut(),
+                ClearTerminal(ClearType::All),
+                MoveTo(0, 0)
+            )?;
+        }
+        self.terminal.show_cursor()?;
         Ok(())
     }
 }
