@@ -104,6 +104,7 @@ os:
       - efibootmgr
       - iproute
       - iptables
+      - linux-firmware-intel
       - lsof
       - lvm2
       - mdadm

@@ -83,6 +83,7 @@ os:
       - efibootmgr
       - iproute
       - iptables
+      - linux-firmware-intel
       - lvm2
       - mdadm
       - moby-engine

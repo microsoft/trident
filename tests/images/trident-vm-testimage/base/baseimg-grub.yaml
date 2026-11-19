@@ -68,6 +68,7 @@ os:
       - iproute
       - iptables
       - jq
+      - linux-firmware-intel
       - openssh-server
       - trident-service
       - vim

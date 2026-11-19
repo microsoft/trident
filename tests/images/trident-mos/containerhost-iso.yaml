@@ -34,6 +34,7 @@ os:
       - curl
       - device-mapper
       - dnf
+      - linux-firmware-intel
       - moby-engine
       - moby-cli
       - openssh-server

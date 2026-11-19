@@ -37,6 +37,7 @@ os:
       - docker-cli
       - iproute
       - iptables
+      - linux-firmware-intel
       - mdadm
       - moby-engine
       - openssh-server

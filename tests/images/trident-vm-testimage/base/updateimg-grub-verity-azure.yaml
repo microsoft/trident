@@ -107,6 +107,7 @@ os:
       - iptables
       - jq
       - kexec-tools
+      - linux-firmware-intel
       - lsof
       - lvm2
       - netplan

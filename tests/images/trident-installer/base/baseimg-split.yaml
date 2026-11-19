@@ -38,6 +38,7 @@ os:
       - efibootmgr
       - iproute
       - iptables
+      - linux-firmware-intel
       - lsof
       - mdadm
       - netplan

@@ -160,6 +160,7 @@ os:
       - iptables
       - jq
       - kexec-tools
+      - linux-firmware-intel
       - lvm2
       - openssh-server
       - systemd-boot

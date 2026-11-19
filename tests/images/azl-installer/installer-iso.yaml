@@ -49,6 +49,7 @@ os:
       - iproute
       - iptables
       - jq
+      - linux-firmware-intel
       - lsof
       - mdadm
       - nano
