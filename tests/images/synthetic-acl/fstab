@@ -1,4 +1,0 @@
-LABEL=ROOT / ext4 defaults 0 1
-LABEL=EFI-SYSTEM /boot vfat umask=0077 0 2
-/dev/mapper/usr /usr ext4 defaults,ro 0 0
-PARTLABEL=OEM /oem ext4 defaults 0 2

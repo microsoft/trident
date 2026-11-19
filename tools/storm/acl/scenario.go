@@ -87,7 +87,7 @@ func (r *runner) evidence() error {
 	return errors.Join(result, walkErr, archive.Close(), compressed.Close(), destination.Close())
 }
 
-func (s *SyntheticACLScenario) run() (result error) {
+func (s *ACLScenario) run() (result error) {
 	if s.args.BootTimeout <= 0 || s.args.OperationTimeout <= 0 {
 		return errors.New("timeouts must be positive")
 	}

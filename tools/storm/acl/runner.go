@@ -33,7 +33,7 @@ type runner struct {
 }
 
 func (r *runner) settings() stormsshconfig.SshCliSettings {
-	return stormsshconfig.SshCliSettings{PrivateKeyPath: filepath.Join(r.args.ArtifactsDir, "id_rsa"), Host: r.ip, User: "root", Port: 22, Timeout: 5}
+	return stormsshconfig.SshCliSettings{PrivateKeyPath: filepath.Join(r.args.ArtifactsDir, "id_rsa"), Host: r.ip, User: "testuser", Port: 22, Timeout: 5}
 }
 
 func (r *runner) closeClient() {
@@ -67,6 +67,7 @@ func (r *runner) withClient(operation func(context.Context, *ssh.Client) error) 
 }
 
 func (r *runner) command(command string) (string, error) {
+	command = "sudo -n sh -c '" + strings.ReplaceAll(command, "'", "'\"'\"'") + "'"
 	var out *stormsshconfig.SshCmdOutput
 	err := r.withClient(func(ctx context.Context, client *ssh.Client) error {
 		var err error

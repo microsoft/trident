@@ -1,8 +1,0 @@
-{
-  "source": "https://github.com/microsoft/azurelinux/blob/3.0/toolkit/imageconfigs/packagelists/nested-virtualization-packages.json",
-  "packages": [
-    {"name": "edk2-hvloader", "url": "https://packages.microsoft.com/azurelinux/3.0/prod/base/x86_64/Packages/e/edk2-hvloader-20240524git3e722403cd16-22.azl3.x86_64.rpm", "sha256": "18dea6a401cdcf5215497707e52316f2e28110bf08a82a7a07b729cb1f75c91d"},
-    {"name": "mshv", "url": "https://packages.microsoft.com/azurelinux/3.0/prod/ms-non-oss/x86_64/Packages/m/mshv-26100.9444.2609032029.1-1.azl3.x86_64.rpm", "sha256": "95a95671546fc29488ffd8b61c00d9869928ceca25005f5c1ca3beaaf83d9385"},
-    {"name": "mshv-bootloader-lx", "url": "https://packages.microsoft.com/azurelinux/3.0/prod/ms-non-oss/x86_64/Packages/m/mshv-bootloader-lx-26100.9444.2609032029.1-1.azl3.x86_64.rpm", "sha256": "cf75cc2633df5d35484ea75aacea7d308a1b18f4064c0e159d99e0e20c48df63"}
-  ]
-}

@@ -1,9 +1,0 @@
-{
-  "load_entries": [
-    {
-      "path": "HvLoader.efi",
-      "args": "${{EFIDIR}}\\lxhvloader.dll MSHV_ROOT=\\${{EFIDIR}}\\Windows MSHV_ENABLE=TRUE MSHV_SCHEDULER_TYPE=ROOT MSHV_X2APIC_POLICY=ENABLE MSHV_LOAD_OPTION=INCLUDETRACEMETADATA=1"
-    },
-    {"path": "second.efi"}
-  ]
-}

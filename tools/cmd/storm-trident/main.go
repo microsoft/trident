@@ -36,7 +36,7 @@ func main() {
 	// Add Trident servicing scenario
 	storm.AddScenario(&servicing.TridentServicingScenario{})
 
-	storm.AddScenario(&acl.SyntheticACLScenario{})
+	storm.AddScenario(&acl.ACLScenario{})
 
 	// Add Trident ACL agent scenario
 	storm.AddScenario(&aclagent.TridentAclAgentScenario{})

@@ -19,10 +19,11 @@ type fileDigest struct {
 }
 
 type snapshot struct {
-	BootID, Kernel, OSRelease, Generation, TridentSHA                      string
-	UsrUUID, RootHash, Verity, Source, Options, Ancestors, Bootctl, Status string
-	MSHVPresent, MSHVCharacter                                             bool
-	Trees                                                                  map[string]map[string]fileDigest
+	FSType                                                                            string
+	BootID, Kernel, OSRelease, TridentSHA                                             string
+	UsrUUID, RootHash, Verity, Source, UsrDevice, Options, Ancestors, Bootctl, Status string
+	MSHVPresent, MSHVCharacter                                                        bool
+	Trees                                                                             map[string]map[string]fileDigest
 }
 
 func checksum(output string) (string, error) {
@@ -61,11 +62,11 @@ func validateSnapshot(current, baseline, reference snapshot, expected checkpoint
 	if !slices.Contains(strings.Fields(current.Ancestors), partition) {
 		return fmt.Errorf("/usr is not backed by expected slot partition %s", partition)
 	}
-	if current.Source != "/dev/mapper/usr" || !slices.Contains(strings.Split(current.Options, ","), "ro") || !strings.Contains(strings.ToLower(current.Verity), "verity") || !isDigest(current.RootHash, 32) {
+	if current.Source == "" || current.Source != current.UsrDevice || current.FSType != "btrfs" || !slices.Contains(strings.Split(current.Options, ","), "ro") || !strings.Contains(strings.ToLower(current.Verity), "verity") || !isDigest(current.RootHash, 32) {
 		return fmt.Errorf("/usr must be read-only and verity-backed")
 	}
-	if current.Generation != expected.Generation || !slices.Contains(strings.Split(current.OSRelease, "\n"), "VARIANT_ID=azurecontainerlinux") {
-		return fmt.Errorf("expected ACL generation %q, got %q", expected.Generation, current.Generation)
+	if !slices.Contains(strings.Split(current.OSRelease, "\n"), "VARIANT_ID=azurecontainerlinux") {
+		return fmt.Errorf("expected native ACL os-release")
 	}
 	if current.TridentSHA != info.TridentSHA256 {
 		return fmt.Errorf("Trident binary does not match artifact provenance")
@@ -155,9 +156,10 @@ func (r *runner) check(expected checkpoint, info artifactInfo) error {
 		{"boot-id", "cat /proc/sys/kernel/random/boot_id", &out.BootID},
 		{"cmdline", "cat /proc/cmdline", nil},
 		{"os-release", "cat /usr/lib/os-release", &out.OSRelease},
-		{"generation", "cat /usr/lib/synthetic-acl-generation", &out.Generation},
 		{"kernel", "uname -r", &out.Kernel},
-		{"usr-source", "findmnt -rn -o SOURCE /usr", &out.Source},
+		{"usr-source", `readlink -f "$(findmnt -rn -o SOURCE --nofsroot /usr)"`, &out.Source},
+		{"usr-device", "readlink -f /dev/mapper/usr", &out.UsrDevice},
+		{"usr-fstype", "findmnt -rn -o FSTYPE /usr", &out.FSType},
 		{"usr-options", "findmnt -rn -o OPTIONS /usr", &out.Options},
 		{"verity", "veritysetup status usr", &out.Verity},
 		{"usr-ancestors", "lsblk -s -rno NAME /dev/mapper/usr", &out.Ancestors},

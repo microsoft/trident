@@ -1,55 +1,82 @@
-# ACL-T image prototype
+# Native ACL images
 
-`acl` and `acl-mshv` are ordinary `testimages.py` QCOW2 targets. Image
-Customizer installs the candidate Trident RPMs and regenerates verity and the
-UKI directly from the real ACL-T template. There is no separate image builder.
-The existing synthetic fixtures and their pipeline remain unchanged.
+The ordinary `testimages.py` targets use two static Image Customizer recipes:
 
-## Inputs
+| Target | Recipe | Output |
+|--------|--------|--------|
+| `acl` | `acl.yaml` | QCOW2 |
+| `acl-update` | `acl.yaml` | COSI |
+| `acl-mshv` | `acl-mshv.yaml` | QCOW2 |
+| `acl-mshv-update` | `acl-mshv.yaml` | COSI |
 
-The base is pinned to `aclmain` run **1260474**, artifact
+Each build starts from the real ACL-T template selected by
+`acl-baremetal-devel` run **1261060**: `aclmain` run **1260474**, artifact
 `drop_build_acl_template_amd64_customize_and_sign`, file
-`acl_template_image.vhdx`. This is the ACL-T source selected by
-`acl-baremetal-devel` run **1261060**, not a generic Azure Linux image.
-The download verifies the VHDX SHA256 before publishing it under `artifacts/`.
+`acl_template_image.vhdx`. The downloader verifies its SHA256. These are native
+ACL Btrfs/verity/OverlayFS images, not ordinary AZL images with altered identities.
+All seven original partition GUIDs and sizes are retained. Image Customizer
+regenerates the `/usr` UUID, verity, UKI and native addons on every build.
 
-Use the ACL-enabled Image Customizer revision from that consumer:
-`microsoft/azure-linux-image-tools@c8dc566c0c04d33e2deaa6a484113e0545997f92`,
-layered onto the official IC 1.7 container. For example, the producer's
-`acl-baremetal/tools/ic/build.py --ref <sha> --tag acl-ic:local`
-builds this existing toolchain. Stock IC does not support the `acl.*` options.
+## Toolchain and RPMs
 
-Stage matching **AZL3** candidate RPMs in `bin/RPMS`, including `trident`,
-`trident-acl`, `trident-selinux` and `trident-static-pcrlock-files`. Public
-repositories exclude `trident*`, and embedded base-image repos are disabled,
-so they cannot silently supply a different candidate. Do not mix AZL4 RPMs
-into this directory.
+Use Linux with Docker, Go 1.26+, Python 3 with PyYAML and cryptography, and
+authenticated `az devops` access to `https://dev.azure.com/mariner-org`.
+The producer's ACL-enabled Image Customizer revision is required; stock IC
+does not implement its `acl.*` options. From the Trident repository root:
 
-For MSHV, also stage the efitreeloader RPM from the producer's
+```bash
+IC_SOURCE=/path/to/azure-linux-image-tools
+test "$(git -C "$IC_SOURCE" rev-parse HEAD)" = c8dc566c0c04d33e2deaa6a484113e0545997f92
+mkdir -p artifacts/acl-ic
+(cd "$IC_SOURCE" && CGO_ENABLED=0 go build -mod=readonly -tags prod \
+  -o "$OLDPWD/artifacts/acl-ic/imagecustomizer" ./toolkit/tools/imagecustomizer)
+docker build -f tests/images/acl/Dockerfile -t acl-ic:local artifacts/acl-ic
+```
+
+Stage matching **AZL3** candidate RPMs in `bin/RPMS`: `trident`, `trident-acl`,
+`trident-selinux` and `trident-static-pcrlock-files`. Both recipes remove and
+reinstall them, including when the candidate is older than ACL-T's version.
+Public repositories exclude `trident*`, and embedded base-image repos are
+disabled. Do not mix AZL4 RPMs into this directory.
+
+For MSHV, also stage the efitreeloader RPM from consumer **1261060**'s
 `drop_build_efitreeloader_rpm` artifact in `artifacts/rpm-overrides`.
-Run 1261060 supplies a build from efitreeloader revision `bf02d4e3f4`.
-The remaining MSHV packages come from the Azure Linux repositories.
+It contains loader revision `bf02d4e3f4`. The remaining MSHV packages, including
+their licenses, are installed as RPMs from Microsoft's public repositories.
+The recipe replaces `kernel` with `kernel-mshv`, pins compatible shim 15.8,
+and assembles the ESP loader bundle in an inline customization hook.
 
 ## Build
-
-Authenticate `az devops` for `https://dev.azure.com/mariner-org` first.
-The first build downloads the pinned base; it can also be fetched explicitly
-with `python3 tests/images/testimages.py download-image acl-t`.
 
 ```bash
 python3 tests/images/testimages.py build acl --container acl-ic:local --output-dir artifacts/acl
 python3 tests/images/testimages.py build acl-mshv --container acl-ic:local --output-dir artifacts/acl-mshv
 ```
 
-Both builds generate SSH keys in their output directory. These unsigned test
-images enable public-key SSH for `testuser` (with passwordless sudo) and DHCP,
-select the `metal` OEM, and disable the automatic ACL agent. The existing ACL
-root-SSH denial remains intact. Private keys are named
-`key_acl_private.pem` and `key_acl-mshv_private.pem`.
-ACL's Btrfs, A/B partition identities, partition sizes and overlay
-layout are retained. The MSHV recipe additionally installs its loader chain;
-merely replacing the Linux kernel would not boot the Microsoft hypervisor.
+Missing ACL-T input is downloaded automatically; explicit download is
+`python3 tests/images/testimages.py download-image acl-t`.
+The images enable `testuser` public-key SSH with passwordless sudo and DHCP,
+select OEM `metal`, and disable the ACL agent. ACL's root-login denial remains.
+Generated private keys are `key_acl_private.pem` and `key_acl-mshv_private.pem`.
 
-These are bootable-image prototypes, not replacement servicing fixtures yet.
-The selected IC still reports ACL COSI bootloaders as `systemd-boot`, including
-MSHV images, so COSI servicing integration needs separate validation.
+For matching base/update keys, place the same public key at
+`tests/images/acl/files/id_rsa.pub` before **each** build. The shared builder
+consumes and removes that staging file. See [ACL Tests](../../../docs/Development/Testing/ACL-Tests.md)
+for building and running a servicing pair.
+
+## COSI publication
+
+IC directly creates each COSI. `publish-servicing-artifacts.sh` packages the
+already-built QCOW2/COSI and SSH key for Storm; it does not customize images.
+It verifies native ACL identity, distinct `/usr` UUIDs, identical candidate
+Trident binaries and the compressed `/usr` hash, and records RPM/input hashes.
+For MSHV it corrects IC's hardcoded `systemd-boot` metadata tag to COSI 1.3
+`efitreeloader-mshv-systemd-boot`, preserving compressed partition bytes.
+This workaround is restricted to these unsigned test artifacts.
+
+Both variants built QCOW2/COSI pairs and passed content audits. Standard native
+update, rollback, update, update, explicit commits and a persistence reboot
+passed in QEMU with verified Btrfs `/usr`. Validation used existing Trident
+artifact 1256724 (`3fc019c`), not a fresh source-head RPM.
+Local MSHV still resets before Linux after `second.efi`;
+neither `/dev/mshv` nor MSHV servicing is a demonstrated pass.

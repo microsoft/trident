@@ -1,14 +1,6 @@
-parameters:
-  - name: micBuildType
-    type: string
-    default: release
-  - name: micVersion
-    type: string
-    default: '*.*.*'
-
 stages:
-  - stage: BuildSyntheticAclImages
-    displayName: Build synthetic ACL images (regular kernel and MSHV)
+  - stage: BuildAclImages
+    displayName: Build ACL images (regular kernel and MSHV)
     dependsOn:
       - GetTridentBinaries_rpms_amd64
       - PrepareSSHKeys
@@ -17,17 +9,13 @@ stages:
       - template: prepare-image.yml
         parameters:
           variant: standard
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
       - template: prepare-image.yml
         parameters:
           variant: mshv
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
 
-  - stage: TestSyntheticAcl
-    displayName: Synthetic ACL manual A/B updates (Linux QEMU)
-    dependsOn: BuildSyntheticAclImages
+  - stage: TestAcl
+    displayName: ACL manual A/B updates (Linux QEMU)
+    dependsOn: BuildAclImages
     jobs:
       - ${{ each variant in split('standard,mshv', ',') }}:
           - job: AclQemu_${{ variant }}
@@ -38,17 +26,17 @@ stages:
               name: trident-ubuntu-1es-pool-eastus2
               hostArchitecture: amd64
             variables:
-              ob_outputDirectory: $(Pipeline.Workspace)/synthetic-acl-${{ variant }}-results
-              ob_artifactBaseName: synthetic-acl-${{ variant }}-results
+              ob_outputDirectory: $(Pipeline.Workspace)/acl-${{ variant }}-results
+              ob_artifactBaseName: acl-${{ variant }}-results
             steps:
               - template: ../common_tasks/checkout_trident.yml
               - template: ../testing_vm/netlaunch-prep.yml
               - task: DownloadPipelineArtifact@2
-                displayName: Download synthetic ACL ${{ variant }} image and COSI
+                displayName: Download ACL ${{ variant }} image and COSI
                 inputs:
                   buildType: current
-                  artifactName: synthetic-acl-${{ variant }}
-                  targetPath: $(Build.ArtifactStagingDirectory)/synthetic-acl
+                  artifactName: acl-${{ variant }}
+                  targetPath: $(Build.ArtifactStagingDirectory)/acl
               - task: DownloadPipelineArtifact@2
                 displayName: Download storm tool
                 inputs:
@@ -64,11 +52,11 @@ stages:
                   script: |
                     set -euo pipefail
                     chmod +x ./bin/storm-trident
-                    chmod 600 '$(Build.ArtifactStagingDirectory)/synthetic-acl/id_rsa'
+                    chmod 600 '$(Build.ArtifactStagingDirectory)/acl/id_rsa'
                     mkdir -p '$(ob_outputDirectory)'
-                    sudo ./bin/storm-trident run synthetic-acl -a -- \
+                    sudo ./bin/storm-trident run acl -a -- \
                       --variant '${{ variant }}' \
-                      --artifacts-dir '$(Build.ArtifactStagingDirectory)/synthetic-acl' \
+                      --artifacts-dir '$(Build.ArtifactStagingDirectory)/acl' \
                       --output-path '$(ob_outputDirectory)'
               - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
                 parameters:

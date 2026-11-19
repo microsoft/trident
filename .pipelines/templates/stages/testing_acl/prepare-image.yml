@@ -1,0 +1,113 @@
+parameters:
+  - name: variant
+    type: string
+    values: [standard, mshv]
+
+jobs:
+  - job: PrepareAcl_${{ parameters.variant }}
+    displayName: Build native ACL ${{ parameters.variant }} QCOW2 and COSI
+    timeoutInMinutes: 60
+    pool:
+      type: linux
+      name: trident-ubuntu-1es-pool-eastus2
+      hostArchitecture: amd64
+    variables:
+      ob_outputDirectory: $(Pipeline.Workspace)/acl-published-${{ parameters.variant }}
+      ob_artifactBaseName: acl-${{ parameters.variant }}
+      ACL_INPUT_DIR: $(Pipeline.Workspace)/acl-inputs-${{ parameters.variant }}
+      ACL_BUILD_DIR: $(Pipeline.Workspace)/acl-build-${{ parameters.variant }}-$(Build.BuildId)-$(System.JobAttempt)
+      ACL_CUSTOMIZER: acl-imagecustomizer:c8dc566
+    steps:
+      - template: ../common_tasks/checkout_trident.yml
+      - template: ../common_tasks/avoid-pypi-usage.yml
+      - checkout: aclImageTools
+        fetchDepth: 1
+        path: s/acl-image-tools
+      - task: GoTool@0
+        inputs:
+          version: '1.26.3'
+      - task: DownloadPipelineArtifact@2
+        displayName: Download pipeline Trident RPMs
+        inputs:
+          buildType: current
+          artifactName: trident-binaries
+          targetPath: $(ACL_INPUT_DIR)/trident
+      - task: DownloadPipelineArtifact@2
+        displayName: Download test SSH keys
+        inputs:
+          buildType: current
+          artifactName: ssh-keys
+          targetPath: $(ACL_INPUT_DIR)/ssh
+      - task: DownloadPipelineArtifact@2
+        displayName: Download ACL-T selected by acl-baremetal-devel
+        inputs:
+          buildType: specific
+          project: ACL
+          definition: '5304'
+          buildVersionToDownload: specific
+          pipelineId: '1260474'
+          artifactName: drop_build_acl_template_amd64_customize_and_sign
+          itemPattern: '**/acl_template_image.vhdx'
+          targetPath: $(ACL_INPUT_DIR)/acl-t
+      - ${{ if eq(parameters.variant, 'mshv') }}:
+          - task: DownloadPipelineArtifact@2
+            displayName: Download producer efitreeloader RPM
+            inputs:
+              buildType: specific
+              project: ACL
+              definition: '5529'
+              buildVersionToDownload: specific
+              pipelineId: '1261060'
+              artifactName: drop_build_efitreeloader_rpm
+              targetPath: $(ACL_INPUT_DIR)/efitreeloader
+      - task: Bash@3
+        displayName: Build pinned ACL Image Customizer and stage native inputs
+        inputs:
+          targetType: inline
+          workingDirectory: $(TRIDENT_SOURCE_DIR)
+          script: |
+            set -euo pipefail
+            sudo apt-get update
+            sudo apt-get install -y libguestfs-tools qemu-utils jq zstd python3-yaml python3-cryptography
+            sudo systemctl start docker
+            chmod 600 '$(ACL_INPUT_DIR)/ssh/id_rsa'
+            source='$(Pipeline.Workspace)/s/acl-image-tools'
+            test "$(git -C "$source" rev-parse HEAD)" = c8dc566c0c04d33e2deaa6a484113e0545997f92
+            mkdir -p '$(ACL_BUILD_DIR)/ic' bin/RPMS artifacts/rpm-overrides
+            (cd "$source" && CGO_ENABLED=0 go build -mod=readonly -tags prod \
+              -o '$(ACL_BUILD_DIR)/ic/imagecustomizer' ./toolkit/tools/imagecustomizer)
+            docker build -f tests/images/acl/Dockerfile -t '$(ACL_CUSTOMIZER)' '$(ACL_BUILD_DIR)/ic'
+            mapfile -t bases < <(find '$(ACL_INPUT_DIR)/acl-t' -type f -name acl_template_image.vhdx)
+            test "${#bases[@]}" -eq 1
+            echo "e639ce68de0c60544994aff33e059add6ac68406fa383a9d69c2a1d192b2d1d5  ${bases[0]}" | sha256sum --check -
+            cp --reflink=auto "${bases[0]}" artifacts/acl_template_image.vhdx
+            find '$(ACL_INPUT_DIR)/trident' -type f -name '*azl3*.rpm' -exec cp -- '{}' bin/RPMS/ \;
+            if [[ '${{ parameters.variant }}' == mshv ]]; then
+              mapfile -t loaders < <(find '$(ACL_INPUT_DIR)/efitreeloader' -type f -name 'efitreeloader-*.rpm')
+              test "${#loaders[@]}" -eq 1
+              cp -- "${loaders[0]}" artifacts/rpm-overrides/
+            fi
+      - task: Bash@3
+        displayName: Build native images through testimages.py and publish servicing artifacts
+        inputs:
+          targetType: inline
+          workingDirectory: $(TRIDENT_SOURCE_DIR)
+          script: |
+            set -euo pipefail
+            image=acl
+            if [[ '${{ parameters.variant }}' == mshv ]]; then image=acl-mshv; fi
+            for phase in base update; do
+              target=$image
+              if [[ $phase == update ]]; then target=$image-update; fi
+              cp '$(ACL_INPUT_DIR)/ssh/id_rsa.pub' tests/images/acl/files/id_rsa.pub
+              python3 tests/images/testimages.py build "$target" --no-download \
+                --container '$(ACL_CUSTOMIZER)' --output-dir '$(ACL_BUILD_DIR)'/"$phase"
+            done
+            sudo env LIBGUESTFS_BACKEND=direct tests/images/acl/publish-servicing-artifacts.sh \
+              '${{ parameters.variant }}' '$(ACL_BUILD_DIR)'/base/"$image.qcow2" \
+              '$(ACL_BUILD_DIR)'/update/"$image-update.cosi" '$(ACL_INPUT_DIR)/ssh/id_rsa' \
+              '$(ob_outputDirectory)'
+      - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+        parameters:
+          outputDir: $(ob_outputDirectory)
+          condition: always()
