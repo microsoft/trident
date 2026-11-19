@@ -282,7 +282,7 @@ stages:
       testSecureBoot: ${{ parameters.testSecureBoot }}
 
   - ${{ if and(parameters.includeAclTests, in(parameters.stageType, 'pr-e2e', 'ci', 'pre', 'full-validation')) }}:
-      - template: stages/testing_acl/tests.yml
+      - template: stages/testing_acl/vm_testing.yml
 
   # Validate trident-acl-agent (storm A/B update scenario against a real tridentd)
   - template: stages/testing_acl_agent/trident-acl-agent-test.yml
