@@ -24,6 +24,11 @@ parameters:
     default: false
     displayName: "Block publishing to artifact feed."
 
+  - name: includeAclTests
+    displayName: "Include native ACL testing"
+    type: boolean
+    default: false
+
   - name: numberOfUpdateIterations
     displayName: Number of times each worker invokes A/B Update
     type: number
@@ -71,6 +76,7 @@ stages:
         parameters:
           stageType: ${{ parameters.targetStage }}
           blockPublishing: ${{ parameters.blockPublishing }}
+          includeAclTests: ${{ parameters.includeAclTests }}
           # TODO: enable this when Azure resources are available
           # # Only perform Azure testing from official pipelines, as only those have access to the Azure subscription.
           # includeAzure: ${{ or(eq(parameters.targetStage, 'pre'), eq(parameters.targetStage, 'ci'), eq(parameters.targetStage, 'pr-e2e-azure')) }}
