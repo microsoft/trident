@@ -68,6 +68,8 @@ def _az_json(image: PipelineArtifactBaseImageManifest, args: list):
 
 
 def select_pipeline_run(image: PipelineArtifactBaseImageManifest) -> dict:
+    """Find the newest successful scheduled run matching all repository branches."""
+    # The list command's branch filter applies only to the pipeline's own checkout.
     branch = image.repository_refs["self"]
     builds = _az_json(
         image,
@@ -89,18 +91,14 @@ def select_pipeline_run(image: PipelineArtifactBaseImageManifest) -> dict:
             "succeeded",
             "--query-order",
             "FinishTimeDesc",
+            "--query",
+            f"[?repository.name=='{image.repository_name}']."
+            "{id: id, buildNumber: buildNumber}",
         ],
     )
     for build in builds:
-        if (
-            build.get("definition", {}).get("id") != image.pipeline_id
-            or build.get("reason") != "schedule"
-            or build.get("status") != "completed"
-            or build.get("result") != "succeeded"
-            or build.get("sourceBranch") != branch
-            or build.get("repository", {}).get("name") != image.repository_name
-        ):
-            continue
+        # Resolved resource branches require the per-run API. Keep inspecting
+        # newest-first until both the pipeline and its source repositories match.
         run = _az_json(
             image,
             [
@@ -147,6 +145,7 @@ def download_pipeline_artifact(image: PipelineArtifactBaseImageManifest) -> None
         build["buildNumber"],
     )
     image.image.path.parent.mkdir(parents=True, exist_ok=True)
+    # Preserve the cached image until download and unique-file validation succeed.
     with tempfile.TemporaryDirectory(dir=image.image.path.parent) as tempdir:
         subprocess.run(
             [

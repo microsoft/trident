@@ -68,6 +68,7 @@ class PipelineArtifactBaseImageManifest:
     artifact_name: str
     filename: str
     repository_name: str
+    # Resource alias -> full ref; self identifies the pipeline's own checkout.
     repository_refs: Dict[str, str]
     org: str = "https://dev.azure.com/mariner-org/"
     project: str = "ACL"

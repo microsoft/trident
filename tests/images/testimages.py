@@ -267,6 +267,7 @@ ARTIFACTS = ArtifactManifest(
             artifact_name="drop_build_acl_template_amd64_customize_and_sign",
             filename="acl_template_image.vhdx",
             repository_name="acl-pipelines",
+            # The pipeline runs on main, independently of its ACL source branch.
             repository_refs={
                 "self": "refs/heads/main",
                 "azure_container_linux": "refs/heads/aclmain",
