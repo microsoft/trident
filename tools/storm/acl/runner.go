@@ -135,10 +135,18 @@ func (r *runner) waitBoot(previous string) (string, error) {
 }
 
 func (r *runner) reboot() error {
-	r.closeClient()
-	ctx, cancel := context.WithTimeout(context.Background(), r.args.BootTimeout)
-	defer cancel()
-	return r.qemu.RebootQemuVMWithoutWaiting(ctx, r.vmName)
+	defer r.closeClient()
+	return r.withClient(func(ctx context.Context, client *ssh.Client) error {
+		const command = "sudo -n systemctl reboot --no-block"
+		out, err := stormsshclient.RunCommandContext(ctx, client, command)
+		_, logErr := fmt.Fprintf(r.log, "$ %s\n%s\nerror: %v\n", command, out.Report(), err)
+		var disconnected *ssh.ExitMissingError
+		if errors.As(err, &disconnected) {
+			// waitBoot still requires a new boot ID before servicing continues.
+			return logErr
+		}
+		return errors.Join(stormtrident.CheckCommandResult(out, err, false), logErr)
+	})
 }
 
 func (r *runner) save(name string, data []byte) error {
