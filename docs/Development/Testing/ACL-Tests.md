@@ -33,9 +33,14 @@ It checks running boot IDs, `/usr` UUID/hash, native ACL identity, Trident hash,
 boot-tree preservation and bootctl selection. MSHV additionally requires its
 kernel, character device `/dev/mshv` and complete slot-owned loader bundle.
 The controller retains checkpoints across guest reboots.
-Controller-requested reboots invoke `sudo -n systemctl reboot --no-block` over
-SSH rather than libvirt shutdown. The next checkpoint requires a new boot ID
-and a working SSH connection before servicing continues.
+Controller-requested standard reboots invoke `sudo -n systemctl reboot --no-block`
+over SSH. MSHV instead invokes `sudo -n systemctl poweroff --no-block`, waits
+for libvirt shutoff, then starts the existing domain without replacing its disk
+or NVRAM. Shutdown is bounded by the boot timeout; it never falls back to forced
+poweroff. Serial output is retained and the guest address is rediscovered.
+Rollback finalization still requests its own reboot through Trident; that warm
+reboot is not redirected by this controller workaround. The next checkpoint
+requires a new boot ID and a working SSH connection before servicing continues.
 
 ## Local execution
 

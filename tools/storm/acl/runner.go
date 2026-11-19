@@ -135,9 +135,11 @@ func (r *runner) waitBoot(previous string) (string, error) {
 }
 
 func (r *runner) reboot() error {
-	defer r.closeClient()
-	return r.withClient(func(ctx context.Context, client *ssh.Client) error {
-		const command = "sudo -n systemctl reboot --no-block"
+	command := "sudo -n systemctl reboot --no-block"
+	if r.args.Variant == "mshv" {
+		command = "sudo -n systemctl poweroff --no-block"
+	}
+	err := r.withClient(func(ctx context.Context, client *ssh.Client) error {
 		out, err := stormsshclient.RunCommandContext(ctx, client, command)
 		_, logErr := fmt.Fprintf(r.log, "$ %s\n%s\nerror: %v\n", command, out.Report(), err)
 		var disconnected *ssh.ExitMissingError
@@ -147,6 +149,21 @@ func (r *runner) reboot() error {
 		}
 		return errors.Join(stormtrident.CheckCommandResult(out, err, false), logErr)
 	})
+	r.closeClient()
+	if err != nil || r.args.Variant != "mshv" {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), r.args.BootTimeout)
+	defer cancel()
+	if _, err := fmt.Fprintln(r.log, "waiting for guest shutoff before libvirt start"); err != nil {
+		return err
+	}
+	if err := r.qemu.StartQemuVMWhenShutoff(ctx, r.vmName); err != nil {
+		return err
+	}
+	r.ip = ""
+	_, err = fmt.Fprintln(r.log, "started existing domain after guest shutoff")
+	return err
 }
 
 func (r *runner) save(name string, data []byte) error {

@@ -21,10 +21,17 @@ func restartDomain(ctx context.Context, lv domainRestarter, domain libvirt.Domai
 	if err := lv.DomainShutdown(domain); err != nil {
 		return err
 	}
+	return startDomainWhenShutoff(ctx, lv, domain)
+}
+
+func startDomainWhenShutoff(ctx context.Context, lv domainRestarter, domain libvirt.Domain) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
-		state, _, err := lv.DomainGetState(domain, 0)
+		state, reason, err := lv.DomainGetState(domain, 0)
 		if err != nil {
 			return err
 		}
@@ -33,7 +40,7 @@ func restartDomain(ctx context.Context, lv domainRestarter, domain libvirt.Domai
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("waiting for shutoff (state %d, reason %d): %w", state, reason, ctx.Err())
 		case <-ticker.C:
 		}
 	}
@@ -41,6 +48,19 @@ func restartDomain(ctx context.Context, lv domainRestarter, domain libvirt.Domai
 		return err
 	}
 	return lv.DomainCreate(domain)
+}
+
+// StartQemuVMWhenShutoff waits for guest-initiated shutdown without forcing it or replacing NVRAM.
+func (cfg QemuConfig) StartQemuVMWhenShutoff(ctx context.Context, vmName string) error {
+	lv, domain, err := getLibvirtDomainByname(vmName)
+	if err != nil {
+		return err
+	}
+	defer lv.Disconnect()
+	if err := startDomainWhenShutoff(ctx, lv, domain); err != nil {
+		return fmt.Errorf("starting domain %q after guest shutdown: %w", vmName, err)
+	}
+	return nil
 }
 
 // RebootQemuVMWithoutWaiting preserves serial output and leaves guest-readiness checks to the caller.
