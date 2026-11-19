@@ -51,3 +51,47 @@ func (cfg QemuConfig) StartQemuVMWhenShutoff(ctx context.Context, vmName string)
 	}
 	return nil
 }
+
+type domainColdRestarter interface {
+	domainStarter
+	DomainDestroy(libvirt.Domain) error
+}
+
+func coldRestartDomain(ctx context.Context, lv domainColdRestarter, domain libvirt.Domain) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	state, reason, err := lv.DomainGetState(domain, 0)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	switch libvirt.DomainState(state) {
+	case libvirt.DomainRunning:
+		if err := lv.DomainDestroy(domain); err != nil {
+			return err
+		}
+	case libvirt.DomainShutoff:
+	default:
+		return fmt.Errorf("cannot cold-restart domain in state %d (reason %d)", state, reason)
+	}
+	return startDomainWhenShutoff(ctx, lv, domain)
+}
+
+// ColdRestartQemuVM stops and starts the existing domain, preserving its disk and NVRAM.
+// The ACL MSHV caller must first confirm Linux reached its final restart boundary.
+func (cfg QemuConfig) ColdRestartQemuVM(ctx context.Context, vmName string) error {
+	lv, domain, err := getLibvirtDomainByname(vmName)
+	if err != nil {
+		return err
+	}
+	defer lv.Disconnect()
+	stop := context.AfterFunc(ctx, func() { _ = lv.Disconnect() })
+	defer stop()
+	if err := coldRestartDomain(ctx, lv, domain); err != nil {
+		return fmt.Errorf("cold-restarting domain %q after guest restart: %w", vmName, err)
+	}
+	return nil
+}

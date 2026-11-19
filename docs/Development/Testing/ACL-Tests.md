@@ -38,9 +38,16 @@ over SSH. MSHV instead invokes `sudo -n systemctl poweroff --no-block`, waits
 for libvirt shutoff, then starts the existing domain without replacing its disk
 or NVRAM. Shutdown is bounded by the boot timeout; it never falls back to forced
 poweroff. Serial output is retained and the guest address is rediscovered.
-Rollback finalization still requests its own reboot through Trident; that warm
-reboot is not redirected by this controller workaround. The next checkpoint
-requires a new boot ID and a working SSH connection before servicing continues.
+Rollback finalization requests its own reboot through Trident. For MSHV only,
+the controller requires Trident's reboot announcement and a fresh Linux
+`reboot: Restarting system` serial message before stopping and starting the
+existing libvirt domain. It monitors serial concurrently with finalization so
+a stalled warm reset cannot leave SSH waiting indefinitely. Missing evidence,
+command failures and timeouts fail the test without a host cold cycle.
+The shutdown excerpt is saved before domain start can truncate the serial log.
+This exercises MSHV rollback with a host cold cycle, not working warm reset.
+The next checkpoint still requires a new boot ID, working SSH, explicit commit
+and the expected slot and generation before servicing continues.
 
 ## Local execution
 

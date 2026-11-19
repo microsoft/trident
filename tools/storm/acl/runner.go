@@ -85,11 +85,20 @@ func (r *runner) command(command string) (string, error) {
 
 func (r *runner) trident(arguments, logName string, expectReboot bool) (string, error) {
 	var out *stormsshconfig.SshCmdOutput
-	err := r.withClient(func(_ context.Context, client *ssh.Client) error {
+	err := r.withClient(func(ctx context.Context, client *ssh.Client) error {
 		var invokeErr error
-		out, invokeErr = stormtrident.InvokeTrident(stormtrident.RuntimeTypeHost, client, nil, arguments)
-		result := stormtrident.CheckCommandResult(out, invokeErr, expectReboot)
-		report := fmt.Sprintf("$ trident %s\n%s\nerror: %v\n", arguments, out.Report(), invokeErr)
+		var result error
+		if expectReboot && r.args.Variant == "mshv" {
+			out, invokeErr = r.tridentWithRestart(ctx, client, arguments, logName)
+			result = invokeErr
+		} else {
+			out, invokeErr = stormtrident.InvokeTrident(stormtrident.RuntimeTypeHost, client, nil, arguments)
+			result = stormtrident.CheckCommandResult(out, invokeErr, expectReboot)
+		}
+		report := fmt.Sprintf("$ trident %s\nerror: %v\n", arguments, invokeErr)
+		if out != nil {
+			report = fmt.Sprintf("$ trident %s\n%s\nerror: %v\n", arguments, out.Report(), invokeErr)
+		}
 		_, logErr := io.WriteString(r.log, report)
 		return errors.Join(result, logErr, r.save(logName+".log", []byte(report)))
 	})
