@@ -1,0 +1,19 @@
+[Unit]
+Description=Trident Linux Installer
+ConditionKernelCommandLine=trident.installer=1
+After=network.target
+Conflicts=trident-install.service
+
+[Service]
+Type=simple
+Environment=TERM=linux
+ExecStart=/usr/bin/trident-installer --system-console
+StandardInput=null
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=infinity
+Restart=no
+SendSIGHUP=yes
+
+[Install]
+WantedBy=multi-user.target
