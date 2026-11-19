@@ -21,6 +21,8 @@ os:
     extraCommandLine:
       - console=ttyS0,115200n8
       - no5lvl
+      # The persistent /etc upper layer must tolerate switching the /usr lower layer.
+      - overlay.index=off
   packages:
     manifest:
       mode: create
