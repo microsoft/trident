@@ -21,7 +21,7 @@ inventory = {workspace = true}
 linux-kernel-cmdline = {workspace = true}
 log = {workspace = true, features = ["std"]}
 netplan-types = {workspace = true}
-nix = {workspace = true, features = ["fs"]}
+nix = {workspace = true, features = ["fs", "process", "term"]}
 once_cell = {workspace = true}
 openssl = {workspace = true}
 serde = {workspace = true}
@@ -34,6 +34,7 @@ sys-mount = {workspace = true}
 tempfile = {workspace = true}
 thiserror = {workspace = true}
 uuid = {workspace = true}
+walkdir = {workspace = true}
 which = {workspace = true}
 xattr = {workspace = true}
 regex = {workspace = true}
@@ -53,4 +54,5 @@ rand = {workspace = true}
 [features]
 functional-test = ["pytest", "test-utilities"]
 pytest-generator = ["pytest"]
+run-interactive = []
 test-utilities = ["rand"]

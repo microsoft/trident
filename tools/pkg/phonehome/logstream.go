@@ -58,8 +58,7 @@ func SetupLogstream(mux *http.ServeMux, backgroundLogFile string) (*os.File, err
 	bgLogger.SetLevel(log.TraceLevel)
 	bgLogFile, err := os.Create(backgroundLogFile)
 	if err != nil {
-		log.WithError(err).WithField("file", backgroundLogFile).Fatalf("failed to create background log file")
-		return nil, err
+		return nil, fmt.Errorf("failed to create background log file %q: %w", backgroundLogFile, err)
 	}
 	bgLogger.SetOutput(bgLogFile)
 	bgLogger.SetFormatter(&log.TextFormatter{
@@ -67,13 +66,11 @@ func SetupLogstream(mux *http.ServeMux, backgroundLogFile string) (*os.File, err
 	})
 
 	mux.HandleFunc("/logstream", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(201)
-		w.Write([]byte("OK"))
-
 		var logEntry LogEntry
 		err := json.NewDecoder(r.Body).Decode(&logEntry)
 		if err != nil {
-			log.WithError(err).Fatalf("failed to decode log entry")
+			log.WithError(err).Error("failed to decode log entry")
+			http.Error(w, "failed to decode log entry", http.StatusBadRequest)
 			return
 		}
 
@@ -99,6 +96,9 @@ func SetupLogstream(mux *http.ServeMux, backgroundLogFile string) (*os.File, err
 			text := fmt.Sprintf("%s %s", colorize("[REMOTE %s]", logEntry.Target), logEntry.Message)
 			populate_fields(log.StandardLogger()).Log(logLevel, text)
 		}
+
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte("OK"))
 	})
 
 	return bgLogFile, nil

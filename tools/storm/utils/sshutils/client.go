@@ -79,9 +79,17 @@ func CreateSshClient(ctx context.Context, config SshClientConfig) (*ssh.Client, 
 		return nil, fmt.Errorf("failed to dial SSH server '%s': %w", host, err)
 	}
 
+	// DialContext does not bound the SSH handshake on the established socket.
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stop()
 	c, chans, reqs, err := ssh.NewClientConn(conn, host, clientConfig)
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("failed to open SSH connection to '%s': %w", host, err)
+	}
+	if !stop() {
+		c.Close()
+		return nil, fmt.Errorf("SSH connection to '%s' canceled: %w", host, ctx.Err())
 	}
 
 	return ssh.NewClient(c, chans, reqs), nil

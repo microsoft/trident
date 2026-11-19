@@ -7,6 +7,7 @@ use trident_api::{
 
 use super::EngineContext;
 
+pub(crate) mod mshv;
 pub mod uki;
 
 pub(crate) const ESP_EXTRACTION_DIRECTORY: &str = VAR_TMP_PATH;
