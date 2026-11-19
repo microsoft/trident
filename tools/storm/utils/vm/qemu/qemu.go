@@ -94,6 +94,44 @@ func (cfg QemuConfig) CleanupQemuVM(vmName string) error {
 	return nil
 }
 
+func (cfg QemuConfig) RebootQemuVm(vmName string, iteration int, outputPath string, verbose bool) error {
+	logrus.Tracef("Truncate log files before reboot")
+	if err := cfg.TruncateLog(vmName); err != nil {
+		return fmt.Errorf("failed to truncate log file: %w", err)
+	}
+
+	lv, domain, err := getLibvirtDomainByname(vmName)
+	if err != nil {
+		return fmt.Errorf("failed to lookup domain by name '%s': %w", vmName, err)
+	}
+
+	logrus.Tracef("Rebooting VM '%s' before update attempt #%d", vmName, iteration)
+	if err := lv.DomainShutdown(domain); err != nil {
+		return fmt.Errorf("failed to shutdown domain '%s': %w", vmName, err)
+	}
+	logrus.Tracef("Waiting for VM '%s' to shut down", vmName)
+	for {
+		domainState, _, err := lv.DomainGetState(domain, 0)
+		if err != nil {
+			return fmt.Errorf("failed to get domain state: %w", err)
+		}
+		if domainState == int32(libvirt.DomainShutoff) {
+			break // Domain is shut off, exit loop
+		}
+	}
+	logrus.Tracef("Domain '%s' is shut down, starting it again", vmName)
+	err = lv.DomainCreate(domain)
+	if err != nil {
+		return fmt.Errorf("failed to start domain '%s': %w", vmName, err)
+	}
+	logrus.Tracef("Waiting for VM '%s' to come back up after reboot", vmName)
+	err = cfg.WaitForLogin(vmName, outputPath, verbose, iteration)
+	if err != nil {
+		return fmt.Errorf("failed to wait for login after reboot: %w", err)
+	}
+	return nil
+}
+
 func getLibvirtDomainByname(vmName string) (lv *libvirt.Libvirt, domain libvirt.Domain, err error) {
 	uri, _ := url.Parse(string(libvirt.QEMUSession))
 	lv, err = libvirt.ConnectToURI(uri)
