@@ -133,6 +133,8 @@ github.com/mattn/go-sqlite3 v1.14.22 h1:2gZY6PC6kBnID23Tichd1K+Z0oS6nE/XwU+Vz/5o
 github.com/mattn/go-sqlite3 v1.14.22/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
 github.com/microsoft/storm v0.4.0-alpha3 h1:ZmRZmrquaUkj9j/NZoxH72AMzioXEiukbP3YNuQ5hm8=
 github.com/microsoft/storm v0.4.0-alpha3/go.mod h1:QMLHpLhA/rI2bmMFor4Vxd6N99k1eadlrXv6lPLbXks=
+github.com/microsoft/storm/facilities v0.0.0-20261119194701-0eba44b2e357 h1:DCJeiRiXTOgIXcBYIPCiO9E8Jj2qZFMSkZiQOAw063o=
+github.com/microsoft/storm/facilities v0.0.0-20261119194701-0eba44b2e357/go.mod h1:AHwnU7roLlxl8zCU1JDXTu0ZmrA4bGQFB5FIxAsOtYA=
 github.com/mitchellh/mapstructure v1.5.0 h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=
 github.com/mitchellh/mapstructure v1.5.0/go.mod h1:bFUtVrKA4DC2yAKiSyO/QUcy7e+RRV2QTWOzhPopBRo=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=

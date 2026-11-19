@@ -2,6 +2,7 @@ package scenario
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -99,7 +100,8 @@ func (s *TridentE2EScenario) manualRollback(tc storm.TestCase) error {
 	if err != nil {
 		// The connection dropping without an exit status alongside the reboot
 		// message is the expected signal that the host has rebooted.
-		if _, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(finalizeOut.Stderr, trident.REBOOTING_LOG_MESSAGE) {
+		var missing *ssh.ExitMissingError
+		if errors.As(err, &missing) && strings.Contains(finalizeOut.Stderr, trident.REBOOTING_LOG_MESSAGE) {
 			logrus.Infof("Host rebooted successfully")
 		} else {
 			return fmt.Errorf("failed to finalize manual rollback: %s", finalizeOut.Report())

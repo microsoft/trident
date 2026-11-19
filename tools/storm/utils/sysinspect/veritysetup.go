@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/facilities/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
@@ -27,7 +27,7 @@ func (s VeritySetupStatus) Get(field string) (string, bool) {
 
 // VeritySetup runs `sudo veritysetup status <name>` on the host and returns the
 // parsed status.
-func VeritySetup(client *ssh.Client, name string) (VeritySetupStatus, error) {
+func VeritySetup(client *stormssh.Client, name string) (VeritySetupStatus, error) {
 	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo veritysetup status %s", sshutils.ShellQuote(name)))
 	if err != nil {
 		return VeritySetupStatus{}, fmt.Errorf("failed to run veritysetup status %s: %w", name, err)

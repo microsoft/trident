@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/facilities/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
@@ -29,7 +29,7 @@ type findmntOutput struct {
 // whitespace: the table separates columns with spaces and does not escape them
 // there, so splitting on whitespace silently shifts every field and reports a
 // mismatch against a perfectly valid configured mount point.
-func Findmnt(client *ssh.Client, target string) ([]FindmntRow, error) {
+func Findmnt(client *stormssh.Client, target string) ([]FindmntRow, error) {
 	out, err := sshutils.CommandOutput(client,
 		fmt.Sprintf("sudo findmnt --json %s", sshutils.ShellQuote(target)))
 	if err != nil {

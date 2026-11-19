@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/facilities/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
@@ -27,7 +27,7 @@ const (
 // Returns ("", false) if /dev/md does not exist or no matching array is found.
 //
 // Mirrors base_test.py::get_raid_name_from_device_name.
-func RaidNameForDevice(client *ssh.Client, deviceName string) (string, bool, error) {
+func RaidNameForDevice(client *stormssh.Client, deviceName string) (string, bool, error) {
 	// A non-RAID host has no /dev/md at all, which must not be an error. But
 	// `ls` exits 2 for BOTH a missing directory and an unreadable one, so the
 	// exit status cannot tell them apart: treating every non-zero status as

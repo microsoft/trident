@@ -1,9 +1,16 @@
 package helpers
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/microsoft/storm"
+	stormssh "github.com/microsoft/storm/facilities/ssh"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/ssh"
+	"gopkg.in/yaml.v3"
 
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
@@ -11,11 +18,6 @@ import (
 	stormsftp "tridenttools/storm/utils/ssh/sftp"
 	"tridenttools/storm/utils/trident"
 	stormtrident "tridenttools/storm/utils/trident"
-
-	"github.com/microsoft/storm"
-	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
-	"gopkg.in/yaml.v3"
 )
 
 type ManualRollbackHelper struct {
@@ -112,7 +114,8 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 
 	out, err = stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, h.args.EnvVars, "rollback -v trace --allowed-operations finalize")
 	if err != nil {
-		if err, ok := err.(*ssh.ExitMissingError); ok && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
+		var missing *ssh.ExitMissingError
+		if errors.As(err, &missing) && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
 			// The connection closed without an exit code, and the output contains REBOOTING_LOG_MESSAGE.
 			// This indicates that the host has rebooted.
 			logrus.Infof("Host rebooted successfully")
@@ -167,7 +170,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	return nil
 }
 
-func copyRemoteFileToArtifacts(client *ssh.Client, remotePath string, artifactName string, tc storm.TestCase) error {
+func copyRemoteFileToArtifacts(client *stormssh.Client, remotePath string, artifactName string, tc storm.TestCase) error {
 	localPath, err := stormsftp.DownloadRemoteFile(client, remotePath, "")
 	if err != nil {
 		return fmt.Errorf("failed to download remote file (%s): %w", remotePath, err)

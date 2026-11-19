@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/Jeffail/gabs/v2"
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/facilities/ssh"
 	"gopkg.in/yaml.v3"
 
 	"tridenttools/pkg/hostconfig"
@@ -69,7 +69,7 @@ func NewHostStatusFromYaml(yamlData []byte) (HostStatus, error) {
 
 // GetHostStatus runs `trident get` on the host over the provided SSH client and
 // parses the result into a HostStatus.
-func GetHostStatus(runtime RuntimeType, client *ssh.Client) (HostStatus, error) {
+func GetHostStatus(runtime RuntimeType, client *stormssh.Client) (HostStatus, error) {
 	out, err := InvokeTrident(runtime, client, nil, "get")
 	if err != nil {
 		return HostStatus{}, fmt.Errorf("failed to invoke 'trident get': %w", err)

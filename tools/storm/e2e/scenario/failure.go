@@ -7,14 +7,14 @@ import (
 	"io"
 	"time"
 
-	"tridenttools/storm/utils/sshutils"
-	"tridenttools/storm/utils/trident"
-
 	"github.com/klauspost/compress/zstd"
 	"github.com/microsoft/storm"
+	stormssh "github.com/microsoft/storm/facilities/ssh"
 	"github.com/microsoft/storm/pkg/storm/artifacts"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
+
+	"tridenttools/storm/utils/sshutils"
+	"tridenttools/storm/utils/trident"
 )
 
 const (
@@ -87,24 +87,19 @@ func (s *TridentE2EScenario) captureContainerLogs(ctx context.Context, broker ar
 
 	var logErrors []error
 	for _, service := range []string{"docker.service", "trident-container.service"} {
-		if err := captureServiceLog(client, broker, service); err != nil {
+		if err := captureServiceLog(ctx, client, broker, service); err != nil {
 			logErrors = append(logErrors, err)
 		}
 	}
 	return errors.Join(logErrors...)
 }
 
-func captureServiceLog(client *ssh.Client, broker artifacts.ArtifactBroker, service string) error {
-	session, err := client.NewSession()
-	if err != nil {
-		return fmt.Errorf("open SSH session for %s logs: %w", service, err)
-	}
-	defer session.Close()
-
+func captureServiceLog(ctx context.Context, client *stormssh.Client, broker artifacts.ArtifactBroker, service string) error {
 	writer := broker.StreamArtifactData("container/" + service + ".log")
-	session.Stdout = writer
-	session.Stderr = writer
-	runErr := session.Run("sudo -n journalctl --no-pager -u " + sshutils.ShellQuote(service))
+	result, runErr := client.RunIO(ctx, "sudo -n journalctl --no-pager -u "+sshutils.ShellQuote(service), nil, writer, writer)
+	if runErr == nil && result.ExitCode != 0 {
+		runErr = fmt.Errorf("journalctl exited with status %d", result.ExitCode)
+	}
 	if err := errors.Join(runErr, writer.Close()); err != nil {
 		return fmt.Errorf("capture %s logs: %w", service, err)
 	}

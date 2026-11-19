@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"tridenttools/storm/utils/sshutils"
-
+	stormssh "github.com/microsoft/storm/facilities/ssh"
 	"golang.org/x/crypto/ssh"
+
+	"tridenttools/storm/utils/sshutils"
 )
 
 func TestCaptureServiceLogPreservesOutputAndExitStatus(t *testing.T) {
@@ -21,7 +22,7 @@ func TestCaptureServiceLogPreservesOutputAndExitStatus(t *testing.T) {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			client := journalTestClient(t, status)
 			broker := failureTestBroker{t: t, dir: t.TempDir()}
-			err := captureServiceLog(client, broker, "docker.service")
+			err := captureServiceLog(context.Background(), client, broker, "docker.service")
 			if (err != nil) != (status != 0) {
 				t.Fatalf("status %d produced error %v", status, err)
 			}
@@ -38,12 +39,13 @@ func TestCaptureServiceLogPreservesOutputAndExitStatus(t *testing.T) {
 	}
 }
 
-func journalTestClient(t *testing.T, status uint32) *ssh.Client {
+func journalTestClient(t *testing.T, status uint32) *stormssh.Client {
 	t.Helper()
-	key, _, err := sshutils.GenerateRsaKeyPair(2048)
+	pair, err := stormssh.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
+	key := pair.PEM
 	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
 		t.Fatal(err)
