@@ -251,6 +251,25 @@ The Trident ACL components required to orchestrate servicing of ACL images.
 
 # ------------------------------------------------------------------------------
 
+%package slot-loader
+Summary:        Opt-in initrd selector for ACL slot-managed extensions
+Requires:       systemd >= 255
+Requires:       /usr/bin/systemd-dissect
+
+%description slot-loader
+Boot-time extension selector and recovery helper. Image builders must integrate
+the loader with dracut and Bootengine before enabling it.
+
+%files slot-loader
+%license LICENSE NOTICE
+%{_bindir}/%{name}-slot-loader
+%{_unitdir}/%{name}-slot-loader.service
+%{_unitdir}/%{name}-slot-loader-recovery.service
+%dir %{_prefix}/lib/%{name}
+%{_prefix}/lib/%{name}/slot-loader.env
+
+# ------------------------------------------------------------------------------
+
 %package installer
 Summary:        Trident Linux Installer console for installer media
 Requires:       %{name} = %{version}-%{release}
@@ -306,7 +325,7 @@ export TRIDENT_VERSION="%{version}-%{release}"
 # Use %{trident_version} for Trident repo build
 export TRIDENT_VERSION="%{trident_version}"
 %endif
-cargo build --release --features trident/grpc-preview -p trident -p trident-acl-agent -p installer
+cargo build --release --features trident/grpc-preview -p trident -p trident-acl-agent -p installer -p trident-slot-loader
 
 mkdir selinux
 cp -p packaging/selinux-policy-trident/trident.fc selinux/
@@ -338,6 +357,10 @@ cargo test --all --no-fail-fast -- --skip test_run_systemd_check --skip test_pre
 install -D -m 755 target/release/%{name} %{buildroot}/%{_bindir}/%{name}
 install -D -m 755 target/release/%{name}-acl-agent %{buildroot}/%{_bindir}/%{name}-acl-agent
 install -D -m 755 target/release/%{name}-installer %{buildroot}/%{_bindir}/%{name}-installer
+install -D -m 755 target/release/%{name}-slot-loader %{buildroot}%{_bindir}/%{name}-slot-loader
+install -D -m 644 packaging/systemd/%{name}-slot-loader.service %{buildroot}%{_unitdir}/%{name}-slot-loader.service
+install -D -m 644 packaging/systemd/%{name}-slot-loader-recovery.service %{buildroot}%{_unitdir}/%{name}-slot-loader-recovery.service
+install -D -m 644 packaging/systemd/slot-loader.env %{buildroot}%{_prefix}/lib/%{name}/slot-loader.env
 install -D -m 644 packaging/systemd/%{name}-acl-agent.service %{buildroot}%{_unitdir}/%{name}-acl-agent.service
 install -D -m 644 packaging/systemd/%{name}-installer.service %{buildroot}%{_unitdir}/%{name}-installer.service
 install -d %{buildroot}%{_unitdir}/multi-user.target.wants

@@ -4321,6 +4321,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "trident-slot-loader"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "indoc",
+ "log",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "trident_api"
 version = "0.1.0"
 dependencies = [

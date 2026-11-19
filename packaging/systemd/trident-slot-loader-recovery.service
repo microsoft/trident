@@ -1,0 +1,13 @@
+[Unit]
+Description=Recover a failed pending ACL extension-loader boot
+DefaultDependencies=no
+After=trident-slot-loader.service
+AssertPathExists=/etc/initrd-release
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/usr/lib/trident/slot-loader.env
+ExecStart=/usr/bin/trident-slot-loader --recover
+TimeoutStartSec=10
+StandardOutput=journal+console
+StandardError=journal+console
