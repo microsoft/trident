@@ -157,9 +157,6 @@ def build_one(
         with ExitStack() as stack:
             tmp_rpm_sources = []
             for rpm_src in rpm_sources:
-                if rpm_src.is_file():
-                    tmp_rpm_sources.append(rpm_src)
-                    continue
                 # Create a temporary directory for each RPM source, delete with sudo because
                 # createrepo is run as root.
                 tmp = stack.enter_context(
@@ -196,7 +193,6 @@ def build_one(
                     tmp_rpm_sources,
                     image_architecture,
                     dry_run,
-                    disable_base_image_rpm_repos=image.disable_base_image_rpm_repos,
                 )
 
     output_file = output_dir / image.file_name()
@@ -433,7 +429,6 @@ def build_signed_image(
         tmp_rpm_sources,
         image_architecture,
         dry_run,
-        disable_base_image_rpm_repos=image.disable_base_image_rpm_repos,
     )
 
     log.info(f"Building signed image: {output_file}")

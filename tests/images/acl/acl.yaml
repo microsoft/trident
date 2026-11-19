@@ -23,8 +23,7 @@ os:
   packages:
     manifest:
       mode: create
-    # Reinstall rather than update, so even an older candidate replaces ACL-T's
-    # installed version. The public repos exclude Trident; use bin/RPMS only.
+    # Remove first so an installed newer version does not make update a no-op.
     remove:
       - trident-acl
       - trident-selinux

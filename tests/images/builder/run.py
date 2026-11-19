@@ -110,7 +110,7 @@ def build(
             dry_run,
         )
     else:
-        rpm_sources: List[Path] = list(image.extra_rpm_sources)
+        rpm_sources: List[Path] = []
         if image.requires_trident:
             rpm_sources.append(RpmSources.TRIDENT.path())
         if image.requires_dhcp:

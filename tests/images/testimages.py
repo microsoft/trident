@@ -132,8 +132,6 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config_file="acl.yaml",
         output_format=OutputFormat.QCOW2,
         ssh_key="files/id_rsa.pub",
-        extra_rpm_sources=[Path("tests/images/acl/rpms.repo")],
-        disable_base_image_rpm_repos=True,
     ),
     ImageConfig(
         "acl-mshv",
@@ -142,8 +140,6 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config_file="acl-mshv.yaml",
         output_format=OutputFormat.QCOW2,
         ssh_key="files/id_rsa.pub",
-        extra_rpm_sources=[Path("tests/images/acl/rpms.repo")],
-        disable_base_image_rpm_repos=True,
     ),
     ImageConfig(
         "acl-update",
@@ -152,8 +148,6 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config_file="acl.yaml",
         output_format=OutputFormat.COSI,
         ssh_key="files/id_rsa.pub",
-        extra_rpm_sources=[Path("tests/images/acl/rpms.repo")],
-        disable_base_image_rpm_repos=True,
     ),
     ImageConfig(
         "acl-mshv-update",
@@ -162,8 +156,6 @@ DEFINED_IMAGES: List[ImageConfig] = [
         config_file="acl-mshv.yaml",
         output_format=OutputFormat.COSI,
         ssh_key="files/id_rsa.pub",
-        extra_rpm_sources=[Path("tests/images/acl/rpms.repo")],
-        disable_base_image_rpm_repos=True,
     ),
     ImageConfig(
         "trident-vm-grub-testimage",

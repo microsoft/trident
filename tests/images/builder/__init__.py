@@ -144,12 +144,6 @@ class ImageConfig:
     # Extra dependencies for this image
     extra_dependencies: List[Path] = field(default_factory=list)
 
-    # Additional RPM directories or .repo files for this image.
-    extra_rpm_sources: List[Path] = field(default_factory=list)
-
-    # Isolate package selection from repositories embedded in the base.
-    disable_base_image_rpm_repos: bool = False
-
     # Requires ukify to be present on the host
     requires_ukify: bool = False
 
@@ -222,7 +216,6 @@ class ImageConfig:
             deps.append(RpmSources.DHCP.path())
             deps.extend(RpmSources.DHCP.path().rglob("*.rpm"))
         deps.extend(self.extra_dependencies)
-        deps.extend(self.extra_rpm_sources)
         return deps
 
     def file_name(self) -> str:

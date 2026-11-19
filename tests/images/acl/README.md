@@ -35,9 +35,12 @@ docker build -f tests/images/acl/Dockerfile -t acl-ic:local artifacts/acl-ic
 
 Stage matching **AZL3** candidate RPMs in `bin/RPMS`: `trident`, `trident-acl`,
 `trident-selinux` and `trident-static-pcrlock-files`. Both recipes remove and
-reinstall them, including when the candidate is older than ACL-T's version.
-Public repositories exclude `trident*`, and embedded base-image repos are
-disabled. Do not mix AZL4 RPMs into this directory.
+reinstall them, so an installed newer version does not make replacement a
+no-op. All four targets use the existing `requires_trident` setting to supply
+`bin/RPMS` to Image Customizer. The base image's repositories remain enabled
+for dependencies; no additional repository configuration is needed.
+Keep a single matching candidate set, newer than publicly available Trident
+packages, and do not mix AZL4 RPMs into this directory.
 
 For MSHV, also stage the efitreeloader RPM from consumer **1261060**'s
 `drop_build_efitreeloader_rpm` artifact in `artifacts/rpm-overrides`.

@@ -38,6 +38,8 @@ The controller retains checkpoints across guest reboots.
 
 See the image README for the pinned ACL-T, efitreeloader RPM and ACL-enabled IC
 inputs. Stage AZL3 candidate RPMs in `bin/RPMS` and build `acl-ic:local`.
+The existing `requires_trident` setting supplies those RPMs; both recipes
+remove/install Trident and retain the base repositories for dependencies.
 Run from the Trident root on a KVM/libvirt-capable Linux host. Artifact packaging
 also needs `libguestfs-tools`, `qemu-utils`, `jq` and `zstd`.
 
