@@ -62,6 +62,8 @@ python3 tests/images/testimages.py build acl-mshv --container acl-ic:local --out
 `download-image acl-t` refreshes the cached image. A missing image is downloaded
 automatically; subsequent builds reuse it. Refresh once before building all
 base/update variants, not between them.
+The ACL COSI targets are excluded from `make all-cosi` because they require
+the dedicated ACL toolchain and inputs.
 The images enable `testuser` public-key SSH with passwordless sudo and DHCP,
 select OEM `metal`, and disable the ACL agent. ACL's root-login denial remains.
 Generated private keys are `key_acl_private.pem` and `key_acl-mshv_private.pem`.
@@ -75,15 +77,23 @@ for building and running a servicing pair.
 
 IC directly creates each COSI. `publish-servicing-artifacts.sh` packages the
 already-built QCOW2/COSI and SSH key for Storm; it does not customize images.
-It verifies native ACL identity, distinct `/usr` UUIDs, identical candidate
+It verifies native ACL identity, distinct `/usr` UUIDs, identical installed
 Trident binaries and the compressed `/usr` hash, and records RPM/input hashes.
+The binary checks establish consistency, not independent verification that
+the supplied candidate RPMs won package resolution.
 For MSHV it corrects IC's hardcoded `systemd-boot` metadata tag to COSI 1.3
 `efitreeloader-mshv-systemd-boot`, preserving compressed partition bytes.
 This workaround is restricted to these unsigned test artifacts.
 
-Both variants built QCOW2/COSI pairs and passed content audits. Standard native
-update, rollback, update, update, explicit commits and a persistence reboot
+Both variants built QCOW2/COSI pairs and passed content audits.
+The initial standard native update, rollback, update, update, explicit commits
+and a persistence reboot
 passed in QEMU with verified Btrfs `/usr`. Validation used existing Trident
 artifact 1256724 (`3fc019c`), not a fresh source-head RPM.
-Local MSHV still resets before Linux after `second.efi`;
-neither `/dev/mshv` nor MSHV servicing is a demonstrated pass.
+An earlier local MSHV boot reset before Linux after `second.efi`.
+[Pipeline 1262480](https://dev.azure.com/mariner-org/ECF/_build/results?buildId=1262480&view=logs)
+at source `a869fe163` subsequently passed the full MSHV servicing cycle with
+four explicit commits on B/A/B/A and a persistence boot on A. This validates
+host-cold-cycle servicing, not working warm reset, production signing or
+cross-version hypervisor/loader servicing. See
+[ACL Tests](../../../docs/Development/Testing/ACL-Tests.md) for transition details.

@@ -12,7 +12,7 @@ and MSHV variants built from the same real ACL-T source as `acl-baremetal-devel`
 
 The static recipes in [`tests/images/acl`](../../../tests/images/acl/README.md)
 retain ACL's Btrfs `/usr`, verity, `/etc` OverlayFS and native partition layout.
-They replace Trident from the pipeline's AZL3 RPMs; MSHV also replaces the
+They request Trident from the pipeline's AZL3 RPMs; MSHV also replaces the
 kernel and installs its complete boot chain. They preserve ACL's root-SSH
 denial, using `testuser` with passwordless sudo instead. Images are unsigned;
 Secure Boot is disabled. A passing run does not validate production signing.
@@ -24,7 +24,7 @@ os-release identity or generation marker is added.
 
 The scenario requires:
 
-1. Baseline boot on USR-A with read-only verified `/usr` and the candidate Trident.
+1. Baseline boot on USR-A with read-only verified `/usr` and the packaged Trident.
 2. Update to B, rollback to A, update to B, then update to A.
 3. Explicit staging/finalization and commit at each operation, with Provisioned
    status on volumes B/A/B/A and another persistence reboot.
@@ -36,8 +36,8 @@ The controller retains checkpoints across guest reboots.
 Controller-requested standard reboots invoke `sudo -n systemctl reboot --no-block`
 over SSH. MSHV instead invokes `sudo -n systemctl poweroff --no-block`, waits
 for libvirt shutoff, then starts the existing domain without replacing its disk
-or NVRAM. Shutdown is bounded by the boot timeout; it never falls back to forced
-poweroff. Serial output is retained and the guest address is rediscovered.
+or NVRAM. Shutoff is polled using the boot timeout without a forced-poweroff
+fallback. Serial output is retained and the guest address is rediscovered.
 Rollback finalization requests its own reboot through Trident. For MSHV only,
 the controller requires Trident's reboot announcement and a fresh Linux
 `reboot: Restarting system` serial message before stopping and starting the
@@ -82,23 +82,27 @@ sudo ./bin/storm-trident run acl -a -- --variant "$VARIANT" \
 
 Refresh ACL-T once before building all variants.
 
-Packaging verifies matching candidate binaries, native ACL identity, distinct
-`/usr` UUIDs and compressed payload hashes. Its MSHV-only metadata correction
+Packaging verifies matching installed Trident binaries, native ACL identity,
+distinct `/usr` UUIDs and compressed payload hashes. The recorded binary hash
+checks consistency across the images and guest boots; it does not independently
+verify selection of the supplied candidate RPMs. Its MSHV-only metadata correction
 works around the pinned IC's hardcoded ACL bootloader tag; it neither rebuilds
 partitions nor rewrites UKIs. Do not use it to relabel arbitrary production COSIs.
 
 ## Pipelines
 
 `testing_acl` builds and tests both variants in the four existing PR-e2e,
-CI, prerelease and full-validation entrypoints. Jobs use the Linux KVM pool;
-there is no Windows/Hyper-V dependency. `ResolveAclTemplate` selects and downloads
+CI, prerelease and full-validation entrypoints, which explicitly set
+`includeAclTests: true`. Other shared-template callers default to no ACL tests.
+Jobs use the Linux KVM pool without Windows/Hyper-V. `ResolveAclTemplate` downloads
 ACL-T once from pipeline **5304**: latest completed/successful **scheduled** run,
 `acl-pipelines` at `main` and resolved `azure_container_linux` at `aclmain`.
-Both image jobs consume the same ACL-T image artifact. They download the
-pinned producer efitreeloader artifact, build the pinned IC revision,
-and invoke ordinary `testimages.py` targets with the pipeline Trident RPMs
-and SSH keys. Generic pipeline MIC version parameters do not override the
-ACL-enabled IC pin.
+Both image jobs consume the same ACL-T image artifact, build the pinned IC
+revision and invoke ordinary `testimages.py` targets with the pipeline Trident
+RPMs and SSH keys. MSHV additionally downloads the pinned producer efitreeloader
+artifact and uses `overlay.index=off` to permit switching `/usr` lower layers
+with persistent `/etc` OverlayFS state. Generic pipeline MIC version parameters
+do not override the ACL-enabled IC pin.
 The pipeline build service needs read access to ACL pipeline runs and artifacts
 and authorization for the `aclImageTools` repository resource.
 
@@ -108,14 +112,21 @@ The private key must remain restricted to the test artifact.
 
 Results are `acl-standard-results` and `acl-mshv-results`. Each run preserves
 the controller log, serial console, command output, snapshots, metadata and
-provenance, plus `result.json` and `guest-evidence.tar.gz`. Failed VM working
+input manifest, plus `result.json` and `guest-evidence.tar.gz`. Failed VM working
 disks are retained after VM cleanup; immutable input images are not modified.
 
 ## Validation limits
 
-Native QCOW2/COSI builds, content audits and the complete standard servicing
-cycle with explicit commits and persistence reboot passed using existing Trident
-artifact 1256724 (`3fc019c`), not a fresh RPM from this source branch.
-MSHV builds and offline audits passed, but local
-QEMU resets before Linux after `second.efi`. Prior pipeline reboot/shutdown
-failures are a separate issue. Do not infer a native MSHV servicing pass.
+Initial native QCOW2/COSI builds, content audits and the complete standard
+servicing cycle with explicit commits and persistence reboot passed using
+existing Trident artifact 1256724 (`3fc019c`), not a fresh source-branch RPM.
+An earlier local MSHV boot reset before Linux after `second.efi`.
+
+[Pipeline 1262480, MSHV job](https://dev.azure.com/mariner-org/ECF/_build/results?buildId=1262480&view=logs)
+at source `a869fe163` subsequently passed update, rollback, update, update,
+four explicit commits on B/A/B/A and a persistence boot on A. This demonstrates
+the native MSHV servicing scenario with the host cold cycles described above,
+not every job in that pipeline or guest warm-reset support.
+Secure Boot, production signing and cross-version hypervisor/loader servicing
+are not validated. The pinned loader still uses shared absolute component paths;
+same-generation bundle checks do not establish cross-version slot isolation.
