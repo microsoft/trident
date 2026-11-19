@@ -349,6 +349,8 @@ pub(crate) mod functional_test {
             let block_device = lsblk::get(&disk_bus_path).unwrap();
             let expected_block_device = BlockDevice {
                 name: TEST_DISK_DEVICE_PATH.into(),
+                kernel_name: TEST_DISK_DEVICE_PATH.into(),
+                path: Some(TEST_DISK_DEVICE_PATH.into()),
                 ptuuid: block_device.ptuuid.clone(),
                 size: DISK_SIZE,
                 partition_table_type: Some(PartitionTableType::Gpt),
@@ -357,6 +359,8 @@ pub(crate) mod functional_test {
                 children: vec![
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
+                        kernel_name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
+                        path: Some(formatcp!("{TEST_DISK_DEVICE_PATH}1").into()),
                         part_uuid: Some(part1.uuid.into()),
                         ptuuid: None,
                         partn: Some(1),
@@ -369,6 +373,8 @@ pub(crate) mod functional_test {
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
+                        kernel_name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
+                        path: Some(formatcp!("{TEST_DISK_DEVICE_PATH}2").into()),
                         part_uuid: Some(part2.uuid.into()),
                         ptuuid: None,
                         partn: Some(2),
@@ -381,6 +387,8 @@ pub(crate) mod functional_test {
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
+                        kernel_name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
+                        path: Some(formatcp!("{TEST_DISK_DEVICE_PATH}3").into()),
                         part_uuid: Some(part3.uuid.into()),
                         ptuuid: None,
                         partn: Some(3),
@@ -393,6 +401,8 @@ pub(crate) mod functional_test {
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}4").into(),
+                        kernel_name: formatcp!("{TEST_DISK_DEVICE_PATH}4").into(),
+                        path: Some(formatcp!("{TEST_DISK_DEVICE_PATH}4").into()),
                         part_uuid: Some(part4.uuid.into()),
                         ptuuid: None,
                         partn: Some(4),
@@ -421,6 +431,8 @@ pub(crate) mod functional_test {
             let block_device = lsblk::get(&disk_bus_path).unwrap();
             let expected_block_device = BlockDevice {
                 name: TEST_DISK_DEVICE_PATH.into(),
+                kernel_name: TEST_DISK_DEVICE_PATH.into(),
+                path: Some(TEST_DISK_DEVICE_PATH.into()),
                 ptuuid: block_device.ptuuid.clone(),
                 size: DISK_SIZE,
                 partition_table_type: Some(PartitionTableType::Gpt),
@@ -429,6 +441,8 @@ pub(crate) mod functional_test {
                 children: vec![
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
+                        kernel_name: formatcp!("{TEST_DISK_DEVICE_PATH}1").into(),
+                        path: Some(formatcp!("{TEST_DISK_DEVICE_PATH}1").into()),
                         part_uuid: Some(part1.uuid.into()),
                         ptuuid: None,
                         partn: Some(1),
@@ -441,6 +455,8 @@ pub(crate) mod functional_test {
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
+                        kernel_name: formatcp!("{TEST_DISK_DEVICE_PATH}2").into(),
+                        path: Some(formatcp!("{TEST_DISK_DEVICE_PATH}2").into()),
                         part_uuid: Some(part2.uuid.into()),
                         ptuuid: None,
                         partn: Some(2),
@@ -453,6 +469,8 @@ pub(crate) mod functional_test {
                     },
                     BlockDevice {
                         name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
+                        kernel_name: formatcp!("{TEST_DISK_DEVICE_PATH}3").into(),
+                        path: Some(formatcp!("{TEST_DISK_DEVICE_PATH}3").into()),
                         part_uuid: Some(part3.uuid.into()),
                         ptuuid: None,
                         partn: Some(3),

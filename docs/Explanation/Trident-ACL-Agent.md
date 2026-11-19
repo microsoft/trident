@@ -7,9 +7,9 @@ half of Azure Container Linux (ACL)'s update mechanism. Any Kubernetes
 control-plane component (a custom controller, an operator, or a script
 driven by `kubectl patch`) can
 orchestrate updates across a fleet of nodes by writing to the annotation
-contract described below, provided it is willing to speak the
-[Omaha](https://github.com/omaha-consortium/omaha) protocol for image
-distribution and honors the agent's per-node protocol.
+contract described below. It supplies the image source on a
+[Nebraska](https://github.com/flatcar/nebraska) server and honors the agent's
+per-node protocol; the agent speaks Omaha to Nebraska for image distribution.
 
 ## Deployment
 
@@ -29,11 +29,12 @@ files. Installing the package does not by itself enable or start the
 service — a deployment decides when that happens, e.g. by running
 `systemctl enable --now trident-acl-agent.service` on the node, or by
 baking that enablement into the image build (as this repo's own
-`updateimg-acl-agent.yaml` test image does via Image Customizer's
-`services: enable` list).
+`tests/images/trident-vm-testimage/base/updateimg-acl-agent.yaml` does via
+Image Customizer's `services: enable` list).
 
-The shipped unit carries no `Environment=` lines beyond `ExecStart`, so
-every deployment-specific choice — which annotation prefix to watch, where
+The shipped unit invokes the agent via `ExecStart` and has no
+`Environment=` lines, so every deployment-specific choice — which annotation
+prefix to watch, where
 to read the current version from, which Kubernetes API server to talk to,
 and so on — is supplied the same way any other systemd service is
 configured: standard `Environment=`/`EnvironmentFile=` constructs, most
@@ -102,7 +103,7 @@ A request annotation looks like:
 
 | `operation` | Trident invocation | Effect |
 |---|---|---|
-| `stage` | `trident update --allowed-operations=stage` | Queries the `server`/`appId`/`track` Omaha endpoint for `targetVersion`, then streams the resulting image to the inactive partition. No reboot. |
+| `stage` | `trident update --allowed-operations=stage` | Queries the `server`/`appId`/`track` Omaha endpoint with the node's current version, requires the offered version to match `targetVersion`, then streams the resulting image to the inactive partition. No reboot. |
 | `finalize` | `trident update --allowed-operations=finalize` (gRPC `UpdateFinalize`, caller-handled reboot) | Arms boot for the staged target, writes a terminal `finalize` status, then triggers the reboot. |
 | `rollback` | `trident rollback --ab` (gRPC `RollbackStage`/`RollbackFinalize`, caller-handled reboot) | Swaps back to the previous partition, mirroring `finalize` on the return path. Only the last update can be undone this way. |
 
@@ -123,9 +124,9 @@ sequenceDiagram
     participant Trident
 
     Orchestrator->>API: 1. PATCH request: stage (opId A)
-    Note over Agent: agent picks up the request<br/>on its next poll
+    Note over Agent: agent picks up the request<br/>through its Node watch
     Agent->>API: 2. read request, PATCH status: stage InProgress
-    Agent->>Nebraska: 3. query targetVersion (server/appId/track)
+    Agent->>Nebraska: 3. check for update using current version (server/appId/track)
     Nebraska-->>Agent: image location
     Agent->>Trident: 4. Stage (image to inactive partition)
     Trident-->>Agent: staged | error
@@ -223,8 +224,8 @@ A status annotation (`<prefix>/update-status` or
 | `InvalidRequest` | Yes | The request annotation itself was rejected before any action was taken — malformed JSON, a schema/version mismatch, a missing required field (`server`/`appId`/`track`/`targetVersion`), a `finalize` whose `targetVersion` doesn't match what was staged, or a second `finalize`/`rollback` submitted while one is already pending its post-reboot `commit`. No Trident operation runs. |
 
 See the request/status schema types in
-`crates/trident-acl-agent/src/annotations/protocol.rs` for the full contract,
-including the formal JSON Schema both sides validate against.
+`crates/trident-acl-agent/src/annotations/protocol.rs` for the validation
+rules and the formal JSON Schemas pinned by the protocol conformance tests.
 
 ## Pre/post-reboot state and the watchdog
 
@@ -234,18 +235,40 @@ commit is pending and a marker for "a boot happened after this point". On
 restart, the agent checks this state to resume the post-reboot `commit`
 step rather than re-running `finalize` from scratch.
 
-While an operation is in flight, the agent refreshes the `InProgress`
-status's `lastUpdatedUtc` on a heartbeat cadence
+While a stage, finalize, or rollback Trident call is in flight, the agent
+refreshes the `InProgress` status's `lastUpdatedUtc` on a heartbeat cadence
 (`TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL`), so an external
 watchdog can distinguish a working agent from a stuck one and reprovision a
 node that never reports a terminal `commit` status within its SLA.
+
+## Nebraska affinity cookies
+
+Cookie handling is opt-in via
+`TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED=true`. When disabled (the
+default), the agent neither sends nor adopts cookies and leaves any existing
+cookie file untouched.
+
+When enabled, each initial staging update check starts without a cookie and
+clears the previous stored value. The cookie returned by that check is
+persisted separately from `state.json` and reused for progress, failure,
+finalize, and post-reboot completion requests. Later responses do not replace
+it. If the initial response sets no cookie, subsequent requests remain
+cookie-less. A restarted staging attempt starts fresh, even with unchanged
+request IDs; resuming finalize or completion retains the stored cookie.
+
+The agent reads the file for each request. Cookies are saved only from
+successful HTTP responses with readable bodies, before Omaha XML validation.
+The file uses owner-only permissions and atomic replacement; cookie values
+are never logged. Cookie I/O failures warn without failing the update, so
+affinity is best-effort if storage fails.
 
 ## Configuration
 
 At startup, the agent logs its effective `AgentConfig` at INFO after applying
 environment overrides and defaults, including for `--validate-connection`.
 Network URL credentials, paths, query strings, and fragments are redacted.
-Kubeconfig and state paths are logged, but their contents are not read for logging.
+Kubeconfig, state, and cookie file paths are logged, but their contents are
+not read for logging.
 
 There is no config file. Every setting is an environment variable prefixed
 `TRIDENT_ACL_AGENT_`, systemd-style: set it in the unit's own
@@ -254,7 +277,7 @@ sets the process's environment before it starts.
 
 A variable that is unset, or set to the empty string, falls back to its
 default. A variable set to a malformed value (a bad URL, a bad duration, an
-unrecognized `mode`) causes the agent to fail to start with an error
+invalid boolean) causes the agent to fail to start with an error
 naming the offending variable.
 
 | Variable | Default | Description |
@@ -263,7 +286,7 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX` | `acl.microsoft.com` | The annotation-key prefix for the request/status/commit-status annotations (e.g. the `acl.microsoft.com` in `acl.microsoft.com/update-request`). Any orchestrator can pick its own namespace here so its annotations don't collide with another controller's. |
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` | `/etc/os-release` | The file the agent reads to determine the node's currently running version. Any file works, as long as it follows the os-release format (`KEY=VALUE` lines, optionally single- or double-quoted, blank lines and `#` comments ignored) — see [below](#configuring-the-on-disk-version). |
 | `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` | `VERSION_ID` | The key the agent looks up in `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (`/etc/os-release` by default) to determine the node's currently running version, used to compare against a request's `targetVersion` (e.g. to short-circuit to `AlreadyAtTarget`). `VERSION_ID` is the standard `os-release` field most images already stamp; a deployment that instead carries an ACL-specific `IMAGE_VERSION` field can point this variable at that key instead — see [below](#configuring-the-on-disk-version). |
-| `TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK` | `always` | Controls what happens when `TRIDENT_ACL_AGENT_CURRENT_VERSION_KEY` isn't present at `TRIDENT_ACL_AGENT_CURRENT_VERSION_PATH` (e.g. a dev/test host, or an image that hasn't started stamping that key yet). `always` reports `0.0.0` as the node's current version — a sentinel that can never collide with a real release version and cause a false `AlreadyAtTarget`. `error` fails the operation instead of using a placeholder version. Any other value is used verbatim as the current version, with no format validation. |
+| `TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK` | `always` | Controls what happens when the configured version file is unreadable, the configured key is missing, or its value is empty. `always` reports `0.0.0` as the node's current version. `error` fails the operation instead of using a placeholder version. Any other value is used verbatim as the current version, with no format validation. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_API_SERVER` | unset | Explicit override for the Kubernetes API server URL. When unset, the server embedded in the kubeconfig is used as-is. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_KUBECONFIG` | `/var/lib/kubelet/kubeconfig` | Path to the kubeconfig used to reach the Kubernetes API server and authenticate as this node. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` | derived from `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` | The Node object this agent watches/patches. |
@@ -271,8 +294,10 @@ naming the offending variable.
 | `TRIDENT_ACL_AGENT_KUBERNETES_KUBELET_CERT_PATH` | `/var/lib/kubelet/pki/kubelet-client-current.pem` | Path to kubelet's own client certificate, consulted when `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE=kubelet-cert`. Override when kubelet's cert lives somewhere other than the standard path (e.g. a non-default kubelet `--cert-dir`). Ignored when `node_name_source` is `hostname` or `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME` is set. |
 | `TRIDENT_ACL_AGENT_TRIDENT_SOCKET` | `unix:///run/trident/trident.sock` | The gRPC Unix socket URI used to reach `tridentd`. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH` | `/var/lib/trident-acl-agent/state.json` | Path to the agent's persistent state file bridging the pre-reboot and post-reboot halves of `finalize`/`rollback` across the reboot. |
-| `TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT` | `20m` | How long a `stage` is allowed to run (a [`humantime`](https://docs.rs/humantime) duration, e.g. `20m`, `1h`) before it's considered failed. |
-| `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | How long a `finalize` is allowed to run before it's considered failed. |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED` | `false` | Enable Nebraska affinity cookie transmission and persistence. When disabled, existing cookie files are left untouched. See [Nebraska affinity cookies](#nebraska-affinity-cookies). |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_PATH` | `/var/lib/trident-acl-agent/nebraska-cookie` | Path to the persisted Nebraska affinity cookie, separate from the agent's state file. |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT` | `20m` | Timeout for each Trident update-stage or rollback-stage call (a [`humantime`](https://docs.rs/humantime) duration, e.g. `20m`, `1h`), not the entire staging workflow. |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT` | `10m` | Timeout for each Trident update-finalize, rollback-finalize, or post-reboot commit call. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL` | `60s` | Refresh cadence for the `InProgress` status heartbeat. |
 | `TRIDENT_ACL_AGENT_ORCHESTRATION_NODE_GONE_MAX_WAIT` | unset (wait forever) | How long the agent will keep waiting for its own Node object to reappear after a 404 before giving up and exiting (a [`humantime`](https://docs.rs/humantime) duration, e.g. `30m`, `1h`). Unset means the agent never gives up on its own — see below. |
 | `TRIDENT_ACL_AGENT_KUBERNETES_VALIDATE_NODE_UUID` | `false` | When `true`, every Node read verifies `status.nodeInfo.systemUUID` against this machine's own `/sys/class/dmi/id/product_uuid`, treating a mismatch the same as the Node not existing (`NodeGone`) — see below. |
@@ -329,8 +354,8 @@ deployment.
 
 ### Setting env vars via a systemd drop-in
 
-The agent ships as `trident-acl-agent.service`, with no `Environment=`
-lines of its own beyond `ExecStart`. Any setting is overridden with a
+The agent ships as `trident-acl-agent.service`, with an `ExecStart` command
+but no `Environment=` lines of its own. Any setting is overridden with a
 drop-in file, without editing the packaged unit:
 
 ```console
@@ -383,11 +408,10 @@ compares it against a request's `targetVersion` the same way it would for
 `VERSION_ID`/`/etc/os-release` — including short-circuiting to
 `AlreadyAtTarget` when they already match.
 
-If the configured key is absent from the configured file (for example, on
-a dev/test host with a minimal `os-release`), the agent consults
+If the configured file is unreadable, the key is missing, or its value is
+empty, the agent consults
 `TRIDENT_ACL_AGENT_CURRENT_VERSION_FALLBACK` (`always` by default): `always`
-reports `0.0.0` as the current version — a sentinel that can never
-accidentally match a real requested version; `error` fails the operation
+reports `0.0.0` as the current version; `error` fails the operation
 instead of guessing; any other value is used verbatim as the current
 version, unvalidated.
 
@@ -397,6 +421,12 @@ version, unvalidated.
 checks connectivity to a single dependency using the current environment
 and exits immediately — useful for a systemd `ExecStartPre` check or manual
 on-node troubleshooting without running the full orchestrator loop.
+
+The Nebraska probe honors the cookie enable/path settings. When enabled,
+it reuses an existing persisted cookie without clearing or replacing it;
+a probe cannot establish affinity. A standalone invocation does not inherit
+a systemd service's environment, so supply those settings explicitly when
+checking cookie reuse.
 
 `--validate-connection nebraska` is the one place
 `TRIDENT_ACL_AGENT_NEBRASKA_ENDPOINT`, `TRIDENT_ACL_AGENT_NEBRASKA_APP_ID`,

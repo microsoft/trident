@@ -6,12 +6,13 @@ use std::{
         linux::fs::MetadataExt,
         unix::fs::{MetadataExt as UnixMetadataExt, PermissionsExt},
     },
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
 };
 
-use anyhow::{anyhow, bail, Context, Error};
+use anyhow::{anyhow, bail, ensure, Context, Error};
 use nix::unistd::{self, Gid, Uid};
 use tempfile::NamedTempFile;
+use walkdir::WalkDir;
 
 /// Creates a file and all parent directories if they don't exist
 pub fn create_file<S>(path: S) -> Result<File, Error>
@@ -198,6 +199,93 @@ where
         })
 }
 
+/// Canonicalizes the longest existing prefix, then appends any missing components.
+///
+/// Resolves symlinks in the existing prefix without requiring the full path to
+/// exist. Errors other than "not found" are propagated.
+fn canonicalize_allow_missing(path: &Path) -> Result<PathBuf, Error> {
+    match fs::canonicalize(path) {
+        Ok(path) => Ok(path),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(canonicalize_allow_missing(
+            path.parent().context("Missing path parent")?,
+        )?
+        .join(path.file_name().context("Missing path name")?)),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Rejects equal paths or either path containing the other.
+/// Resolves existing ancestors, including links, even when a suffix does not exist yet.
+pub fn ensure_disjoint_paths(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<(), Error> {
+    let from = canonicalize_allow_missing(&path::absolute(from)?)?;
+    let to = canonicalize_allow_missing(&path::absolute(to)?)?;
+    ensure!(
+        !from.starts_with(&to) && !to.starts_with(&from),
+        "Source and destination paths overlap"
+    );
+    Ok(())
+}
+
+/// Copies a regular file or directory tree, preserving empty directories.
+///
+/// Rejects overlapping paths, source links and special files. Callers must ensure
+/// that the destination tree and its ancestors contain no symlinks, and that no
+/// destination file is a hard link to a source file. These conditions are not
+/// checked: destination symlinks are followed, and hard-linked aliases can truncate
+/// source files. Extra destination entries are retained; errors can leave a partial
+/// copy, so callers needing preflight validation must perform it separately.
+pub fn copy_recursively(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<(), Error> {
+    let from = from.as_ref();
+    let to = to.as_ref();
+    ensure_disjoint_paths(from, to)?;
+    for entry in WalkDir::new(from)
+        .follow_links(false)
+        .follow_root_links(false)
+    {
+        let entry = entry?;
+        let destination = if entry.depth() == 0 {
+            to.to_path_buf()
+        } else {
+            to.join(entry.path().strip_prefix(from)?)
+        };
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(&destination).with_context(|| {
+                format!(
+                    "Failed to create destination directory: {}",
+                    destination.display()
+                )
+            })?;
+        } else {
+            ensure!(
+                entry.file_type().is_file(),
+                "Not a regular file: {}",
+                entry.path().display()
+            );
+            fs::copy(entry.path(), &destination).with_context(|| {
+                format!(
+                    "Failed to copy '{}' to '{}'",
+                    entry.path().display(),
+                    destination.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+/// Removes a file, link or directory tree without following a root link.
+/// Missing entries are ignored.
+pub fn remove_recursively_if_exists(path: impl AsRef<Path>) -> Result<(), Error> {
+    let path = path.as_ref();
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(path)?,
+        Ok(_) => fs::remove_file(path)?,
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
 /// Read the current process umask from `/proc/self/status` (thread-safe).
 fn read_umask() -> Result<u32, Error> {
     let status =
@@ -332,7 +420,104 @@ fn atomic_write_file_inner(
 mod tests {
     use super::*;
 
+    use std::os::unix::fs as unix_fs;
+
+    use nix::sys::stat::Mode;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_copy_recursively_preserves_empty_directories_and_root_files() {
+        let temp = tempdir().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination");
+        fs::create_dir_all(source.join("nested/empty")).unwrap();
+        fs::write(source.join("nested/payload.new"), b"payload").unwrap();
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(destination.join("retained"), b"retained").unwrap();
+        copy_recursively(&source, &destination).unwrap();
+        assert!(destination.join("nested/empty").is_dir());
+        assert_eq!(
+            fs::read(destination.join("nested/payload.new")).unwrap(),
+            b"payload"
+        );
+        assert_eq!(fs::read(destination.join("retained")).unwrap(), b"retained");
+        let file = temp.path().join("file");
+        copy_recursively(source.join("nested/payload.new"), &file).unwrap();
+        assert_eq!(fs::read(&file).unwrap(), b"payload");
+        copy_recursively(&source, source.join("child")).unwrap_err();
+        assert!(!source.join("child").exists());
+    }
+
+    #[test]
+    fn test_copy_recursively_reports_failed_file_paths() {
+        let temp = tempdir().unwrap();
+        let source = temp.path().join("source");
+        let destination = temp.path().join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir_all(destination.join("payload")).unwrap();
+        fs::write(source.join("payload"), b"payload").unwrap();
+
+        let error = copy_recursively(&source, &destination).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains(source.join("payload").to_str().unwrap()));
+        assert!(message.contains(destination.join("payload").to_str().unwrap()));
+        assert_eq!(fs::read(source.join("payload")).unwrap(), b"payload");
+        assert!(destination.join("payload").is_dir());
+    }
+
+    #[test]
+    fn test_copy_recursively_rejects_source_links_and_special_files() {
+        let temp = tempdir().unwrap();
+        let outside = temp.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("payload"), b"outside").unwrap();
+        let file_link = temp.path().join("file-link");
+        let directory_link = temp.path().join("directory-link");
+        let fifo = temp.path().join("fifo");
+        unix_fs::symlink(outside.join("payload"), &file_link).unwrap();
+        unix_fs::symlink(&outside, &directory_link).unwrap();
+        unistd::mkfifo(&fifo, Mode::S_IRUSR).unwrap();
+        for source in [&file_link, &directory_link, &fifo] {
+            let destination = temp.path().join("destination");
+            copy_recursively(source, &destination).unwrap_err();
+            assert!(!destination.exists());
+        }
+        assert_eq!(fs::read(outside.join("payload")).unwrap(), b"outside");
+    }
+
+    #[test]
+    fn test_ensure_disjoint_paths_resolves_existing_ancestors() {
+        let temp = tempdir().unwrap();
+        let source = temp.path().join("source");
+        let alias = temp.path().join("alias");
+        fs::create_dir(&source).unwrap();
+        unix_fs::symlink(&source, &alias).unwrap();
+        ensure_disjoint_paths(&source, &alias).unwrap_err();
+        ensure_disjoint_paths(&source, alias.join("missing/child")).unwrap_err();
+        ensure_disjoint_paths(alias.join("missing/child"), &source).unwrap_err();
+        ensure_disjoint_paths(&source, temp.path().join("other/missing")).unwrap();
+    }
+
+    #[test]
+    fn test_remove_recursively_if_exists_preserves_link_targets() {
+        let temp = tempdir().unwrap();
+        let outside = temp.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("payload"), b"outside").unwrap();
+        let link = temp.path().join("link");
+        unix_fs::symlink(&outside, &link).unwrap();
+        remove_recursively_if_exists(&link).unwrap();
+        remove_recursively_if_exists(&link).unwrap();
+        assert!(!link.exists());
+        assert_eq!(fs::read(outside.join("payload")).unwrap(), b"outside");
+        let entry = temp.path().join("entry");
+        fs::create_dir_all(entry.join("nested")).unwrap();
+        fs::write(entry.join("nested/payload"), b"payload").unwrap();
+        remove_recursively_if_exists(&entry).unwrap();
+        fs::write(&entry, b"file").unwrap();
+        remove_recursively_if_exists(&entry).unwrap();
+        assert!(!entry.exists());
+    }
 
     #[test]
     fn test_create_file() {

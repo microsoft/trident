@@ -174,6 +174,21 @@ impl Storage {
         require_root_mount_point: bool,
     ) -> Result<StorageGraph, HostConfigurationStaticValidationError> {
         // Check basic constraints
+        for disk in &self.disks {
+            // Enforce XOR: exactly one of device or selector must be provided.
+            if disk.device.as_os_str().is_empty() == disk.selector.is_none() {
+                return Err(HostConfigurationStaticValidationError::InvalidDiskTarget {
+                    disk_id: disk.id.clone(),
+                });
+            }
+            if disk.selector.is_some() && !disk.adopted_partitions.is_empty() {
+                return Err(
+                    HostConfigurationStaticValidationError::SelectorWithAdoptedPartitions {
+                        disk_id: disk.id.clone(),
+                    },
+                );
+            }
+        }
 
         if let Some(encryption) = &self.encryption {
             encryption.validate()?;

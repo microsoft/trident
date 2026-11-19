@@ -14,6 +14,12 @@ use super::storage::storage_graph::error::StorageGraphBuildError;
 #[derive(thiserror::Error, Serialize, Deserialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum HostConfigurationStaticValidationError {
+    #[error("Disk '{disk_id}' must specify exactly one of device or selector")]
+    InvalidDiskTarget { disk_id: String },
+
+    #[error("Disk '{disk_id}' cannot combine a selector with adopted partitions")]
+    SelectorWithAdoptedPartitions { disk_id: String },
+
     #[error("Additional file '{additional_file}' has both content and source, but only one must be specified")]
     AdditionalFileBothContentAndSource { additional_file: String },
 

@@ -28,7 +28,7 @@ use trident_api::{
 
 use crate::{
     datastore::DataStore, logging, subsystems::storage::DEFAULT_FSTAB_PATH,
-    TEMPORARY_DATASTORE_PATH, TRIDENT_BACKGROUND_LOG_PATH, TRIDENT_METRICS_FILE_PATH,
+    temporary_datastore_path, TRIDENT_BACKGROUND_LOG_PATH, TRIDENT_METRICS_FILE_PATH,
     TRIDENT_VERSION,
 };
 
@@ -157,11 +157,11 @@ fn collect_report() -> DiagnosticsReport {
 
 struct DatastorePaths {
     default: PathBuf,
-    temporary: PathBuf,
+    temporary: Option<PathBuf>,
     configured: Option<PathBuf>,
 }
 
-fn get_datastore_paths() -> DatastorePaths {
+fn get_datastore_paths(failures: &mut Vec<CollectionFailure>) -> DatastorePaths {
     let configured = fs::read_to_string(AGENT_CONFIG_PATH)
         .ok()
         .and_then(|contents| {
@@ -173,7 +173,9 @@ fn get_datastore_paths() -> DatastorePaths {
 
     DatastorePaths {
         default: PathBuf::from(TRIDENT_DATASTORE_PATH_DEFAULT),
-        temporary: PathBuf::from(TEMPORARY_DATASTORE_PATH),
+        temporary: temporary_datastore_path()
+            .map_err(|error| record_failure(failures, "temporary datastore path", &error))
+            .ok(),
         configured,
     }
 }
@@ -252,12 +254,12 @@ fn collect_full_journal(failures: &mut Vec<CollectionFailure>) -> Option<String>
 
 fn collect_host_status(failures: &mut Vec<CollectionFailure>) -> Option<HostStatus> {
     debug!("Collecting host status from datastore");
-    let paths = get_datastore_paths();
+    let paths = get_datastore_paths(failures);
 
     let candidates = [
         paths.configured.as_ref(),
         Some(&paths.default),
-        Some(&paths.temporary),
+        paths.temporary.as_ref(),
     ];
 
     for path in candidates.into_iter().flatten() {
@@ -571,17 +573,19 @@ pub(crate) fn generate_and_bundle(
     files.extend(collect_historical_logs(&mut report).unwrap_or_default());
 
     // Collect datastores
-    let paths = get_datastore_paths();
+    let paths = get_datastore_paths(&mut report.collection_failures);
     files.push(FileToCollect::new(
         paths.default,
         "datastore.sqlite",
         "Default datastore",
     ));
-    files.push(FileToCollect::new(
-        paths.temporary,
-        "datastore-tmp.sqlite",
-        "Temporary datastore",
-    ));
+    if let Some(temporary) = paths.temporary {
+        files.push(FileToCollect::new(
+            temporary,
+            "datastore-tmp.sqlite",
+            "Temporary datastore",
+        ));
+    }
     if let Some(configured) = paths.configured {
         files.push(FileToCollect::new(
             configured,

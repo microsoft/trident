@@ -40,6 +40,8 @@ use url::Url;
 
 use crate::{cosi_sha384::CosiSha384Source, DEFAULT_NEBRASKA_APP_ID, DEFAULT_NEBRASKA_TRACK};
 
+pub use super::nebraska::CookieLifetime;
+
 const ENV_PREFIX_NEBRASKA: &str = "TRIDENT_ACL_AGENT_NEBRASKA_";
 const ENV_PREFIX_COSI_SHA384: &str = "TRIDENT_ACL_AGENT_COSI_SHA384_";
 const ENV_PREFIX_KUBERNETES: &str = "TRIDENT_ACL_AGENT_KUBERNETES_";
@@ -67,6 +69,14 @@ const DEFAULT_NODE_GONE_MAX_WAIT: Option<Duration> = None;
 /// File name for the persisted agent state (see `annotations::state`).
 pub const STATE_FILE_NAME: &str = "state.json";
 pub const DEFAULT_STATE_PATH: &str = formatcp!("/var/lib/trident-acl-agent/{STATE_FILE_NAME}");
+/// File name for the persisted Nebraska affinity cookie (see
+/// `core::nebraska::CookieStore`). Deliberately a separate file from
+/// `STATE_FILE_NAME`: the cookie is a host/connection-level attribute with
+/// no relationship to any update operation, unlike everything else in
+/// `state.json`.
+pub const NEBRASKA_COOKIE_FILE_NAME: &str = "nebraska-cookie";
+pub const DEFAULT_NEBRASKA_COOKIE_PATH: &str =
+    formatcp!("/var/lib/trident-acl-agent/{NEBRASKA_COOKIE_FILE_NAME}");
 pub const DEFAULT_KUBELET_KUBECONFIG: &str = "/var/lib/kubelet/kubeconfig";
 /// Default path to kubelet's own client certificate, used to derive
 /// `node_name` when `TRIDENT_ACL_AGENT_KUBERNETES_NODE_NAME_SOURCE` is
@@ -86,6 +96,9 @@ const KUBELET_CERT_CN_NODE_PREFIX: &str = "system:node:";
 /// Default annotation-key prefix.
 /// Override with `TRIDENT_ACL_AGENT_KUBERNETES_ANNOTATION_PREFIX`.
 pub const DEFAULT_ANNOTATION_PREFIX: &str = "acl.microsoft.com";
+/// Cookies are opt-in.
+/// Override with `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED`.
+const DEFAULT_COOKIE_ENABLED: bool = false;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentConfig {
@@ -167,6 +180,13 @@ impl AgentConfig {
                 state_path: orchestration
                     .state_path
                     .unwrap_or_else(|| PathBuf::from(DEFAULT_STATE_PATH)),
+                cookie_path: orchestration
+                    .cookie_path
+                    .unwrap_or_else(|| PathBuf::from(DEFAULT_NEBRASKA_COOKIE_PATH)),
+                cookie_enabled: orchestration
+                    .cookie_enabled
+                    .unwrap_or(DEFAULT_COOKIE_ENABLED),
+                cookie_lifetime: orchestration.cookie_lifetime.unwrap_or_default(),
                 stage_timeout: orchestration.stage_timeout.unwrap_or(DEFAULT_STAGE_TIMEOUT),
                 finalize_timeout: orchestration
                     .finalize_timeout
@@ -310,6 +330,12 @@ struct RawOrchestrationConfig {
     mode: Option<Mode>,
     #[serde(deserialize_with = "empty_path_as_none")]
     state_path: Option<PathBuf>,
+    #[serde(deserialize_with = "empty_path_as_none")]
+    cookie_path: Option<PathBuf>,
+    #[serde(deserialize_with = "empty_bool_as_none")]
+    cookie_enabled: Option<bool>,
+    #[serde(deserialize_with = "empty_cookie_lifetime_as_none")]
+    cookie_lifetime: Option<CookieLifetime>,
     #[serde(deserialize_with = "empty_duration_as_none")]
     stage_timeout: Option<Duration>,
     #[serde(deserialize_with = "empty_duration_as_none")]
@@ -378,6 +404,9 @@ where
         .transpose()
 }
 
+/// Parses `"true"`/`"false"` (Rust's `bool::from_str`, case-sensitive
+/// lowercase only), treating the empty string as unset like every other
+/// `empty_*_as_none` helper here.
 fn empty_bool_as_none<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
 where
     D: Deserializer<'de>,
@@ -387,6 +416,23 @@ where
             value.parse::<bool>().map_err(|_| {
                 D::Error::custom(format!(
                     "invalid boolean {value:?} (expected \"true\" or \"false\")"
+                ))
+            })
+        })
+        .transpose()
+}
+
+fn empty_cookie_lifetime_as_none<'de, D>(
+    deserializer: D,
+) -> Result<Option<CookieLifetime>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    empty_as_none(String::deserialize(deserializer)?)
+        .map(|value| {
+            value.parse::<CookieLifetime>().map_err(|_| {
+                D::Error::custom(format!(
+                    "unknown cookie lifetime {value:?} (expected \"per-update\" or \"per-message\")"
                 ))
             })
         })
@@ -625,6 +671,22 @@ impl FromStr for NodeNameSource {
 pub struct OrchestrationConfig {
     pub mode: Mode,
     pub state_path: PathBuf,
+    /// Path to the persisted Nebraska affinity cookie (see
+    /// `core::nebraska::CookieStore`). Kept separate from `state_path` so
+    /// cookie persistence does not change the serialized update-state schema.
+    pub cookie_path: PathBuf,
+    /// Blanket kill switch for the whole cookie mechanism. When `false`, no
+    /// `Cookie:` header is ever sent and no `Set-Cookie` is ever adopted -
+    /// the persisted file (if one exists from before the toggle was
+    /// flipped) is never read *or* written, so toggling this back to `true`
+    /// later just picks the stale file back up as-is. Override with
+    /// `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED`.
+    pub cookie_enabled: bool,
+    /// Whether only the initial update response or every message response
+    /// may replace the cookie. Defaults to per-update. See [`CookieLifetime`].
+    /// Override with `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME`
+    /// (`"per-update"` or `"per-message"`).
+    pub cookie_lifetime: CookieLifetime,
     /// Placeholder default pending real data from storm aclagent scenario runs.
     pub stage_timeout: Duration,
     /// Placeholder default pending real data from storm aclagent scenario runs.
@@ -652,6 +714,9 @@ impl Default for OrchestrationConfig {
         Self {
             mode: Mode::Annotations,
             state_path: PathBuf::from(DEFAULT_STATE_PATH),
+            cookie_path: PathBuf::from(DEFAULT_NEBRASKA_COOKIE_PATH),
+            cookie_enabled: DEFAULT_COOKIE_ENABLED,
+            cookie_lifetime: CookieLifetime::PerUpdate,
             stage_timeout: DEFAULT_STAGE_TIMEOUT,
             finalize_timeout: DEFAULT_FINALIZE_TIMEOUT,
             heartbeat_interval: DEFAULT_HEARTBEAT_INTERVAL,
@@ -732,6 +797,8 @@ mod tests {
     fn startup_summary_includes_effective_defaults() {
         let config = AgentConfig::from_vars(vec![]).unwrap();
         let summary = format!("{:?}", config.redacted_for_logging());
+        assert!(summary.contains("cookie_enabled: false"), "{summary}");
+        assert!(summary.contains("cookie_lifetime: PerUpdate"), "{summary}");
         for expected in [
             "AgentConfig",
             "nebraska.endpoint",
@@ -854,6 +921,18 @@ mod tests {
             config.orchestration.state_path,
             PathBuf::from(DEFAULT_STATE_PATH)
         );
+        assert_eq!(
+            config.orchestration.cookie_path,
+            PathBuf::from(DEFAULT_NEBRASKA_COOKIE_PATH)
+        );
+        assert!(
+            !config.orchestration.cookie_enabled,
+            "cookie_enabled should default to off"
+        );
+        assert_eq!(
+            config.orchestration.cookie_lifetime,
+            CookieLifetime::PerUpdate
+        );
         assert_eq!(config.orchestration.stage_timeout, DEFAULT_STAGE_TIMEOUT);
         assert_eq!(
             config.orchestration.finalize_timeout,
@@ -914,6 +993,15 @@ mod tests {
                 "TRIDENT_ACL_AGENT_ORCHESTRATION_STATE_PATH",
                 "/var/lib/trident-acl-agent/custom-state.json",
             ),
+            (
+                "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_PATH",
+                "/var/lib/trident-acl-agent/custom-nebraska-cookie",
+            ),
+            ("TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED", "true"),
+            (
+                "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME",
+                "per-message",
+            ),
             ("TRIDENT_ACL_AGENT_ORCHESTRATION_STAGE_TIMEOUT", "21m"),
             ("TRIDENT_ACL_AGENT_ORCHESTRATION_FINALIZE_TIMEOUT", "11m"),
             ("TRIDENT_ACL_AGENT_ORCHESTRATION_HEARTBEAT_INTERVAL", "45s"),
@@ -954,6 +1042,15 @@ mod tests {
         assert_eq!(
             config.orchestration.state_path,
             PathBuf::from("/var/lib/trident-acl-agent/custom-state.json")
+        );
+        assert_eq!(
+            config.orchestration.cookie_path,
+            PathBuf::from("/var/lib/trident-acl-agent/custom-nebraska-cookie")
+        );
+        assert!(config.orchestration.cookie_enabled);
+        assert_eq!(
+            config.orchestration.cookie_lifetime,
+            CookieLifetime::PerMessage
         );
         assert_eq!(
             config.orchestration.stage_timeout,
@@ -1021,6 +1118,66 @@ mod tests {
             AgentConfig::from_vars(vars(&[("TRIDENT_ACL_AGENT_ORCHESTRATION_MODE", "bogus")]))
                 .unwrap_err();
         assert!(format!("{err:#}").contains("bogus"), "{err:#}");
+    }
+
+    #[test]
+    fn cookie_enabled_is_opt_in() {
+        assert!(!AgentConfig::default().orchestration.cookie_enabled);
+        for (value, expected) in [("", false), ("false", false), ("true", true)] {
+            let config = AgentConfig::from_vars(vars(&[(
+                "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED",
+                value,
+            )]))
+            .unwrap();
+            assert_eq!(
+                config.orchestration.cookie_enabled, expected,
+                "cookie_enabled with value {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_cookie_enabled_is_a_parse_error() {
+        let err = AgentConfig::from_vars(vars(&[(
+            "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED",
+            "yes please",
+        )]))
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("yes please"), "{err:#}");
+    }
+
+    #[test]
+    fn cookie_lifetime_modes_and_empty_default() {
+        assert_eq!(CookieLifetime::default(), CookieLifetime::PerUpdate);
+        for (value, expected) in [
+            ("", CookieLifetime::PerUpdate),
+            ("per-update", CookieLifetime::PerUpdate),
+            ("per-message", CookieLifetime::PerMessage),
+        ] {
+            let config = AgentConfig::from_vars(vars(&[(
+                "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME",
+                value,
+            )]))
+            .unwrap();
+            assert_eq!(config.orchestration.cookie_lifetime, expected);
+            let summary = format!("{:?}", config.redacted_for_logging());
+            assert!(summary.contains(&format!("cookie_lifetime: {expected:?}")));
+        }
+    }
+
+    #[test]
+    fn malformed_cookie_lifetime_is_a_parse_error() {
+        for value in ["bogus", "forever", "PerUpdate", "per_update", "PER-MESSAGE"] {
+            let err = AgentConfig::from_vars(vars(&[(
+                "TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_LIFETIME",
+                value,
+            )]))
+            .unwrap_err();
+            let message = format!("{err:#}");
+            assert!(message.contains(value), "{message}");
+            assert!(message.contains("per-update"), "{message}");
+            assert!(message.contains("per-message"), "{message}");
+        }
     }
 
     #[test]

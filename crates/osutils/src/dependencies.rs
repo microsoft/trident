@@ -14,6 +14,12 @@ use trident_api::error::{
     ExecutionEnvironmentMisconfigurationError, ServicingError, TridentError, TridentResultExt,
 };
 
+#[cfg(feature = "run-interactive")]
+mod interactive;
+
+#[cfg(feature = "run-interactive")]
+pub use interactive::set_foreground_group;
+
 #[derive(Debug, thiserror::Error)]
 pub enum DependencyError {
     #[error("Failed to find dependency '{dependency}': {source}")]
@@ -88,6 +94,7 @@ impl<T> DependencyResultExt<T> for Result<T, Box<DependencyError>> {
 #[derive(Debug, Clone, Copy, IntoStaticStr)]
 #[strum(serialize_all = "lowercase")]
 pub enum Dependency {
+    Bash,
     Blkid,
     Chown,
     Chpasswd,

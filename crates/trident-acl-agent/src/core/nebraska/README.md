@@ -48,6 +48,31 @@ new ones does not break parsing.
 
 ## Usage
 
+### Affinity cookies
+
+Cookies are opt-in. The agent uses these environment variables:
+
+| Variable | Default |
+| --- | --- |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_ENABLED` | `false` |
+| `TRIDENT_ACL_AGENT_ORCHESTRATION_COOKIE_PATH` | `/var/lib/trident-acl-agent/nebraska-cookie` |
+
+Each initial `check_for_update` starts without a cookie, clears the previous
+stored value, and persists only that response's cookie. Progress,
+failure, completion, and diagnostic requests reuse it without adopting
+replacements. An initial response without a cookie leaves the update cookie-less.
+A restarted staging attempt starts a new interval, even with unchanged request
+IDs; resuming finalize/completion does not.
+
+When cookies are disabled, clients neither send nor adopt them. Both agent
+orchestration modes and connectivity probes honor the enabled switch.
+
+Only HTTP-success responses with readable bodies can supply a cookie; XML
+validation happens afterward. Cookies are stored with owner-only permissions and
+atomic replacement, never logged. I/O failures warn without failing the update;
+the affinity guarantees are therefore best-effort when storage fails. Concurrent
+cookie-bearing responses use last-successful-write-wins ordering.
+
 ### Poll for an update
 
 ```rust,no_run
