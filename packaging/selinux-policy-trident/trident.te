@@ -313,8 +313,8 @@ files_var_lib_filetrans(trident_t, trident_var_lib_t, { dir file lnk_file })
 allow trident_t trident_var_lib_t:dir { getattr search read write add_name create remove_name open mounton relabelto rmdir };
 allow trident_t trident_var_lib_t:file { getattr setattr create open read write unlink lock relabelto rename };
 
-# Allow Trident to relabel its executable
-allow trident_t trident_exec_t:file relabelto;
+# Allow selfUpgradeTrident to replace and relabel the installed binary.
+allow trident_t trident_exec_t:file { getattr open read relabelto setattr write };
 
 allow trident_t audit_spool_t:dir { getattr open read relabelto };
 allow trident_t auditctl_exec_t:file getattr;

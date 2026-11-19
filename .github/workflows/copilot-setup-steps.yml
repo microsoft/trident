@@ -13,7 +13,17 @@ on:
       - "**/Cargo.toml"
       - .github/workflows/copilot-setup-steps.yml
       - scripts/cloud-agent/ado-cargo-token.sh
+      - scripts/cloud-agent/download_functional_artifact.py
+      - scripts/cloud-agent/download_install_artifacts.py
+      - scripts/cloud-agent/functional-artifact.json
+      - scripts/cloud-agent/install-artifacts.json
+      - scripts/cloud-agent/prepare_update_host_config.py
+      - scripts/cloud-agent/run-functional.sh
+      - scripts/cloud-agent/run-install.sh
       - scripts/cloud-agent/setup.sh
+      - scripts/cloud-agent/setup-functional.sh
+      - scripts/cloud-agent/setup-install.sh
+      - scripts/cloud-agent/tests/**
       - scripts/cloud-agent/validate.sh
 
 jobs:

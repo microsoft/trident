@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "organization": "mariner-org",
+  "project": "ECF",
+  "definitionId": 5067,
+  "buildId": 1244644,
+  "sourceBranch": "refs/heads/main",
+  "sourceVersion": "dc5a201b8abcdd849252fed0814596a75c8c2749",
+  "buildResult": "succeeded",
+  "artifactName": "trident-functest",
+  "artifactType": "PipelineArtifact",
+  "artifactSize": 526632118,
+  "imageFilename": "trident-functest.qcow2",
+  "imageSize": 520880128,
+  "imageSha256": "729765466d5afc038514d2067ba7d7084d95cdce6e34d0a737d428c331de9619"
+}
