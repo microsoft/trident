@@ -23,20 +23,20 @@ regenerates the `/usr` UUID, verity, UKI and native addons on every build.
 
 Use Linux with Docker, Go 1.26+, Python 3 with PyYAML and cryptography, and
 authenticated `az devops` access to `https://dev.azure.com/mariner-org`.
-The pinned ACL-enabled Image Customizer revision below is required; stock IC
-does not implement its `acl.*` options. The upstream build installs Trivy if
-missing; an existing installation must match its expected version (0.69.2 for
-the current pin). From the Trident repository root:
+Ensure Image Customizer supports COSI 1.3 and the recipes' `acl.*` options
+(e.g. branch `user/frhuelsz/acl-baremetal`). The upstream build installs Trivy
+if missing; an existing installation must match its expected version
+(currently 0.69.2). From the Trident repository root:
 
 ```bash
 IC_SOURCE=/path/to/azure-linux-image-tools
-ACL_CUSTOMIZER_PIN=$(python3 -c '
+ACL_CUSTOMIZER_BRANCH=$(python3 -c '
 import yaml
-with open(".pipelines/templates/acl-variables.yml") as config:
-    print(yaml.safe_load(config)["variables"]["ACL_CUSTOMIZER_PIN"])
+with open(".pipelines/templates/stages/testing_acl/prepare-image.yml") as config:
+    print(yaml.safe_load(config)["jobs"][0]["variables"]["ACL_CUSTOMIZER_BRANCH"])
 ')
 git -C "$IC_SOURCE" fetch --depth 1 \
-  https://github.com/microsoft/azure-linux-image-tools.git "$ACL_CUSTOMIZER_PIN"
+  https://github.com/microsoft/azure-linux-image-tools.git "$ACL_CUSTOMIZER_BRANCH"
 git -C "$IC_SOURCE" checkout --detach FETCH_HEAD
 make -C "$IC_SOURCE/toolkit" go-imagecustomizer REBUILD_TOOLS=y
 "$IC_SOURCE/toolkit/tools/imagecustomizer/container/build-container.sh" \

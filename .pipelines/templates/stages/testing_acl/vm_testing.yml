@@ -1,8 +1,6 @@
 stages:
   - stage: BuildAclImages
     displayName: Build ACL images (regular kernel and MSHV)
-    variables:
-      - template: ../../acl-variables.yml
     dependsOn:
       - GetTridentBinaries_rpms_amd64
       - PrepareSSHKeys

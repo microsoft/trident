@@ -18,6 +18,7 @@ jobs:
       ACL_INPUT_DIR: $(Pipeline.Workspace)/acl-inputs-${{ parameters.variant }}
       ACL_BUILD_DIR: $(Pipeline.Workspace)/acl-build-${{ parameters.variant }}-$(Build.BuildId)-$(System.JobAttempt)
       ACL_CUSTOMIZER: acl-imagecustomizer:local
+      ACL_CUSTOMIZER_BRANCH: user/frhuelsz/acl-baremetal
     steps:
       - template: ../common_tasks/checkout_trident.yml
       - template: ../common_tasks/avoid-pypi-usage.yml
@@ -54,7 +55,7 @@ jobs:
               artifactName: drop_build_efitreeloader_rpm
               targetPath: $(ACL_INPUT_DIR)/efitreeloader
       - task: Bash@3
-        displayName: Build pinned ACL Image Customizer and stage native inputs
+        displayName: Build ACL Image Customizer and stage native inputs
         inputs:
           targetType: inline
           workingDirectory: $(TRIDENT_SOURCE_DIR)
@@ -66,12 +67,10 @@ jobs:
             chmod 600 '$(ACL_INPUT_DIR)/ssh/id_rsa'
             source='$(ACL_BUILD_DIR)/image-tools'
             mkdir -p "$source" bin/RPMS artifacts/rpm-overrides
-            # Repository resources cannot resolve this YAML-defined pin.
             git -C "$source" init
             git -C "$source" fetch --depth 1 \
-              https://github.com/microsoft/azure-linux-image-tools.git '$(ACL_CUSTOMIZER_PIN)'
+              https://github.com/microsoft/azure-linux-image-tools.git '$(ACL_CUSTOMIZER_BRANCH)'
             git -C "$source" checkout --detach FETCH_HEAD
-            # The shared MIC downloader uses --branch, which cannot select a commit SHA.
             make -C "$source/toolkit" go-imagecustomizer REBUILD_TOOLS=y
             "$source/toolkit/tools/imagecustomizer/container/build-container.sh" \
               -t '$(ACL_CUSTOMIZER)'
