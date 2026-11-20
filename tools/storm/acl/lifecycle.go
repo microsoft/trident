@@ -20,7 +20,7 @@ type lifecycle struct {
 }
 
 func (l *lifecycle) checkDeployment() error {
-	bootID, err := l.g.waitBoot("")
+	bootID, err := l.g.waitBoot(NO_PREVIOUS_BOOT_ID)
 	if err != nil {
 		return fmt.Errorf("baseline SSH: %w", err)
 	}

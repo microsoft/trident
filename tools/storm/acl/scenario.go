@@ -241,7 +241,7 @@ func (s *ACLScenario) deploy() error {
 	if err := r.qemu.DeployQemuVMWithoutWaiting(ctx, r.vmName, s.args.ArtifactsDir); err != nil {
 		return err
 	}
-	if _, err := r.waitBoot(""); err != nil {
+	if _, err := r.waitBoot(NO_PREVIOUS_BOOT_ID); err != nil {
 		return err
 	}
 	if _, err := r.command("mkdir -p " + guestDir); err != nil {

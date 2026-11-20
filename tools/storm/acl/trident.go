@@ -10,7 +10,10 @@ import (
 	"github.com/microsoft/storm"
 )
 
-const guestDir = "/var/lib/trident/acl"
+const (
+	guestDir            = "/var/lib/trident/acl"
+	NO_PREVIOUS_BOOT_ID = ""
+)
 
 type imageVariant string
 
