@@ -2,8 +2,10 @@ use std::path::Path;
 
 use log::warn;
 
+use osutils::efivar;
 use trident_api::{
-    constants::EFI_DEFAULT_BIN_DIRECTORY, error::TridentError, status::AbVolumeSelection,
+    error::{ServicingError, TridentError},
+    status::AbVolumeSelection,
 };
 
 use super::boot;
@@ -12,13 +14,13 @@ const MSHV_DEVICE_PATH: &str = "/dev/mshv";
 
 /// Runs the expected-slot identity hook when /dev/mshv reports as present.
 ///
-/// `expected_volume` selects the A/B slot for `install_index`; None selects the
-/// EFI/BOOT fallback. A missing or uninspectable device path skips the check
-/// successfully. When invoked, an identity-hook error propagates unchanged.
+/// `expected_volume` selects the A/B slot for `install_index`; None skips
+/// fallback identity validation. Missing/uninspectable devices and unavailable
+/// or unsupported loader metadata also skip the check successfully.
 ///
-/// The identity hook is currently an assume-success stub. Ok means the check was
-/// skipped or the stub accepted it, not that the running hypervisor matches the
-/// expected OS slot. This does not inspect installed ESP files.
+/// A managed loader-directory mismatch propagates to the caller's recovery flow.
+/// Success is not payload attestation: this infers slot consistency from the
+/// slot-owned boot chain, without inspecting ESP files or the running binaries.
 pub(super) fn validate_active_hypervisor(
     install_index: usize,
     expected_volume: Option<AbVolumeSelection>,
@@ -44,23 +46,53 @@ fn validate_if_mshv_present(
     Ok(())
 }
 
-/// Assume-success placeholder for verifying the running hypervisor's identity.
-///
-/// Formats the expected slot/fallback directory for a warning, but does not read
-/// ESP components or query the running hypervisor. Always returns Ok until an
-/// actual identity comparison is implemented.
+/// Compares the loader's managed-slot origin with the validated OS expectation.
 fn validate_hypervisor_identity(
     install_index: usize,
     expected_volume: Option<AbVolumeSelection>,
 ) -> Result<(), TridentError> {
-    let expected_directory = expected_volume
+    let Some(expected_volume) = expected_volume else {
+        return Ok(());
+    };
+    validate_loader_origin(
+        install_index,
+        expected_volume,
+        efivar::read_loader_image_identifier(),
+    )
+}
+
+fn validate_loader_origin(
+    install_index: usize,
+    expected_volume: AbVolumeSelection,
+    image: Result<String, TridentError>,
+) -> Result<(), TridentError> {
+    let image = match image {
+        Ok(image) => image.replace('/', "\\"),
+        Err(error) => {
+            // Missing evidence must not be reported as a rejected A/B trial.
+            warn!("Cannot determine MSHV boot-chain origin; skipping validation: {error:?}");
+            return Ok(());
+        }
+    };
+
+    let observed_directory = [AbVolumeSelection::VolumeA, AbVolumeSelection::VolumeB]
+        .into_iter()
         .map(|volume| boot::make_esp_dir_name(install_index, volume))
-        .unwrap_or_else(|| EFI_DEFAULT_BIN_DIRECTORY.into());
-    // TODO: Identify the running hypervisor and compare it with the expected OS's MSHV boot components.
-    warn!(
-        "MSHV hypervisor identity validation is not implemented; assuming success for {:?}",
-        expected_directory
-    );
+        .find(|directory| image.eq_ignore_ascii_case(&format!(r"\EFI\{directory}\second.efi")));
+    let Some(observed_directory) = observed_directory else {
+        warn!("Unsupported MSHV boot-chain origin {image:?}; skipping validation");
+        return Ok(());
+    };
+
+    let expected_directory = boot::make_esp_dir_name(install_index, expected_volume);
+    if observed_directory != expected_directory {
+        return Err(TridentError::new(
+            ServicingError::ValidateAbActiveHypervisor {
+                expected_slot: expected_directory,
+                observed_slot: Some(observed_directory),
+            },
+        ));
+    }
     Ok(())
 }
 
@@ -72,7 +104,87 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use trident_api::error::{ErrorKind, ServicingError};
+    use trident_api::error::ErrorKind;
+
+    #[test]
+    fn matching_loader_origins_accept_efi_case_and_separators() {
+        for (index, volume, image) in [
+            (0, AbVolumeSelection::VolumeA, r"\EFI\AZLA\second.efi"),
+            (0, AbVolumeSelection::VolumeB, "/efi/azlb/SECOND.EFI"),
+            (1, AbVolumeSelection::VolumeA, r"\EFI\AZL2A\second.efi"),
+            (2, AbVolumeSelection::VolumeB, r"\EFI\AZL3B\second.efi"),
+        ] {
+            validate_loader_origin(index, volume, Ok(image.into())).unwrap();
+        }
+    }
+
+    #[test]
+    fn opposite_loader_slot_returns_structured_mismatch() {
+        for (index, volume, image, expected, observed) in [
+            (
+                0,
+                AbVolumeSelection::VolumeA,
+                r"\EFI\AZLB\second.efi",
+                "AZLA",
+                "AZLB",
+            ),
+            (
+                0,
+                AbVolumeSelection::VolumeB,
+                "/efi/azla/SECOND.EFI",
+                "AZLB",
+                "AZLA",
+            ),
+            (
+                1,
+                AbVolumeSelection::VolumeB,
+                r"\EFI\AZL2A\second.efi",
+                "AZL2B",
+                "AZL2A",
+            ),
+        ] {
+            let error = validate_loader_origin(index, volume, Ok(image.into())).unwrap_err();
+            assert!(
+                matches!(
+                    error.kind(),
+                    ErrorKind::Servicing(ServicingError::ValidateAbActiveHypervisor {
+                        expected_slot,
+                        observed_slot,
+                    }) if expected_slot == expected && observed_slot.as_deref() == Some(observed)
+                ),
+                "got {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_loader_origins_do_not_reject_trial() {
+        for image in [
+            r"\EFI\BOOT\second.efi",
+            r"\EFI\AZL2B\second.efi",
+            r"\EFI\AZLB\bootx64.efi",
+            r"\EFI\AZLB\second.efi.extra",
+            r"\EFI\AZLB\second.efi\extra",
+            r"\EFI\other\second.efi",
+            r"EFI\AZLB\second.efi",
+            "",
+        ] {
+            validate_loader_origin(0, AbVolumeSelection::VolumeA, Ok(image.into())).unwrap();
+        }
+        validate_hypervisor_identity(0, None).unwrap();
+    }
+
+    #[test]
+    fn unavailable_loader_metadata_does_not_reject_trial() {
+        validate_loader_origin(
+            0,
+            AbVolumeSelection::VolumeB,
+            Err(TridentError::new(ServicingError::ReadEfiVariable {
+                name: "LoaderImageIdentifier".into(),
+            })),
+        )
+        .unwrap();
+    }
 
     #[test]
     fn missing_mshv_device_skips_identity_validation() {

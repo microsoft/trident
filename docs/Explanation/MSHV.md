@@ -165,11 +165,23 @@ slot's files, not a recorded configuration flag.
 
 ### Hypervisor Identity
 
-**Hypervisor identity validation is not implemented.** Boot validation calls an
-expected-slot identity hook when `/dev/mshv` appears present. This best-effort
-presence gate skips missing or uninspectable paths; the hook currently logs the
-expected slot and always succeeds. It does not inspect ESP contents or establish
-the identity of the running hypervisor.
+Boot validation checks managed-slot boot-chain consistency when `/dev/mshv`
+appears present. After validating the OS device, it compares the boot loader's
+`LoaderImageIdentifier` EFI variable with the expected slot's
+`\EFI\AZLA\second.efi` or `\EFI\AZLB\second.efi` path (including installation-index
+suffixes). EFI path separators and ASCII case are normalized for comparison.
+In the slot-owned chain, efitreeloader resolves both the MSHV payload and
+systemd-boot from its executing directory; the loader directory is therefore a
+slot-origin proxy, not a query of the running hypervisor's binary paths.
+
+Only a recognized opposite-slot path for the same installation fails this
+check. Missing or uninspectable devices skip validation. Missing, unreadable,
+malformed or unsupported loader metadata logs a warning and skips validation;
+it does not reject the candidate. Fallback identity (`EFI/BOOT`) is not checked.
+This does not parse `BootCurrent`/`Boot####`, distinguish ESPs, inspect installed
+payload bytes or attest hypervisor identity. The loader variable must describe
+the slot-owned chain; deployed systemd behavior and same-boot chain retries
+require VM validation.
 
 The recovery scaffolding reserves `CommitFailed` (stored as `commit-failed`) for
 a rejected A/B trial that requires returning to the retained OS. An identity-hook
@@ -179,7 +191,6 @@ failure if recovery fails, and does not request another rollback on an identity
 failure during recovery. Health-check rejection remains the separate
 `AbUpdateHealthCheckFailed` state.
 
-The always-success stub cannot detect a mixed hypervisor/OS boot or trigger
-`CommitFailed` in production. Root-device validation and health checks still
-apply; passing them does not establish hypervisor/OS consistency or production
-readiness.
+A recognized loader/OS slot mismatch can trigger `CommitFailed`; unavailable
+evidence cannot. Root-device validation and health checks still apply. Passing
+these checks does not establish payload identity or production readiness.
