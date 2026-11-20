@@ -32,6 +32,20 @@ type runner struct {
 	snapshots  map[string]snapshot
 }
 
+func (r *runner) prepareUpdate() error {
+	if _, err := r.command("mkdir -p " + guestDir); err != nil {
+		return err
+	}
+	config := filepath.Join(r.args.OutputPath, "update.yaml")
+	if err := os.WriteFile(config, []byte(updateConfig()), 0600); err != nil {
+		return err
+	}
+	if err := r.upload(config, guestDir+"/update.yaml"); err != nil {
+		return err
+	}
+	return r.upload(filepath.Join(r.args.ArtifactsDir, "update.cosi"), guestDir+"/update.cosi")
+}
+
 func (r *runner) settings() stormsshconfig.SshCliSettings {
 	return stormsshconfig.SshCliSettings{PrivateKeyPath: filepath.Join(r.args.ArtifactsDir, "id_rsa"), Host: r.ip, User: "testuser", Port: 22, Timeout: 5}
 }

@@ -37,6 +37,8 @@ The controller retains checkpoints across guest reboots and test cases.
 Storm reports `deploy-vm`, `check-deployment`, `run-ab-update`, `run-rollback`,
 `run-ab-update-2`, `run-ab-update-3`, `check-persistence`, `collect-logs` and
 `cleanup-vm` separately. These are ordered cases sharing one disposable VM.
+The first update case creates/uploads its host configuration and uploads the
+COSI; later updates reuse those files. Deployment only starts the VM and waits for SSH.
 A failed case stops later cases. The failure hook collects diagnostics before
 any cleanup pause, and the cleanup hook still removes the VM when its named
 case was skipped. Collection and cleanup are not repeated after their named

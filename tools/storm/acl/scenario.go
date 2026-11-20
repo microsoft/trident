@@ -108,7 +108,12 @@ func (s *ACLScenario) checkDeployment(tc storm.TestCase) error {
 }
 
 func (s *ACLScenario) runABUpdate(tc storm.TestCase) error {
-	return s.runTestCase(tc, func() error { return s.lifecycle.update("update-1", "b", false) })
+	return s.runTestCase(tc, func() error {
+		if err := s.runner.prepareUpdate(); err != nil {
+			return err
+		}
+		return s.lifecycle.update("update-1", "b", false)
+	})
 }
 
 func (s *ACLScenario) runRollback(tc storm.TestCase) error {
@@ -242,19 +247,6 @@ func (s *ACLScenario) deploy() error {
 		return err
 	}
 	if _, err := r.waitBoot(NO_PREVIOUS_BOOT_ID); err != nil {
-		return err
-	}
-	if _, err := r.command("mkdir -p " + guestDir); err != nil {
-		return err
-	}
-	config := filepath.Join(s.args.OutputPath, "update.yaml")
-	if err := os.WriteFile(config, []byte(updateConfig()), 0600); err != nil {
-		return err
-	}
-	if err := r.upload(config, guestDir+"/update.yaml"); err != nil {
-		return err
-	}
-	if err := r.upload(filepath.Join(s.args.ArtifactsDir, "update.cosi"), guestDir+"/update.cosi"); err != nil {
 		return err
 	}
 	return nil
