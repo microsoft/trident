@@ -1,10 +1,10 @@
 use std::{
-    fs::{self, File, Permissions},
+    fs::{self, File, OpenOptions, Permissions},
     io::{ErrorKind, Read, Write},
     os::{
         fd::AsFd,
         linux::fs::MetadataExt,
-        unix::fs::{MetadataExt as UnixMetadataExt, PermissionsExt},
+        unix::fs::{MetadataExt as UnixMetadataExt, OpenOptionsExt, PermissionsExt},
     },
     path::{self, Path, PathBuf},
 };
@@ -29,18 +29,44 @@ where
     ))
 }
 
-/// Creates a file and all parent directories if they don't exist, and sets the file mode
+/// Opens a truncated file for writing, creating missing parent directories.
+///
+/// New files are created with no permissions beyond `mode`, and the final mode
+/// is normalized to exactly `mode` for both new and existing files.
 pub fn create_file_mode<S>(path: S, mode: u32) -> Result<File, Error>
 where
     S: AsRef<Path>,
 {
-    let file = create_file(path.as_ref())?;
-    fs::set_permissions(path.as_ref(), Permissions::from_mode(mode)).context(format!(
-        "Could not set permissions {:#o} for file {}",
-        mode,
+    let file = open_file_mode(path.as_ref(), mode)?;
+    file.set_permissions(Permissions::from_mode(mode))
+        .context(format!(
+            "Could not set permissions {:#o} for file {}",
+            mode,
+            path.as_ref().display()
+        ))?;
+    file.set_len(0).context(format!(
+        "Could not truncate file: {}",
         path.as_ref().display()
     ))?;
     Ok(file)
+}
+
+/// Opens a file for writing, creating missing parent directories.
+///
+/// For a new file, `mode` is applied at creation and may be made more
+/// restrictive by the process umask. Existing files are not truncated.
+fn open_file_mode(path: impl AsRef<Path>, mode: u32) -> Result<File, Error> {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        create_dirs(parent)?;
+    }
+
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .mode(mode)
+        .open(path)
+        .with_context(|| format!("Could not create file: {}", path.display()))
 }
 
 /// Creates all directories in a path if they don't exist
@@ -426,6 +452,21 @@ mod tests {
 
     use nix::sys::stat::Mode;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_open_file_mode_restricts_permissions_at_creation() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("nested/config");
+
+        let file = open_file_mode(&path, 0o600).unwrap();
+        let mode = file.metadata().unwrap().permissions().mode() & 0o777;
+
+        assert_eq!(
+            mode & 0o077,
+            0,
+            "Unexpected group or other access: {mode:04o}"
+        );
+    }
 
     #[test]
     fn test_write_file_creates_parents_sets_mode_and_truncates() {
