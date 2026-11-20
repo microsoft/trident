@@ -15,7 +15,6 @@ schedules:
 trigger: none
 
 variables:
-  - template: templates/acl-variables.yml
   # For pipelines that do not produce any production artifacts, disable CodeQL analysis
   - name: Codeql.Enabled
     value: false

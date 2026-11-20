@@ -14,9 +14,6 @@ trigger:
     include:
       - main
 
-variables:
-  - template: templates/acl-variables.yml
-
 resources:
   repositories:
     - repository: templates
