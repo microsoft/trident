@@ -30,8 +30,10 @@ does not implement its `acl.*` options. From the Trident repository root:
 IC_SOURCE=/path/to/azure-linux-image-tools
 ACL_CUSTOMIZER_PIN=$(python3 -c '
 import yaml
-with open(".pipelines/templates/acl-variables.yml") as config:
-    print(yaml.safe_load(config)["variables"]["ACL_CUSTOMIZER_PIN"])
+with open(".pipelines/trident-ci.yml") as config:
+    parameters = yaml.safe_load(config)["parameters"]
+print(next(p["default"] for p in parameters
+           if p["name"] == "ACL_CUSTOMIZER_PIN"))
 ')
 test "$(git -C "$IC_SOURCE" rev-parse HEAD)" = "$ACL_CUSTOMIZER_PIN"
 mkdir -p artifacts/acl-ic

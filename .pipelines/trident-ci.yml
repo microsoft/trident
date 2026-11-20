@@ -8,6 +8,12 @@
 # Support:        https://aka.ms/onebranchsup                                   #
 #################################################################################
 
+parameters:
+  - name: ACL_CUSTOMIZER_PIN
+    type: string
+    # From microsoft/azure-linux-image-tools branch user/frhuelsz/acl-baremetal.
+    default: a7526eb98a57b41b5d4a0789fcf72622e6a8729a
+
 trigger:
   batch: true
   branches:
@@ -15,7 +21,8 @@ trigger:
       - main
 
 variables:
-  - template: templates/acl-variables.yml
+  - name: ACL_CUSTOMIZER_PIN
+    value: ${{ parameters.ACL_CUSTOMIZER_PIN }}
 
 resources:
   repositories:
@@ -23,7 +30,7 @@ resources:
       type: github
       name: microsoft/azure-linux-image-tools
       endpoint: microsoft
-      ref: ${{ variables.ACL_CUSTOMIZER_PIN }}
+      ref: ${{ parameters.ACL_CUSTOMIZER_PIN }}
 
     - repository: templates
       type: git

@@ -9,6 +9,10 @@
 #################################################################################
 
 parameters:
+  - name: ACL_CUSTOMIZER_PIN
+    type: string
+    # From microsoft/azure-linux-image-tools branch user/frhuelsz/acl-baremetal.
+    default: a7526eb98a57b41b5d4a0789fcf72622e6a8729a
   - name: aclAgentTestParallelJobs
     displayName: Number of parallel ACL-agent test jobs
     type: number
@@ -22,7 +26,7 @@ resources:
       type: github
       name: microsoft/azure-linux-image-tools
       endpoint: microsoft
-      ref: ${{ variables.ACL_CUSTOMIZER_PIN }}
+      ref: ${{ parameters.ACL_CUSTOMIZER_PIN }}
 
     - repository: platform-tests
       type: git
@@ -39,7 +43,8 @@ resources:
       ref: refs/heads/main
 
 variables:
-  - template: templates/acl-variables.yml
+  - name: ACL_CUSTOMIZER_PIN
+    value: ${{ parameters.ACL_CUSTOMIZER_PIN }}
   # For pipelines that do not produce any production artifacts, disable CodeQL analysis
   - name: Codeql.Enabled
     value: false
