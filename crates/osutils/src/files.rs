@@ -123,7 +123,9 @@ where
     Ok(())
 }
 
-/// Writes to a file
+/// Writes `contents` to a file, creating missing parent directories.
+///
+/// Existing files are truncated and the final file mode is set to `mode`.
 pub fn write_file<S>(path: S, mode: u32, contents: &[u8]) -> Result<(), Error>
 where
     S: AsRef<Path>,
@@ -424,6 +426,26 @@ mod tests {
 
     use nix::sys::stat::Mode;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_write_file_creates_parents_sets_mode_and_truncates() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("nested/config");
+
+        write_file(&path, 0o640, b"original contents").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"original contents");
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+
+        write_file(&path, 0o600, b"new").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+        assert_eq!(
+            fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
 
     #[test]
     fn test_copy_recursively_preserves_empty_directories_and_root_files() {

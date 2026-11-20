@@ -1,9 +1,4 @@
-use std::{
-    fs::{self, OpenOptions},
-    io::Write,
-    os::unix::fs::OpenOptionsExt,
-    path::Path,
-};
+use std::{fs, path::Path};
 
 use anyhow::{Context, Error};
 use const_format::formatcp;
@@ -11,7 +6,7 @@ use log::debug;
 
 use netplan_types::NetworkConfig;
 
-use crate::dependencies::Dependency;
+use crate::{dependencies::Dependency, files};
 
 /// Path to Trident's netplan config file.
 pub const TRIDENT_NETPLAN_FILE: &str = "/etc/netplan/99-trident.yaml";
@@ -24,34 +19,12 @@ pub const NETPLAN_BACKUP_FILE: &str = formatcp!("{NETPLAN_BACKUP_DIR}{TRIDENT_NE
 /// Writes the given network configuration to Trident's netplan config file.
 pub fn write(value: &NetworkConfig) -> Result<(), Error> {
     debug!("Writing netplan config to {}", TRIDENT_NETPLAN_FILE);
-    write_to(TRIDENT_NETPLAN_FILE, value)
-}
-
-fn write_to(path: impl AsRef<Path>, value: &NetworkConfig) -> Result<(), Error> {
-    let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "Failed to create netplan config directory at '{}'",
-                parent.display()
-            )
-        })?;
-    }
-
-    OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
-        .with_context(|| {
-            format!(
-                "Failed to open netplan configuration file {}",
-                path.display()
-            )
-        })?
-        .write_all(render_netplan_yaml(value)?.as_bytes())
-        .with_context(|| format!("Failed to write netplan config to {}", path.display()))
+    files::write_file(
+        TRIDENT_NETPLAN_FILE,
+        0o600,
+        render_netplan_yaml(value)?.as_bytes(),
+    )
+    .with_context(|| format!("Failed to write netplan config to {TRIDENT_NETPLAN_FILE}"))
 }
 
 /// Executes `netplan generate`.
@@ -130,10 +103,10 @@ mod tests {
     use super::*;
 
     use netplan_types::{CommonPropertiesAllDevices, EthernetConfig};
-    use tempfile::tempdir;
 
-    fn basic_config() -> NetworkConfig {
-        NetworkConfig {
+    #[test]
+    fn test_render_netplan_yaml_basic() {
+        let config = NetworkConfig {
             version: 2,
             ethernets: Some(
                 [(
@@ -149,11 +122,8 @@ mod tests {
                 .into(),
             ),
             ..Default::default()
-        }
-    }
+        };
 
-    #[test]
-    fn test_render_netplan_yaml_basic() {
         let expected = indoc::indoc! {r#"
             network:
               version: 2
@@ -161,7 +131,7 @@ mod tests {
                 eth0:
                   dhcp4: true
         "#};
-        let yaml = render_netplan_yaml(&basic_config()).expect("Failed to render yaml");
+        let yaml = render_netplan_yaml(&config).expect("Failed to render yaml");
         assert_eq!(yaml.trim(), expected.trim());
     }
 
@@ -178,18 +148,5 @@ mod tests {
         "#};
         let yaml = render_netplan_yaml(&config).expect("Failed to render yaml");
         assert_eq!(yaml.trim(), expected.trim());
-    }
-
-    #[test]
-    fn test_write_creates_parent_directories() {
-        let temp = tempdir().unwrap();
-        let path = temp.path().join("etc/netplan/99-trident.yaml");
-
-        write_to(&path, &basic_config()).unwrap();
-
-        assert_eq!(
-            fs::read_to_string(path).unwrap(),
-            render_netplan_yaml(&basic_config()).unwrap()
-        );
     }
 }
