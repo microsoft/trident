@@ -1,3 +1,0 @@
-FROM mcr.microsoft.com/azurelinux/imagecustomizer@sha256:ba75fd7c39d3f82838497526af75c092898b337f347fafb3487a532fd648a1a1
-COPY imagecustomizer /usr/bin/imagecustomizer
-ENV ENABLE_TELEMETRY=false

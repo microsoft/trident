@@ -24,7 +24,9 @@ regenerates the `/usr` UUID, verity, UKI and native addons on every build.
 Use Linux with Docker, Go 1.26+, Python 3 with PyYAML and cryptography, and
 authenticated `az devops` access to `https://dev.azure.com/mariner-org`.
 The pinned ACL-enabled Image Customizer revision below is required; stock IC
-does not implement its `acl.*` options. From the Trident repository root:
+does not implement its `acl.*` options. The upstream build installs Trivy if
+missing; an existing installation must match its expected version (0.69.2 for
+the current pin). From the Trident repository root:
 
 ```bash
 IC_SOURCE=/path/to/azure-linux-image-tools
@@ -33,11 +35,10 @@ import yaml
 with open(".pipelines/templates/acl-variables.yml") as config:
     print(yaml.safe_load(config)["variables"]["ACL_CUSTOMIZER_PIN"])
 ')
-test "$(git -C "$IC_SOURCE" rev-parse HEAD)" = "$ACL_CUSTOMIZER_PIN"
-mkdir -p artifacts/acl-ic
-(cd "$IC_SOURCE" && CGO_ENABLED=0 go build -mod=readonly -tags prod \
-  -o "$OLDPWD/artifacts/acl-ic/imagecustomizer" ./toolkit/tools/imagecustomizer)
-docker build -f tests/images/acl/Dockerfile -t acl-ic:local artifacts/acl-ic
+git -C "$IC_SOURCE" checkout --detach "$ACL_CUSTOMIZER_PIN"
+make -C "$IC_SOURCE/toolkit" go-imagecustomizer REBUILD_TOOLS=y
+"$IC_SOURCE/toolkit/tools/imagecustomizer/container/build-container.sh" \
+  -t acl-imagecustomizer:local
 ```
 
 Stage matching **AZL3** candidate RPMs in `bin/RPMS`: `trident`, `trident-acl`,
@@ -60,8 +61,8 @@ and assembles the ESP loader bundle in an inline customization hook.
 
 ```bash
 python3 tests/images/testimages.py download-image acl-t
-python3 tests/images/testimages.py build acl --container acl-ic:local --output-dir artifacts/acl
-python3 tests/images/testimages.py build acl-mshv --container acl-ic:local --output-dir artifacts/acl-mshv
+python3 tests/images/testimages.py build acl --container acl-imagecustomizer:local --output-dir artifacts/acl
+python3 tests/images/testimages.py build acl-mshv --container acl-imagecustomizer:local --output-dir artifacts/acl-mshv
 ```
 
 `download-image acl-t` refreshes the cached image. A missing image is downloaded

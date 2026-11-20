@@ -17,7 +17,7 @@ jobs:
       ob_artifactBaseName: acl-${{ parameters.variant }}
       ACL_INPUT_DIR: $(Pipeline.Workspace)/acl-inputs-${{ parameters.variant }}
       ACL_BUILD_DIR: $(Pipeline.Workspace)/acl-build-${{ parameters.variant }}-$(Build.BuildId)-$(System.JobAttempt)
-      ACL_CUSTOMIZER: acl-imagecustomizer:$(ACL_CUSTOMIZER_PIN)
+      ACL_CUSTOMIZER: acl-imagecustomizer:local
     steps:
       - template: ../common_tasks/checkout_trident.yml
       - template: ../common_tasks/avoid-pypi-usage.yml
@@ -68,11 +68,11 @@ jobs:
             sudo systemctl start docker
             chmod 600 '$(ACL_INPUT_DIR)/ssh/id_rsa'
             source='$(Pipeline.Workspace)/s/acl-image-tools'
-            test "$(git -C "$source" rev-parse HEAD)" = '$(ACL_CUSTOMIZER_PIN)'
-            mkdir -p '$(ACL_BUILD_DIR)/ic' bin/RPMS artifacts/rpm-overrides
-            (cd "$source" && CGO_ENABLED=0 go build -mod=readonly -tags prod \
-              -o '$(ACL_BUILD_DIR)/ic/imagecustomizer' ./toolkit/tools/imagecustomizer)
-            docker build -f tests/images/acl/Dockerfile -t '$(ACL_CUSTOMIZER)' '$(ACL_BUILD_DIR)/ic'
+            # The shared MIC downloader uses --branch, which cannot select a commit SHA.
+            make -C "$source/toolkit" go-imagecustomizer REBUILD_TOOLS=y
+            "$source/toolkit/tools/imagecustomizer/container/build-container.sh" \
+              -t '$(ACL_CUSTOMIZER)'
+            mkdir -p bin/RPMS artifacts/rpm-overrides
             cp --reflink=auto '$(ACL_INPUT_DIR)/acl-t/acl_template_image.vhdx' artifacts/
             find '$(ACL_INPUT_DIR)/trident' -type f -name '*azl3*.rpm' -exec cp -- '{}' bin/RPMS/ \;
             if [[ '${{ parameters.variant }}' == mshv ]]; then
