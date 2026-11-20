@@ -169,7 +169,7 @@ lazy_static::lazy_static! {
 fn persist_background_log_and_metrics(
     datastore_path: &Path,
     newroot_path: Option<&Path>,
-    servicing_state: ServicingState,
+    servicing_state: &ServicingState,
 ) {
     // Generate the new log filename
     let new_background_log_filename = format!(
@@ -534,7 +534,7 @@ mod functional_test {
 
         // Persist the background log and metrics file
         let servicing_state = ServicingState::AbUpdateFinalized;
-        persist_background_log_and_metrics(&datastore_path, Some(newroot_path), servicing_state);
+        persist_background_log_and_metrics(&datastore_path, Some(newroot_path), &servicing_state);
 
         assert!(
             persisted_log_and_metrics_exist(&log_dir, servicing_state),
@@ -562,7 +562,7 @@ mod functional_test {
 
         // Persist the background log and metrics file
         let servicing_state = ServicingState::AbUpdateFinalized;
-        persist_background_log_and_metrics(&datastore_path, None, servicing_state);
+        persist_background_log_and_metrics(&datastore_path, None, &servicing_state);
 
         assert!(
             !persisted_log_and_metrics_exist(datastore_dir, servicing_state),
