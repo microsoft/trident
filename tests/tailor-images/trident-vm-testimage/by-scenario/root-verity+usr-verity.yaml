@@ -1,0 +1,8 @@
+config:
+  os:
+    $include: ./include/uki-verity-os-common.yaml
+  scripts:
+    postCustomization:
+      - $include: ./include/uki-verity-scripts.yaml
+  previewFeatures:
+    - uki
