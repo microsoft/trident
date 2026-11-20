@@ -194,11 +194,11 @@ func (s *ACLScenario) finish() error {
 	}
 	s.recordFailure(cleanupErr)
 	summary := struct {
-		artifactInfo
-		VMName string `json:"vmName"`
-		Passed bool   `json:"passed"`
-		Error  string `json:"error,omitempty"`
-	}{artifactInfo: s.lifecycle.info, VMName: r.vmName, Passed: s.completed && s.failure == nil}
+		Variant imageVariant `json:"variant"`
+		VMName  string       `json:"vmName"`
+		Passed  bool         `json:"passed"`
+		Error   string       `json:"error,omitempty"`
+	}{Variant: s.args.Variant, VMName: r.vmName, Passed: s.completed && s.failure == nil}
 	if s.failure != nil {
 		summary.Error = s.failure.Error()
 	}
@@ -222,8 +222,7 @@ func (s *ACLScenario) deploy() error {
 	if err != nil {
 		return err
 	}
-	info, err := readArtifacts(s.args.ArtifactsDir, s.args.Variant)
-	if err != nil {
+	if err := validateArtifacts(s.args.ArtifactsDir, s.args.Variant); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(s.args.OutputPath, 0755); err != nil {
@@ -233,14 +232,14 @@ func (s *ACLScenario) deploy() error {
 	if err != nil {
 		return err
 	}
-	r := &runner{args: s.args, vmName: s.args.VMName, log: log, snapshots: make(map[string]snapshot)}
+	r := &runner{args: s.args, vmName: s.args.VMName, log: log}
 	r.qemu = qemu.QemuConfig{NestedVirtualization: s.args.Variant == variantMSHV, SecureBoot: false, SerialLog: filepath.Join(s.args.OutputPath, "serial-console.log"), ImagePattern: `^base\.qcow2$`}
 	if s.args.Variant == variantMSHV {
 		r.qemu.MemoryMiB = 16 * 1024
 		r.qemu.VCPUs = 4
 	}
 	s.runner = r
-	s.lifecycle = lifecycle{g: r, info: info}
+	s.lifecycle = lifecycle{g: r}
 	ctx, cancel := context.WithTimeout(context.Background(), s.args.OperationTimeout)
 	defer cancel()
 	if err := r.qemu.DeployQemuVMWithoutWaiting(ctx, r.vmName, s.args.ArtifactsDir); err != nil {

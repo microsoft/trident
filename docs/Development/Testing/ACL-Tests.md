@@ -24,15 +24,16 @@ Trident binary digests.
 
 The scenario requires:
 
-1. Baseline boot on USR-A with read-only, verity-backed `/usr`.
+1. Baseline boot and SSH readiness.
 2. Update to B, rollback to A, update to B, then update to A.
 3. Explicit staging/finalization and commit at each operation, with Provisioned
    status on volumes B/A/B/A and another persistence reboot.
 
-It checks running boot IDs, active slot partitions, native ACL identity,
-boot-tree preservation and bootctl selection. MSHV additionally requires its
-kernel, character device `/dev/mshv` and complete slot-owned loader bundle.
-The controller retains checkpoints across guest reboots and test cases.
+After each commit and the persistence reboot, it checks that Trident status
+reports `servicingState: provisioned` and the expected `abActiveVolume`.
+Boot IDs ensure reboot waits observe a new boot. The scenario does not inspect
+filesystems, native ACL identity, MSHV devices or boot-tree contents.
+The controller retains the last boot ID and expected active slot across cases.
 
 Storm reports `deploy-vm`, `check-deployment`, `run-ab-update`, `run-rollback`,
 `run-ab-update-2`, `run-ab-update-3`, `check-persistence`, `collect-logs` and
@@ -125,7 +126,7 @@ it does not read the standalone metadata, input manifest or COSI contents.
 The private key must remain restricted to the test artifact.
 
 Results are `acl-standard-results` and `acl-mshv-results`. Each run preserves
-the controller log, serial console, command output and snapshots,
+the controller log, serial console, command output and captured Trident status,
 plus `result.json` and `guest-evidence.tar.gz`. Failed VM working
 disks are retained after VM cleanup; input images are not modified.
 QEMU creates `booted.qcow2` in the artifacts directory; the scenario removes it

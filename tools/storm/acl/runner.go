@@ -2,13 +2,10 @@ package acl
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -29,7 +26,6 @@ type runner struct {
 	qemu       qemu.QemuConfig
 	log        *os.File
 	client     *ssh.Client
-	snapshots  map[string]snapshot
 }
 
 func (r *runner) prepareUpdate() error {
@@ -195,60 +191,4 @@ func (r *runner) save(name string, data []byte) error {
 		return err
 	}
 	return os.WriteFile(file, data, 0600)
-}
-
-func (r *runner) readBootTrees(out *snapshot) error {
-	return r.withClient(func(_ context.Context, client *ssh.Client) error {
-		remote, err := stormsftp.NewSftpSudoClient(client)
-		if err != nil {
-			return err
-		}
-		defer remote.Close()
-		if st, err := remote.Stat("/dev/mshv"); err == nil {
-			out.MSHVPresent = true
-			out.MSHVCharacter = st.Mode()&os.ModeCharDevice != 0
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-		for _, tree := range []string{"BOOT", "AZLA", "AZLB"} {
-			base := "/boot/EFI/" + tree
-			st, err := remote.Stat(base)
-			if os.IsNotExist(err) {
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			if !st.IsDir() {
-				return fmt.Errorf("%s is not a directory", base)
-			}
-			files := make(map[string]fileDigest)
-			walker := remote.Walk(base)
-			for walker.Step() {
-				if err := walker.Err(); err != nil {
-					return err
-				}
-				info := walker.Stat()
-				if info.IsDir() {
-					continue
-				}
-				if !info.Mode().IsRegular() {
-					return fmt.Errorf("nonregular boot file %s", walker.Path())
-				}
-				file, err := remote.Open(walker.Path())
-				if err != nil {
-					return err
-				}
-				hash := sha256.New()
-				_, readErr := io.Copy(hash, file)
-				if err := errors.Join(readErr, file.Close()); err != nil {
-					return err
-				}
-				name := strings.ToLower(strings.TrimPrefix(path.Clean(walker.Path()), base+"/"))
-				files[name] = fileDigest{SHA256: hex.EncodeToString(hash.Sum(nil)), Size: info.Size()}
-			}
-			out.Trees[tree] = files
-		}
-		return nil
-	})
 }

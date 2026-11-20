@@ -64,25 +64,20 @@ func (s *ACLScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	return nil
 }
 
-type artifactInfo struct {
-	Variant imageVariant `json:"variant"`
-}
-
-func readArtifacts(dir string, variant imageVariant) (artifactInfo, error) {
-	info := artifactInfo{Variant: variant}
+func validateArtifacts(dir string, variant imageVariant) error {
 	if variant != variantStandard && variant != variantMSHV {
-		return info, fmt.Errorf("unsupported ACL variant %q; expected standard or mshv", variant)
+		return fmt.Errorf("unsupported ACL variant %q; expected standard or mshv", variant)
 	}
 	for _, name := range []string{"base.qcow2", "update.cosi", "id_rsa"} {
 		st, err := os.Stat(filepath.Join(dir, name))
 		if err != nil {
-			return info, err
+			return err
 		}
 		if !st.Mode().IsRegular() || st.Size() == 0 {
-			return info, fmt.Errorf("%s must be a nonempty regular file", name)
+			return fmt.Errorf("%s must be a nonempty regular file", name)
 		}
 	}
-	return info, nil
+	return nil
 }
 
 func updateConfig() string {
