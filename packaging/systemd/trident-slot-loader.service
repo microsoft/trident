@@ -1,0 +1,19 @@
+[Unit]
+Description=Prepare managed extensions for the booted ACL slot
+DefaultDependencies=no
+RequiresMountsFor=/sysroot/usr /sysroot
+After=initrd-root-fs.target
+Before=initrd-setup-root.service initrd-parse-etc.service
+OnFailure=trident-slot-loader-recovery.service
+AssertPathExists=/etc/initrd-release
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/usr/lib/trident/slot-loader.env
+ExecStart=/usr/bin/trident-slot-loader
+TimeoutStartSec=30
+UMask=0077
+StandardOutput=journal+console
+StandardError=journal+console
+SyslogLevelPrefix=yes

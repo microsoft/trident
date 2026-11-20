@@ -6,6 +6,7 @@ members = [
     "crates/docbuilder",
     "crates/installer",
     "crates/trident-acl-agent",
+    "crates/trident-slot-loader",
     "crates/trident-client",
     "crates/osmodifier",
     "crates/osutils",
