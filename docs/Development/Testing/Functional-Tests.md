@@ -130,7 +130,9 @@ explicitly publish a compatibility symlink, pass `--link-path` to
 
 Each cloud run reserves its namespace for the duration of the run and rejects
 existing or prefix-colliding libvirt resources before provisioning or enabling
-cleanup. `TRIDENT_FUNCTIONAL_NAMESPACE` must contain only letters, digits,
+cleanup. Each invocation also uses a private temporary pytest cache so concurrent
+runs cannot overwrite each other's cached VM address or namespace. The cache is
+removed on exit. `TRIDENT_FUNCTIONAL_NAMESPACE` must contain only letters, digits,
 underscores, or hyphens, starting with a letter or digit.
 
 When reusing a functional-test VM, its namespace is restored from pytest's

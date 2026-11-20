@@ -5,6 +5,7 @@ set -euo pipefail
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly JUNIT_XML="target/trident_functional_tests.xml"
 build_output=""
+pytest_cache_dir=""
 virtdeploy_namespace=""
 
 usage() {
@@ -33,6 +34,9 @@ cleanup() {
     if [[ -n "$virtdeploy_namespace" && -x "$REPO_ROOT/bin/virtdeploy" ]]; then
         "$REPO_ROOT/bin/virtdeploy" clean \
             --namespace "$virtdeploy_namespace" || cleanup_code=$?
+    fi
+    if [[ -n "$pytest_cache_dir" ]]; then
+        rm -rf -- "$pytest_cache_dir" || cleanup_code=$?
     fi
     if [[ "$exit_code" -eq 0 && "$cleanup_code" -ne 0 ]]; then
         exit_code=$cleanup_code
@@ -136,6 +140,7 @@ main() {
 
     build_output="$(mktemp)"
     trap cleanup EXIT
+    pytest_cache_dir="$(mktemp -d)"
 
     run bash -c "cd tools && go generate pkg/tridentgrpc/grpc.go"
     run make \
@@ -156,6 +161,7 @@ main() {
         --keep-duplicates
         -v
         -o junit_logging=all
+        -o "cache_dir=$pytest_cache_dir"
         --junitxml "$JUNIT_XML"
         --build-output "$build_output"
         --functional-base-image "$functional_image"
