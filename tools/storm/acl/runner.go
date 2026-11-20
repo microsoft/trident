@@ -132,9 +132,9 @@ func (r *runner) upload(source, dest string) error {
 	})
 }
 
-// waitBoot reconnects to an SSH-ready guest whose boot ID differs from previous.
+// waitBoot reconnects to an SSH-ready guest whose boot ID differs from previousBootID.
 // NO_PREVIOUS_BOOT_ID accepts the initial boot.
-func (r *runner) waitBoot(previous string) (string, error) {
+func (r *runner) waitBoot(previousBootID string) (string, error) {
 	r.closeClient()
 	ctx, cancel := context.WithTimeout(context.Background(), r.args.BootTimeout)
 	defer cancel()
@@ -154,12 +154,12 @@ func (r *runner) waitBoot(previous string) (string, error) {
 		}
 		r.ip = *address
 	}
-	client, id, err := stormsshcheck.WaitForBoot(ctx, r.settings(), previous)
+	client, id, err := stormsshcheck.WaitForBoot(ctx, r.settings(), previousBootID)
 	if err != nil {
 		return "", err
 	}
 	r.client = client
-	_, err = fmt.Fprintf(r.log, "boot: %s (previous %q)\n", id, previous)
+	_, err = fmt.Fprintf(r.log, "boot: %s (previous %q)\n", id, previousBootID)
 	return id, err
 }
 

@@ -13,8 +13,8 @@ import (
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
 )
 
-// WaitForBoot returns an SSH-ready boot distinct from previous; the caller owns the client.
-func WaitForBoot(ctx context.Context, settings stormsshconfig.SshCliSettings, previous string) (*ssh.Client, string, error) {
+// WaitForBoot returns an SSH-ready boot distinct from previousBootID; the caller owns the client.
+func WaitForBoot(ctx context.Context, settings stormsshconfig.SshCliSettings, previousBootID string) (*ssh.Client, string, error) {
 	// boot pairs a ready connection with the boot identity observed through it.
 	type boot struct {
 		client *ssh.Client
@@ -37,14 +37,14 @@ func WaitForBoot(ctx context.Context, settings stormsshconfig.SshCliSettings, pr
 		}
 		id := strings.TrimSpace(out.Stdout)
 		parsed, err := uuid.Parse(id)
-		if err != nil || parsed == uuid.Nil || id == previous {
+		if err != nil || parsed == uuid.Nil || id == previousBootID {
 			_ = client.Close()
-			return nil, fmt.Errorf("boot %q is invalid or unchanged from %q", id, previous)
+			return nil, fmt.Errorf("boot %q is invalid or unchanged from %q", id, previousBootID)
 		}
 		return &boot{client: client, id: id}, nil
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("waiting for SSH boot after %q: %w", previous, err)
+		return nil, "", fmt.Errorf("waiting for SSH boot after %q: %w", previousBootID, err)
 	}
 	return result.client, result.id, nil
 }

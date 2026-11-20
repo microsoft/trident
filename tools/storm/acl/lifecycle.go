@@ -6,7 +6,7 @@ import "fmt"
 type guest interface {
 	trident(arguments, logName string, expectReboot bool) (string, error)
 	check(phase, slot string) error
-	waitBoot(string) (string, error)
+	waitBoot(previousBootID string) (string, error)
 	reboot() error
 }
 
