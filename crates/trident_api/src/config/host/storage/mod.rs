@@ -776,6 +776,7 @@ mod tests {
             name: "root".into(),
             data_device_id: "root-a".into(),
             hash_device_id: "root-a-verity".into(),
+            hash_signature_device_id: None,
             ..Default::default()
         }];
         storage.filesystems.push(FileSystem {
@@ -2775,6 +2776,7 @@ mod tests {
                 name: "usr".into(),
                 data_device_id: "some-data-device".into(),
                 hash_device_id: "some-hash-device".into(),
+                hash_signature_device_id: None,
                 ..Default::default()
             })
             .expect("Failed to validate usr verity device");
@@ -2787,6 +2789,7 @@ mod tests {
                     name: "usr-foo".into(),
                     data_device_id: "some-data-device".into(),
                     hash_device_id: "some-hash-device".into(),
+                    hash_signature_device_id: None,
                     ..Default::default()
                 })
                 .unwrap_err(),
