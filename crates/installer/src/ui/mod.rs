@@ -37,11 +37,15 @@ use crate::{
 
 mod model;
 mod output;
+#[cfg(feature = "ui-preview")]
+mod preview;
 mod render;
 mod theme;
 
 use model::{Action, LogSource, Model, Screen};
 pub(super) use output::Output;
+#[cfg(feature = "ui-preview")]
+pub(super) use preview::{run as run_preview, Scenario as PreviewScenario};
 use theme::VERBOSITY_LEVELS;
 
 /// Refresh often enough to show progress without busy-polling the terminal.

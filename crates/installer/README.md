@@ -7,6 +7,31 @@ crate, not a partitioning engine.
 See the [Installer reference](../../docs/Reference/Installer.md) for the
 source-selection and screen flows.
 
+## Local UI preview (development only)
+
+Run the current UI without root, a Trident daemon, or installation media:
+
+```console
+cargo run -p installer --features ui-preview -- --ui-preview success
+cargo run -p installer --features ui-preview -- --ui-preview error
+```
+
+The preview shares the real screen model, renderer, log filters, and keyboard
+navigation. It replays representative Trident events; source entry restarts
+the sample instead of fetching the URL. Shell, reboot, and shutdown only show
+notices. Automatic reboot is disabled. `Q` exits; close any URL entry or
+verbosity picker with Esc first.
+
+To inspect previously hidden logs, select Info with `V`, `4`, Enter, then
+select Trace with `V`, `6`, Enter and scroll back with Page Up. Records are
+retained independently of the visible filter.
+
+The sample uses excerpts from a disposable QEMU StreamDisk run, with version,
+hash, and device identifiers omitted. Added Trace records follow Trident's
+command-log format; the error scenario supplies a representative network
+configuration failure. This exercises the UI, not gRPC transport or servicing.
+The `ui-preview` feature is off by default and is not enabled by RPM builds.
+
 ## Configuration
 
 Read `/etc/trident/installer.toml` or the path supplied with `--config`.
