@@ -40,10 +40,9 @@ mod output;
 mod render;
 mod theme;
 
-use model::{display_text, log_visible, Action, LogSource, Model, Screen};
+use model::{Action, LogSource, Model, Screen};
 pub(super) use output::Output;
-use render::{render, title};
-use theme::{vt_rgb_palette, VERBOSITY_LEVELS};
+use theme::VERBOSITY_LEVELS;
 
 /// Refresh often enough to show progress without busy-polling the terminal.
 const FRAME_INTERVAL: Duration = Duration::from_millis(100);
@@ -79,7 +78,7 @@ impl Display {
         terminal::enable_raw_mode()?;
         self.active = true;
         if self.linux_vt {
-            installer_terminal::set_vt_palette(&mut io::stdout(), &vt_rgb_palette()?)?;
+            installer_terminal::set_vt_palette(&mut io::stdout(), &theme::vt_rgb_palette()?)?;
         }
         execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
         self.terminal.clear()?;
@@ -193,9 +192,9 @@ fn redact_event(mut event: Event) -> Event {
     event
 }
 
-/// Runs the installer event loop, starting autorun and offering recovery on a terminal.
-/// Noninteractive runs return after work completes and fail if recovery needs user input;
-/// `plain` selects text output instead of the full-screen display.
+/// Starts autorun and handles worker events, recovery input and caller-managed power actions.
+/// `plain` disables full-screen drawing, not servicing. Without an interactive terminal,
+/// failures return an error instead of offering recovery; servicing may outlive a disconnected UI.
 pub(super) async fn run(
     config_path: PathBuf,
     plain: bool,
@@ -238,7 +237,10 @@ pub(super) async fn run(
             output.record(&event)?;
             let entry = model.event(event);
             output.announce(&entry, model.serial_verbosity);
-            if display.is_none() && shell.is_none() && log_visible(entry.level, model.verbosity) {
+            if display.is_none()
+                && shell.is_none()
+                && model::log_visible(entry.level, model.verbosity)
+            {
                 println!("{}", entry.plain());
             }
         }
@@ -312,7 +314,9 @@ pub(super) async fn run(
             }
         } else {
             if let Some(display) = &mut display {
-                display.terminal.draw(|frame| render(frame, &model))?;
+                display
+                    .terminal
+                    .draw(|frame| render::render(frame, &model))?;
             } else if printed_screen != Some((model.screen, model.verbosity_open)) {
                 if model.verbosity_open {
                     println!("\nLOG VERBOSITY (display only)");
@@ -323,11 +327,11 @@ pub(super) async fn run(
                 } else {
                     println!(
                         "\n{}\n{}",
-                        title(model.screen),
-                        display_text(&model.details)
+                        render::title(model.screen),
+                        model::display_text(&model.details)
                     );
                     for (index, choice) in model.choices().iter().enumerate() {
-                        println!("{}: {choice}", index + 1);
+                        println!("{}: {}", index + 1, choice.label());
                     }
                     if matches!(model.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
                         println!("Enter an http:// or https:// URL, then press Enter");
@@ -455,6 +459,11 @@ mod tests {
         RemoteErrorCategory, ServicingKind,
     };
 
+    use super::model::MenuItem;
+
+    /// Bounds scheduler coordination so a broken worker test cannot hang the suite.
+    const WORKER_TEST_TIMEOUT: Duration = Duration::from_secs(1);
+
     /// Creates an unmodified Enter press for navigation tests.
     fn enter() -> KeyEvent {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
@@ -580,7 +589,7 @@ mod tests {
             .unwrap();
             Ok::<(), Error>(())
         });
-        time::timeout(Duration::from_secs(1), async {
+        time::timeout(WORKER_TEST_TIMEOUT, async {
             while !worker.is_finished() {
                 task::yield_now().await;
             }
@@ -590,7 +599,7 @@ mod tests {
 
         let mut model = Model::new();
         model.screen = Screen::Recovery;
-        model.selected = 5;
+        model.select(MenuItem::Shutdown);
         assert!(!rx.is_empty());
         assert_eq!(
             model.key(enter(), !(rx.is_empty() && worker.is_finished())),
@@ -623,7 +632,7 @@ mod tests {
         for _ in 0..EVENT_CAPACITY {
             rx.recv().await.unwrap();
         }
-        time::timeout(Duration::from_secs(1), async {
+        time::timeout(WORKER_TEST_TIMEOUT, async {
             while !worker.is_finished() {
                 task::yield_now().await;
             }
@@ -633,7 +642,7 @@ mod tests {
 
         let mut model = Model::new();
         model.screen = Screen::Recovery;
-        model.selected = 5;
+        model.select(MenuItem::Shutdown);
         assert!(!rx.is_empty());
         assert_eq!(
             model.key(enter(), !(rx.is_empty() && worker.is_finished())),
@@ -642,8 +651,9 @@ mod tests {
         model.event(rx.recv().await.unwrap());
         assert!(model.uncertain);
         model.screen = Screen::Recovery;
-        model.selected = 5;
-        assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
+        assert!(!model.choices().contains(&MenuItem::Shutdown));
+        model.selected = model.choices().len();
+        assert!(model.key(enter(), false).is_none());
         worker.await.unwrap().unwrap();
     }
 
@@ -664,7 +674,7 @@ mod tests {
         });
         let previously_empty = rx.is_empty();
         release.send(()).unwrap();
-        time::timeout(Duration::from_secs(1), async {
+        time::timeout(WORKER_TEST_TIMEOUT, async {
             while !worker.is_finished() {
                 task::yield_now().await;
             }
@@ -676,7 +686,7 @@ mod tests {
 
         let mut model = Model::new();
         model.screen = Screen::Recovery;
-        model.selected = 5;
+        model.select(MenuItem::Shutdown);
         assert_eq!(
             model.key(enter(), !(worker.is_finished() && rx.is_empty())),
             Some(Action::BlockedPower)
@@ -684,8 +694,9 @@ mod tests {
         model.event(rx.recv().await.unwrap());
         assert!(model.uncertain);
         model.screen = Screen::Recovery;
-        model.selected = 5;
-        assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
+        assert!(!model.choices().contains(&MenuItem::Shutdown));
+        model.selected = model.choices().len();
+        assert!(model.key(enter(), false).is_none());
         worker.await.unwrap().unwrap();
     }
 }

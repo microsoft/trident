@@ -12,6 +12,7 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
 };
+
 use trident_client::{LogLevel, ServicingEvent};
 
 use crate::{
@@ -21,7 +22,7 @@ use crate::{
 };
 
 use super::theme::{
-    theme_color, COLOR_DEBUG, COLOR_ERROR, COLOR_INFO, COLOR_INST, COLOR_SUCCESS, COLOR_TRACE,
+    self, COLOR_DEBUG, COLOR_ERROR, COLOR_INFO, COLOR_INST, COLOR_SUCCESS, COLOR_TRACE,
     COLOR_TRIDENT, COLOR_WARN, VERBOSITY_LEVELS,
 };
 
@@ -31,6 +32,12 @@ const REBOOT_DELAY: Duration = Duration::from_secs(5);
 const LOG_CAPACITY: usize = 500;
 /// Bound ordinary display records; final results retain their full diagnostics.
 const DISPLAY_LOG_CHARACTERS: usize = 4096;
+/// Retain all severities, but start the display at Debug.
+const DEFAULT_DISPLAY_VERBOSITY: LevelFilter = LevelFilter::Debug;
+/// A single wrapped row avoids skipping diagnostics in short log panels.
+const LOG_SCROLL_ROWS: u16 = 1;
+/// Elapsed prefixes show total minutes rather than wrapping after an hour.
+const SECONDS_PER_MINUTE: u64 = 60;
 
 /// Screen state used by both Ratatui and the plain-text fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +51,35 @@ pub(super) enum Screen {
     HostConfigUrl,
     /// Limited actions while an operation may still be writing.
     Menu,
+}
+
+/// A menu choice, independent of its row number or the runtime action it requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum MenuItem {
+    Retry,
+    Shell,
+    StreamUrl,
+    HostConfigUrl,
+    Reboot,
+    Shutdown,
+    ReturnToInstallation,
+    ContinueToRecovery,
+}
+
+impl MenuItem {
+    /// Text shared by the full-screen and plain menus; never used to dispatch actions.
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::Retry => "Retry",
+            Self::Shell => "Shell",
+            Self::StreamUrl => "Stream COSI from URL",
+            Self::HostConfigUrl => "Install from Host Configuration URL",
+            Self::Reboot => "Reboot",
+            Self::Shutdown => "Shutdown",
+            Self::ReturnToInstallation => "Return to installation",
+            Self::ContinueToRecovery => "Continue to recovery",
+        }
+    }
 }
 
 /// Distinguishes local installer messages from records sent by Trident.
@@ -64,7 +100,7 @@ impl LogSource {
 
     /// Uses the source's theme color or its Linux VT equivalent.
     fn color(self, linux_vt: bool) -> Color {
-        theme_color(
+        theme::theme_color(
             match self {
                 Self::Inst => COLOR_INST,
                 Self::Trident => COLOR_TRIDENT,
@@ -93,10 +129,14 @@ impl LogEntry {
     /// Formats elapsed time as a minutes-and-seconds prefix without wrapping at an hour.
     fn prefix(&self) -> String {
         let seconds = self.elapsed.as_secs();
-        format!("{:02}:{:02} [", seconds / 60, seconds % 60)
+        format!(
+            "{:02}:{:02} [",
+            seconds / SECONDS_PER_MINUTE,
+            seconds % SECONDS_PER_MINUTE
+        )
     }
 
-    /// Prefixes each line of a diagnostic for plain output and serial mirrors.
+    /// Sanitizes control characters and prefixes every line for plain and serial output.
     pub(super) fn plain(&self) -> String {
         let prefix = format!(
             "{}{}:{}] ",
@@ -112,14 +152,15 @@ impl LogEntry {
     }
 
     /// Preserves message lines and indentation, prefixing only the first line.
+    /// `linux_vt` selects ANSI palette roles instead of RGB; result colors override severity.
     pub(super) fn styled(&self, linux_vt: bool) -> Text<'_> {
-        let level = Style::default().fg(theme_color(
+        let level = Style::default().fg(theme::theme_color(
             self.result_color.unwrap_or(log_color(self.level)),
             linux_vt,
         ));
         let surrounding = self
             .result_color
-            .map(|color| Style::default().fg(theme_color(color, linux_vt)))
+            .map(|color| Style::default().fg(theme::theme_color(color, linux_vt)))
             .unwrap_or_default();
         Text::from(
             self.message
@@ -203,10 +244,10 @@ impl Model {
             activity: "Preparing installer".into(),
             details: String::new(),
             logs: VecDeque::new(),
-            verbosity: LevelFilter::Debug,
+            verbosity: DEFAULT_DISPLAY_VERBOSITY,
             serial_verbosity: SerialVerbosity::Debug.filter(),
             verbosity_open: false,
-            verbosity_selected: 4,
+            verbosity_selected: verbosity_index(DEFAULT_DISPLAY_VERBOSITY),
             selected: 0,
             scroll: 0,
             url: String::new(),
@@ -231,7 +272,8 @@ impl Model {
         self.result_log(LogLevel::Error, format!("FAILURE: {details}"), COLOR_ERROR)
     }
 
-    /// Retains a bounded display copy while returning the full diagnostic.
+    /// Retains a bounded, sanitized display copy and returns the unshortened record.
+    /// Display filtering does not affect retention; final results bypass this size limit.
     pub(super) fn log(&mut self, source: LogSource, level: LogLevel, message: String) -> LogEntry {
         let entry = LogEntry {
             elapsed: self.started.elapsed(),
@@ -269,7 +311,9 @@ impl Model {
         entry
     }
 
-    /// Applies a worker event to the current screen and returns its diagnostic record.
+    /// Applies one worker event and returns its diagnostic for plain and serial output.
+    /// Only confirmed completion or idleness clears an uncertain servicing outcome.
+    /// Unrecognized daemon events or completion kinds fail with an uncertain outcome.
     pub(super) fn event(&mut self, event: Event) -> LogEntry {
         match event {
             Event::InstallerLog { level, message } => self.log(
@@ -357,24 +401,25 @@ impl Model {
         }
     }
 
-    /// Lists actions in keyboard-selection order for the current screen.
-    pub(super) fn choices(&self) -> Vec<&'static str> {
+    /// Lists visible choices in keyboard order, excluding power actions while uncertain.
+    /// The order controls navigation only; actions are dispatched by the item enum.
+    pub(super) fn choices(&self) -> Vec<MenuItem> {
         match self.screen {
             Screen::Recovery => {
                 let mut actions = vec![
-                    "Retry",
-                    "Shell",
-                    "Stream COSI from URL",
-                    "Install from Host Configuration URL",
+                    MenuItem::Retry,
+                    MenuItem::Shell,
+                    MenuItem::StreamUrl,
+                    MenuItem::HostConfigUrl,
                 ];
                 if !self.uncertain {
-                    actions.extend(["Reboot", "Shutdown"]);
+                    actions.extend([MenuItem::Reboot, MenuItem::Shutdown]);
                 }
                 actions
             }
-            Screen::Success => vec!["Reboot", "Shell"],
-            Screen::Menu => vec!["Return to installation", "Shell"],
-            Screen::Error => vec!["Continue to recovery", "Shell"],
+            Screen::Success => vec![MenuItem::Reboot, MenuItem::Shell],
+            Screen::Menu => vec![MenuItem::ReturnToInstallation, MenuItem::Shell],
+            Screen::Error => vec![MenuItem::ContinueToRecovery, MenuItem::Shell],
             _ => Vec::new(),
         }
     }
@@ -389,7 +434,7 @@ impl Model {
 
     /// Updates navigation for a key press and returns an action only when one is requested.
     /// URL entry and the verbosity picker consume keys before screen-level shortcuts;
-    /// a running worker or uncertain outcome blocks power even on a stale screen.
+    /// a running worker or uncertain outcome blocks power. Hidden or stale selections do nothing.
     pub(super) fn key(&mut self, key: KeyEvent, worker_active: bool) -> Option<Action> {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return None;
@@ -470,20 +515,16 @@ impl Model {
             }
             KeyCode::Char('s') => return Some(Action::Shell),
             KeyCode::Char('v' | 'V') => {
-                self.verbosity_selected = VERBOSITY_LEVELS
-                    .iter()
-                    .position(|level| *level == self.verbosity)
-                    .expect("invariant: all log levels are present in the verbosity picker");
+                self.verbosity_selected = verbosity_index(self.verbosity);
                 self.verbosity_open = true;
                 return None;
             }
             KeyCode::PageUp => {
-                // Single rows keep short viewports from skipping diagnostic lines.
-                self.scroll = self.scroll.saturating_add(1);
+                self.scroll = self.scroll.saturating_add(LOG_SCROLL_ROWS);
                 return None;
             }
             KeyCode::PageDown => {
-                self.scroll = self.scroll.saturating_sub(1);
+                self.scroll = self.scroll.saturating_sub(LOG_SCROLL_ROWS);
                 return None;
             }
             KeyCode::Esc => {
@@ -505,34 +546,30 @@ impl Model {
             KeyCode::Up | KeyCode::BackTab => self.selected = (self.selected + count - 1) % count,
             KeyCode::Down | KeyCode::Tab => self.selected = (self.selected + 1) % count,
             KeyCode::Enter => {
-                let action = match (self.screen, self.selected) {
-                    (Screen::Recovery, 0) => Some(Action::Start(self.last_request.clone())),
-                    (Screen::Recovery, 1)
-                    | (Screen::Success, 1)
-                    | (Screen::Menu, 1)
-                    | (Screen::Error, 1) => Some(Action::Shell),
-                    (Screen::Recovery, 2) => {
+                let action = match self.choices().get(self.selected).copied()? {
+                    MenuItem::Retry => Some(Action::Start(self.last_request.clone())),
+                    MenuItem::Shell => Some(Action::Shell),
+                    MenuItem::StreamUrl => {
                         self.url.clear();
                         self.screen = Screen::StreamUrl;
                         None
                     }
-                    (Screen::Recovery, 3) => {
+                    MenuItem::HostConfigUrl => {
                         self.url.clear();
                         self.screen = Screen::HostConfigUrl;
                         None
                     }
-                    (Screen::Recovery, 4) | (Screen::Success, 0) => Some(Action::Reboot),
-                    (Screen::Recovery, 5) => Some(Action::Poweroff),
-                    (Screen::Menu, 0) => {
+                    MenuItem::Reboot => Some(Action::Reboot),
+                    MenuItem::Shutdown => Some(Action::Poweroff),
+                    MenuItem::ReturnToInstallation => {
                         self.screen = Screen::Progress;
                         None
                     }
-                    (Screen::Error, 0) => {
+                    MenuItem::ContinueToRecovery => {
                         self.screen = Screen::Recovery;
                         self.selected = 0;
                         None
                     }
-                    _ => None,
                 };
                 return if (worker_active || self.uncertain)
                     && matches!(action, Some(Action::Reboot | Action::Poweroff))
@@ -546,6 +583,24 @@ impl Model {
         }
         None
     }
+
+    /// Selects a visible item in tests, failing if the current screen does not offer it.
+    #[cfg(test)]
+    pub(super) fn select(&mut self, item: MenuItem) {
+        self.selected = self
+            .choices()
+            .iter()
+            .position(|choice| *choice == item)
+            .expect("test menu item must be visible");
+    }
+}
+
+/// Resolves picker position from the shared order; every LevelFilter must have an entry.
+fn verbosity_index(level: LevelFilter) -> usize {
+    VERBOSITY_LEVELS
+        .iter()
+        .position(|candidate| *candidate == level)
+        .expect("invariant: all log levels are present in the verbosity picker")
 }
 
 /// A request for the runtime to act; key handling itself never starts servicing.
@@ -568,7 +623,7 @@ pub(super) fn display_text(text: &str) -> String {
         .replace('\t', "    ")
 }
 
-/// Compares a Trident severity against the chosen display filter.
+/// Applies the display filter, treating unknown daemon severities as warnings.
 pub(super) fn log_visible(level: LogLevel, verbosity: LevelFilter) -> bool {
     let level = match level {
         LogLevel::Error => Level::Error,
@@ -676,14 +731,18 @@ mod tests {
             entry.plain(),
             "00:00 [INST:DEBUG] Loaded installer settings"
         );
-        assert_eq!(
-            entry.styled(false).lines[0].spans[1].style.fg,
-            Some(Color::Rgb(171, 186, 196))
-        );
-        assert_eq!(
-            entry.styled(false).lines[0].spans[3].style.fg,
-            Some(Color::Rgb(167, 180, 189))
-        );
+        let styled = entry.styled(false);
+        for (label, color) in [("INST", COLOR_INST), ("DEBUG", COLOR_DEBUG)] {
+            let span = styled
+                .lines
+                .first()
+                .unwrap()
+                .spans
+                .iter()
+                .find(|span| span.content == label)
+                .unwrap();
+            assert_eq!(span.style.fg, Some(color));
+        }
         assert_eq!(model.logs.len(), 1);
     }
 
@@ -770,9 +829,11 @@ mod tests {
         );
     }
 
+    /// Removing the details view must not make long failures lose their final cause.
     #[test]
     fn complete_failure_is_retained_beyond_the_normal_display_limit() {
-        let context = "    Failed to configure a network interface\n".repeat(200);
+        let context_line = "    Failed to configure a network interface\n";
+        let context = context_line.repeat(DISPLAY_LOG_CHARACTERS / context_line.len() + 1);
         let details = formatdoc! {"
             Installation failed
 
@@ -797,15 +858,15 @@ mod tests {
         model.fail("Complete diagnostic information".into(), false);
         assert!(model.key(enter(), false).is_none());
         assert_eq!(model.screen, Screen::Recovery);
-        model.selected = 1;
+        model.select(MenuItem::Shell);
         assert_eq!(model.key(enter(), false), Some(Action::Shell));
         assert_eq!(model.screen, Screen::Recovery);
         assert_eq!(model.details, "Complete diagnostic information");
         model.screen = Screen::Success;
-        model.selected = 1;
+        model.select(MenuItem::Shell);
         assert_eq!(model.key(enter(), false), Some(Action::Shell));
         assert_eq!(model.screen, Screen::Success);
-        model.selected = 0;
+        model.select(MenuItem::Reboot);
         assert_eq!(model.key(enter(), false), Some(Action::Reboot));
     }
 
@@ -820,13 +881,16 @@ mod tests {
         assert_eq!(model.screen, Screen::Menu);
 
         model.screen = Screen::Recovery;
-        for (index, action) in [(4, Action::Reboot), (5, Action::Poweroff)] {
-            model.selected = index;
+        for (item, action) in [
+            (MenuItem::Reboot, Action::Reboot),
+            (MenuItem::Shutdown, Action::Poweroff),
+        ] {
+            model.select(item);
             assert_eq!(model.key(enter(), true), Some(Action::BlockedPower));
             assert_eq!(model.key(enter(), false), Some(action));
         }
         model.screen = Screen::Success;
-        model.selected = 0;
+        model.select(MenuItem::Reboot);
         assert_eq!(model.key(enter(), true), Some(Action::BlockedPower));
     }
 
@@ -839,19 +903,21 @@ mod tests {
             uncertain: true,
         });
         model.screen = Screen::Recovery;
-        assert!(!model.choices().contains(&"Reboot"));
-        assert!(!model.choices().contains(&"Shutdown"));
-        for index in [4, 5] {
-            model.selected = index;
-            assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
-        }
+        assert!(!model.choices().contains(&MenuItem::Reboot));
+        assert!(!model.choices().contains(&MenuItem::Shutdown));
+        // A selection left beyond the shortened menu cannot dispatch a hidden power action.
+        model.selected = model.choices().len();
+        assert!(model.key(enter(), false).is_none());
 
         model.event(Event::IdleConfirmed);
         assert!(!model.uncertain);
-        assert!(model.choices().contains(&"Reboot"));
-        assert!(model.choices().contains(&"Shutdown"));
-        for (index, action) in [(4, Action::Reboot), (5, Action::Poweroff)] {
-            model.selected = index;
+        assert!(model.choices().contains(&MenuItem::Reboot));
+        assert!(model.choices().contains(&MenuItem::Shutdown));
+        for (item, action) in [
+            (MenuItem::Reboot, Action::Reboot),
+            (MenuItem::Shutdown, Action::Poweroff),
+        ] {
+            model.select(item);
             assert_eq!(model.key(enter(), false), Some(action));
         }
 
@@ -870,6 +936,7 @@ mod tests {
         assert_eq!(model.key(enter(), false), Some(Action::Reboot));
     }
 
+    /// Retry keeps the last source and carries uncertainty through to the next worker.
     #[test]
     fn recovery_retry_preserves_autorun_and_remote_sources() {
         let url = source::remote_url("https://example.test/image.cosi?sig=secret").unwrap();

@@ -14,9 +14,9 @@ use ratatui::{
 use crate::APPLICATION_NAME;
 
 use super::{
-    model::{display_text, log_visible, Model, Screen},
+    model::{self, Model, Screen},
     theme::{
-        theme_color, COLOR_BACKGROUND, COLOR_BRAND, COLOR_ERROR, COLOR_FRAME, COLOR_SUCCESS,
+        self, COLOR_BACKGROUND, COLOR_BRAND, COLOR_ERROR, COLOR_FRAME, COLOR_SUCCESS,
         VERBOSITY_LEVELS,
     },
 };
@@ -72,8 +72,8 @@ fn block(title: &str, linux_vt: bool) -> Block<'_> {
     Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
-        .style(Style::default().bg(theme_color(COLOR_BACKGROUND, linux_vt)))
-        .border_style(Style::default().fg(theme_color(COLOR_FRAME, linux_vt)))
+        .style(Style::default().bg(theme::theme_color(COLOR_BACKGROUND, linux_vt)))
+        .border_style(Style::default().fg(theme::theme_color(COLOR_FRAME, linux_vt)))
         .title(title)
 }
 
@@ -98,7 +98,7 @@ fn header_height(viewport: Rect) -> u16 {
 /// Draws the wordmark when space permits, plus the installer status.
 fn render_header(frame: &mut Frame, area: Rect, state: &str, state_color: Color, linux_vt: bool) {
     let brand = Style::default()
-        .fg(theme_color(COLOR_BRAND, linux_vt))
+        .fg(theme::theme_color(COLOR_BRAND, linux_vt))
         .add_modifier(Modifier::BOLD);
     let mut lines = Vec::new();
     if area.height >= WORDMARK_HEADER_HEIGHT {
@@ -114,7 +114,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &str, state_color: Color,
     lines.push(Line::from(Span::styled(APPLICATION_NAME, brand)));
     lines.push(Line::from(Span::styled(
         state,
-        Style::default().fg(theme_color(state_color, linux_vt)),
+        Style::default().fg(theme::theme_color(state_color, linux_vt)),
     )));
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
 }
@@ -135,14 +135,16 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
     if header_lines > 0 {
         lines.push(Line::from(Span::styled(
             model.activity.clone(),
-            Style::default().fg(theme_color(COLOR_BRAND, model.linux_vt)),
+            Style::default().fg(theme::theme_color(COLOR_BRAND, model.linux_vt)),
         )));
         lines.push(Line::default());
     }
     let mut logs = model
         .logs
         .iter()
-        .filter(|entry| entry.result_color.is_some() || log_visible(entry.level, model.verbosity))
+        .filter(|entry| {
+            entry.result_color.is_some() || model::log_visible(entry.level, model.verbosity)
+        })
         .collect::<Vec<_>>();
     if matches!(model.screen, Screen::Success | Screen::Error) {
         if let Some(index) = logs.iter().rposition(|entry| entry.result_color.is_some()) {
@@ -157,11 +159,11 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
-        .style(Style::default().bg(theme_color(COLOR_BACKGROUND, model.linux_vt)))
-        .border_style(Style::default().fg(theme_color(color, model.linux_vt)))
+        .style(Style::default().bg(theme::theme_color(COLOR_BACKGROUND, model.linux_vt)))
+        .border_style(Style::default().fg(theme::theme_color(color, model.linux_vt)))
         .title(Span::styled(
             title,
-            Style::default().fg(theme_color(color, model.linux_vt)),
+            Style::default().fg(theme::theme_color(color, model.linux_vt)),
         ));
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     let visible_rows = usize::from(area.height.saturating_sub(2));
@@ -175,10 +177,12 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
         .scroll((u16::try_from(offset).unwrap_or(u16::MAX), 0))
 }
 
-/// Draws the current screen, actions, log controls, and any pending reboot countdown.
+/// Draws the current screen without changing its state or performing runtime actions.
+/// Compact headers preserve room for full errors and every action on small terminals.
 pub(super) fn render(frame: &mut Frame, model: &Model) {
     frame.render_widget(
-        Block::default().style(Style::default().bg(theme_color(COLOR_BACKGROUND, model.linux_vt))),
+        Block::default()
+            .style(Style::default().bg(theme::theme_color(COLOR_BACKGROUND, model.linux_vt))),
         frame.area(),
     );
     let choices = model.choices();
@@ -225,18 +229,18 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         let operation =
             Layout::horizontal([Constraint::Min(0), Constraint::Length(21)]).split(areas[1]);
         frame.render_widget(
-            Paragraph::new(display_text(&model.source)).wrap(Wrap { trim: false }),
+            Paragraph::new(model::display_text(&model.source)).wrap(Wrap { trim: false }),
             operation[0],
         );
         frame.render_widget(
             Paragraph::new(format!("Logs: {} [V]", model.verbosity))
                 .alignment(Alignment::Right)
-                .style(Style::default().fg(theme_color(COLOR_BRAND, model.linux_vt))),
+                .style(Style::default().fg(theme::theme_color(COLOR_BRAND, model.linux_vt))),
             operation[1],
         );
     } else {
         frame.render_widget(
-            Paragraph::new(display_text(&model.source)).wrap(Wrap { trim: false }),
+            Paragraph::new(model::display_text(&model.source)).wrap(Wrap { trim: false }),
             areas[1],
         );
     }
@@ -244,11 +248,11 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         _ if model.showing_logs() => log_panel(model, areas[2]),
         Screen::StreamUrl | Screen::HostConfigUrl => Paragraph::new(format!(
             "Enter an http:// or https:// URL:\n\n{}\n\nEnter: start   Esc: back",
-            display_text(&model.url)
+            model::display_text(&model.url)
         ))
         .block(block("Remote source", model.linux_vt))
         .wrap(Wrap { trim: false }),
-        _ => Paragraph::new(display_text(&model.details))
+        _ => Paragraph::new(model::display_text(&model.details))
             .block(block("Result", model.linux_vt))
             .wrap(Wrap { trim: false }),
     };
@@ -258,12 +262,13 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         .enumerate()
         .map(|(index, choice)| {
             ListItem::new(format!(
-                "{} {choice}",
-                if index == model.selected { ">" } else { " " }
+                "{} {}",
+                if index == model.selected { ">" } else { " " },
+                choice.label()
             ))
             .style(if index == model.selected {
                 Style::default()
-                    .fg(theme_color(COLOR_BRAND, model.linux_vt))
+                    .fg(theme::theme_color(COLOR_BRAND, model.linux_vt))
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -290,7 +295,7 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
     };
     frame.render_widget(
         Paragraph::new(format!("{controls}\n{countdown}"))
-            .style(Style::default().fg(theme_color(COLOR_BRAND, model.linux_vt))),
+            .style(Style::default().fg(theme::theme_color(COLOR_BRAND, model.linux_vt))),
         areas[4],
     );
     if model.verbosity_open {
@@ -325,7 +330,7 @@ fn render_verbosity_picker(frame: &mut Frame, model: &Model) {
                 ),
                 if index == model.verbosity_selected {
                     Style::default()
-                        .fg(theme_color(COLOR_BRAND, model.linux_vt))
+                        .fg(theme::theme_color(COLOR_BRAND, model.linux_vt))
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
@@ -358,7 +363,7 @@ mod tests {
 
     use super::super::{
         model::LogSource,
-        theme::{vt_rgb_palette, COLOR_DEBUG, COLOR_INFO, COLOR_TRACE},
+        theme::{COLOR_DEBUG, COLOR_INFO, COLOR_TRACE},
     };
 
     /// The full-size header and background keep their intended colors and spacing.
@@ -436,15 +441,18 @@ mod tests {
     /// VT palette slots distinguish log severities without changing RGB-mode colors.
     #[test]
     fn linux_vt_palette_uses_distinct_slots_for_a1_log_levels() {
-        let entries = vt_rgb_palette().unwrap();
+        let entries = theme::vt_rgb_palette().unwrap();
         assert!(entries.contains(&(15, 229, 234, 236)));
         assert!(entries.contains(&(7, 167, 180, 189)));
         assert!(entries.contains(&(8, 99, 115, 129)));
-        assert_eq!(theme_color(COLOR_INFO, true), Color::White);
-        assert_eq!(theme_color(COLOR_DEBUG, true), Color::Gray);
-        assert_eq!(theme_color(COLOR_TRACE, true), Color::DarkGray);
-        assert_eq!(theme_color(COLOR_SUCCESS, true), Color::LightGreen);
-        assert_eq!(theme_color(COLOR_DEBUG, false), Color::Rgb(167, 180, 189));
+        assert_eq!(theme::theme_color(COLOR_INFO, true), Color::White);
+        assert_eq!(theme::theme_color(COLOR_DEBUG, true), Color::Gray);
+        assert_eq!(theme::theme_color(COLOR_TRACE, true), Color::DarkGray);
+        assert_eq!(theme::theme_color(COLOR_SUCCESS, true), Color::LightGreen);
+        assert_eq!(
+            theme::theme_color(COLOR_DEBUG, false),
+            Color::Rgb(167, 180, 189)
+        );
 
         let mut model = Model::new();
         model.linux_vt = true;
@@ -571,6 +579,9 @@ mod tests {
     /// Wrapped diagnostics and activity cannot hide the latest result at 80x24.
     #[test]
     fn wrapped_log_rows_keep_the_result_visible_and_scrollable() {
+        /// Five single-row presses move past the short result into earlier wrapped output.
+        const SCROLL_ROWS: usize = 5;
+
         let mut model = Model::new();
         model.log(
             LogSource::Trident,
@@ -600,12 +611,12 @@ mod tests {
             "{}",
             visible_text(&terminal)
         );
-        for _ in 0..5 {
+        for _ in 0..SCROLL_ROWS {
             model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
         }
         terminal.draw(|frame| render(frame, &model)).unwrap();
         assert!(!visible_text(&terminal).contains("SUCCESS: Installation"));
-        for _ in 0..5 {
+        for _ in 0..SCROLL_ROWS {
             model.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE), false);
         }
         terminal.draw(|frame| render(frame, &model)).unwrap();
@@ -665,8 +676,12 @@ mod tests {
         assert_eq!(model.screen, Screen::Recovery);
     }
 
+    /// A real-shaped error must remain readable without switching out of the log panel.
     #[test]
     fn error_chain_keeps_its_layout_in_the_scrollable_log_panel() {
+        /// Covers the complete sample even when wrapped in the narrowest test terminal.
+        const MAX_SCROLL_PRESSES: usize = 40;
+
         let details = indoc! {"
             Trident failed due to a servicing error
 
@@ -718,7 +733,7 @@ mod tests {
                 assert!(text.contains("Code: write-netplan-config"), "{text}");
             } else {
                 let mut found = [false; 3];
-                for _ in 0..40 {
+                for _ in 0..MAX_SCROLL_PRESSES {
                     let text = rows(&terminal).join("\n");
                     for (seen, marker) in
                         found
