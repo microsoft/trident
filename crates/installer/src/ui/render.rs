@@ -1,6 +1,6 @@
 //! Draws the Ratatui screens, their action lists and the scrollable log panel.
 
-use std::time::Instant;
+use std::{borrow::Cow, ops::Range, time::Instant};
 
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
+use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
 
 use crate::APPLICATION_NAME;
 
@@ -165,16 +166,108 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
             title,
             Style::default().fg(theme::theme_color(color, model.linux_vt)),
         ));
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
-    let visible_rows = usize::from(area.height.saturating_sub(2));
-    // Wrapped rows, not entry counts, determine whether the final result remains visible.
-    let total_rows = paragraph.line_count(area.width.saturating_sub(2).max(1));
-    let offset = total_rows
+    let rows = log_window(
+        &lines,
+        area.width.saturating_sub(2),
+        area.height.saturating_sub(2),
+        model.scroll,
+    );
+    // Paragraph only paints this prewrapped window; it never receives the full-history offset.
+    Paragraph::new(rows).block(block)
+}
+
+/// Wraps before windowing so neither accumulated history nor one long line needs u16 scrolling.
+/// `scroll` counts wrapped rows back from the end; overscroll returns the first viewport.
+fn log_window<'a>(lines: &[Line<'a>], width: u16, height: u16, scroll: usize) -> Vec<Line<'a>> {
+    if width == 0 || height == 0 {
+        return Vec::new();
+    }
+    // Greedy wrapping without inserted hyphens keeps each rendered row a slice of the source.
+    let columns = usize::from(width);
+    let options = Options::new(columns)
+        .wrap_algorithm(WrapAlgorithm::FirstFit)
+        .word_separator(WordSeparator::AsciiSpace)
+        .word_splitter(WordSplitter::NoHyphenation);
+    let row_counts = lines
+        .iter()
+        .map(|line| {
+            if line.width() <= columns {
+                1
+            } else {
+                textwrap::wrap(&line.to_string(), &options).len()
+            }
+        })
+        .collect::<Vec<_>>();
+    let visible_rows = usize::from(height);
+    // Clamp overscroll at the top; all offsets stay wide until only the viewport remains.
+    let mut skip = row_counts
+        .iter()
+        .sum::<usize>()
         .saturating_sub(visible_rows)
-        .saturating_sub(usize::from(model.scroll));
-    paragraph
-        .block(block)
-        .scroll((u16::try_from(offset).unwrap_or(u16::MAX), 0))
+        .saturating_sub(scroll);
+    let mut rows = Vec::with_capacity(visible_rows);
+    for (line, count) in lines.iter().zip(row_counts) {
+        if skip >= count {
+            skip -= count;
+            continue;
+        }
+        // Most historical lines fit already; copy only the handful inside the visible window.
+        if line.width() <= columns {
+            rows.push(line.clone());
+            if rows.len() == visible_rows {
+                return rows;
+            }
+            continue;
+        }
+        let text = line.to_string();
+        let mut position = 0;
+        for row in textwrap::wrap(&text, &options) {
+            let start = position
+                + text[position..]
+                    .find(row.as_ref())
+                    .expect("invariant: unhyphenated rows are source substrings");
+            position = start + row.len();
+            if skip > 0 {
+                skip -= 1;
+                continue;
+            }
+            rows.push(styled_slice(line, start..position));
+            if rows.len() == visible_rows {
+                return rows;
+            }
+        }
+    }
+    rows
+}
+
+/// Reapplies the original span colors to a wrapped row, whose byte boundaries come from textwrap.
+fn styled_slice<'a>(line: &Line<'a>, range: Range<usize>) -> Line<'a> {
+    let mut position = 0;
+    let spans = line
+        .spans
+        .iter()
+        .filter_map(|span| {
+            let span_start = position;
+            position += span.content.len();
+            let start = range.start.max(span_start);
+            let end = range.end.min(position);
+            if start >= end {
+                return None;
+            }
+            let range = start - span_start..end - span_start;
+            // Borrow log-message slices; copy only spans already owned by the formatted prefix.
+            let content = match &span.content {
+                Cow::Borrowed(text) => Cow::Borrowed(&text[range]),
+                Cow::Owned(text) => Cow::Owned(text[range].to_owned()),
+            };
+            Some(Span::styled(content, span.style))
+        })
+        .collect();
+    Line {
+        spans,
+        style: line.style,
+        alignment: line.alignment,
+    }
 }
 
 /// Draws the current screen without changing its state or performing runtime actions.
@@ -348,6 +441,8 @@ fn render_verbosity_picker(frame: &mut Frame, model: &Model) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::slice;
 
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use indoc::indoc;
@@ -754,6 +849,68 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Many short multiline records must not push the latest failure beyond the viewport API.
+    #[test]
+    fn newest_failure_remains_reachable_beyond_u16_rows() {
+        const HISTORY_RECORDS: usize = 499;
+        const LINES_PER_RECORD: usize = 150;
+
+        let mut model = Model::new();
+        for index in 0..HISTORY_RECORDS {
+            let first_line = if index == 0 { "oldest record\n" } else { "" };
+            model.log(
+                LogSource::Trident,
+                LogLevel::Info,
+                format!("{first_line}{}", "x\n".repeat(LINES_PER_RECORD)),
+            );
+        }
+        model.fail(
+            "latest failure\n    actionable underlying cause".into(),
+            false,
+        );
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let text = |terminal: &Terminal<TestBackend>| {
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+        };
+        terminal.draw(|frame| render(frame, &model)).unwrap();
+        assert!(text(&terminal).contains("FAILURE: latest failure"));
+        assert!(text(&terminal).contains("actionable underlying cause"));
+
+        model.scroll = usize::from(u16::MAX);
+        model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
+        assert!(model.scroll > usize::from(u16::MAX));
+        model.scroll = usize::MAX;
+        terminal.draw(|frame| render(frame, &model)).unwrap();
+        assert!(text(&terminal).contains("oldest record"));
+
+        model.scroll = 0;
+        terminal.draw(|frame| render(frame, &model)).unwrap();
+        assert!(text(&terminal).contains("FAILURE: latest failure"));
+    }
+
+    /// One untruncated result can itself wrap past u16 rows; UTF-8 and span colors must survive.
+    #[test]
+    fn a_single_line_can_wrap_past_u16_rows() {
+        let line = Line::from(vec![
+            Span::styled("é", Style::default().fg(COLOR_ERROR)),
+            Span::raw("x".repeat(usize::from(u16::MAX) * 2)),
+            Span::styled("界", Style::default().fg(COLOR_SUCCESS)),
+        ]);
+        let latest = log_window(slice::from_ref(&line), 2, 1, 0);
+        assert_eq!(latest[0].to_string(), "界");
+        assert_eq!(latest[0].spans[0].style.fg, Some(COLOR_SUCCESS));
+
+        let oldest = log_window(slice::from_ref(&line), 2, 1, usize::MAX);
+        assert!(oldest[0].to_string().starts_with('é'));
+        assert_eq!(oldest[0].spans[0].style.fg, Some(COLOR_ERROR));
     }
 
     /// Compact layouts retain the application heading and available actions.

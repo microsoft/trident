@@ -35,7 +35,7 @@ const DISPLAY_LOG_CHARACTERS: usize = 4096;
 /// Retain all severities, but start the display at Debug.
 const DEFAULT_DISPLAY_VERBOSITY: LevelFilter = LevelFilter::Debug;
 /// A single wrapped row avoids skipping diagnostics in short log panels.
-const LOG_SCROLL_ROWS: u16 = 1;
+const LOG_SCROLL_ROWS: usize = 1;
 /// Elapsed prefixes show total minutes rather than wrapping after an hour.
 const SECONDS_PER_MINUTE: u64 = 60;
 
@@ -217,7 +217,7 @@ pub(super) struct Model {
     /// Highlighted action on the current screen.
     pub(super) selected: usize,
     /// Wrapped log rows to scroll back from the latest record.
-    pub(super) scroll: u16,
+    pub(super) scroll: usize,
     /// Recovery URL under edit; it is validated before starting a request.
     pub(super) url: String,
     /// The daemon may still be writing; block power actions until idleness is confirmed.
