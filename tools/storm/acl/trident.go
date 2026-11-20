@@ -32,8 +32,8 @@ type ACLScenario struct {
 type scenarioArgs struct {
 	Variant          imageVariant  `help:"ACL image variant" enum:"standard,mshv" default:"standard"`
 	ArtifactsDir     string        `help:"Directory containing ACL base.qcow2, update.cosi and id_rsa" required:""`
-	OutputPath       string        `help:"Directory for evidence and private VM working disk" required:""`
-	VMName           string        `help:"Prefix for a uniquely named disposable QEMU VM" default:"acl"`
+	OutputPath       string        `help:"Directory for test evidence" required:""`
+	VMName           string        `help:"Name of the disposable QEMU VM" default:"acl"`
 	BootTimeout      time.Duration `help:"Maximum wait for each SSH-ready boot" default:"10m"`
 	OperationTimeout time.Duration `help:"Maximum duration of each deployment or guest operation" default:"30m"`
 }

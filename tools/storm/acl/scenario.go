@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/microsoft/storm"
 	qemu "tridenttools/storm/utils/vm/qemu"
 )
@@ -22,18 +21,15 @@ func collectAndSync(collect, sync func() error) error {
 	return errors.Join(collect(), sync())
 }
 
-func cleanupVMFiles(runDir string, successful bool) error {
-	names := []string{"base.qcow2"}
-	if successful {
-		names = append(names, "booted.qcow2")
+func cleanupVMFiles(artifactsDir string, successful bool) error {
+	if !successful {
+		return nil
 	}
-	var result error
-	for _, name := range names {
-		if err := os.Remove(filepath.Join(runDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
-			result = errors.Join(result, err)
-		}
+	err := os.Remove(filepath.Join(artifactsDir, "booted.qcow2"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
 	}
-	return result
+	return err
 }
 
 func (r *runner) evidence() error {
@@ -50,7 +46,7 @@ func (r *runner) evidence() error {
 		err = os.WriteFile(filepath.Join(r.args.OutputPath, "serial.log"), serial, 0600)
 	}
 	result = errors.Join(result, err)
-	destination, err := os.OpenFile(filepath.Join(r.args.OutputPath, "guest-evidence.tar.gz"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	destination, err := os.OpenFile(filepath.Join(r.args.OutputPath, "guest-evidence.tar.gz"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
 		return errors.Join(result, err)
 	}
@@ -189,7 +185,7 @@ func (s *ACLScenario) finish() error {
 	r.closeClient()
 	cleanupErr := r.qemu.CleanupQemuVM(r.vmName)
 	if cleanupErr == nil {
-		cleanupErr = cleanupVMFiles(r.args.OutputPath, s.completed && s.failure == nil)
+		cleanupErr = cleanupVMFiles(r.args.ArtifactsDir, s.completed && s.failure == nil)
 	}
 	s.recordFailure(cleanupErr)
 	summary := struct {
@@ -221,9 +217,6 @@ func (s *ACLScenario) deploy() error {
 	if err != nil {
 		return err
 	}
-	if s.args.OutputPath == s.args.ArtifactsDir {
-		return errors.New("output path must differ from immutable artifacts directory")
-	}
 	info, err := readArtifacts(s.args.ArtifactsDir, s.args.Variant)
 	if err != nil {
 		return err
@@ -231,31 +224,21 @@ func (s *ACLScenario) deploy() error {
 	if err := os.MkdirAll(s.args.OutputPath, 0755); err != nil {
 		return err
 	}
-	runDir := filepath.Join(s.args.OutputPath, "run-"+uuid.NewString())
-	if err := os.Mkdir(runDir, 0755); err != nil {
-		return err
-	}
-	s.args.OutputPath = runDir
-	log, err := os.OpenFile(filepath.Join(runDir, "controller.log"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	log, err := os.OpenFile(filepath.Join(s.args.OutputPath, "controller.log"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
-	r := &runner{args: s.args, vmName: s.args.VMName + "-" + uuid.NewString(), log: log, snapshots: make(map[string]snapshot)}
-	r.qemu = qemu.QemuConfig{NestedVirtualization: s.args.Variant == variantMSHV, SecureBoot: false, SerialLog: filepath.Join(runDir, "serial-console.log"), ImagePattern: `^base\.qcow2$`}
+	r := &runner{args: s.args, vmName: s.args.VMName, log: log, snapshots: make(map[string]snapshot)}
+	r.qemu = qemu.QemuConfig{NestedVirtualization: s.args.Variant == variantMSHV, SecureBoot: false, SerialLog: filepath.Join(s.args.OutputPath, "serial-console.log"), ImagePattern: `^base\.qcow2$`}
 	if s.args.Variant == variantMSHV {
 		r.qemu.MemoryMiB = 16 * 1024
 		r.qemu.VCPUs = 4
 	}
 	s.runner = r
 	s.lifecycle = lifecycle{g: r, info: info}
-	// The QEMU helper copies beside its source; a private symlink keeps build inputs
-	// immutable and isolates concurrent runs.
-	if err := os.Symlink(filepath.Join(s.args.ArtifactsDir, "base.qcow2"), filepath.Join(runDir, "base.qcow2")); err != nil {
-		return err
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.args.OperationTimeout)
 	defer cancel()
-	if err := r.qemu.DeployQemuVMWithoutWaiting(ctx, r.vmName, runDir); err != nil {
+	if err := r.qemu.DeployQemuVMWithoutWaiting(ctx, r.vmName, s.args.ArtifactsDir); err != nil {
 		return err
 	}
 	if _, err := r.waitBoot(""); err != nil {
@@ -264,7 +247,7 @@ func (s *ACLScenario) deploy() error {
 	if _, err := r.command("mkdir -p " + guestDir); err != nil {
 		return err
 	}
-	config := filepath.Join(runDir, "update.yaml")
+	config := filepath.Join(s.args.OutputPath, "update.yaml")
 	if err := os.WriteFile(config, []byte(updateConfig()), 0600); err != nil {
 		return err
 	}

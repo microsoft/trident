@@ -125,7 +125,11 @@ The private key must remain restricted to the test artifact.
 Results are `acl-standard-results` and `acl-mshv-results`. Each run preserves
 the controller log, serial console, command output and snapshots,
 plus `result.json` and `guest-evidence.tar.gz`. Failed VM working
-disks are retained after VM cleanup; immutable input images are not modified.
+disks are retained after VM cleanup; input images are not modified.
+QEMU creates `booted.qcow2` in the artifacts directory; the scenario removes it
+after a successful run. Evidence is written directly to `--output-path`, and the VM
+uses `--vm-name` without a generated suffix. Runs must not share a VM name,
+artifacts directory or output path concurrently.
 
 ## Validation limits
 
