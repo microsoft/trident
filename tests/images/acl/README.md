@@ -86,6 +86,8 @@ for building and running a servicing pair.
 IC directly creates each COSI, including COSI 1.3 metadata with bootloader type
 `efitreeloader-mshv-systemd-boot` for MSHV. The pinned revision includes native
 MSHV boot-chain detection; no metadata rewriting or archive repacking is needed.
+The MSHV recipe installs `rpm` so IC can query the package database; ACL-T
+otherwise provides `tdnf` and RPM libraries but no `rpm` command.
 Publication copies the QCOW2, COSI and SSH key to `base.qcow2`, `update.cosi`
 and `id_rsa` in the artifact directory. The private key is restricted to mode 0600.
 

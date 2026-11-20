@@ -43,6 +43,8 @@ os:
       - mshv
       - mshv-bootloader-lx
       - efitreeloader
+      # IC needs rpm to identify the installed MSHV boot chain in COSI metadata.
+      - rpm
       # lxhvloader is incompatible with shim 16.1.
       - shim-15.8-6.azl3
       - sudo
