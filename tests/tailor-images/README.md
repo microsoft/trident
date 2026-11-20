@@ -9,7 +9,7 @@ for now and is removed in a follow-up cleanup PR.
 Use the in-tree tailor binary via Cargo:
 
 ```bash
-cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   matrix trident-testimage --format json
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   matrix trident-installer --format json
 ```
 
 Build examples:
@@ -20,6 +20,9 @@ cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-i
 
 # trident-testimage-arm64
 cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-testimage -s arch=arm64 --output-dir ./artifacts
+
+# trident-direct-streaming-installer-arm64
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-installer -s arch=arm64 -s variant=direct-streaming --output-dir ./artifacts
 ```
 
 ## Base images
@@ -45,5 +48,7 @@ remote source.
 
 The current families are:
 
+- `azl-installer`
 - `trident-functest`
+- `trident-installer`
 - `trident-testimage`
