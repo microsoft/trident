@@ -1,8 +1,9 @@
 # Test images with tailor
 
 `tests/tailor-images/` is a [tailor](../../tools/tailor/README.md) workspace.
-It replaces the legacy `testimages.py` / `builder/` flow, which runs alongside it
-for now and is removed in a follow-up cleanup PR.
+It replaces the legacy `testimages.py` / `builder/` flow -- no Make target or
+pipeline invokes it anymore, though its files remain on disk until a follow-up
+cleanup PR removes them.
 
 ## Build from the repo root
 
@@ -15,6 +16,11 @@ cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-i
 Build examples:
 
 ```bash
+# Several image families declare an optional dev-RPM-override source
+# (artifacts/rpm-overrides); tailor validates it eagerly, so create the
+# (possibly empty) directory once before building any of them directly:
+mkdir -p artifacts/rpm-overrides
+
 # trident-testimage
 cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-testimage -s arch=amd64 --output-dir ./artifacts
 
@@ -55,7 +61,15 @@ The workspace declares read-only mounts for these inputs, and the image lists
 them in `extraDependencies` so changes invalidate Tailor's build cache. Do not
 copy these assets into the image workspace.
 
-## Image families
+## Legacy name mapping
+
+Tailor publishes every cell under its slug (`<image>_<axis values>_<format>`),
+not a legacy filename. Pipelines and Make targets still accept the historical
+image names, so the mapping from legacy name to slug is declared explicitly:
+the Makefile's `declare_tailor_target` macro (`targets.mk`) and the pipeline's
+`build-image-template.yml` each name the exact slug they expect and rename it
+to the legacy path after the build (plus clone-suffix and raw-to-`.cosi`
+handling where needed).
 
 The current families are:
 

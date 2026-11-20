@@ -10,7 +10,7 @@ Servicing tests validate multi-update workflows on pre-built VM images using
 from a QCOW2 image that already has Trident and an OS installed, then run
 repeated A/B updates with optional rollback testing.
 
-The VM images are defined in `tests/images/trident-vm-testimage/` and built
+The VM images are defined in `tests/tailor-images/trident-vm-testimage/` and built
 with Image Customizer from a `qemu_guest` base image downloaded from MCR.
 
 ## VM Image Types
@@ -19,25 +19,26 @@ The servicing scenario expects a QCOW2 image matching the pattern
 `trident-vm-*-testimage.qcow2` in the artifacts directory. The pipeline-tested
 image types are:
 
-| Image | Bootloader | Integrity | UKI | Config File |
+| Image | Bootloader | Integrity | UKI | Config Files |
 |-------|-----------|-----------|-----|-------------|
-| `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | `updateimg-grub-verity.yaml` |
-| `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | `baseimg-usr-verity.yaml` |
+| `trident-vm-grub-verity-testimage` | grub2 | Root verity | No | `by-scenario/grub-verity-base.yaml` (base), `by-scenario/grub-verity.yaml` (update) |
+| `trident-vm-usr-verity-testimage` | systemd-boot | `/usr` verity | Yes | `by-scenario/usr-verity.yaml` |
 
-All image configs live under `tests/images/trident-vm-testimage/base/`. The
-base image is `qemu_guest` (see [step 4](#4-download-the-qemu_guest-base-image)
+All image configs live under `tests/tailor-images/trident-vm-testimage/`: the
+matrix is defined in `image.yaml`, and each scenario's specific configuration
+lives under `by-scenario/`. The base image is `qemu_guest` (see [step 4](#4-download-the-qemu_guest-base-image)
 for how to obtain it).
 
 **`trident-vm-grub-verity-testimage`** uses grub2 with root dm-verity. The root
 filesystem is read-only and integrity-protected, with `/var` on a separate
 partition and an `/etc` overlay service for runtime state. It uses the
-`updateimg-grub-verity.yaml` config which includes SSH access, network
-configuration, and sudoers for the test user.
+`by-scenario/grub-verity-base.yaml` and `by-scenario/grub-verity.yaml` configs
+which include SSH access, network configuration, and sudoers for the test user.
 
 **`trident-vm-usr-verity-testimage`** uses systemd-boot with a Unified Kernel
 Image (UKI) and `/usr` dm-verity. This is a preview feature
 (`previewFeatures: uki`) that requires `ukify` on the build host. It uses the
-`baseimg-usr-verity.yaml` config which defines the full runtime layout.
+`by-scenario/usr-verity.yaml` config which defines the full runtime layout.
 
 ### COSI Update Images
 
@@ -105,7 +106,7 @@ step, so the base image's pre-installed package set does not matter.
 :::tip Internal shortcut
 If you have access to the internal Azure DevOps artifacts feed, the Makefile
 downloads `qemu_guest` automatically (requires `az login`). You can also
-download it directly: `./tests/images/testimages.py download-image qemu_guest`
+download it directly: `cargo run --manifest-path tools/tailor/Cargo.toml -- --manifest tests/tailor-images/tailor.yaml bases download qemu_guest`
 :::
 
 ### 5. Build the VM Image
@@ -131,15 +132,18 @@ the same filename in each directory (the update loop picks the filename from
 ```bash
 mkdir -p artifacts/update-a artifacts/update-b
 
-# Build two clones of the COSI image (produces _0 and _1 suffixed files)
-sudo ./tests/images/testimages.py build trident-vm-grub-verity-testimage \
-    --output-dir ./artifacts --clones 2
+# trident-vm-testimage declares artifacts/rpm-overrides as an (optional) RPM
+# source; tailor validates it eagerly, so create it even when empty -- `make`
+# creates this automatically via its own dependency graph, but a direct
+# `cargo run ... tailor ... build` invocation like below bypasses that.
+mkdir -p artifacts/rpm-overrides
+
+# Build two clones of the COSI image
+cargo run --manifest-path tools/tailor/Cargo.toml --     --manifest tests/tailor-images/tailor.yaml     build trident-vm-testimage -s arch=amd64 -s scenario=grub-verity     --output-dir ./artifacts --clones 2
 
 # Move the clones into the update directories with the same filename
-mv artifacts/trident-vm-grub-verity-testimage_0.cosi \
-    artifacts/update-a/trident-vm-grub-verity-testimage.cosi
-mv artifacts/trident-vm-grub-verity-testimage_1.cosi \
-    artifacts/update-b/trident-vm-grub-verity-testimage.cosi
+mv artifacts/trident-vm-testimage_amd64_grub-verity_cosi_clone0.cosi     artifacts/update-a/trident-vm-grub-verity-testimage.cosi
+mv artifacts/trident-vm-testimage_amd64_grub-verity_cosi_clone1.cosi     artifacts/update-b/trident-vm-grub-verity-testimage.cosi
 ```
 
 :::note
