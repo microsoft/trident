@@ -118,10 +118,12 @@ and authorization for the `aclImageTools` repository resource.
 
 Published inputs are `acl-standard` and `acl-mshv`, each containing
 `base.qcow2`, `update.cosi`, `metadata.json`, `manifest.json` and `id_rsa`.
+The Storm scenario requires all except the standalone `metadata.json`; it does
+not parse COSI metadata or compare it with the standalone file.
 The private key must remain restricted to the test artifact.
 
 Results are `acl-standard-results` and `acl-mshv-results`. Each run preserves
-the controller log, serial console, command output, snapshots, metadata and
+the controller log, serial console, command output, snapshots and
 input manifest, plus `result.json` and `guest-evidence.tar.gz`. Failed VM working
 disks are retained after VM cleanup; immutable input images are not modified.
 

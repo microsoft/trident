@@ -2,17 +2,13 @@
 package acl
 
 import (
-	"archive/tar"
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/microsoft/storm"
-	metadata "tridenttools/cmd/mkcosi/metadata"
 )
 
 const guestDir = "/var/lib/trident/acl"
@@ -36,7 +32,7 @@ type ACLScenario struct {
 
 type scenarioArgs struct {
 	Variant          imageVariant  `help:"ACL image variant" enum:"standard,mshv" default:"standard"`
-	ArtifactsDir     string        `help:"Directory containing ACL base.qcow2, update.cosi, metadata.json, manifest.json and id_rsa" required:""`
+	ArtifactsDir     string        `help:"Directory containing ACL base.qcow2, update.cosi, manifest.json and id_rsa" required:""`
 	OutputPath       string        `help:"Directory for evidence and private VM working disk" required:""`
 	VMName           string        `help:"Prefix for a uniquely named disposable QEMU VM" default:"acl"`
 	BootTimeout      time.Duration `help:"Maximum wait for each SSH-ready boot" default:"10m"`
@@ -75,7 +71,7 @@ func readArtifacts(dir string, variant imageVariant) (artifactInfo, error) {
 	if variant != variantStandard && variant != variantMSHV {
 		return info, fmt.Errorf("unsupported ACL variant %q; expected standard or mshv", variant)
 	}
-	for _, name := range []string{"base.qcow2", "update.cosi", "metadata.json", "manifest.json", "id_rsa"} {
+	for _, name := range []string{"base.qcow2", "update.cosi", "manifest.json", "id_rsa"} {
 		st, err := os.Stat(filepath.Join(dir, name))
 		if err != nil {
 			return info, err
@@ -83,21 +79,6 @@ func readArtifacts(dir string, variant imageVariant) (artifactInfo, error) {
 		if !st.Mode().IsRegular() || st.Size() == 0 {
 			return info, fmt.Errorf("%s must be a nonempty regular file", name)
 		}
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, "metadata.json"))
-	if err != nil {
-		return info, err
-	}
-	var m metadata.MetadataJson
-	if err = json.Unmarshal(raw, &m); err != nil {
-		return info, fmt.Errorf("COSI metadata: %w", err)
-	}
-	validBootloader := m.Bootloader.Type == metadata.BootloaderTypeSystemDBoot && (m.Version == "1.2" || m.Version == "1.3")
-	if variant == variantMSHV {
-		validBootloader = m.Bootloader.Type == "efitreeloader-mshv-systemd-boot" && m.Version == "1.3"
-	}
-	if !validBootloader || m.OsArch != metadata.OsArchitectureX8664 {
-		return info, fmt.Errorf("incompatible %s COSI metadata: version=%q osArch=%q bootloader=%q", variant, m.Version, m.OsArch, m.Bootloader.Type)
 	}
 	var manifest struct {
 		ImageSource string       `json:"imageSource"`
@@ -112,32 +93,6 @@ func readArtifacts(dir string, variant imageVariant) (artifactInfo, error) {
 	}
 	if manifest.ImageSource != "acl-t" || manifest.Variant != variant {
 		return info, fmt.Errorf("manifest must identify ACL-T %s", variant)
-	}
-	f, err := os.Open(filepath.Join(dir, "update.cosi"))
-	if err != nil {
-		return info, err
-	}
-	defer f.Close()
-	tr := tar.NewReader(f)
-	for {
-		header, err := tr.Next()
-		if err != nil {
-			return info, fmt.Errorf("COSI metadata member: %w", err)
-		}
-		if header.Name != "metadata.json" {
-			continue
-		}
-		if header.Typeflag != tar.TypeReg || header.Size != int64(len(raw)) {
-			return info, fmt.Errorf("COSI metadata member differs from metadata.json")
-		}
-		embedded, err := io.ReadAll(io.LimitReader(tr, int64(len(raw))+1))
-		if err != nil {
-			return info, err
-		}
-		if !bytes.Equal(embedded, raw) {
-			return info, fmt.Errorf("COSI metadata member differs from metadata.json bytes")
-		}
-		break
 	}
 	return info, nil
 }

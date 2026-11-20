@@ -248,14 +248,12 @@ func (s *ACLScenario) deploy() error {
 	}
 	s.runner = r
 	s.lifecycle = lifecycle{g: r, info: info}
-	for _, name := range []string{"manifest.json", "metadata.json"} {
-		data, err := os.ReadFile(filepath.Join(s.args.ArtifactsDir, name))
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(runDir, name), data, 0600); err != nil {
-			return err
-		}
+	data, err := os.ReadFile(filepath.Join(s.args.ArtifactsDir, "manifest.json"))
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "manifest.json"), data, 0600); err != nil {
+		return err
 	}
 	// The QEMU helper copies beside its source; a private symlink keeps build inputs
 	// immutable and isolates concurrent runs.
