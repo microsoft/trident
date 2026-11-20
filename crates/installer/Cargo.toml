@@ -10,6 +10,9 @@ license = "MIT"
 name = "trident-installer"
 path = "src/main.rs"
 
+[features]
+ui-preview = []
+
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
