@@ -161,6 +161,12 @@ func (u *UpdateTest) doUpdateTest() error {
 	// Invoke trident update
 	updateCmd := fmt.Sprintf("sudo trident -v trace grpc-client update %s", vmHostConfigPath)
 	logrus.Tracef("Invoking `trident update` on VM: '%s'", updateCmd)
+	// Capture "uptime --since" before the reboot so the shared WaitForLogin
+	// fallback can definitively confirm the VM rebooted if serial-getty fails.
+	preRebootUptime := ""
+	if uptimeOut, uptimeErr := stormssh.SshCommand(u.VMConfig.VMConfig, u.VMIP, "uptime --since"); uptimeErr == nil {
+		preRebootUptime = strings.TrimSpace(uptimeOut)
+	}
 	updateOutput, err := stormssh.SshCommandCombinedOutput(u.VMConfig.VMConfig, u.VMIP, updateCmd)
 	logrus.Tracef("Update output (%v):\n%s", err, updateOutput)
 	if strings.Contains(updateOutput, "Trident failed due to a servicing error") {
@@ -179,7 +185,7 @@ func (u *UpdateTest) doUpdateTest() error {
 	if u.ExpectReboot {
 		// Wait for update to complete
 		logrus.Tracef("Waiting for VM to come back up after update")
-		err = u.VMConfig.QemuConfig.WaitForLogin(u.VMConfig.VMConfig.Name, u.TestConfig.OutputPath, u.TestConfig.Verbose, 0)
+		err = stormvm.WaitForLoginWithSshFallback(u.VMConfig, u.VMIP, preRebootUptime, 0, u.TestConfig.OutputPath, u.TestConfig.Verbose)
 		if err != nil {
 			return fmt.Errorf("VM did not come back up after update: %w", err)
 		}
@@ -222,6 +228,11 @@ func (u *UpdateTest) doRollbackTest(
 		rollbackCommand = fmt.Sprintf("%s %s", rollbackCommand, rollbackExpectation)
 	}
 	logrus.Tracef("Invoking `%s` on VM", rollbackCommand)
+	// Capture "uptime --since" before the reboot for the shared WaitForLogin fallback.
+	preRebootUptime := ""
+	if uptimeOut, uptimeErr := stormssh.SshCommand(u.VMConfig.VMConfig, u.VMIP, "uptime --since"); uptimeErr == nil {
+		preRebootUptime = strings.TrimSpace(uptimeOut)
+	}
 	updateOutput, err := stormssh.SshCommand(u.VMConfig.VMConfig, u.VMIP, rollbackCommand)
 	if !rollbackNeedsReboot && err != nil {
 		// Ignore error from ssh if reboot was expected, but otherwise
@@ -233,7 +244,7 @@ func (u *UpdateTest) doRollbackTest(
 	if rollbackNeedsReboot {
 		// Wait for rollback to complete
 		logrus.Tracef("Waiting for VM to come back up after rollback")
-		err = u.VMConfig.QemuConfig.WaitForLogin(u.VMConfig.VMConfig.Name, u.TestConfig.OutputPath, u.TestConfig.Verbose, 0)
+		err = stormvm.WaitForLoginWithSshFallback(u.VMConfig, u.VMIP, preRebootUptime, 0, u.TestConfig.OutputPath, u.TestConfig.Verbose)
 		if err != nil {
 			return fmt.Errorf("VM did not come back up after rollback: %w", err)
 		}
@@ -275,6 +286,11 @@ func (u *UpdateTest) doSplitRollbackTest(
 	// Invoke trident rollback --allowed-operations finalize
 	rollbackCommand = "sudo trident rollback --allowed-operations finalize"
 	logrus.Tracef("Invoking `%s` on VM", rollbackCommand)
+	// Capture "uptime --since" before the reboot for the shared WaitForLogin fallback.
+	preRebootUptime := ""
+	if uptimeOut, uptimeErr := stormssh.SshCommand(u.VMConfig.VMConfig, u.VMIP, "uptime --since"); uptimeErr == nil {
+		preRebootUptime = strings.TrimSpace(uptimeOut)
+	}
 	updateOutput, err = stormssh.SshCommand(u.VMConfig.VMConfig, u.VMIP, rollbackCommand)
 	if !rollbackNeedsReboot && err != nil {
 		// Ignore error from ssh if reboot was expected, but otherwise
@@ -286,7 +302,7 @@ func (u *UpdateTest) doSplitRollbackTest(
 	if rollbackNeedsReboot {
 		// Wait for rollback to complete
 		logrus.Tracef("Waiting for VM to come back up after rollback")
-		err = u.VMConfig.QemuConfig.WaitForLogin(u.VMConfig.VMConfig.Name, u.TestConfig.OutputPath, u.TestConfig.Verbose, 0)
+		err = stormvm.WaitForLoginWithSshFallback(u.VMConfig, u.VMIP, preRebootUptime, 0, u.TestConfig.OutputPath, u.TestConfig.Verbose)
 		if err != nil {
 			return fmt.Errorf("VM did not come back up after rollback: %w", err)
 		}
