@@ -106,8 +106,8 @@ extends:
         - stage: ProcessJunit_Stage_amd64
           displayName: Process amd64 junit files
           dependsOn:
-            - DeploymentTesting_host
-            - DeploymentTesting_container
+            - E2ETesting_VM_HOST
+            - E2ETesting_VM_CONTAINER
             # - BaremetalDeploymentTesting_host
             # - BaremetalDeploymentTesting_container
             - ServicingTesting

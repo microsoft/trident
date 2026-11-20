@@ -132,9 +132,7 @@ func (s *TridentE2EScenario) prepareHostConfig(tc storm.TestCase) error {
 // policy sealed to PCR 7 could never reproduce; Trident rejects the
 // combination during dynamic validation
 // (crates/trident/src/subsystems/storage/encryption.rs). This mirrors the
-// legacy pipeline glue added in #221
-// (.pipelines/templates/stages/testing_vm/netlaunch-testing.yml), which
-// rewrites the Host Configuration for exactly this case so combined/rerun
+// legacy pipeline glue added in #221, which rewrote the HC so combined/rerun
 // (usr-verity UKI + encryption) install on the container runtime.
 // applyImageOverrides injects the pipeline-provided OCI overrides (extension
 // images, ACR-hosted COSI URL) and then derives the encryption policy from the
