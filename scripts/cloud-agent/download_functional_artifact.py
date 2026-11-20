@@ -26,6 +26,57 @@ class ArtifactError(RuntimeError):
     pass
 
 
+def https_origin(url: str) -> Tuple[str, int]:
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        if (
+            parsed.scheme == "https"
+            and parsed.hostname
+            and parsed.username is None
+            and parsed.password is None
+        ):
+            return parsed.hostname, 443 if parsed.port is None else parsed.port
+    except ValueError as error:
+        raise ArtifactError("Invalid HTTPS request or redirect URL") from error
+    raise ArtifactError("Request or redirect requires HTTPS without user information")
+
+
+class ArtifactRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, allow_artifact_redirects: bool = False):
+        self.allow_artifact_redirects = allow_artifact_redirects
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        try:
+            origin = https_origin(req.full_url)
+            destination = https_origin(newurl)
+            if destination != origin:
+                # ADO documents Blob Storage and vsassets.io as artifact destinations:
+                # https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/linux-agent#im-running-a-firewall-and-my-code-is-in-azure-repos-what-urls-does-the-agent-need-to-communicate-with
+                allowed_hosts = (
+                    ".artifacts.visualstudio.com",
+                    ".blob.core.windows.net",
+                    ".vsassets.io",
+                )
+                if (
+                    not self.allow_artifact_redirects
+                    or destination[1] != 443
+                    or not destination[0].endswith(allowed_hosts)
+                ):
+                    raise ArtifactError(
+                        "Cross-origin redirect destination is not allowed"
+                    )
+        except ArtifactError:
+            fp.close()
+            raise
+
+        # Keep urllib's redirect status handling and bounded loop detection.
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and destination != origin:
+            for header in ("Authorization", "Cookie", "Proxy-authorization"):
+                redirected.remove_header(header)
+        return redirected
+
+
 def load_config(path: Path) -> Dict[str, Any]:
     with path.open(encoding="utf-8") as config_file:
         config = json.load(config_file)
@@ -61,6 +112,7 @@ def get_ado_token() -> str:
 
 
 def request_json(url: str, token: str) -> Dict[str, Any]:
+    https_origin(url)
     request = urllib.request.Request(
         url,
         headers={
@@ -69,9 +121,11 @@ def request_json(url: str, token: str) -> Dict[str, Any]:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        opener = urllib.request.build_opener(ArtifactRedirectHandler())
+        with opener.open(request, timeout=120) as response:
             return json.load(response)
     except urllib.error.HTTPError as error:
+        error.close()
         raise ArtifactError(
             f"Azure DevOps request failed with HTTP {error.code}: {url}"
         ) from error
@@ -213,6 +267,7 @@ def image_matches(path: Path, expected_size: int, expected_sha256: str) -> bool:
 
 
 def download_file(url: str, token: str, destination: Path) -> None:
+    https_origin(url)
     request = urllib.request.Request(
         url,
         headers={
@@ -221,7 +276,10 @@ def download_file(url: str, token: str, destination: Path) -> None:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=600) as response:
+        opener = urllib.request.build_opener(
+            ArtifactRedirectHandler(allow_artifact_redirects=True)
+        )
+        with opener.open(request, timeout=600) as response:
             content_type = response.headers.get_content_type()
             if content_type == "text/html":
                 raise ArtifactError(
@@ -230,6 +288,7 @@ def download_file(url: str, token: str, destination: Path) -> None:
             with destination.open("wb") as output:
                 shutil.copyfileobj(response, output, CHUNK_SIZE)
     except urllib.error.HTTPError as error:
+        error.close()
         raise ArtifactError(
             f"Artifact download failed with HTTP {error.code}"
         ) from error

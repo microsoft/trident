@@ -1,12 +1,16 @@
 import importlib.util
+import io
 import json
 import tempfile
 import threading
 import time
 import unittest
 import urllib.parse
+import urllib.response
 import zipfile
 
+from contextlib import contextmanager
+from email.message import Message
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
@@ -17,6 +21,193 @@ SPEC = importlib.util.spec_from_file_location(
 )
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+
+
+class ArtifactRedirectTests(unittest.TestCase):
+    metadata_url = "https://dev.azure.com/example/project/_apis/build/builds"
+    artifact_url = "https://example.artifacts.visualstudio.com/content"
+    blob_url = "https://example.blob.core.windows.net/artifact?sig=dummy-signature"
+
+    @contextmanager
+    def transport(self, routes):
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            code, location = routes[request.full_url]
+            headers = Message()
+            headers["Content-Type"] = "application/json"
+            if location is not None:
+                headers["Location"] = location
+            response = urllib.response.addinfourl(
+                io.BytesIO(b'{"artifact": "dummy content"}'),
+                headers,
+                request.full_url,
+                code,
+            )
+            response.msg = "Found" if location is not None else "OK"
+            return response
+
+        with patch.object(
+            MODULE.urllib.request.HTTPSHandler, "https_open", side_effect=respond
+        ), patch.object(
+            MODULE.urllib.request.HTTPHandler, "http_open", side_effect=respond
+        ), patch(
+            "socket.create_connection", side_effect=AssertionError("Network forbidden")
+        ):
+            yield requests
+
+    def fetch(self, metadata=False):
+        if metadata:
+            return MODULE.request_json(self.metadata_url, "dummy-token")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "artifact.zip"
+            MODULE.download_file(self.artifact_url, "dummy-token", destination)
+            return json.loads(destination.read_bytes())
+
+    def test_stock_urllib_forwards_authorization_across_origins(self):
+        routes = {
+            self.artifact_url: (302, self.blob_url),
+            self.blob_url: (200, None),
+        }
+        with self.transport(routes) as requests:
+            request = MODULE.urllib.request.Request(
+                self.artifact_url, headers={"Authorization": "Bearer dummy-token"}
+            )
+            with MODULE.urllib.request.build_opener().open(request) as response:
+                response.read()
+        self.assertEqual(len(requests), 2)
+        self.assertTrue(requests[1].get_header("Authorization") == "Bearer dummy-token")
+
+    def test_same_https_origin_preserves_authorization(self):
+        for metadata in (False, True):
+            start = self.metadata_url if metadata else self.artifact_url
+            for code in (301, 302, 303, 307, 308):
+                with self.subTest(metadata=metadata, code=code):
+                    target = start + "/next"
+                    # Explicit default port and hostname case do not change origin.
+                    location = target.replace(".com/", ".COM:443/")
+                    with self.transport(
+                        {start: (code, location), location: (200, None)}
+                    ) as requests:
+                        self.assertEqual(
+                            self.fetch(metadata), {"artifact": "dummy content"}
+                        )
+                    self.assertEqual(len(requests), 2)
+                    self.assertTrue(
+                        requests[1].get_header("Authorization") == "Bearer dummy-token"
+                    )
+
+    def test_relative_redirect_preserves_authorization(self):
+        target = "https://example.artifacts.visualstudio.com/next"
+        with self.transport(
+            {self.artifact_url: (302, "/next"), target: (200, None)}
+        ) as requests:
+            self.fetch()
+        self.assertTrue(requests[1].has_header("Authorization"))
+
+    def test_documented_artifact_redirects_strip_authorization(self):
+        for target in (
+            self.blob_url,
+            "https://example.vsblob.vsassets.io/content?sig=dummy-signature",
+            "https://other.artifacts.visualstudio.com/content",
+        ):
+            with self.subTest(target=target):
+                with self.transport(
+                    {self.artifact_url: (302, target), target: (200, None)}
+                ) as requests:
+                    self.assertEqual(self.fetch(), {"artifact": "dummy content"})
+                self.assertEqual(len(requests), 2)
+                self.assertEqual(requests[1].full_url, target)
+                self.assertFalse(requests[1].has_header("Authorization"))
+
+    def test_redirect_chain_never_restores_credentials(self):
+        next_blob = self.blob_url + "&next=1"
+        final = self.artifact_url + "/final"
+        routes = {
+            self.artifact_url: (302, self.blob_url),
+            self.blob_url: (307, next_blob),
+            next_blob: (303, final),
+            final: (200, None),
+        }
+        with self.transport(routes) as requests:
+            self.fetch()
+        self.assertEqual(
+            [request.has_header("Authorization") for request in requests],
+            [True, False, False, False],
+        )
+
+    def test_metadata_rejects_all_cross_origin_redirects(self):
+        for target in (self.blob_url, self.artifact_url, "https://example.invalid/"):
+            with self.subTest(target=target):
+                with self.transport({self.metadata_url: (302, target)}) as requests:
+                    with self.assertRaisesRegex(MODULE.ArtifactError, "Cross-origin"):
+                        self.fetch(metadata=True)
+                self.assertEqual(len(requests), 1)
+
+    def test_download_rejects_untrusted_redirects_before_request(self):
+        for target in (
+            "https://example.invalid/",
+            "https://example.blob.core.windows.net.example.invalid/",
+            "https://notblob.core.windows.net/",
+            "https://blob.core.windows.net/",
+            "https://example.artifacts.visualstudio.com:444/content",
+            "https://example.blob.core.windows.net:0/content",
+            "https://user@example.blob.core.windows.net/content",
+            "https://example.blob.core.windows.net:invalid/content",
+        ):
+            with self.subTest(target=target):
+                with self.transport({self.artifact_url: (302, target)}) as requests:
+                    with self.assertRaises(MODULE.ArtifactError):
+                        self.fetch()
+                self.assertEqual(len(requests), 1)
+
+    def test_metadata_and_download_reject_downgrades(self):
+        for metadata in (False, True):
+            start = self.metadata_url if metadata else self.artifact_url
+            for target in (start.replace("https:", "http:"), "ftp://example.invalid/"):
+                with self.subTest(metadata=metadata, target=target):
+                    with self.transport({start: (302, target)}) as requests:
+                        with self.assertRaisesRegex(MODULE.ArtifactError, "HTTPS"):
+                            self.fetch(metadata)
+                    self.assertEqual(len(requests), 1)
+
+    def test_allowed_artifact_host_cannot_redirect_to_untrusted_host(self):
+        with self.transport(
+            {
+                self.artifact_url: (302, self.blob_url),
+                self.blob_url: (302, "https://example.invalid/"),
+            }
+        ) as requests:
+            with self.assertRaisesRegex(MODULE.ArtifactError, "Cross-origin"):
+                self.fetch()
+        self.assertEqual(len(requests), 2)
+        self.assertFalse(requests[1].has_header("Authorization"))
+
+    def test_initial_authenticated_requests_require_https(self):
+        with self.transport({}) as requests:
+            with self.assertRaisesRegex(MODULE.ArtifactError, "HTTPS"):
+                MODULE.request_json("http://dev.azure.com/", "dummy-token")
+            with tempfile.TemporaryDirectory() as temp_dir:
+                with self.assertRaisesRegex(MODULE.ArtifactError, "HTTPS"):
+                    MODULE.download_file(
+                        "http://example.artifacts.visualstudio.com/content",
+                        "dummy-token",
+                        Path(temp_dir) / "artifact.zip",
+                    )
+        self.assertEqual(requests, [])
+
+    def test_metadata_and_download_reject_redirect_loops(self):
+        for metadata in (False, True):
+            start = self.metadata_url if metadata else self.artifact_url
+            target = start + "/next"
+            with self.subTest(metadata=metadata):
+                with self.transport(
+                    {start: (302, target), target: (302, start)}
+                ) as requests:
+                    with self.assertRaisesRegex(MODULE.ArtifactError, "HTTP 302"):
+                        self.fetch(metadata)
+                self.assertLessEqual(len(requests), 11)
 
 
 class FunctionalArtifactTests(unittest.TestCase):
