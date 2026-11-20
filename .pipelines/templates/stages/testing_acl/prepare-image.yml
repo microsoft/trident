@@ -17,7 +17,7 @@ jobs:
       ob_artifactBaseName: acl-${{ parameters.variant }}
       ACL_INPUT_DIR: $(Pipeline.Workspace)/acl-inputs-${{ parameters.variant }}
       ACL_BUILD_DIR: $(Pipeline.Workspace)/acl-build-${{ parameters.variant }}-$(Build.BuildId)-$(System.JobAttempt)
-      ACL_CUSTOMIZER: acl-imagecustomizer:c8dc566
+      ACL_CUSTOMIZER: acl-imagecustomizer:a7526eb
     steps:
       - template: ../common_tasks/checkout_trident.yml
       - template: ../common_tasks/avoid-pypi-usage.yml
@@ -64,11 +64,11 @@ jobs:
           script: |
             set -euo pipefail
             sudo apt-get update
-            sudo apt-get install -y libguestfs-tools qemu-utils jq zstd python3-yaml python3-cryptography
+            sudo apt-get install -y python3-yaml python3-cryptography
             sudo systemctl start docker
             chmod 600 '$(ACL_INPUT_DIR)/ssh/id_rsa'
             source='$(Pipeline.Workspace)/s/acl-image-tools'
-            test "$(git -C "$source" rev-parse HEAD)" = c8dc566c0c04d33e2deaa6a484113e0545997f92
+            test "$(git -C "$source" rev-parse HEAD)" = a7526eb98a57b41b5d4a0789fcf72622e6a8729a
             mkdir -p '$(ACL_BUILD_DIR)/ic' bin/RPMS artifacts/rpm-overrides
             (cd "$source" && CGO_ENABLED=0 go build -mod=readonly -tags prod \
               -o '$(ACL_BUILD_DIR)/ic/imagecustomizer' ./toolkit/tools/imagecustomizer)
@@ -96,10 +96,10 @@ jobs:
               python3 tests/images/testimages.py build "$target" --no-download \
                 --container '$(ACL_CUSTOMIZER)' --output-dir '$(ACL_BUILD_DIR)'/"$phase"
             done
-            sudo env LIBGUESTFS_BACKEND=direct tests/images/acl/publish-servicing-artifacts.sh \
-              '${{ parameters.variant }}' '$(ACL_BUILD_DIR)'/base/"$image.qcow2" \
-              '$(ACL_BUILD_DIR)'/update/"$image-update.cosi" '$(ACL_INPUT_DIR)/ssh/id_rsa' \
-              '$(ob_outputDirectory)'
+            mkdir -p '$(ob_outputDirectory)'
+            cp --reflink=auto '$(ACL_BUILD_DIR)'/base/"$image.qcow2" '$(ob_outputDirectory)/base.qcow2'
+            cp '$(ACL_BUILD_DIR)'/update/"$image-update.cosi" '$(ob_outputDirectory)/update.cosi'
+            install -m 0600 '$(ACL_INPUT_DIR)/ssh/id_rsa' '$(ob_outputDirectory)/id_rsa'
       - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
         parameters:
           outputDir: $(ob_outputDirectory)

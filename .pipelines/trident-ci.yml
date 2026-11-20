@@ -20,7 +20,7 @@ resources:
       type: github
       name: microsoft/azure-linux-image-tools
       endpoint: microsoft
-      ref: c8dc566c0c04d33e2deaa6a484113e0545997f92
+      ref: a7526eb98a57b41b5d4a0789fcf72622e6a8729a
 
     - repository: templates
       type: git

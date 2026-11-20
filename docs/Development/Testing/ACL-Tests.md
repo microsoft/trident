@@ -67,8 +67,7 @@ See the image README for ACL-T selection and the pinned efitreeloader/ACL-enable
 inputs. Stage AZL3 candidate RPMs in `bin/RPMS` and build `acl-ic:local`.
 The existing `requires_trident` setting supplies those RPMs; both recipes
 remove/install Trident and retain the base repositories for dependencies.
-Run from the Trident root on a KVM/libvirt-capable Linux host. Artifact packaging
-also needs `libguestfs-tools`, `qemu-utils`, `jq` and `zstd`.
+Run from the Trident root on a KVM/libvirt-capable Linux host.
 
 ```bash
 python3 tests/images/testimages.py download-image acl-t
@@ -84,9 +83,10 @@ for PHASE in base update; do
   python3 tests/images/testimages.py build "$TARGET" --container acl-ic:local \
     --output-dir "$WORK/$PHASE"
 done
-sudo env LIBGUESTFS_BACKEND=direct tests/images/acl/publish-servicing-artifacts.sh \
-  "$VARIANT" "$WORK/base/$IMAGE.qcow2" "$WORK/update/$IMAGE-update.cosi" \
-  "$WORK/id_rsa" "$WORK/published"
+mkdir -p "$WORK/published"
+cp --reflink=auto "$WORK/base/$IMAGE.qcow2" "$WORK/published/base.qcow2"
+cp "$WORK/update/$IMAGE-update.cosi" "$WORK/published/update.cosi"
+install -m 0600 "$WORK/id_rsa" "$WORK/published/id_rsa"
 make bin/storm-trident
 sudo ./bin/storm-trident run acl -a -- --variant "$VARIANT" \
   --artifacts-dir "$WORK/published" --output-path "$WORK/results"
@@ -94,13 +94,11 @@ sudo ./bin/storm-trident run acl -a -- --variant "$VARIANT" \
 
 Refresh ACL-T once before building all variants.
 
-Packaging verifies native ACL identity and compressed payload hashes, but not
-filesystem UUIDs, verity root hashes or Trident binary digests. The disposable
-test's update configuration uses `image.sha384: ignored`; metadata-digest and
-whole-COSI checksum checks are outside this scenario. Its MSHV-only metadata
-correction works around the pinned IC's hardcoded ACL bootloader tag; it neither
-rebuilds partitions nor rewrites UKIs. Do not use it to relabel arbitrary production
-COSIs.
+Publication copies the built images without inspection or modification. The
+pinned IC emits the correct MSHV COSI 1.3 bootloader metadata directly.
+The disposable test's update configuration uses `image.sha384: ignored`;
+artifact checksums, filesystem UUIDs, verity root hashes and Trident binary
+digests are outside this scenario.
 
 ## Pipelines
 
@@ -120,9 +118,8 @@ The pipeline build service needs read access to ACL pipeline runs and artifacts
 and authorization for the `aclImageTools` repository resource.
 
 Published inputs are `acl-standard` and `acl-mshv`, each containing
-`base.qcow2`, `update.cosi`, `metadata.json`, `manifest.json` and `id_rsa`.
-The Storm scenario requires only `base.qcow2`, `update.cosi` and `id_rsa`;
-it does not read the standalone metadata, input manifest or COSI contents.
+`base.qcow2`, `update.cosi` and `id_rsa`. The Storm scenario does not inspect
+COSI contents.
 The private key must remain restricted to the test artifact.
 
 Results are `acl-standard-results` and `acl-mshv-results`. Each run preserves

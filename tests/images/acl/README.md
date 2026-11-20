@@ -23,12 +23,12 @@ regenerates the `/usr` UUID, verity, UKI and native addons on every build.
 
 Use Linux with Docker, Go 1.26+, Python 3 with PyYAML and cryptography, and
 authenticated `az devops` access to `https://dev.azure.com/mariner-org`.
-The producer's ACL-enabled Image Customizer revision is required; stock IC
+The pinned ACL-enabled Image Customizer revision below is required; stock IC
 does not implement its `acl.*` options. From the Trident repository root:
 
 ```bash
 IC_SOURCE=/path/to/azure-linux-image-tools
-test "$(git -C "$IC_SOURCE" rev-parse HEAD)" = c8dc566c0c04d33e2deaa6a484113e0545997f92
+test "$(git -C "$IC_SOURCE" rev-parse HEAD)" = a7526eb98a57b41b5d4a0789fcf72622e6a8729a
 mkdir -p artifacts/acl-ic
 (cd "$IC_SOURCE" && CGO_ENABLED=0 go build -mod=readonly -tags prod \
   -o "$OLDPWD/artifacts/acl-ic/imagecustomizer" ./toolkit/tools/imagecustomizer)
@@ -75,14 +75,11 @@ for building and running a servicing pair.
 
 ## COSI publication
 
-IC directly creates each COSI. `publish-servicing-artifacts.sh` packages the
-already-built QCOW2/COSI and SSH key for Storm; it does not customize images.
-It verifies native ACL identity and the compressed `/usr` payload hash, and
-records RPM/input hashes. It does not compare filesystem UUIDs, verity root
-hashes or installed Trident binary digests.
-For MSHV it corrects IC's hardcoded `systemd-boot` metadata tag to COSI 1.3
-`efitreeloader-mshv-systemd-boot`, preserving compressed partition bytes.
-This workaround is restricted to these unsigned test artifacts.
+IC directly creates each COSI, including COSI 1.3 metadata with bootloader type
+`efitreeloader-mshv-systemd-boot` for MSHV. The pinned revision includes native
+MSHV boot-chain detection; no metadata rewriting or archive repacking is needed.
+Publication copies the QCOW2, COSI and SSH key to `base.qcow2`, `update.cosi`
+and `id_rsa` in the artifact directory. The private key is restricted to mode 0600.
 
 Both variants built QCOW2/COSI pairs and passed content audits.
 The initial standard native update, rollback, update, update, explicit commits
