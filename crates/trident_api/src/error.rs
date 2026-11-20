@@ -785,6 +785,8 @@ pub enum DatastoreError {
 }
 
 impl ServicingError {
+    pub const AB_UPDATE_HYPERVISOR_COMMIT_CHECK_SUBKIND: &str = "ab-update-hypervisor-commit-check";
+
     /// Kebab-case serde subkind for [`ServicingError::AbUpdateRebootCheck`],
     /// matching this enum's `#[serde(rename_all = "kebab-case")]` attribute.
     /// Verified against `serde_variant::to_variant_name` in this module's tests.
