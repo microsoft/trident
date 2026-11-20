@@ -15,6 +15,7 @@ import (
 
 // WaitForBoot returns an SSH-ready boot distinct from previous; the caller owns the client.
 func WaitForBoot(ctx context.Context, settings stormsshconfig.SshCliSettings, previous string) (*ssh.Client, string, error) {
+	// boot pairs a ready connection with the boot identity observed through it.
 	type boot struct {
 		client *ssh.Client
 		id     string

@@ -50,6 +50,8 @@ func RunCommand(client *ssh.Client, command string) (*stormsshconfig.SshCmdOutpu
 	return RunCommandContext(context.Background(), client, command)
 }
 
+// OpenSshClientContext opens an SSH connection with context-aware dialing and handshaking.
+// The caller owns the returned connection.
 func OpenSshClientContext(ctx context.Context, settings stormsshconfig.SshCliSettings) (*ssh.Client, error) {
 	cfg, err := settings.IntoClientConfig()
 	if err != nil {

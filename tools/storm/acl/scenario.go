@@ -17,10 +17,12 @@ import (
 	qemu "tridenttools/storm/utils/vm/qemu"
 )
 
+// collectAndSync attempts guest sync even when evidence collection fails.
 func collectAndSync(collect, sync func() error) error {
 	return errors.Join(collect(), sync())
 }
 
+// cleanupVMFiles removes only the disposable working disk after a successful run.
 func cleanupVMFiles(artifactsDir string, successful bool) error {
 	if !successful {
 		return nil
@@ -32,6 +34,7 @@ func cleanupVMFiles(artifactsDir string, successful bool) error {
 	return err
 }
 
+// evidence captures current boot logs and archives previously saved command evidence.
 func (r *runner) evidence() error {
 	previous := r.args.OperationTimeout
 	r.args.OperationTimeout = min(previous, 30*time.Second)
@@ -85,12 +88,14 @@ func (r *runner) evidence() error {
 	return errors.Join(result, walkErr, archive.Close(), compressed.Close(), destination.Close())
 }
 
+// recordFailure preserves operation and cleanup errors for the final result.
 func (s *ACLScenario) recordFailure(err error) {
 	if err != nil && !errors.Is(s.failure, err) {
 		s.failure = errors.Join(s.failure, err)
 	}
 }
 
+// runTestCase records an operation failure before reporting it to Storm.
 func (s *ACLScenario) runTestCase(tc storm.TestCase, operation func() error) error {
 	if err := operation(); err != nil {
 		s.recordFailure(err)
@@ -99,14 +104,17 @@ func (s *ACLScenario) runTestCase(tc storm.TestCase, operation func() error) err
 	return nil
 }
 
+// deployVm starts the guest used by the remaining ordered cases.
 func (s *ACLScenario) deployVm(tc storm.TestCase) error {
 	return s.runTestCase(tc, s.deploy)
 }
 
+// checkDeployment establishes the baseline boot and initial slot.
 func (s *ACLScenario) checkDeployment(tc storm.TestCase) error {
 	return s.runTestCase(tc, s.lifecycle.checkDeployment)
 }
 
+// runABUpdate uploads update inputs and commits the first transition to B.
 func (s *ACLScenario) runABUpdate(tc storm.TestCase) error {
 	return s.runTestCase(tc, func() error {
 		if err := s.runner.prepareUpdate(); err != nil {
@@ -116,18 +124,22 @@ func (s *ACLScenario) runABUpdate(tc storm.TestCase) error {
 	})
 }
 
+// runRollback commits a return to the retained A slot.
 func (s *ACLScenario) runRollback(tc storm.TestCase) error {
 	return s.runTestCase(tc, func() error { return s.lifecycle.update("rollback", "a", true) })
 }
 
+// runABUpdate2 verifies servicing can return to B after rollback.
 func (s *ACLScenario) runABUpdate2(tc storm.TestCase) error {
 	return s.runTestCase(tc, func() error { return s.lifecycle.update("update-2", "b", false) })
 }
 
+// runABUpdate3 verifies another update can reuse A.
 func (s *ACLScenario) runABUpdate3(tc storm.TestCase) error {
 	return s.runTestCase(tc, func() error { return s.lifecycle.update("update-3", "a", false) })
 }
 
+// checkPersistence marks the scenario complete only after a persisted-boot check.
 func (s *ACLScenario) checkPersistence(tc storm.TestCase) error {
 	return s.runTestCase(tc, func() error {
 		if err := s.lifecycle.checkPersistence(); err != nil {
@@ -138,14 +150,17 @@ func (s *ACLScenario) checkPersistence(tc storm.TestCase) error {
 	})
 }
 
+// collectLogs captures diagnostics before the named cleanup case.
 func (s *ACLScenario) collectLogs(tc storm.TestCase) error {
 	return s.runTestCase(tc, s.gatherLogs)
 }
 
+// cleanupVm releases the guest and writes the final scenario result.
 func (s *ACLScenario) cleanupVm(tc storm.TestCase) error {
 	return s.runTestCase(tc, s.finish)
 }
 
+// OnFailure captures diagnostics before Storm pauses or cleans up a failed scenario.
 func (s *ACLScenario) OnFailure(ctx storm.FailureContext) error {
 	if s.failure == nil {
 		for _, failed := range ctx.FailedCases() {
@@ -155,6 +170,7 @@ func (s *ACLScenario) OnFailure(ctx storm.FailureContext) error {
 	return s.gatherLogs()
 }
 
+// gatherLogs collects diagnostics and syncs guest writes at most once.
 func (s *ACLScenario) gatherLogs() error {
 	if s.runner == nil || s.logsCollected {
 		return nil
@@ -175,6 +191,7 @@ func (s *ACLScenario) gatherLogs() error {
 	return err
 }
 
+// finish releases resources and writes final status, retaining working disks on failure.
 func (s *ACLScenario) finish() error {
 	if s.runner == nil || s.finished {
 		return nil
@@ -209,6 +226,7 @@ func (s *ACLScenario) finish() error {
 	return errors.Join(incompleteErr, evidenceErr, cleanupErr, summaryErr)
 }
 
+// deploy validates inputs, initializes evidence output and boots the disposable VM.
 func (s *ACLScenario) deploy() error {
 	if s.args.BootTimeout <= 0 || s.args.OperationTimeout <= 0 {
 		return errors.New("timeouts must be positive")

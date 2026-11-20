@@ -2,6 +2,7 @@ package acl
 
 import "fmt"
 
+// guest supplies the operations needed to drive servicing independently of VM transport.
 type guest interface {
 	trident(arguments, logName string, expectReboot bool) (string, error)
 	check(phase, slot string) error
@@ -9,11 +10,13 @@ type guest interface {
 	reboot() error
 }
 
+// lifecycle tracks the last accepted boot and active slot across servicing cases.
 type lifecycle struct {
 	g                  guest
 	bootID, activeSlot string
 }
 
+// checkDeployment establishes SSH readiness and the native image's initial A slot.
 func (l *lifecycle) checkDeployment() error {
 	bootID, err := l.g.waitBoot(NO_PREVIOUS_BOOT_ID)
 	if err != nil {
@@ -23,6 +26,7 @@ func (l *lifecycle) checkDeployment() error {
 	return nil
 }
 
+// update stages, finalizes and commits an update or rollback to the expected slot.
 func (l *lifecycle) update(name, slot string, rollback bool) error {
 	command := "update " + guestDir + "/update.yaml"
 	if rollback {
@@ -54,6 +58,7 @@ func (l *lifecycle) update(name, slot string, rollback bool) error {
 	return nil
 }
 
+// checkPersistence verifies the committed slot remains Provisioned after another reboot.
 func (l *lifecycle) checkPersistence() error {
 	if err := l.g.reboot(); err != nil {
 		return fmt.Errorf("persisted reboot: %w", err)

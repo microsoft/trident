@@ -262,6 +262,7 @@ func (cfg QemuConfig) deleteLibvirtDomain(vmName string) error {
 	return nil
 }
 
+// resources applies legacy defaults when callers leave memory or vCPUs unset.
 func (cfg QemuConfig) resources() (memoryMiB, vcpus uint) {
 	memoryMiB, vcpus = cfg.MemoryMiB, cfg.VCPUs
 	if memoryMiB == 0 {
@@ -273,6 +274,7 @@ func (cfg QemuConfig) resources() (memoryMiB, vcpus uint) {
 	return
 }
 
+// virtInstallBaseArgs selects guest resources and UEFI firmware for virt-install.
 func (cfg QemuConfig) virtInstallBaseArgs(name, bootImage string) []string {
 	memoryMiB, vcpus := cfg.resources()
 	args := []string{
@@ -571,6 +573,7 @@ func innerWaitForLogin(vmSerialLog string, verbose bool, iteration int, localSer
 	return stormutils.WaitForLoginMessageInSerialLog(vmSerialLog, verbose, iteration, localSerialLog, time.Second*180)
 }
 
+// nestedVirtualizationCPU requires enabled nested KVM and selects host CPU passthrough.
 func nestedVirtualizationCPU(cpuInfo []byte, readFile func(string) ([]byte, error)) (string, error) {
 	feature, module := "", ""
 	for _, line := range strings.Split(string(cpuInfo), "\n") {

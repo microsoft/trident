@@ -20,6 +20,7 @@ import (
 	qemu "tridenttools/storm/utils/vm/qemu"
 )
 
+// runner owns guest transport, VM control and evidence output for one scenario.
 type runner struct {
 	args       scenarioArgs
 	vmName, ip string
@@ -28,6 +29,7 @@ type runner struct {
 	client     *ssh.Client
 }
 
+// prepareUpdate creates the host configuration and uploads it with the COSI for later updates.
 func (r *runner) prepareUpdate() error {
 	if _, err := r.command("mkdir -p " + guestDir); err != nil {
 		return err
@@ -42,10 +44,12 @@ func (r *runner) prepareUpdate() error {
 	return r.upload(filepath.Join(r.args.ArtifactsDir, "update.cosi"), guestDir+"/update.cosi")
 }
 
+// settings selects the test user's SSH credentials and current guest address.
 func (r *runner) settings() stormsshconfig.SshCliSettings {
 	return stormsshconfig.SshCliSettings{PrivateKeyPath: filepath.Join(r.args.ArtifactsDir, "id_rsa"), Host: r.ip, User: "testuser", Port: 22, Timeout: 5}
 }
 
+// closeClient releases the cached SSH connection before reconnecting or cleaning up.
 func (r *runner) closeClient() {
 	if r.client != nil {
 		_ = r.client.Close()
@@ -53,6 +57,7 @@ func (r *runner) closeClient() {
 	}
 }
 
+// withClient reuses an SSH connection and closes it when the operation context is canceled.
 func (r *runner) withClient(operation func(context.Context, *ssh.Client) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), r.args.OperationTimeout)
 	defer cancel()
@@ -76,6 +81,7 @@ func (r *runner) withClient(operation func(context.Context, *ssh.Client) error) 
 	return err
 }
 
+// command runs a privileged guest shell command and records its output.
 func (r *runner) command(command string) (string, error) {
 	command = "sudo -n sh -c '" + strings.ReplaceAll(command, "'", "'\"'\"'") + "'"
 	var out *stormsshconfig.SshCmdOutput
@@ -93,6 +99,7 @@ func (r *runner) command(command string) (string, error) {
 	return strings.TrimSpace(out.Stdout), err
 }
 
+// trident captures command evidence and handles expected reboot disconnects.
 func (r *runner) trident(arguments, logName string, expectReboot bool) (string, error) {
 	var out *stormsshconfig.SshCmdOutput
 	err := r.withClient(func(ctx context.Context, client *ssh.Client) error {
@@ -118,12 +125,15 @@ func (r *runner) trident(arguments, logName string, expectReboot bool) (string, 
 	return out.Stdout, err
 }
 
+// upload copies a local input into the guest through privileged SFTP.
 func (r *runner) upload(source, dest string) error {
 	return r.withClient(func(_ context.Context, client *ssh.Client) error {
 		return stormsftp.UploadLocalFile(client, source, dest)
 	})
 }
 
+// waitBoot reconnects to an SSH-ready guest whose boot ID differs from previous.
+// NO_PREVIOUS_BOOT_ID accepts the initial boot.
 func (r *runner) waitBoot(previous string) (string, error) {
 	r.closeClient()
 	ctx, cancel := context.WithTimeout(context.Background(), r.args.BootTimeout)
@@ -153,6 +163,7 @@ func (r *runner) waitBoot(previous string) (string, error) {
 	return id, err
 }
 
+// reboot requests a guest restart, using poweroff followed by domain start for MSHV.
 func (r *runner) reboot() error {
 	command := "sudo -n systemctl reboot --no-block"
 	if r.args.Variant == variantMSHV {
@@ -185,6 +196,7 @@ func (r *runner) reboot() error {
 	return err
 }
 
+// save writes named evidence beneath the scenario's output directory.
 func (r *runner) save(name string, data []byte) error {
 	file := filepath.Join(r.args.OutputPath, "evidence", filepath.FromSlash(name))
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {

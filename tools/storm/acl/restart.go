@@ -18,6 +18,7 @@ import (
 
 var guestRestartBoundary = regexp.MustCompile(`(?m)^\[\s*\d+\.\d+\] reboot: Restarting system\r?$`)
 
+// waitForGuestRestart tails serial output until Linux reaches its final restart boundary.
 func waitForGuestRestart(ctx context.Context, serial io.Reader) ([]byte, error) {
 	var output bytes.Buffer
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -39,9 +40,12 @@ func waitForGuestRestart(ctx context.Context, serial io.Reader) ([]byte, error) 
 	}
 }
 
+// invokeTridentWithGuestRestart requires both Trident's reboot announcement and a serial restart boundary.
+// It closes SSH when the serial wait finishes so a stalled warm reset cannot hang the command.
 func invokeTridentWithGuestRestart(ctx context.Context, client *ssh.Client, arguments string, serial io.Reader) (*stormsshconfig.SshCmdOutput, []byte, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// restartResult carries the observed shutdown excerpt and any serial-wait error.
 	type restartResult struct {
 		serial []byte
 		err    error
@@ -65,6 +69,7 @@ func invokeTridentWithGuestRestart(ctx context.Context, client *ssh.Client, argu
 	return out, boundary.serial, errors.Join(result, boundary.err)
 }
 
+// tridentWithRestart saves fresh restart evidence before cold-cycling the existing MSHV domain.
 func (r *runner) tridentWithRestart(ctx context.Context, client *ssh.Client, arguments, logName string) (*stormsshconfig.SshCmdOutput, error) {
 	serial, err := os.Open(r.qemu.SerialLog)
 	if err != nil {

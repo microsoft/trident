@@ -8,11 +8,13 @@ import (
 	"github.com/digitalocean/go-libvirt"
 )
 
+// domainStarter exposes the libvirt operations needed to wait for shutoff and start a domain.
 type domainStarter interface {
 	DomainGetState(libvirt.Domain, uint32) (int32, int32, error)
 	DomainCreate(libvirt.Domain) error
 }
 
+// startDomainWhenShutoff waits for a stopped domain before starting it without redefining it.
 func startDomainWhenShutoff(ctx context.Context, lv domainStarter, domain libvirt.Domain) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -52,11 +54,13 @@ func (cfg QemuConfig) StartQemuVMWhenShutoff(ctx context.Context, vmName string)
 	return nil
 }
 
+// domainColdRestarter adds forced stop support while retaining the domain definition.
 type domainColdRestarter interface {
 	domainStarter
 	DomainDestroy(libvirt.Domain) error
 }
 
+// coldRestartDomain stops a running domain, then starts it once shutoff is observed.
 func coldRestartDomain(ctx context.Context, lv domainColdRestarter, domain libvirt.Domain) error {
 	if err := ctx.Err(); err != nil {
 		return err
