@@ -243,7 +243,7 @@ mod tests {
                     .map(|cell| cell.symbol())
                     .collect::<String>()
             };
-            model.scroll = u16::MAX;
+            model.scroll = usize::MAX;
             terminal
                 .draw(|frame| render::render(frame, &model))
                 .unwrap();
@@ -258,7 +258,7 @@ mod tests {
                     .collect::<Vec<_>>(),
                 history
             );
-            model.scroll = u16::MAX;
+            model.scroll = usize::MAX;
             terminal
                 .draw(|frame| render::render(frame, &model))
                 .unwrap();
