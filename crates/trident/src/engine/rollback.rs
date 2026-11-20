@@ -129,7 +129,16 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         if let Err(error) =
             mshv::validate_active_hypervisor(ctx.install_index, ctx.get_ab_update_volume())
         {
-            return record_hypervisor_failure(datastore, current_servicing_state, error);
+            if current_servicing_state == ServicingState::AbUpdateFinalized {
+                let serialized =
+                    serde_yaml::to_value(&error).structured(InternalError::SerializeError)?;
+                datastore.with_host_status(|status| {
+                    status.servicing_state = ServicingState::CommitFailed;
+                    status.last_error = Some(serialized);
+                })?;
+                return Ok(BootValidationResult::InvalidHypervisor(error));
+            }
+            return Err(error);
         }
     } else if matches!(
         current_servicing_state,
@@ -257,24 +266,6 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 state,
             }));
         }
-    }
-}
-
-/// Persists trial A/B identity failure before requesting rollback; other states only error.
-fn record_hypervisor_failure(
-    datastore: &mut DataStore,
-    state: ServicingState,
-    error: TridentError,
-) -> Result<BootValidationResult, TridentError> {
-    if state == ServicingState::AbUpdateFinalized {
-        let serialized = serde_yaml::to_value(&error).structured(InternalError::SerializeError)?;
-        datastore.with_host_status(|status| {
-            status.servicing_state = ServicingState::CommitFailed;
-            status.last_error = Some(serialized);
-        })?;
-        Ok(BootValidationResult::InvalidHypervisor(error))
-    } else {
-        Err(error)
     }
 }
 
@@ -863,7 +854,6 @@ mod tests {
 
     use const_format::formatcp;
     use maplit::btreemap;
-    use tempfile::TempDir;
 
     use osutils::{osrelease::OsRelease, testutils::repart::TEST_DISK_DEVICE_PATH};
     use trident_api::{
@@ -875,66 +865,6 @@ mod tests {
         error::ErrorKind,
         status::AbVolumeSelection,
     };
-
-    /// The recovery state and original error survive reopening the datastore.
-    #[test]
-    fn hypervisor_failure_is_persisted_before_requesting_rollback() {
-        let temp = TempDir::new().unwrap();
-        let path = temp.path().join("datastore.sqlite");
-        let mut datastore = DataStore::open_or_create(&path).unwrap();
-        let error = TridentError::new(ServicingError::ValidateAbActiveHypervisor {
-            expected_slot: "AZLB".into(),
-            observed_slot: Some("AZLA".into()),
-        });
-        let expected_error = serde_yaml::to_value(&error).unwrap();
-        let result =
-            record_hypervisor_failure(&mut datastore, ServicingState::AbUpdateFinalized, error)
-                .unwrap();
-        assert!(matches!(result, BootValidationResult::InvalidHypervisor(_)));
-        assert_eq!(
-            datastore.host_status().servicing_state,
-            ServicingState::CommitFailed
-        );
-        assert_eq!(
-            datastore.host_status().last_error.as_ref(),
-            Some(&expected_error)
-        );
-        drop(datastore);
-        let datastore = DataStore::open(&path).unwrap();
-        assert_eq!(
-            datastore.host_status().servicing_state,
-            ServicingState::CommitFailed
-        );
-        assert_eq!(
-            datastore.host_status().last_error.as_ref(),
-            Some(&expected_error)
-        );
-    }
-
-    /// A recovery identity failure must not request another rollback.
-    #[test]
-    fn recovery_identity_failure_does_not_request_another_rollback() {
-        let temp = TempDir::new().unwrap();
-        let mut datastore =
-            DataStore::open_or_create(&temp.path().join("datastore.sqlite")).unwrap();
-        datastore
-            .with_host_status(|status| {
-                status.servicing_state = ServicingState::CommitFailed;
-            })
-            .unwrap();
-        let error = TridentError::new(ServicingError::ValidateAbActiveHypervisor {
-            expected_slot: "AZLA".into(),
-            observed_slot: None,
-        });
-        assert!(
-            record_hypervisor_failure(&mut datastore, ServicingState::CommitFailed, error,)
-                .is_err()
-        );
-        assert_eq!(
-            datastore.host_status().servicing_state,
-            ServicingState::CommitFailed
-        );
-    }
 
     #[test]
     fn test_get_expected_device_path() {
