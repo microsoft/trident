@@ -45,13 +45,13 @@ jobs:
           targetPath: $(ACL_INPUT_DIR)/acl-t
       - ${{ if eq(parameters.variant, 'mshv') }}:
           - task: DownloadPipelineArtifact@2
-            displayName: Download producer efitreeloader RPM
+            displayName: Download latest successful nightly efitreeloader RPM
             inputs:
               buildType: specific
               project: ACL
               definition: '5529'
-              buildVersionToDownload: specific
-              pipelineId: '1261060'
+              buildVersionToDownload: latest
+              tags: nightly
               artifactName: drop_build_efitreeloader_rpm
               targetPath: $(ACL_INPUT_DIR)/efitreeloader
       - task: Bash@3

@@ -52,9 +52,10 @@ for dependencies; no additional repository configuration is needed.
 Keep a single matching candidate set, newer than publicly available Trident
 packages, and do not mix AZL4 RPMs into this directory.
 
-For MSHV, also stage the efitreeloader RPM from consumer **1261060**'s
-`drop_build_efitreeloader_rpm` artifact in `artifacts/rpm-overrides`.
-It contains loader revision `bf02d4e3f4`. The remaining MSHV packages, including
+For MSHV, also stage the efitreeloader RPM from the latest successful
+`nightly`-tagged run of [ACL pipeline 5529](https://dev.azure.com/mariner-org/ACL/_build?definitionId=5529).
+Use its `drop_build_efitreeloader_rpm` artifact in `artifacts/rpm-overrides`.
+The remaining MSHV packages, including
 their licenses, are installed as RPMs from Microsoft's public repositories.
 The recipe replaces `kernel` with `kernel-mshv`, pins compatible shim 15.8,
 and assembles the ESP loader bundle in an inline customization hook.
