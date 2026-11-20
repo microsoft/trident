@@ -1,1 +1,0 @@
-lsblk --json --output-all --bytes
