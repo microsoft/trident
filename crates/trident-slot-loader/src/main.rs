@@ -1,43 +1,34 @@
-use std::{
-    env::{self, VarError},
-    fs,
-    path::PathBuf,
-    process::ExitCode,
-};
+//! Initrd entry point: configure diagnostics, select a command and delegate its workflow.
 
-use anyhow::{bail, Context, Error};
-use log::{error, info, LevelFilter, Log, Metadata, Record};
+use std::{env, process::ExitCode};
 
-mod activation;
+use anyhow::{bail, Error};
+use log::info;
+
 mod config;
+mod diagnostics;
+mod filesystem;
+mod loader;
 mod manifest;
+mod mounts;
+mod outputs;
+mod recovery;
 mod release;
+mod selection;
+mod symlinks;
 mod tools;
 
-struct Stderr;
-
-impl Log for Stderr {
-    fn enabled(&self, _: &Metadata) -> bool {
-        true
-    }
-
-    fn log(&self, record: &Record) {
-        eprintln!("trident-slot-loader: {}: {}", record.level(), record.args());
-    }
-
-    fn flush(&self) {}
-}
+const CMDLINE_PATH: &str = "/proc/cmdline";
+const MAX_CMDLINE_BYTES: u64 = 64 * 1024;
 
 fn main() -> ExitCode {
-    if let Err(error) = log::set_logger(&Stderr) {
-        eprintln!("trident-slot-loader: ERROR: {error}");
-        return ExitCode::FAILURE;
-    }
-    log::set_max_level(LevelFilter::Info);
-    match run() {
+    let result = config::log_level_from_environment()
+        .and_then(diagnostics::init)
+        .and_then(|_| run());
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            error!("{error:#}");
+            diagnostics::report_failure(&error);
             ExitCode::FAILURE
         }
     }
@@ -58,43 +49,41 @@ fn run() -> Result<(), Error> {
         }
         _ => bail!("expected no arguments, --recover, --version or --help"),
     };
-    let config = config::Config::new(
-        PathBuf::from("/sysroot"),
-        PathBuf::from("/run"),
-        env::var_os("TRIDEN_SLOT_STORE"),
-    )?;
-    if !config.store_present()? {
-        info!("store absent: {}", config.store().display());
+    let paths = diagnostics::stage("configuration", config::Paths::from_environment)?;
+    info!(
+        "event=command_start version={} recover={recover} store={} host_store={}",
+        env!("CARGO_PKG_VERSION"),
+        paths.store().display(),
+        paths.host_store().display()
+    );
+    if !diagnostics::stage("store_lookup", || {
+        filesystem::directory_exists(paths.store())
+    })? {
+        info!("event=loader_noop reason=store_absent");
         return Ok(());
     }
-    let cmdline = fs::read_to_string("/proc/cmdline").context("reading kernel command line")?;
-    let slot = config::Slot::parse(&cmdline)?;
-    let slot_dir = config.slot_dir(slot)?;
+    let slot = diagnostics::stage("slot_detection", || {
+        selection::Slot::parse(&filesystem::read_bounded(CMDLINE_PATH, MAX_CMDLINE_BYTES)?)
+    })?;
+    let slot_dir = paths.store().join(slot.name());
+    filesystem::directory(&slot_dir)?;
+    info!("event=slot_selected slot={slot}");
     if recover {
         let enabled =
-            config::reboot_enabled(Some(&setting("REBOOT_ON_UPDATE_LOADER_ERROR", "true")?))?;
-        return activation::recover(&slot_dir, enabled, &tools::System);
-    }
-    let mode = setting("LOADER_MODE", "acl")?;
-    anyhow::ensure!(mode == "acl", "unsupported LOADER_MODE {mode:?}");
-    let confext_mode = setting("CONFEXT_MODE", "overlay")?;
-    let confext_mode = config::ConfextMode::parse(&confext_mode)?;
-    let manifest = manifest::Manifest::read(slot_dir.join("slot-loader.json"))?;
-    info!(
-        "slot={} manifest={} backend={confext_mode:?}",
-        slot.name(),
-        slot_dir.join("slot-loader.json").display()
-    );
-    activation::activate(&config, slot, &manifest, confext_mode, &tools::System)?;
-    activation::clear_pending(&slot_dir)?;
-    info!("slot={} prepared", slot.name());
-    Ok(())
-}
-
-fn setting(name: &str, default: &str) -> Result<String, Error> {
-    match env::var(name) {
-        Ok(value) => Ok(value),
-        Err(VarError::NotPresent) => Ok(default.to_string()),
-        Err(error) => Err(error).with_context(|| format!("reading {name}")),
+            diagnostics::stage("recovery_configuration", config::recovery_from_environment)?;
+        diagnostics::stage("recovery", || {
+            recovery::run(&slot_dir, enabled, &tools::System)
+        })
+    } else {
+        let mode = diagnostics::stage(
+            "activation_configuration",
+            config::activation_from_environment,
+        )?;
+        info!(
+            "event=configuration_ready slot={slot} confext_mode={mode} sysroot={} runtime={}",
+            paths.sysroot().display(),
+            paths.runtime().display()
+        );
+        loader::run(&paths, slot, mode, &tools::System)
     }
 }

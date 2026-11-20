@@ -16,3 +16,4 @@ TimeoutStartSec=30
 UMask=0077
 StandardOutput=journal+console
 StandardError=journal+console
+SyslogLevelPrefix=yes

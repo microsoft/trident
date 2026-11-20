@@ -11,3 +11,4 @@ ExecStart=/usr/bin/trident-slot-loader --recover
 TimeoutStartSec=10
 StandardOutput=journal+console
 StandardError=journal+console
+SyslogLevelPrefix=yes

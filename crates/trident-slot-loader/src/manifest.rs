@@ -1,11 +1,18 @@
-use std::{collections::HashSet, fs::File, io::Read, path::Path};
+//! Versioned boot input, independent of the servicing database and runtime publication.
+//!
+//! Serde rejects duplicate known keys. Unknown fields deliberately remain forward-compatible.
+
+use std::{collections::HashSet, path::Path};
 
 use anyhow::{ensure, Context, Error};
 use serde::Deserialize;
 
+use crate::filesystem;
+
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 const MAX_NAME_BYTES: usize = 251;
 
+/// Manifest order is retained: earlier confexts have higher overlay precedence.
 #[derive(Debug, Deserialize)]
 pub(super) struct Manifest {
     version: u64,
@@ -23,16 +30,7 @@ pub(super) struct Extension {
 impl Manifest {
     pub(super) fn read(path: impl AsRef<Path>) -> Result<Self, Error> {
         let path = path.as_ref();
-        super::config::regular_file(path)?;
-        let mut data = String::new();
-        File::open(path)?
-            .take(MAX_MANIFEST_BYTES + 1)
-            .read_to_string(&mut data)
-            .with_context(|| format!("reading manifest {}", path.display()))?;
-        ensure!(
-            data.len() as u64 <= MAX_MANIFEST_BYTES,
-            "manifest exceeds size limit"
-        );
+        let data = filesystem::read_bounded(path, MAX_MANIFEST_BYTES)?;
         Self::parse(&data).with_context(|| format!("manifest {}", path.display()))
     }
 

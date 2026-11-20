@@ -1,18 +1,38 @@
+//! Confext metadata compatibility. No image mounting, publication or shell evaluation occurs here.
+
 use std::{
     collections::HashMap,
-    fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::{bail, ensure, Context, Error};
 
+use crate::filesystem;
+
+const MAX_RELEASE_BYTES: u64 = 64 * 1024;
 type Fields = HashMap<String, String>;
 
-pub(super) fn host(root: &Path) -> Result<Fields, Error> {
-    read(&root.join("usr/lib/os-release"))
+/// Factory metadata from the booted OS, never the initrd's own os-release.
+pub(super) struct HostRelease(Fields);
+
+pub(super) fn host(root: &Path) -> Result<HostRelease, Error> {
+    let root = root.canonicalize().context("resolving target root")?;
+    let path = root
+        .join("usr/lib/os-release")
+        .canonicalize()
+        .context("resolving factory os-release")?;
+    ensure!(
+        path.starts_with(root.join("usr")),
+        "factory os-release escapes target /usr"
+    );
+    Ok(HostRelease(read(&path)?))
 }
 
-pub(super) fn validate_confext(mount: &Path, name: &str, host: &Fields) -> Result<PathBuf, Error> {
+pub(super) fn validate_confext(
+    mount: &Path,
+    name: &str,
+    host: &HostRelease,
+) -> Result<PathBuf, Error> {
     let lower = mount
         .join("etc")
         .canonicalize()
@@ -34,16 +54,17 @@ pub(super) fn validate_confext(mount: &Path, name: &str, host: &Fields) -> Resul
         "extension-release escapes its mount"
     );
     let fields = read(&release)?;
-    compatible(&fields, host)?;
+    compatible(&fields, &host.0)?;
     Ok(lower)
 }
 
 fn read(path: &Path) -> Result<Fields, Error> {
-    parse(&fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?)
+    parse(&filesystem::read_bounded(path, MAX_RELEASE_BYTES)?)
         .with_context(|| format!("release metadata {}", path.display()))
 }
 
 fn parse(data: &str) -> Result<Fields, Error> {
+    ensure!(!data.contains('\0'), "NUL in release metadata");
     let mut fields = Fields::new();
     for line in data
         .lines()
@@ -137,7 +158,8 @@ fn compatible(extension: &Fields, host: &Fields) -> Result<(), Error> {
     }
     ensure!(
         value("ID") == Some(host_id.as_str()),
-        "confext OS ID mismatch"
+        "confext OS ID mismatch: expected {host_id:?}, got {:?}",
+        value("ID")
     );
     let host_value = |key| {
         host.get(key)
@@ -149,9 +171,16 @@ fn compatible(extension: &Fields, host: &Fields) -> Result<(), Error> {
         value("CONFEXT_LEVEL"),
         host_value("VERSION_ID"),
     ) {
-        (Some(expected), Some(actual), _) => ensure!(expected == actual, "CONFEXT_LEVEL mismatch"),
+        (Some(expected), Some(actual), _) => ensure!(
+            expected == actual,
+            "CONFEXT_LEVEL mismatch: expected {expected:?}, got {actual:?}"
+        ),
         (_, _, Some(version)) => {
-            ensure!(value("VERSION_ID") == Some(version), "VERSION_ID mismatch")
+            ensure!(
+                value("VERSION_ID") == Some(version),
+                "VERSION_ID mismatch: expected {version:?}, got {:?}",
+                value("VERSION_ID")
+            )
         }
         _ => {}
     }
@@ -161,6 +190,58 @@ fn compatible(extension: &Fields, host: &Fields) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::{fs, os::unix::fs::symlink};
+
+    #[test]
+    fn factory_metadata_cannot_resolve_to_the_initrd_or_another_root() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("usr/lib")).unwrap();
+        fs::write(outside.path().join("os-release"), "ID=wrong").unwrap();
+        symlink(
+            outside.path().join("os-release"),
+            root.path().join("usr/lib/os-release"),
+        )
+        .unwrap();
+        assert!(host(root.path())
+            .err()
+            .unwrap()
+            .to_string()
+            .contains("escapes"));
+    }
+
+    #[test]
+    fn confext_lowerdirs_and_release_metadata_cannot_escape_the_image_mount() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let host = HostRelease(parse("ID=acl\nVERSION_ID=3.0").unwrap());
+        symlink(outside.path(), root.path().join("etc")).unwrap();
+        validate_confext(root.path(), "defaults", &host).unwrap_err();
+        fs::remove_file(root.path().join("etc")).unwrap();
+        fs::create_dir_all(root.path().join("etc/extension-release.d")).unwrap();
+        fs::write(
+            outside.path().join("release"),
+            "ID=_any\nCONFEXT_ID=defaults",
+        )
+        .unwrap();
+        symlink(
+            outside.path().join("release"),
+            root.path()
+                .join("etc/extension-release.d/extension-release.defaults"),
+        )
+        .unwrap();
+        validate_confext(root.path(), "defaults", &host).unwrap_err();
+    }
+
+    #[test]
+    fn oversized_or_nul_release_metadata_is_rejected() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("release");
+        fs::write(&path, "x".repeat(MAX_RELEASE_BYTES as usize + 1)).unwrap();
+        read(&path).unwrap_err();
+        parse("ID=acl\0garbage").unwrap_err();
+    }
 
     #[test]
     fn release_values_are_data_not_shell() {

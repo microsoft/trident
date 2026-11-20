@@ -1,210 +1,192 @@
+//! Environment parsing and path derivation. This module performs no filesystem I/O.
+
 use std::{
+    env,
     ffi::OsString,
-    fs, io,
+    fmt,
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{bail, ensure, Context, Error};
+use anyhow::{bail, ensure, Error};
+use log::LevelFilter;
 
 const DEFAULT_STORE: &str = "/var/lib/aclslot";
+const SYSROOT: &str = "/sysroot";
+const RUNTIME_ROOT: &str = "/run";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Slot {
-    A,
-    B,
-}
-
-impl Slot {
-    pub(super) fn parse(cmdline: &str) -> Result<Self, Error> {
-        let mut values = cmdline
-            .split_ascii_whitespace()
-            .filter_map(|word| word.strip_prefix("acl.slot="));
-        let slot = match values.next() {
-            Some("a") => Self::A,
-            Some("b") => Self::B,
-            other => bail!("missing or invalid acl.slot: {other:?}"),
-        };
-        ensure!(values.next().is_none(), "duplicate acl.slot");
-        Ok(slot)
-    }
-
-    pub(super) fn name(self) -> &'static str {
-        match self {
-            Self::A => "a",
-            Self::B => "b",
-        }
-    }
-}
-
+/// Confext activation belongs either to our writable-overlay preparation or to systemd, never both.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ConfextMode {
+    /// Retain read-only mounts and publish their /etc directories for Bootengine.
     Overlay,
+    /// Publish native confext links; the loader must not mount these images.
     Systemd,
 }
 
 impl ConfextMode {
-    pub(super) fn parse(value: &str) -> Result<Self, Error> {
+    fn parse(value: &str) -> Result<Self, Error> {
         match value {
             "overlay" => Ok(Self::Overlay),
             "systemd" => Ok(Self::Systemd),
-            _ => bail!("unsupported CONFEXT_MODE {value:?}"),
+            _ => bail!("unsupported CONFEXT_MODE {value:?}; expected overlay or systemd"),
         }
     }
 }
 
-pub(super) struct Config {
-    pub(super) root: PathBuf,
-    pub(super) run: PathBuf,
-    pub(super) host_store: PathBuf,
+impl fmt::Display for ConfextMode {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Overlay => "overlay",
+            Self::Systemd => "systemd",
+        })
+    }
 }
 
-impl Config {
-    pub(super) fn new(root: PathBuf, run: PathBuf, store: Option<OsString>) -> Result<Self, Error> {
-        let host_store = store
-            .map(PathBuf::from)
-            .unwrap_or_else(|| DEFAULT_STORE.into());
-        ensure!(
-            host_store.is_absolute()
-                && host_store != Path::new("/")
-                && host_store
-                    .components()
-                    .skip(1)
-                    .all(|part| matches!(part, Component::Normal(_))),
-            "TRIDEN_SLOT_STORE must be a non-root absolute path without . or .."
-        );
+/// Keeps initrd access paths distinct from the host paths stored in native symlinks.
+pub(super) struct Paths {
+    sysroot: PathBuf,
+    runtime: PathBuf,
+    host_store: PathBuf,
+    store: PathBuf,
+}
+
+impl Paths {
+    pub(super) fn from_environment() -> Result<Self, Error> {
+        let store = env::var_os("TRIDEN_SLOT_STORE").unwrap_or_else(|| DEFAULT_STORE.into());
+        Self::new(SYSROOT.into(), RUNTIME_ROOT.into(), store.into())
+    }
+
+    pub(super) fn new(
+        sysroot: PathBuf,
+        runtime: PathBuf,
+        host_store: PathBuf,
+    ) -> Result<Self, Error> {
+        for path in [&sysroot, &runtime, &host_store] {
+            ensure!(
+                path.is_absolute()
+                    && path != Path::new("/")
+                    && path
+                        .components()
+                        .skip(1)
+                        .all(|part| matches!(part, Component::Normal(_))),
+                "expected a non-root absolute path without parent traversal: {}",
+                path.display()
+            );
+        }
+        let store = sysroot.join(host_store.strip_prefix("/")?);
         Ok(Self {
-            root,
-            run,
+            sysroot,
+            runtime,
             host_store,
+            store,
         })
     }
 
-    pub(super) fn store(&self) -> PathBuf {
-        self.root.join(
-            self.host_store
-                .strip_prefix("/")
-                .expect("invariant: absolute store"),
-        )
+    pub(super) fn store(&self) -> &Path {
+        &self.store
     }
 
-    pub(super) fn store_present(&self) -> Result<bool, Error> {
-        let path = self.store();
-        match fs::symlink_metadata(&path) {
-            Ok(_) => {
-                directory(&path)?;
-                Ok(true)
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-            Err(error) => Err(error).with_context(|| format!("inspecting {}", path.display())),
-        }
+    pub(super) fn host_store(&self) -> &Path {
+        &self.host_store
     }
 
-    pub(super) fn slot_dir(&self, slot: Slot) -> Result<PathBuf, Error> {
-        let path = self.store().join(slot.name());
-        directory(&path)?;
-        Ok(path)
+    pub(super) fn runtime(&self) -> &Path {
+        &self.runtime
+    }
+
+    pub(super) fn sysroot(&self) -> &Path {
+        &self.sysroot
+    }
+
+    pub(super) fn lowerdirs(&self) -> PathBuf {
+        self.runtime.join("trident-slot-loader/etc-lowerdirs")
     }
 }
 
-pub(super) fn directory(path: &Path) -> Result<(), Error> {
-    let mut current = PathBuf::new();
-    for component in path.components() {
-        current.push(component);
-        let metadata = fs::symlink_metadata(&current)
-            .with_context(|| format!("inspecting directory {}", current.display()))?;
-        ensure!(
-            metadata.is_dir(),
-            "{} is not a real directory",
-            current.display()
-        );
-    }
-    Ok(())
+pub(super) fn activation_from_environment() -> Result<ConfextMode, Error> {
+    activation(&|name| env::var_os(name))
 }
 
-pub(super) fn regular_file(path: &Path) -> Result<(), Error> {
-    if let Some(parent) = path.parent() {
-        directory(parent)?;
-    }
+pub(super) fn recovery_from_environment() -> Result<bool, Error> {
+    recovery(&|name| env::var_os(name))
+}
+
+pub(super) fn log_level_from_environment() -> Result<LevelFilter, Error> {
+    setting(
+        &|name| env::var_os(name),
+        "TRIDENT_SLOT_LOADER_LOG_LEVEL",
+        "info",
+    )?
+    .parse()
+    .map_err(|error| anyhow::anyhow!("invalid TRIDENT_SLOT_LOADER_LOG_LEVEL: {error}"))
+}
+
+fn activation(environment: &impl Fn(&str) -> Option<OsString>) -> Result<ConfextMode, Error> {
+    let mode = setting(environment, "LOADER_MODE", "acl")?;
     ensure!(
-        fs::symlink_metadata(path)
-            .with_context(|| format!("inspecting {}", path.display()))?
-            .is_file(),
-        "{} is not a regular file",
-        path.display()
+        mode == "acl",
+        "unsupported LOADER_MODE {mode:?}; expected acl"
     );
-    Ok(())
+    ConfextMode::parse(&setting(environment, "CONFEXT_MODE", "overlay")?)
 }
 
-pub(super) fn create_directory(path: &Path) -> Result<(), Error> {
-    let mut current = PathBuf::new();
-    for component in path.components() {
-        current.push(component);
-        match fs::symlink_metadata(&current) {
-            Ok(metadata) => ensure!(
-                metadata.is_dir(),
-                "{} is not a real directory",
-                current.display()
-            ),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                fs::create_dir(&current)
-                    .with_context(|| format!("creating {}", current.display()))?;
-            }
-            Err(error) => {
-                return Err(error).with_context(|| format!("inspecting {}", current.display()))
-            }
-        }
+fn recovery(environment: &impl Fn(&str) -> Option<OsString>) -> Result<bool, Error> {
+    match setting(environment, "REBOOT_ON_UPDATE_LOADER_ERROR", "true")?.as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        other => bail!("invalid REBOOT_ON_UPDATE_LOADER_ERROR {other:?}; expected true or false"),
     }
-    Ok(())
 }
 
-pub(super) fn reboot_enabled(value: Option<&str>) -> Result<bool, Error> {
-    match value {
-        None | Some("true") => Ok(true),
-        Some("false") => Ok(false),
-        Some(other) => bail!("invalid REBOOT_ON_UPDATE_LOADER_ERROR {other:?}"),
-    }
+fn setting(
+    environment: &impl Fn(&str) -> Option<OsString>,
+    name: &str,
+    default: &str,
+) -> Result<String, Error> {
+    environment(name).map_or_else(
+        || Ok(default.to_string()),
+        |value| {
+            value
+                .into_string()
+                .map_err(|value| anyhow::anyhow!("{name} is not UTF-8: {value:?}"))
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use std::os::unix::fs::symlink;
+    use std::{collections::HashMap, os::unix::ffi::OsStringExt};
 
     #[test]
-    fn slot_is_explicit_and_unambiguous() {
-        assert_eq!(Slot::parse("quiet acl.slot=a").unwrap(), Slot::A);
-        assert_eq!(Slot::parse("acl.slot=b console=tty0").unwrap(), Slot::B);
-        for invalid in [
-            "",
-            "acl.slot=A",
-            "acl.slot=c",
-            "acl.slot=a acl.slot=a",
-            "acl.slot=a acl.slot=b",
-        ] {
-            Slot::parse(invalid).unwrap_err();
-        }
+    fn modes_are_typed_and_invalid_values_do_not_fall_back() {
+        assert_eq!(activation(&|_| None).unwrap(), ConfextMode::Overlay);
+        assert!(recovery(&|_| None).unwrap());
+        let values = HashMap::from([
+            ("CONFEXT_MODE", "systemd"),
+            ("REBOOT_ON_UPDATE_LOADER_ERROR", "false"),
+        ]);
+        let environment = |name: &str| values.get(name).map(OsString::from);
+        assert_eq!(activation(&environment).unwrap(), ConfextMode::Systemd);
+        assert!(!recovery(&environment).unwrap());
+        activation(&|_| Some("invalid".into())).unwrap_err();
+        recovery(&|_| Some("invalid".into())).unwrap_err();
+        activation(&|_| Some(OsString::from_vec(vec![0xff]))).unwrap_err();
     }
 
     #[test]
-    fn store_uses_one_host_path_and_rejects_symlink_ancestors() {
-        let temporary = tempfile::tempdir().unwrap();
-        let config =
-            Config::new(temporary.path().into(), temporary.path().join("run"), None).unwrap();
-        assert_eq!(config.store(), temporary.path().join("var/lib/aclslot"));
-        assert!(!config.store_present().unwrap());
-        fs::create_dir_all(config.store()).unwrap();
-        assert!(config.store_present().unwrap());
-        symlink("aclslot", temporary.path().join("var/lib/alias")).unwrap();
-        let config = Config::new(
-            temporary.path().into(),
-            temporary.path().join("run"),
-            Some("/var/lib/alias".into()),
-        )
-        .unwrap();
-        config.store_present().unwrap_err();
-        for path in ["relative", "/", "/var/../etc"] {
-            assert!(Config::new("/sysroot".into(), "/run".into(), Some(path.into())).is_err());
+    fn recovery_does_not_depend_on_activation_settings() {
+        assert!(recovery(&|name| { (name == "CONFEXT_MODE").then(|| "invalid".into()) }).unwrap());
+    }
+
+    #[test]
+    fn one_store_path_produces_distinct_initrd_and_host_views() {
+        let paths = Paths::new("/sysroot".into(), "/run".into(), DEFAULT_STORE.into()).unwrap();
+        assert_eq!(paths.store(), Path::new("/sysroot/var/lib/aclslot"));
+        assert_eq!(paths.host_store(), Path::new(DEFAULT_STORE));
+        for invalid in ["relative", "/", "/var/../etc"] {
+            assert!(Paths::new("/sysroot".into(), "/run".into(), invalid.into()).is_err());
         }
     }
 }
