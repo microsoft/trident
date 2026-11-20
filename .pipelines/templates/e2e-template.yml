@@ -53,11 +53,6 @@ parameters:
       - forceBuild
       - prebuilt
 
-  - name: includeAclTests
-    displayName: "Include native ACL testing"
-    type: boolean
-    default: false
-
   - name: includeAzure
     displayName: "Include Azure testing"
     type: boolean
@@ -281,7 +276,7 @@ stages:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
       testSecureBoot: ${{ parameters.testSecureBoot }}
 
-  - ${{ if and(parameters.includeAclTests, in(parameters.stageType, 'pr-e2e', 'ci', 'pre', 'full-validation')) }}:
+  - ${{ if in(parameters.stageType, 'pr-e2e', 'ci', 'pre', 'full-validation') }}:
       - template: stages/testing_acl/vm_testing.yml
 
   # Validate trident-acl-agent (storm A/B update scenario against a real tridentd)

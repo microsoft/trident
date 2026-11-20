@@ -76,4 +76,3 @@ extends:
       - template: templates/pipeline-selector.yml
         parameters:
           targetStage: pre
-          includeAclTests: true

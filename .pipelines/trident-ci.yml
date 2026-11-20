@@ -62,4 +62,3 @@ extends:
       - template: templates/pipeline-selector.yml
         parameters:
           targetStage: ci
-          includeAclTests: true

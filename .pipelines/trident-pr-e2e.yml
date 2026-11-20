@@ -44,5 +44,4 @@ extends:
         parameters:
           targetStage: pr-e2e
           blockPublishing: true
-          includeAclTests: true
           aclAgentTestParallelJobs: ${{ parameters.aclAgentTestParallelJobs }}
