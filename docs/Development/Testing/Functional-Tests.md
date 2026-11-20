@@ -113,6 +113,10 @@ On the 1ES runner, install the optional libvirt/QEMU dependencies once:
 bash scripts/cloud-agent/setup-functional.sh
 ```
 
+Setup installs `xorriso` for cloud-init ISO generation and preserves existing
+libvirt configuration and SSH keys. Cloud functional runs explicitly select
+`qemu:///system` without rewriting the user's libvirt configuration.
+
 Run the bounded smoke suite:
 
 ```bash
@@ -128,12 +132,27 @@ An existing local `artifacts/trident-functest.qcow2` is left untouched. To
 explicitly publish a compatibility symlink, pass `--link-path` to
 `scripts/cloud-agent/download_functional_artifact.py`.
 
-Each cloud run reserves its namespace for the duration of the run and rejects
-existing or prefix-colliding libvirt resources before provisioning or enabling
-cleanup. Each invocation also uses a private temporary pytest cache so concurrent
-runs cannot overwrite each other's cached VM address or namespace. The cache is
-removed on exit. `TRIDENT_FUNCTIONAL_NAMESPACE` must contain only letters, digits,
-underscores, or hyphens, starting with a letter or digit.
+Cloud functional runs are serialized per host, from artifact preparation and
+shared build generation through VM cleanup. A competing run exits with a
+host-busy error rather than sharing generated files, reports, or network
+selection. Updated setup provisions the persistent lock at
+`/var/lib/trident-cloud-agent/functional.lock` for the `libvirt` group. All
+participating runs must use the updated scripts; the lock does not coordinate
+older runners or independent libvirt tools.
+
+Each run also rejects existing or prefix-colliding libvirt resources before
+provisioning or enabling cleanup. Its pytest cache and generated netlaunch
+configuration are private temporary files, leaving the checkout's existing
+pytest cache and `tools/vm-netlaunch.yaml` untouched.
+`TRIDENT_FUNCTIONAL_NAMESPACE` must contain only letters, digits, underscores,
+or hyphens, starting with a letter or digit.
+
+Virtdeploy checks resource ownership and dependencies before cleanup or
+replacement. New domains and networks carry ownership metadata; legacy resources
+must satisfy the expected generated configuration, including canonical pool
+paths. An ownership or dependency conflict fails before destruction rather than
+guessing which resources may be deleted. Inactive pool files are retained and
+reported for manual inspection.
 
 When reusing a functional-test VM, its namespace is restored from pytest's
 cache. A conflicting `--virtdeploy-namespace`, or a legacy cached environment
