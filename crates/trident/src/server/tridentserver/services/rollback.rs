@@ -24,6 +24,7 @@ use crate::engine::manual_rollback::utils::{
     ManualRollbackRequestKind,
 };
 use crate::{
+    command_kind::CommandKind,
     server::{
         tridentserver::{RebootDecision, ServicingResponseStream},
         TridentServer,
@@ -71,7 +72,7 @@ impl RollbackService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "rollback",
+            CommandKind::rollback(),
             super::reboot_allowed(&finalize.reboot),
             move || {
                 let mut trident: Trident =
@@ -109,25 +110,32 @@ impl RollbackService for TridentServer {
         let logstream = self.logstream.clone();
         let tracestream = self.tracestream.clone();
 
-        self.servicing_request("rollback_stage", RebootDecision::Error, move || {
-            let mut trident: Trident = Trident::new(None, &data_store_path, logstream, tracestream)
-                .message("Failed to initialize Trident")?;
+        self.servicing_request(
+            CommandKind::rollback_stage(),
+            RebootDecision::Error,
+            move || {
+                let mut trident: Trident =
+                    Trident::new(None, &data_store_path, logstream, tracestream)
+                        .message("Failed to initialize Trident")?;
 
-            let mut datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+                let mut datastore = DataStore::open_or_create(&data_store_path)
+                    .message("Failed to open datastore")?;
 
-            let (invoke_if_next_is_runtime, invoke_available_ab) =
-                manual_rollback_flags(req.kind())?;
+                let (invoke_if_next_is_runtime, invoke_available_ab) =
+                    manual_rollback_flags(req.kind())?;
 
-            trident
-                .rollback(
-                    &mut datastore,
-                    invoke_if_next_is_runtime,
-                    invoke_available_ab,
-                    Operation::Stage.into(),
-                )
-                .map(|(exit_kind, servicing_type)| (exit_kind, None, Some(servicing_type.into())))
-        })
+                trident
+                    .rollback(
+                        &mut datastore,
+                        invoke_if_next_is_runtime,
+                        invoke_available_ab,
+                        Operation::Stage.into(),
+                    )
+                    .map(|(exit_kind, servicing_type)| {
+                        (exit_kind, None, Some(servicing_type.into()))
+                    })
+            },
+        )
     }
 
     type RollbackFinalizeStream = ServicingResponseStream;
@@ -142,7 +150,7 @@ impl RollbackService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "rollback_finalize",
+            CommandKind::rollback_finalize(),
             super::reboot_allowed(&finalize.reboot),
             move || {
                 let mut trident: Trident =
