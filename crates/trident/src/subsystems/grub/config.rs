@@ -16,11 +16,12 @@ use trident_api::{
     constants::{
         BOOT_MOUNT_POINT_PATH, ESP_EFI_DIRECTORY, GRUB2_CONFIG_FILENAME,
         GRUB2_CONFIG_RELATIVE_PATH, ROOT_MOUNT_POINT_PATH, TRIDENT_OVERLAY_LOWER_RELATIVE_PATH,
-        TRIDENT_OVERLAY_UPPER_RELATIVE_PATH, TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
+        TRIDENT_OVERLAY_PATH, TRIDENT_OVERLAY_UPPER_RELATIVE_PATH,
+        TRIDENT_OVERLAY_WORK_RELATIVE_PATH,
     },
 };
 
-use crate::engine::{constants::TRIDENT_OVERLAY_PATH, storage::verity, EngineContext};
+use crate::engine::{boot::get_update_esp_dir_name, storage::verity, EngineContext};
 
 /// Updates the boot filesystem UUID on the search command inside the GRUB
 /// config.
@@ -76,7 +77,7 @@ pub(super) fn update_configs(ctx: &EngineContext) -> Result<(), Error> {
         .esp_mount_path
         .as_path()
         .join(ESP_EFI_DIRECTORY)
-        .join(super::get_update_esp_dir_name(ctx).context("Failed to get update install ID")?)
+        .join(get_update_esp_dir_name(ctx).context("Failed to get update install ID")?)
         .join(GRUB2_CONFIG_FILENAME);
 
     update_grub_config_esp(&bootentry_config_path, &boot_uuid).context(format!(

@@ -233,7 +233,7 @@ impl EngineContext {
     }
 
     /// Using the `/` mount point, fetches the root block device path.
-    pub(super) fn get_root_block_device_path(&self) -> Option<PathBuf> {
+    pub(crate) fn get_root_block_device_path(&self) -> Option<PathBuf> {
         self.get_root_block_device_id()
             .and_then(|id| self.get_block_device_path(&id))
     }

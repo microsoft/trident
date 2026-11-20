@@ -133,6 +133,8 @@ pub enum ServicingState {
     Provisioned,
     /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
+    /// Commit failed and rollback to the retained OS is required.
+    CommitFailed,
     /// A state written by another Trident version, preserved for inspection only.
     #[strum(default)]
     Unknown(String),
@@ -379,6 +381,7 @@ mod tests {
                 "ab-update-health-check-failed",
                 ServicingState::AbUpdateHealthCheckFailed,
             ),
+            ("commit-failed", ServicingState::CommitFailed),
             (
                 "future-recovery-step",
                 ServicingState::Unknown("future-recovery-step".into()),
@@ -402,6 +405,27 @@ mod tests {
         for yaml in ["42", "true", "null", "[]", "{}"] {
             serde_yaml::from_str::<ServicingState>(yaml).unwrap_err();
         }
+    }
+
+    #[test]
+    fn commit_failure_roundtrips_without_previous_hypervisor_alias() {
+        let state: ServicingState = serde_yaml::from_str("commit-failed").unwrap();
+        assert_eq!(state, ServicingState::CommitFailed);
+        assert_eq!(
+            serde_yaml::to_string(&state).unwrap().trim(),
+            "commit-failed"
+        );
+        assert_eq!(
+            serde_yaml::from_str::<ServicingState>("ab-update-hypervisor-check-failed").unwrap(),
+            ServicingState::Unknown("ab-update-hypervisor-check-failed".into())
+        );
+
+        let health: ServicingState = serde_yaml::from_str("ab-update-health-check-failed").unwrap();
+        assert_eq!(health, ServicingState::AbUpdateHealthCheckFailed);
+        assert_eq!(
+            serde_yaml::to_string(&health).unwrap().trim(),
+            "ab-update-health-check-failed"
+        );
     }
 
     #[test]

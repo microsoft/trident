@@ -21,6 +21,7 @@ use crate::{
     engine::{
         bootentries,
         context::{EngineContext, EngineContextParams},
+        mshv,
         storage::{encryption, verity},
     },
     health,
@@ -34,14 +35,19 @@ pub enum BootValidationResult {
     ValidBootProvisioned,
     /// Target OS booted successfully, and the health checks failed
     ValidBootHealthCheckFailed(TridentError),
+    /// The trial OS booted, but its hypervisor failed validation and requires rollback.
+    InvalidHypervisor(TridentError),
 }
 
 /// Validates that the firmware correctly booted from the expected target OS
 /// image rather than rolling back, and reconciles the Host Status accordingly.
 ///
+/// Checks the boot device and calls the identity hook when `/dev/mshv` is present.
+/// The hook currently assumes success rather than verifying the running hypervisor.
+///
 /// A successful finalized boot continues the commit process. An unexpected boot
 /// device returns an error, updating Host Status where rollback reconciliation
-/// requires it. Trial A/B health-check failures can request
+/// requires it. Trial A/B health or hypervisor validation failures can request
 /// recovery; failed recovery returns an error without another rollback or
 /// changing Host Status.
 #[tracing::instrument(skip_all)]
@@ -54,10 +60,10 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         ServicingState::AbUpdateFinalized
         | ServicingState::CleanInstallFinalized
         | ServicingState::ManualRollbackAbFinalized => datastore.host_status().ab_active_volume,
-        // For AbUpdateHealthCheckFailed, use
+        // For AbUpdateHealthCheckFailed or CommitFailed, use
         // the opposite of the active volume set in Host Status, so recovery
         // validates the retained servicing OS rather than the failed candidate.
-        ServicingState::AbUpdateHealthCheckFailed => {
+        ServicingState::AbUpdateHealthCheckFailed | ServicingState::CommitFailed => {
             match datastore.host_status().ab_active_volume {
                 Some(AbVolumeSelection::VolumeB) => Some(AbVolumeSelection::VolumeA),
                 Some(AbVolumeSelection::VolumeA) => Some(AbVolumeSelection::VolumeB),
@@ -73,9 +79,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     };
 
     let servicing_type = match current_servicing_state {
-        ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
-            ServicingType::AbUpdate
-        }
+        ServicingState::AbUpdateFinalized
+        | ServicingState::AbUpdateHealthCheckFailed
+        | ServicingState::CommitFailed => ServicingType::AbUpdate,
         ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
         ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
         _ => ServicingType::NoActiveServicing,
@@ -84,7 +90,7 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
     // Recovery validates the retained OS, not the failed candidate.
     let recovering = matches!(
         current_servicing_state,
-        ServicingState::AbUpdateHealthCheckFailed
+        ServicingState::AbUpdateHealthCheckFailed | ServicingState::CommitFailed
     );
     let expected_spec = if recovering {
         datastore.host_status().spec_old.clone()
@@ -118,7 +124,31 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         compare_device_paths(current_device_path.clone(), expected_device_path.clone())
             .message("Host failed to boot from expected boot device")?;
 
-    // TODO: Validate the running hypervisor's identity against the expected OS slot.
+    // Route trial identity failures to recovery; propagate recovery failures.
+    if booted_to_expected_device {
+        if let Err(error) =
+            mshv::validate_active_hypervisor(ctx.install_index, ctx.get_ab_update_volume())
+        {
+            if current_servicing_state == ServicingState::AbUpdateFinalized {
+                let serialized =
+                    serde_yaml::to_value(&error).structured(InternalError::SerializeError)?;
+                datastore.with_host_status(|status| {
+                    status.servicing_state = ServicingState::CommitFailed;
+                    status.last_error = Some(serialized);
+                })?;
+                return Ok(BootValidationResult::InvalidHypervisor(error));
+            }
+            return Err(error);
+        }
+    } else if matches!(
+        current_servicing_state,
+        ServicingState::AbUpdateFinalized | ServicingState::ManualRollbackAbFinalized
+    ) {
+        // Firmware rolled back; validate against the retained OS's slot.
+        let host_status = datastore.host_status();
+        mshv::validate_active_hypervisor(host_status.install_index, host_status.ab_active_volume)?;
+    }
+
     match (booted_to_expected_device, &current_servicing_state) {
         (true, ServicingState::CleanInstallFinalized)
         | (true, ServicingState::AbUpdateFinalized)
@@ -136,8 +166,9 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
         //
         // Every case below will return an error.
         //
-        (false, ServicingState::AbUpdateHealthCheckFailed) => {
-            // For an A/B update whose health checks failed,
+        (false, ServicingState::AbUpdateHealthCheckFailed)
+        | (false, ServicingState::CommitFailed) => {
+            // For an A/B update whose health or hypervisor validation failed,
             // failure to boot back into the retained servicing OS is a failed
             // recovery: report the error and leave Host Status unchanged.
             error!("Host failed to rollback into the servicing OS");
@@ -174,6 +205,19 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
                 HealthChecksError::AbUpdateHealthCheckCommitCheck {
                     expected_device_path: current_device_path.to_string_lossy().to_string(),
                 },
+            ));
+        }
+        (true, ServicingState::CommitFailed) => {
+            // Restore the retained OS's status, but still report the rejected update's failure.
+            info!("Rollback to servicing OS succeeded, setting host status from {current_servicing_state:?} to Provisioned");
+            datastore.with_host_status(|host_status| {
+                host_status.spec = host_status.spec_old.clone();
+                host_status.spec_old = Default::default();
+                host_status.servicing_state = ServicingState::Provisioned;
+            })?;
+
+            return Err(TridentError::new(
+                ServicingError::AbUpdateHypervisorCommitCheck,
             ));
         }
         (false, ServicingState::AbUpdateFinalized) => {
