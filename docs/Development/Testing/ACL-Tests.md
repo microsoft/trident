@@ -11,9 +11,7 @@ and MSHV variants.
 
 ## Image and test contract
 
-For the non-MSHV (`standard`) variant, use **ACL images**, not ordinary Azure
-Linux images with altered identities. They must retain ACL's Btrfs `/usr`,
-verity, `/etc` OverlayFS and native A/B partition layout. The `mshv` variant
+For standard (non-MSHV) variant, use an ACL image. The `mshv` variant
 requires ACL images with the MSHV kernel and complete boot chain.
 MSHV images are not publicly available.
 
@@ -43,9 +41,7 @@ The scenario requires:
 
 After each commit and the persistence reboot, it checks that Trident status
 reports `servicingState: provisioned` and the expected `abActiveVolume`.
-Boot IDs ensure reboot waits observe a new boot. The scenario does not inspect
-filesystems, native ACL identity, MSHV devices or boot-tree contents.
-The controller retains the last boot ID and expected active slot across cases.
+Boot IDs ensure reboot waits observe a new boot.
 
 Storm reports `deploy-vm`, `check-deployment`, `run-ab-update`, `run-rollback`,
 `run-ab-update-2`, `run-ab-update-3`, `check-persistence`, `collect-logs` and
@@ -81,6 +77,9 @@ Run from the Trident root on a KVM/libvirt-capable Linux host with QEMU,
 with nested KVM enabled; its VM uses four CPUs, 16 GiB RAM and the plain OVMF
 4M CODE/VARS firmware.
 
+These tests have only been run on Intel platforms. MSHV tests may have
+compatibility issues on AMD platforms.
+
 Copy the already-created images and their matching key into a dedicated
 artifacts directory using the filenames below. Do not generate a new SSH key:
 it would not match the key authorized in the images.
@@ -107,17 +106,6 @@ The disposable test's update configuration uses `image.sha384: ignored`.
 The scenario does not inspect COSI contents or validate artifact checksums,
 filesystem UUIDs, verity root hashes or Trident binary digests.
 
-## Pipelines
-
-`testing_acl` builds and tests both variants in the four existing PR-e2e,
-CI, prerelease and full-validation entrypoints, which explicitly set
-`includeAclTests: true`. Other shared-template callers default to no ACL tests.
-Jobs use the Linux KVM pool without Windows/Hyper-V.
-
-Published inputs are `acl-standard` and `acl-mshv`, each containing
-`base.qcow2`, `update.cosi` and `id_rsa`, ready for `--artifacts-dir`.
-Keep the private key restricted to the test artifact and mode 0600 locally.
-
 ## Results and diagnostics
 
 Results are `acl-standard-results` and `acl-mshv-results`. Each run preserves
@@ -128,19 +116,3 @@ QEMU creates `booted.qcow2` in the artifacts directory; the scenario removes it
 after a successful run. Evidence is written directly to `--output-path`, and the VM
 uses `--vm-name` without a generated suffix. Runs must not share a VM name,
 artifacts directory or output path concurrently.
-
-## Validation limits
-
-Initial native QCOW2/COSI builds, content audits and the complete standard
-servicing cycle with explicit commits and persistence reboot passed using
-existing Trident artifact 1256724 (`3fc019c`), not a fresh source-branch RPM.
-An earlier local MSHV boot reset before Linux after `second.efi`.
-
-[Pipeline 1262480, MSHV job](https://dev.azure.com/mariner-org/ECF/_build/results?buildId=1262480&view=logs)
-at source `a869fe163` subsequently passed update, rollback, update, update,
-four explicit commits on B/A/B/A and a persistence boot on A. This demonstrates
-the native MSHV servicing scenario with the host cold cycles described above,
-not every job in that pipeline or guest warm-reset support.
-Secure Boot, production signing and cross-version hypervisor/loader servicing
-are not validated. The pinned loader still uses shared absolute component paths;
-same-generation bundle checks do not establish cross-version slot isolation.
