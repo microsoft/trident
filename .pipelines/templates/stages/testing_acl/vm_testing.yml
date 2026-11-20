@@ -88,11 +88,30 @@ stages:
                     chmod +x ./bin/storm-trident
                     chmod 600 '$(Build.ArtifactStagingDirectory)/acl/id_rsa'
                     mkdir -p '$(ob_outputDirectory)'
-                    sudo ./bin/storm-trident run acl -a -- \
+                    sudo ./bin/storm-trident run acl -a \
+                      -j '$(ob_outputDirectory)/acl-${{ variant }}.junit.xml' -- \
                       --variant '${{ variant }}' \
                       --artifacts-dir '$(Build.ArtifactStagingDirectory)/acl' \
                       --output-path '$(ob_outputDirectory)'
+              - bash: |
+                  set -euo pipefail
+                  disk='$(Build.ArtifactStagingDirectory)/acl/booted.qcow2'
+                  if [[ -f "$disk" ]]; then
+                    sudo zstd -T0 "$disk"
+                    sudo mv "$disk.zst" '$(ob_outputDirectory)/'
+                  else
+                    echo "##vso[task.logissue type=warning]No booted.qcow2 was created; no failed VM disk to publish."
+                  fi
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
+                condition: failed()
+                displayName: Publish failed ACL VM disk
               - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
                 parameters:
                   outputDir: $(ob_outputDirectory)
                   condition: always()
+              - template: ../junit/handle-junit-test-results.yml
+                parameters:
+                  testRunName: ACL ${{ variant }}
+                  junitTestFile: $(ob_outputDirectory)/acl-${{ variant }}.junit.xml
+                  displayNameSpecifier: ACL ${{ variant }}
+                  artifactName: junit_acl_${{ variant }}
