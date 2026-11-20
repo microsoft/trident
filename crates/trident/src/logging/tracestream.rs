@@ -19,7 +19,7 @@ use tracing::{
 };
 use tracing_subscriber::{layer::Layer, registry::LookupSpan};
 
-use crate::{TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
+use crate::{logging::operation_context, TRIDENT_METRICS_FILE_PATH, TRIDENT_VERSION};
 use osutils::{
     dmi, files,
     osrelease::{OsRelease, OS_RELEASE_PATH},
@@ -172,6 +172,12 @@ impl TraceSender {
         self.server.read().map(|s| s.clone()).unwrap_or_default()
     }
 
+    fn additional_fields(&self) -> BTreeMap<String, Value> {
+        let mut fields = ADDITIONAL_FIELDS.clone();
+        merge_operation_context(&mut fields);
+        fields
+    }
+
     fn write_metric_to_file(&self, metric: String) {
         if let Some(mut file) = self.metrics_file.as_ref() {
             if let Err(e) = file.write_all(format!("{metric}\n").as_bytes()) {
@@ -241,7 +247,7 @@ where
             timestamp: Utc::now(),
             metric_name,
             value: json!(value),
-            additional_fields: ADDITIONAL_FIELDS.clone(),
+            additional_fields: self.additional_fields(),
             platform_info: PLATFORM_INFO.clone(),
         };
 
@@ -321,7 +327,7 @@ where
             timestamp: Utc::now(),
             metric_name: span.name().to_string(),
             value: json!(visitor.fields),
-            additional_fields: ADDITIONAL_FIELDS.clone(),
+            additional_fields: self.additional_fields(),
             platform_info: PLATFORM_INFO.clone(),
         };
 
@@ -376,6 +382,32 @@ fn product_uuid_or_unknown(uuid: Result<String, Error>) -> String {
         debug!("Failed to read product uuid: {err:#}");
         "unknown".into()
     })
+}
+
+/// Merge the current thread's `operation_id`/`command`/`source` (see
+/// `operation_context`), if any, into `fields`. Values the caller already
+/// set (e.g. an event that explicitly names its own `command`) are never
+/// overwritten.
+///
+/// Shared by both local telemetry sinks (`TraceSender::additional_fields`
+/// below and `AppInsightsSender::send_event`) so the
+/// operation_id/command/source/installation_id-fallback rule has one
+/// implementation instead of being hand-duplicated between them -- a
+/// prior version of this function existed independently in each sink,
+/// which risked the two silently diverging if the rule ever changed in
+/// only one place.
+pub(crate) fn merge_operation_context(fields: &mut BTreeMap<String, Value>) {
+    if let Some((operation_id, command, source)) = operation_context::current() {
+        fields
+            .entry(fields::OPERATION_ID.to_string())
+            .or_insert_with(|| json!(operation_id));
+        fields
+            .entry(fields::COMMAND.to_string())
+            .or_insert_with(|| json!(command.as_str()));
+        fields
+            .entry(fields::SOURCE.to_string())
+            .or_insert_with(|| json!(source.as_str()));
+    }
 }
 
 fn populate_additional_fields() -> BTreeMap<String, Value> {
