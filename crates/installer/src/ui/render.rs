@@ -150,7 +150,10 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
             logs.push(result);
         }
     }
-    lines.extend(logs.into_iter().map(|entry| entry.styled(model.linux_vt)));
+    lines.extend(
+        logs.into_iter()
+            .flat_map(|entry| entry.styled(model.linux_vt).lines),
+    );
     let block = Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
@@ -191,7 +194,7 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
     };
     let full_header = header_height(frame.area());
     // Keep diagnostics and every recovery action visible before reserving space for the wordmark.
-    let header = if (model.screen == Screen::Error && !model.showing_logs())
+    let header = if model.screen == Screen::Error
         || full_header + source_height + MIN_CONTENT_HEIGHT + action_height + FOOTER_HEIGHT
             > frame.area().height
     {
@@ -245,13 +248,6 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         ))
         .block(block("Remote source", model.linux_vt))
         .wrap(Wrap { trim: false }),
-        Screen::Error => Paragraph::new(display_text(&model.details))
-            .block(
-                block("Full error details / Esc to return", model.linux_vt)
-                    .border_style(Style::default().fg(theme_color(COLOR_ERROR, model.linux_vt))),
-            )
-            .wrap(Wrap { trim: false })
-            .scroll((model.scroll, 0)),
         _ => Paragraph::new(display_text(&model.details))
             .block(block("Result", model.linux_vt))
             .wrap(Wrap { trim: false }),
@@ -288,16 +284,9 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         })
         .unwrap_or_else(|| format!("Elapsed {}s", model.started.elapsed().as_secs()));
     let controls = if matches!(model.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
-        "Enter: start   Esc: return to recovery".to_owned()
+        "Enter: start   Esc: return to recovery"
     } else {
-        format!(
-            "Arrows: choose  Enter: select  S: shell  V: logs{}  Esc: back",
-            if model.screen == Screen::Error {
-                "  D: details"
-            } else {
-                ""
-            },
-        )
+        "Arrows: choose  Enter: select  S: shell  V: logs  PgUp/PgDn: scroll  Esc: back"
     };
     frame.render_widget(
         Paragraph::new(format!("{controls}\n{countdown}"))
@@ -611,10 +600,14 @@ mod tests {
             "{}",
             visible_text(&terminal)
         );
-        model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
+        for _ in 0..5 {
+            model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
+        }
         terminal.draw(|frame| render(frame, &model)).unwrap();
         assert!(!visible_text(&terminal).contains("SUCCESS: Installation"));
-        model.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE), false);
+        for _ in 0..5 {
+            model.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE), false);
+        }
         terminal.draw(|frame| render(frame, &model)).unwrap();
         assert!(visible_text(&terminal).contains("SUCCESS: Installation"));
 
@@ -625,9 +618,9 @@ mod tests {
         assert!(visible_text(&terminal).contains("Latest activity"));
     }
 
-    /// Failures show prior logs first while still allowing full diagnostic details.
+    /// Failures keep prior logs and the full diagnostic together in the same panel.
     #[test]
-    fn failure_shows_logs_by_default_and_keeps_full_details_accessible() {
+    fn failure_shows_logs_and_full_diagnostics_together() {
         let mut model = Model::new();
         model.log(LogSource::Trident, LogLevel::Warn, "Earlier warning".into());
         let result = model.event(Event::Error {
@@ -666,24 +659,14 @@ mod tests {
                 Color::Rgb(255, 107, 115)
             );
         }
-        model.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), false);
-        assert!(!model.showing_logs());
-        terminal.draw(|frame| render(frame, &model)).unwrap();
-        let text = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
         assert!(text.contains("Underlying transport failure"));
+        assert!(!text.contains("D: details"));
         model.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), false);
-        assert_eq!(model.screen, Screen::Error);
-        assert!(model.showing_logs());
+        assert_eq!(model.screen, Screen::Recovery);
     }
 
     #[test]
-    fn error_chain_does_not_spill_into_logs_and_keeps_its_detail_layout() {
+    fn error_chain_keeps_its_layout_in_the_scrollable_log_panel() {
         let details = indoc! {"
             Trident failed due to a servicing error
 
@@ -721,16 +704,11 @@ mod tests {
                     .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
                     .collect::<Vec<_>>()
             };
-            terminal.draw(|frame| render(frame, &model)).unwrap();
-            let text = rows(&terminal).join("\n");
-            assert!(text.contains("FAILURE:"), "{width}x{height}:\n{text}");
-            assert!(!text.contains("Context:"), "{width}x{height}:\n{text}");
-            assert!(!text.contains("Category:"), "{width}x{height}:\n{text}");
-
-            model.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), false);
+            model.scroll = 0;
             terminal.draw(|frame| render(frame, &model)).unwrap();
             if width == 160 {
                 let text = rows(&terminal).join("\n");
+                assert!(text.contains("FAILURE:"), "{text}");
                 assert!(text.contains("Context:"), "{text}");
                 assert!(
                     text.contains("    0: Failed to execute a clean install"),
@@ -739,24 +717,27 @@ mod tests {
                 assert!(text.contains("    5: No such file or directory"), "{text}");
                 assert!(text.contains("Code: write-netplan-config"), "{text}");
             } else {
-                let mut found_cause = false;
-                for _ in 0..10 {
-                    if rows(&terminal)
-                        .join("\n")
-                        .contains("No such file or directory")
+                let mut found = [false; 3];
+                for _ in 0..40 {
+                    let text = rows(&terminal).join("\n");
+                    for (seen, marker) in
+                        found
+                            .iter_mut()
+                            .zip(["FAILURE:", "Context:", "No such file or directory"])
                     {
-                        found_cause = true;
+                        *seen |= text.contains(marker);
+                    }
+                    if found.iter().all(|seen| *seen) {
                         break;
                     }
-                    model.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE), false);
+                    model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
                     terminal.draw(|frame| render(frame, &model)).unwrap();
                 }
                 assert!(
-                    found_cause,
-                    "{width}x{height}: error details are not reachable"
+                    found.iter().all(|seen| *seen),
+                    "{width}x{height}: error lines are not reachable: {found:?}"
                 );
             }
-            model.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), false);
         }
     }
 

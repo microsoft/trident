@@ -10,7 +10,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use log::{Level, LevelFilter};
 use ratatui::{
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
 };
 use trident_client::{LogLevel, ServicingEvent};
 
@@ -29,7 +29,7 @@ use super::theme::{
 const REBOOT_DELAY: Duration = Duration::from_secs(5);
 /// Limit in-memory display history; the private diagnostic file keeps complete records.
 const LOG_CAPACITY: usize = 500;
-/// Bound work spent rendering one record without shortening saved diagnostics.
+/// Bound ordinary display records; final results retain their full diagnostics.
 const DISPLAY_LOG_CHARACTERS: usize = 4096;
 
 /// Screen state used by both Ratatui and the plain-text fallback.
@@ -111,8 +111,8 @@ impl LogEntry {
             .join("\n")
     }
 
-    /// Styles the source and severity separately, highlighting result records as a whole.
-    pub(super) fn styled(&self, linux_vt: bool) -> Line<'_> {
+    /// Preserves message lines and indentation, prefixing only the first line.
+    pub(super) fn styled(&self, linux_vt: bool) -> Text<'_> {
         let level = Style::default().fg(theme_color(
             self.result_color.unwrap_or(log_color(self.level)),
             linux_vt,
@@ -121,17 +121,32 @@ impl LogEntry {
             .result_color
             .map(|color| Style::default().fg(theme_color(color, linux_vt)))
             .unwrap_or_default();
-        Line::from(vec![
-            Span::styled(self.prefix(), surrounding),
-            Span::styled(
-                self.source.label(),
-                Style::default().fg(self.source.color(linux_vt)),
-            ),
-            Span::styled(":", surrounding),
-            Span::styled(level_label(self.level), level.add_modifier(Modifier::BOLD)),
-            Span::styled("] ", surrounding),
-            Span::styled(self.message.as_str(), level),
-        ])
+        Text::from(
+            self.message
+                .split('\n')
+                .enumerate()
+                .map(|(index, message)| {
+                    let mut spans = Vec::new();
+                    if index == 0 {
+                        spans.extend([
+                            Span::styled(self.prefix(), surrounding),
+                            Span::styled(
+                                self.source.label(),
+                                Style::default().fg(self.source.color(linux_vt)),
+                            ),
+                            Span::styled(":", surrounding),
+                            Span::styled(
+                                level_label(self.level),
+                                level.add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled("] ", surrounding),
+                        ]);
+                    }
+                    spans.push(Span::styled(message, level));
+                    Line::from(spans)
+                })
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -146,9 +161,9 @@ pub(super) struct Model {
     pub(super) last_request: Request,
     /// Short, most recent progress message above the log panel.
     pub(super) activity: String,
-    /// Current result or failure, retained for the detailed error view.
+    /// Current result or failure, also used by plain output and headless errors.
     pub(super) details: String,
-    /// Bounded, single-line copies of diagnostics; complete entries go to the log file.
+    /// Bounded diagnostic history, with final results kept in full.
     pub(super) logs: VecDeque<LogEntry>,
     /// On-screen filter; changing it does not discard stored records.
     pub(super) verbosity: LevelFilter,
@@ -160,7 +175,7 @@ pub(super) struct Model {
     pub(super) verbosity_selected: usize,
     /// Highlighted action on the current screen.
     pub(super) selected: usize,
-    /// Wrapped log rows to scroll back, or detail rows when details are open.
+    /// Wrapped log rows to scroll back from the latest record.
     pub(super) scroll: u16,
     /// Recovery URL under edit; it is validated before starting a request.
     pub(super) url: String,
@@ -174,8 +189,6 @@ pub(super) struct Model {
     pub(super) started: Instant,
     /// Headless runs return an error if recovery requires a terminal.
     pub(super) failed: bool,
-    /// Toggle between retained logs and the full failure details.
-    error_details_open: bool,
     /// Selects ANSI palette roles instead of raw RGB for graphical Linux VTs.
     pub(super) linux_vt: bool,
 }
@@ -202,13 +215,11 @@ impl Model {
             reboot_at: None,
             started: Instant::now(),
             failed: false,
-            error_details_open: false,
             linux_vt: false,
         }
     }
 
-    /// Shows a short failure summary while keeping full details for serial output and `D`.
-    /// Preserves uncertainty from earlier failures and cancels automatic reboot.
+    /// Logs the full failure, preserves earlier uncertainty and cancels automatic reboot.
     pub(super) fn fail(&mut self, details: String, uncertain: bool) -> LogEntry {
         self.details = details.clone();
         self.uncertain |= uncertain;
@@ -217,15 +228,10 @@ impl Model {
         self.scroll = 0;
         self.selected = 0;
         self.screen = Screen::Error;
-        self.error_details_open = false;
-        let summary = details.lines().next().unwrap_or(&details);
-        let mut entry =
-            self.result_log(LogLevel::Error, format!("FAILURE: {summary}"), COLOR_ERROR);
-        entry.message = display_text(&format!("FAILURE: {details}"));
-        entry
+        self.result_log(LogLevel::Error, format!("FAILURE: {details}"), COLOR_ERROR)
     }
 
-    /// Retains a bounded, single-line display copy while returning the full diagnostic.
+    /// Retains a bounded display copy while returning the full diagnostic.
     pub(super) fn log(&mut self, source: LogSource, level: LogLevel, message: String) -> LogEntry {
         let entry = LogEntry {
             elapsed: self.started.elapsed(),
@@ -238,8 +244,7 @@ impl Model {
         let mut displayed = characters
             .by_ref()
             .take(DISPLAY_LOG_CHARACTERS)
-            .collect::<String>()
-            .replace('\n', " ");
+            .collect::<String>();
         if characters.next().is_some() {
             displayed.push_str(" [Display shortened; full record preserved in diagnostic log]");
         }
@@ -258,7 +263,8 @@ impl Model {
         let mut entry = self.log(LogSource::Inst, level, message);
         entry.result_color = Some(color);
         if let Some(last) = self.logs.back_mut() {
-            last.result_color = Some(color);
+            // Results have no separate details view, so do not truncate their messages.
+            *last = entry.clone();
         }
         entry
     }
@@ -373,12 +379,12 @@ impl Model {
         }
     }
 
-    /// Shows the log panel on result screens unless full error details are open.
+    /// Shows servicing history on progress, menu and result screens.
     pub(super) fn showing_logs(&self) -> bool {
         matches!(
             self.screen,
-            Screen::Progress | Screen::Menu | Screen::Success
-        ) || self.screen == Screen::Error && !self.error_details_open
+            Screen::Progress | Screen::Menu | Screen::Success | Screen::Error
+        )
     }
 
     /// Updates navigation for a key press and returns an action only when one is requested.
@@ -444,11 +450,6 @@ impl Model {
                 _ => None,
             };
         }
-        if self.screen == Screen::Error && matches!(key.code, KeyCode::Char('d' | 'D')) {
-            self.error_details_open = !self.error_details_open;
-            self.scroll = 0;
-            return None;
-        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.screen = if worker_active || self.screen == Screen::Progress {
                 Screen::Menu
@@ -477,27 +478,15 @@ impl Model {
                 return None;
             }
             KeyCode::PageUp => {
-                self.scroll = if self.showing_logs() {
-                    self.scroll.saturating_add(5)
-                } else {
-                    self.scroll.saturating_sub(5)
-                };
+                // Single rows keep short viewports from skipping diagnostic lines.
+                self.scroll = self.scroll.saturating_add(1);
                 return None;
             }
             KeyCode::PageDown => {
-                self.scroll = if self.showing_logs() {
-                    self.scroll.saturating_sub(5)
-                } else {
-                    self.scroll.saturating_add(5)
-                };
+                self.scroll = self.scroll.saturating_sub(1);
                 return None;
             }
             KeyCode::Esc => {
-                if self.screen == Screen::Error && self.error_details_open {
-                    self.error_details_open = false;
-                    self.scroll = 0;
-                    return None;
-                }
                 self.screen = match self.screen {
                     Screen::Progress => Screen::Menu,
                     Screen::Menu => Screen::Progress,
@@ -622,6 +611,8 @@ fn log_color(level: LogLevel) -> Color {
 mod tests {
     use super::*;
 
+    use indoc::formatdoc;
+
     use trident_client::{
         Completion as ClientCompletion, LogRecord, RebootDisposition, ServicingKind,
     };
@@ -686,11 +677,11 @@ mod tests {
             "00:00 [INST:DEBUG] Loaded installer settings"
         );
         assert_eq!(
-            entry.styled(false).spans[1].style.fg,
+            entry.styled(false).lines[0].spans[1].style.fg,
             Some(Color::Rgb(171, 186, 196))
         );
         assert_eq!(
-            entry.styled(false).spans[3].style.fg,
+            entry.styled(false).lines[0].spans[3].style.fg,
             Some(Color::Rgb(167, 180, 189))
         );
         assert_eq!(model.logs.len(), 1);
@@ -777,6 +768,26 @@ mod tests {
             entry.plain(),
             "00:00 [INST:ERROR] FAILURE: No image or Host Configuration"
         );
+    }
+
+    #[test]
+    fn complete_failure_is_retained_beyond_the_normal_display_limit() {
+        let context = "    Failed to configure a network interface\n".repeat(200);
+        let details = formatdoc! {"
+            Installation failed
+
+            Context:
+            {context}
+                Failed to open Netplan configuration file
+                No such file or directory (os error 2)
+        "};
+        let mut model = Model::new();
+        let record = model.fail(details.clone(), false);
+        assert_eq!(model.details, details);
+        assert_eq!(model.logs.back().unwrap().message, record.message);
+        assert!(record
+            .message
+            .contains("\n    No such file or directory (os error 2)\n"));
     }
 
     /// Continuing from an error opens recovery; shell actions leave their screen unchanged.

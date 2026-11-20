@@ -88,8 +88,6 @@ flowchart TD
   M -->|Completed successfully| S
   P -->|Failure or unknown outcome| E["ERROR: logs; Continue; Shell"]
   M -->|Failure or unknown outcome| E
-  E -->|D| ED["Full error details"]
-  ED -->|D or Esc| E
   E -->|Continue, Esc, or Ctrl-C| R["RECOVERY"]
   S -->|Ctrl-C| R
   classDef startPoint fill:#07545b,stroke:#77e6db,color:#f0fffc,stroke-width:3px
@@ -102,7 +100,7 @@ flowchart TD
   class P progress
   class M menu
   class S success
-  class E,ED error
+  class E error
   class R recovery
 ```
 
@@ -141,14 +139,17 @@ flowchart TD
 
 | Action | Behavior |
 | --- | --- |
-| Arrows, Tab, number keys, Enter | Select and activate an action. `V` changes only the display log filter; Page Up/Down scrolls logs or error details. |
-| Ctrl-C / Esc | On PROGRESS, open MENU without stopping work; MENU's Esc or Return returns to PROGRESS. On ERROR, Esc or Continue opens RECOVERY; Esc first closes full details if open. On a URL-entry screen, Esc returns to RECOVERY. On SUCCESS, Ctrl-C opens RECOVERY. |
-| `D` on ERROR | Toggle between recent logs with a short failure summary and the full, scrollable error chain. Details use a compact header to leave more room for diagnostics. |
+| Arrows, Tab, number keys, Enter | Select and activate an action. `V` changes only the display log filter; Page Up/Down scrolls logs one wrapped row at a time. |
+| Ctrl-C / Esc | On PROGRESS, open MENU without stopping work; MENU's Esc or Return returns to PROGRESS. On ERROR, Esc or Continue opens RECOVERY. On a URL-entry screen, Esc returns to RECOVERY. On SUCCESS, Ctrl-C opens RECOVERY. |
 | Retry | Repeat the last operation, including an entered recovery URL, with freshly loaded installer settings. Autorun retries select their sources again; an uncertain prior outcome still requires a Trident status check before another write. |
 | Shell or `S` | Opens a root recovery shell from PROGRESS, MENU, ERROR, RECOVERY, or SUCCESS. Servicing continues and automatic reboot waits while the shell owns the terminal; `exit` returns to the latest screen. A nonzero shell exit is only a warning. |
 | Stream COSI URL / Install HC URL | Recovery accepts HTTP(S) URLs without embedded username or password. A new attempt reloads installer TOML. Explicit StreamDisk recovery skips local media; recovery HC checks it once without waiting. |
 | Reboot / Shutdown | RECOVERY offers both; SUCCESS also offers Reboot. A running worker blocks power actions, and neither is offered in RECOVERY while the outcome is uncertain. A later attempt first checks Trident's servicing state before another write. |
 | Automatic reboot | Starts five seconds after success **only** when enabled, work was performed, and Trident says a reboot is required. |
+
+Errors remain in full in the scrollable log panel, with their line breaks and
+indentation preserved. The error screen uses a compact header to leave more
+room for the report; there is no separate details view.
 
 With `--system-console`, the installer uses tty1 for the UI and mirrors logs
 to active serial consoles; serial consoles do not receive a TUI. `--plain`
