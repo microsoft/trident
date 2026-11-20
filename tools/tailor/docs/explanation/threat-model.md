@@ -48,7 +48,9 @@ load-bearing — treat a regression in them as a serious bug:
   `crates/tailor-exec/src/guard.rs`.
 - **Single build per output directory.** A build takes an advisory lock on its
   output directory, so two concurrent builds cannot race on the shared stamp,
-  hash-cache, and artifact writes. See `crates/tailor-exec/src/lock.rs`.
+  hash-cache, and artifact writes. Separate output directories do not isolate
+  image-local working files; overlapping cells require separate worktrees.
+  See `crates/tailor-exec/src/lock.rs`.
 - **Atomic state writes.** Build stamps, the hash cache, and the published
   artifact are written to a temporary file and renamed into place, so an
   interrupted build cannot leave torn state a later run would trust. See
@@ -64,15 +66,12 @@ load-bearing — treat a regression in them as a serious bug:
   image. Tailor does not check for live loop devices or mounts before removal;
   do not clean live build trees.
 
-## Supply-chain pinning
+## Registry input identity
 
-Because a moving container tag is a reproducibility hazard (today's `:latest` is
-not tomorrow's), tailor resolves and pins the digests of the images it runs —
-the IC toolchain, tools-directory sources, base images, and the janitor image —
-into `tailor.lock`. Pinning by digest is a **consistency and reproducibility**
-measure under the trusted-host model, not a defense against a compromised
-registry account; run `tailor lock` to freeze digests and `tailor update` to
-refresh them deliberately.
+Registry inputs resolve to digests for a build invocation, but a moving tag can
+select different bytes next time. Digest resolution is not a defense against a
+compromised registry account and does not make a build offline. Build only from
+trusted registries and images within the trusted-host boundary above.
 
 ## Reporting
 

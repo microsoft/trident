@@ -1,71 +1,34 @@
-# Pin the Image Customizer version
+# Select an Image Customizer tag
 
-Pin Image Customizer in `tailor.yaml` under `toolchains:`.
+Choose the workspace's default Image Customizer container in `tailor.yaml`:
 
 ```yaml
 schemaVersion: 1
-
 toolchains:
-  default: ic-1.3
+  default: ic
   entries:
-    - name: ic-1.3
+    - name: ic
       container: mcr.microsoft.com/azurelinux/imagecustomizer
       version: "1.3.0"
+      pull: missing
 ```
 
-`tag` defaults to `version`, or to `latest` when neither `tag` nor `version` is set. Use `tag` if the registry tag is not the version string:
+`version` is SemVer metadata and supplies the registry tag if `tag` is absent. An explicit
+`tag` takes precedence; with neither field, the tag is `latest`. Images may choose another named
+toolchain with `toolchain: <name>`. `pull: missing` (default) normally uses a local image, then
+resolves/pulls from the registry if absent; `always` requests a pull, while `never` normally
+requires a local image. The policy applies to this container source, not separately declared
+registry base images.
 
-```yaml
-toolchains:
-  default: nightly
-  entries:
-    - name: nightly
-      container: mcr.microsoft.com/azurelinux/imagecustomizer
-      tag: latest
-```
-
-An image can select a non-default toolchain:
-
-```yaml
-# db/image.yaml
-name: db
-toolchain: ic-1.3
-```
-
-## Freeze and refresh the lockfile *(preview)*
-
-> **Preview feature.** `tailor lock`, `tailor update`, and `tailor build --locked` are gated behind
-> the `lock-preview` Cargo feature and are **absent from default builds** (lockfile enforcement is not
-> yet implemented). Install with `cargo install --features lock-preview` to use the commands below.
-
-`tailor.lock` records the exact digest each toolchain (and base image) resolves to, so every machine
-builds the same inputs.
+Tags, **including version-shaped tags**, can move. Selecting `version: "1.3.0"` or
+`tag: "1.3.0"` does not guarantee identical bytes on later machines or runs. To inspect the
+current resolution, run `tailor resolve` with a reachable engine (it may contact registries):
 
 ```bash
-# First time — resolve everything and write the lock:
-tailor lock
-
-# Add a new image/toolchain later — lock keeps existing pins and resolves only the new inputs:
-tailor lock
-
-# Deliberately move every pin to the latest digest:
-tailor update
+tailor resolve
 ```
 
-`lock` is a **freeze**: inputs already pinned keep their digests, so re-running it is idempotent and
-never silently moves a pin. `update` re-resolves **everything** to the latest digest — use it when you
-intend to move up.
-
-## Build reproducibly from the lock
-
-```bash
-tailor build --locked
-```
-
-`--locked` requires a complete lock and fails on any missing entry or registry drift, so a CI build
-never silently resolves something new.
-
-> **Local images.** A local-only Image Customizer image (a fresh `docker build` that was never pushed,
-> so it has no registry digest) can't be pinned and is omitted from `tailor.lock`; reproducibility then
-> depends on the local image tag you built. A local image that *does* carry a repo digest is still
-> locked. See [Use a locally-built Image Customizer image](use-a-local-ic-image.md).
+It prints a YAML summary of resolved inputs to stdout without building or writing files.
+Results from a later run may differ if a tag changes. See
+[Pull policy](../reference/tailor-yaml.md#pull-policy) and
+the [CLI reference](../reference/cli.md#tailor-resolve-images).

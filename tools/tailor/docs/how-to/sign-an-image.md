@@ -48,20 +48,23 @@ signing:
 
 | Backend | Required fields | Use |
 | --- | --- | --- |
-| `local-test-ca` | none | MVP / CI. A self-signed CA + leaf minted per build. Not a production trust root. |
-| `keypair` | `key`, `cert` | Bring your own Secure Boot key + certificate (PEM). |
+| `local-test-ca` | `openssl` and `sbsign` on the host | MVP / CI. A self-signed CA + leaf minted per build. Not a production trust root. |
+| `keypair` | `key`, `cert` (PEM); `openssl` and `sbsign` on the host | Bring your own Secure Boot key + certificate. |
 | `azure-key-vault` | `vault`, `certificate` | Remote signing — configuration only; execution is a later milestone. |
 
 ## 3. Opt an image in
 
-Set `signing:` on the image — `true` for the workspace default profile, or a profile id. The image
-still authors its own `output.artifacts` (that is what tells IC which boot artifacts to extract):
+Add `signing:` to a buildable image — `true` for the workspace default profile, or a profile id.
+Keep its `base`, output, and other IC config fields; the excerpt below also adds
+`output.artifacts` **and IC's `output-artifacts` preview flag** (distinct from tailor's
+workspace `signing` opt-in):
 
 ```yaml
-# image.yaml
+# appliance/image.yaml (relevant fields)
 name: appliance
 signing: true            # or `signing: byo`
 config:
+  previewFeatures: [output-artifacts]
   output:
     artifacts:
       items: [ukis, shim, systemd-boot, verity-hash]
@@ -93,7 +96,9 @@ error: signing preflight failed — fix every prerequisite below, then rebuild:
 
 What the preflight checks per backend:
 
-- **`local-test-ca`** — always ready (the CA + leaf are minted at sign time).
+- **Both implemented backends** — `openssl` and `sbsign` are on the host `PATH`, even if the
+  extracted image contains only one artifact type.
+- **`local-test-ca`** — no key files required; the CA + leaf are minted at sign time.
 - **`keypair`** — the `key` and `cert` files exist, are readable, and are PEM.
 - **`azure-key-vault`** — configuration completeness; preflight also reports that execution is not yet
   available for this backend.
@@ -118,3 +123,5 @@ declared `output.artifacts`, sign them on the host, and re-inject them so the fi
   into an image.
 - `local-test-ca` mints fresh keys each build, so its signed outputs are intentionally not
   reproducible; use `keypair` (a fixed cert identity) for reproducible production builds.
+- `tailor clean` only removes the default `<slug>.ca_cert.pem`; a `publishCaCert` override must be
+  cleaned up separately.
