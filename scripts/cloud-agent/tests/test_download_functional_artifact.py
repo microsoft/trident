@@ -106,6 +106,55 @@ class ArtifactRedirectTests(unittest.TestCase):
             self.fetch()
         self.assertTrue(requests[1].has_header("Authorization"))
 
+    def test_308_redirects_without_stdlib_308_support(self):
+        base = MODULE.urllib.request.HTTPRedirectHandler
+        original_redirect_request = base.redirect_request
+
+        def legacy_redirect_request(handler, req, fp, code, msg, headers, newurl):
+            if code == 308:
+                raise MODULE.urllib.error.HTTPError(
+                    req.full_url, code, msg, headers, fp
+                )
+            return original_redirect_request(
+                handler, req, fp, code, msg, headers, newurl
+            )
+
+        with patch.object(
+            base,
+            "http_error_308",
+            side_effect=AssertionError("Inherited 308 dispatch must not be used"),
+            create=True,
+        ), patch.object(base, "redirect_request", new=legacy_redirect_request):
+            for metadata, target, expected_error in (
+                (False, self.artifact_url + "/next", None),
+                (True, self.metadata_url + "/next", None),
+                (False, self.blob_url, None),
+                (True, self.blob_url, "Cross-origin"),
+                (False, "https://example.invalid/", "Cross-origin"),
+                (False, self.artifact_url.replace("https:", "http:"), "HTTPS"),
+                (True, self.metadata_url.replace("https:", "http:"), "HTTPS"),
+            ):
+                with self.subTest(metadata=metadata, target=target):
+                    start = self.metadata_url if metadata else self.artifact_url
+                    with self.transport(
+                        {start: (308, target), target: (200, None)}
+                    ) as requests:
+                        if expected_error is not None:
+                            with self.assertRaisesRegex(
+                                MODULE.ArtifactError, expected_error
+                            ):
+                                self.fetch(metadata)
+                            self.assertEqual(len(requests), 1)
+                        else:
+                            self.assertEqual(
+                                self.fetch(metadata), {"artifact": "dummy content"}
+                            )
+                            self.assertEqual(len(requests), 2)
+                            self.assertEqual(
+                                requests[1].has_header("Authorization"),
+                                target != self.blob_url,
+                            )
+
     def test_documented_artifact_redirects_strip_authorization(self):
         for target in (
             self.blob_url,

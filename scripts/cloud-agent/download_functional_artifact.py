@@ -42,6 +42,8 @@ def https_origin(url: str) -> Tuple[str, int]:
 
 
 class ArtifactRedirectHandler(urllib.request.HTTPRedirectHandler):
+    http_error_308 = urllib.request.HTTPRedirectHandler.http_error_302
+
     def __init__(self, allow_artifact_redirects: bool = False):
         self.allow_artifact_redirects = allow_artifact_redirects
 
@@ -70,7 +72,11 @@ class ArtifactRedirectHandler(urllib.request.HTTPRedirectHandler):
             raise
 
         # Keep urllib's redirect status handling and bounded loop detection.
-        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        # Python 3.10 needs 308 dispatched explicitly and treated as 307 here.
+        redirect_code = 307 if code == 308 else code
+        redirected = super().redirect_request(
+            req, fp, redirect_code, msg, headers, newurl
+        )
         if redirected is not None and destination != origin:
             for header in ("Authorization", "Cookie", "Proxy-authorization"):
                 redirected.remove_header(header)
