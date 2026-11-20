@@ -72,3 +72,4 @@ images:
     - trident-functest
     - trident-installer
     - trident-testimage
+    - trident-verity-testimage
