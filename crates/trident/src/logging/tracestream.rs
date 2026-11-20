@@ -216,7 +216,7 @@ where
         {
             Some(name) => name.to_string(),
             None => {
-                warn!("Event does not have a metric_name field, skipping!");
+                // TraceSender is metric-only; sibling layers may handle general events.
                 return;
             }
         };
@@ -545,6 +545,34 @@ mod tests {
         assert!(
             metric_found,
             "Expected test metric not found in the local metrics file"
+        );
+    }
+
+    #[test]
+    fn test_tracestream_ignores_non_metric_events() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let metrics_path = temp_dir.path().join("metrics.jsonl");
+        let tracestream = TraceStream::default();
+        let trace_sender = tracestream
+            .make_trace_sender_with_metrics_path(metrics_path.to_str().unwrap())
+            .with_filter(filter::LevelFilter::INFO);
+
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::Registry::default().with(trace_sender),
+        );
+
+        tracing::info!(message = "general info event");
+        tracing::error!(error_kind = "test-error", error_subkind = "test-subkind");
+
+        let file = File::open(&metrics_path).unwrap();
+        let lines: Vec<String> = BufReader::new(file)
+            .lines()
+            .map(|line| line.unwrap())
+            .collect();
+
+        assert!(
+            lines.is_empty(),
+            "non-metric events must not create local metric entries: {lines:?}"
         );
     }
 
