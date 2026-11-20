@@ -1,5 +1,6 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
+use anyhow::{bail, Context, Error};
 use log::debug;
 use sys_mount::{FilesystemType, Mount, MountFlags, UnmountDrop, UnmountFlags};
 
@@ -11,6 +12,28 @@ use trident_api::{
     },
     error::{ReportError, ServicingError, TridentError},
 };
+
+/// Rejects index-enabled overlays before reusing a persistent upper with a new /usr.
+pub(super) fn validate_index_disabled(index_path: &Path) -> Result<(), Error> {
+    let index = fs::read_to_string(index_path).with_context(|| {
+        format!(
+            "Failed to read OverlayFS index parameter '{}'",
+            index_path.display()
+        )
+    })?;
+    match index.trim() {
+        "N" => Ok(()),
+        "Y" => bail!(
+            "OverlayFS index is enabled; ACL MSHV A/B updates require it to be disabled \
+             to avoid persistent /etc overlay origin verification failures. \
+             Boot with overlay.index=off before staging an update"
+        ),
+        value => bail!(
+            "Unexpected OverlayFS index parameter value '{value}' at '{}'; expected Y or N",
+            index_path.display()
+        ),
+    }
+}
 
 /// Sets up the overlay for the /etc directory, using
 /// TRIDENT_OVERLAY_RELATIVE_PATH for the work and upper directories.
@@ -69,6 +92,44 @@ pub(super) fn create(
             target: target_path.to_string_lossy().into(),
         })?;
     Ok(etc_overlay_mount)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_index_disabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("index");
+        fs::write(&path, "N\n").unwrap();
+        validate_index_disabled(&path).unwrap();
+
+        fs::write(&path, "Y\n").unwrap();
+        let error = validate_index_disabled(&path).unwrap_err().to_string();
+        assert!(error.contains("OverlayFS index is enabled"));
+        assert!(error.contains("overlay.index=off"));
+    }
+
+    #[test]
+    fn test_validate_index_disabled_rejects_unknown_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("index");
+        for value in ["", "off", "0", "y", "N\nY"] {
+            fs::write(&path, value).unwrap();
+            let error = validate_index_disabled(&path).unwrap_err().to_string();
+            assert!(error.contains("Unexpected OverlayFS index parameter value"));
+        }
+    }
+
+    #[test]
+    fn test_validate_index_disabled_reports_read_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing");
+        let error = validate_index_disabled(&path).unwrap_err().to_string();
+        assert!(error.contains("Failed to read OverlayFS index parameter"));
+        assert!(error.contains(path.to_str().unwrap()));
+    }
 }
 
 #[cfg(feature = "functional-test")]
