@@ -13,7 +13,7 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-CANDIDATE = "a489e73f4bb36117bef4cd560106c2d6f999f5af"
+CANDIDATE = "3029aad73e28f71b1c47ca8eecdce9e6ec445c9f"
 LOCK = Path("/var/lib/trident-cloud-agent/functional.lock")
 PLANNED = (
     "candidate runner-baseline source-setup functional-setup-1 functional-setup-2 "

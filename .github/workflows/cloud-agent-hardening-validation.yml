@@ -23,7 +23,7 @@ jobs:
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: a489e73f4bb36117bef4cd560106c2d6f999f5af
+          ref: 3029aad73e28f71b1c47ca8eecdce9e6ec445c9f
           path: candidate
           persist-credentials: false
 
@@ -48,7 +48,7 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           mkdir -p "$RUNNER_TEMP/trident-hardening-reports"
-          printf 'Workflow job status before upload: %s\nCandidate: a489e73f4bb36117bef4cd560106c2d6f999f5af\n' \
+          printf 'Workflow job status before upload: %s\nCandidate: 3029aad73e28f71b1c47ca8eecdce9e6ec445c9f\n' \
             "$JOB_STATUS" | tee "$RUNNER_TEMP/trident-hardening-reports/workflow-status.txt" >> "$GITHUB_STEP_SUMMARY"
           if [[ -f "$RUNNER_TEMP/trident-hardening-reports/summary.md" ]]; then
             cat "$RUNNER_TEMP/trident-hardening-reports/summary.md" >> "$GITHUB_STEP_SUMMARY"
