@@ -19,7 +19,7 @@ use trident_api::{
 
 use crate::{
     engine::{
-        boot, bootentries,
+        bootentries,
         context::{EngineContext, EngineContextParams},
         mshv,
         storage::{encryption, verity},
@@ -217,15 +217,8 @@ pub fn validate_boot(datastore: &mut DataStore) -> Result<BootValidationResult, 
             })?;
 
             return Err(TridentError::new(
-                ServicingError::ValidateAbActiveHypervisor {
-                    expected_slot: ctx
-                        .get_ab_update_volume()
-                        .map(|volume| boot::make_esp_dir_name(ctx.install_index, volume))
-                        .unwrap_or_default(),
-                    observed_slot: None,
-                },
-            ))
-            .message("Rollback to the retained OS succeeded after hypervisor validation failed");
+                ServicingError::AbUpdateHypervisorCommitCheck,
+            ));
         }
         (false, ServicingState::AbUpdateFinalized) => {
             // AbUpdateFinalize, when booting from incorrect device (the servicing OS), mark host status

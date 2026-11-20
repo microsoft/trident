@@ -372,6 +372,9 @@ pub enum InvalidInputError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServicingError {
+    #[error("A/B update hypervisor validation failed; rollback to the retained OS succeeded")]
+    AbUpdateHypervisorCommitCheck,
+
     #[error(
         "A/B update failed as host booted from '{root_device_path}' instead of the expected device \
         '{expected_device_path}'"
