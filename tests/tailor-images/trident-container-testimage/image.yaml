@@ -1,0 +1,14 @@
+name: trident-container-testimage
+
+base:
+  ref: baremetal
+
+outputs:
+  - format: cosi
+
+extraDependencies:
+  - ./base
+  - ../common
+
+config:
+  $include: ./tailor/baseimg.yaml
