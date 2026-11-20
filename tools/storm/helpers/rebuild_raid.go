@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,18 +9,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/microsoft/storm"
+	stormssh "github.com/microsoft/storm/facilities/ssh"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
+	"libvirt.org/go/libvirtxml"
+
 	stormutils "tridenttools/storm/utils"
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
 	stormtrident "tridenttools/storm/utils/trident"
-
-	"github.com/microsoft/storm"
-	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
-	"gopkg.in/yaml.v2"
-	"libvirt.org/go/libvirtxml"
 )
 
 type RebuildRaidHelper struct {
@@ -409,24 +411,16 @@ func (h *RebuildRaidHelper) checkTridentServiceWithSsh(tc storm.TestCase) error 
 }
 
 // Checks if a file exists at the specified path on the host.
-func (h *RebuildRaidHelper) checkFileExists(client *ssh.Client, filePath string) (bool, error) {
-	clientSession, err := client.NewSession()
+func (h *RebuildRaidHelper) checkFileExists(client *stormssh.Client, filePath string) (bool, error) {
+	result, err := client.Run(context.Background(), "test -f "+sshutils.ShellQuote(filePath))
 	if err != nil {
 		return false, err
 	}
-	defer clientSession.Close()
-
-	command := fmt.Sprintf("test -f %s", filePath)
-	output, err := clientSession.CombinedOutput(command)
-	logrus.Tracef("check file exists output: %s\n%v", string(output), err)
-	if err != nil {
-		return false, nil
-	}
-	return true, nil
+	return result.ExitCode == 0, nil
 }
 
 // Runs "trident rebuild-raid" to trigger rebuilding RAID and checks if RAID was rebuilt successfully.
-func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client) error {
+func (h *RebuildRaidHelper) tridentRebuildRaid(client *stormssh.Client) error {
 	output, err := stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, []string{}, "rebuild-raid -v trace")
 	if err != nil {
 		logrus.Errorf("Failed to invoke Trident: %v", err)
@@ -443,7 +437,7 @@ func (h *RebuildRaidHelper) tridentRebuildRaid(client *ssh.Client) error {
 }
 
 // Copy the Trident config to the host if it isn't already there.
-func (h *RebuildRaidHelper) copyHostConfig(client *ssh.Client, tridentConfig string) error {
+func (h *RebuildRaidHelper) copyHostConfig(client *stormssh.Client, tridentConfig string) error {
 	fileExists, err := h.checkFileExists(client, tridentConfig)
 	if err != nil {
 		return err

@@ -1,16 +1,18 @@
 package e2e
 
 import (
-	"encoding/json"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
+
+	"github.com/microsoft/storm/facilities/ado"
+	"github.com/microsoft/storm/pkg/storm/core"
+
 	"tridenttools/storm/e2e/scenario"
 	"tridenttools/storm/e2e/testrings"
 	"tridenttools/storm/utils"
 	"tridenttools/storm/utils/trident"
-
-	"github.com/microsoft/storm/pkg/storm/core"
 )
 
 type TridentE2EMatrixScriptSet struct {
@@ -61,7 +63,9 @@ func (s *TridentE2EScenarioMatrix) Run(suite core.SuiteContext) error {
 			variable := fmt.Sprintf("TEST_MATRIX_E2E_%s_%s", strings.ToUpper(hw.ToString()), strings.ToUpper(rt.ToString()))
 
 			// Set the output variable
-			utils.SetAzureDevopsOutputVariable(variable, matrixJson)
+			if err := ado.SetVariable(os.Stdout, variable, matrixJson, true); err != nil {
+				return err
+			}
 
 			// Log summary
 			scenarioNames := ""
@@ -139,50 +143,39 @@ func (s *TridentE2EScenarioMatrix) GenerateMatrix(
 	runtime trident.RuntimeType,
 	testRing testrings.TestRing,
 ) (string, error) {
-	output := make(outputMatrix)
+	output := make(map[string]map[string]string)
 	for _, scenarioName := range matchingScenarios {
 		config, _, _, err := scenario.ParseScenarioName(scenarioName)
 		if err != nil {
 			return "", err
 		}
 
-		output[scenarioName] = matrixEntry{
-			Scenario: scenarioName,
-			Hardware: hardware.ToString(),
-			Runtime:  runtime.ToString(),
-			TestRing: testRing.ToString(),
+		leg := strings.ReplaceAll(scenarioName, "-", "_")
+		if _, exists := output[leg]; exists {
+			return "", fmt.Errorf("scenario %q collides with matrix leg %q", scenarioName, leg)
+		}
+		output[leg] = map[string]string{
+			"SCENARIO":  scenarioName,
+			"HARDWARE":  hardware.ToString(),
+			"RUNTIME":   runtime.ToString(),
+			"TEST_RING": testRing.ToString(),
 
 			// Facts the pipeline needs about the scenario. They are derived
 			// here, where the scenario name is composed, rather than being
 			// parsed back out of it with sed in a pipeline step.
-			ConfigurationName:     config,
-			RuntimeEnvironment:    runtime.ToString(),
-			DeploymentEnvironment: hardware.DeploymentEnvironment(),
-			InstallerIsoName:      installerIsoName(config, runtime),
+			"tridentConfigurationName": config,
+			"tridentRuntimeEnv":        runtime.ToString(),
+			"tridentDeploymentEnv":     hardware.DeploymentEnvironment(),
+			"installerISOName":         installerIsoName(config, runtime),
 		}
 	}
 
-	rawJson, err := json.Marshal(output)
+	rawJson, err := ado.MarshalMatrix(output)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal matrix to JSON: %w", err)
 	}
 
 	return string(rawJson), nil
-}
-
-type outputMatrix map[string]matrixEntry
-
-type matrixEntry struct {
-	Scenario string `json:"SCENARIO"`
-	Hardware string `json:"HARDWARE"`
-	Runtime  string `json:"RUNTIME"`
-	TestRing string `json:"TEST_RING"`
-
-	// Emitted under the names the E2E test execution template consumes.
-	ConfigurationName     string `json:"tridentConfigurationName"`
-	RuntimeEnvironment    string `json:"tridentRuntimeEnv"`
-	DeploymentEnvironment string `json:"tridentDeploymentEnv"`
-	InstallerIsoName      string `json:"installerISOName"`
 }
 
 // Installer ISO names. The split configuration installs from its own ISO;

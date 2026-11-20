@@ -5,6 +5,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	stormssh "github.com/microsoft/storm/facilities/ssh"
 )
 
 func TestCreateSshClientCancelsStalledHandshake(t *testing.T) {
@@ -28,7 +30,7 @@ func TestCreateSshClientCancelsStalledHandshake(t *testing.T) {
 		<-serverDone
 	}()
 
-	key, _, err := GenerateRsaKeyPair(2048)
+	pair, err := stormssh.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +43,7 @@ func TestCreateSshClientCancelsStalledHandshake(t *testing.T) {
 			User:       "test",
 			Host:       "127.0.0.1",
 			Port:       uint16(listener.Addr().(*net.TCPAddr).Port),
-			PrivateKey: key,
+			PrivateKey: pair.PEM,
 		})
 		if client != nil {
 			client.Close()

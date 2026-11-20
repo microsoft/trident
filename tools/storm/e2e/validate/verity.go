@@ -3,7 +3,7 @@ package validate
 import (
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/facilities/ssh"
 
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/utils/sysinspect"
@@ -55,7 +55,7 @@ func verityForRoot(spec hostconfig.HostConfig, rootDeviceID string) (VerityDevic
 // (accounting for A/B updates and RAID arrays).
 func ValidateVerity(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	spec hostconfig.HostConfig,
 	abActive tridentutil.AbVolumeSelection,
 ) {
@@ -114,7 +114,7 @@ func ValidateVerity(
 // devices must correspond to the active volume of the data/hash A/B pairs.
 func validateVerityAbDevices(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	spec hostconfig.HostConfig,
 	blkid map[string]sysinspect.BlkidEntry,
 	verity VerityDevice,
@@ -166,7 +166,7 @@ func validateVerityAbDevices(
 // data/hash devices must correspond to the configured data/hash device IDs.
 func validateVerityNonAbDevices(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	blkid map[string]sysinspect.BlkidEntry,
 	verity VerityDevice,
 	dataDevice, hashDevice string,

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/facilities/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
@@ -29,7 +29,7 @@ func (e EfiBootInfo) CurrentName() (string, bool) {
 }
 
 // EfiBootMgr runs `sudo efibootmgr` and returns the parsed boot info.
-func EfiBootMgr(client *ssh.Client) (EfiBootInfo, error) {
+func EfiBootMgr(client *stormssh.Client) (EfiBootInfo, error) {
 	out, err := sshutils.CommandOutput(client, "sudo efibootmgr")
 	if err != nil {
 		return EfiBootInfo{}, fmt.Errorf("failed to run efibootmgr: %w", err)

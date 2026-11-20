@@ -11,9 +11,9 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/knqyf263/go-rpmdb v0.1.1
 	github.com/microsoft/storm v0.4.0-alpha3
+	github.com/microsoft/storm/facilities v0.0.0-20261119194701-0eba44b2e357
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pkg/errors v0.9.1
-	github.com/pkg/sftp v1.13.9
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.19.0
@@ -47,6 +47,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/pkg/sftp v1.13.9 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230126093431-47fa9a501578 // indirect
 	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/rubenv/sql-migrate v1.8.1 // indirect

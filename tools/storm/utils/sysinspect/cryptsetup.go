@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/facilities/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
@@ -28,7 +28,7 @@ func (s CryptsetupStatus) Get(field string) (string, bool) {
 }
 
 // Cryptsetup runs `sudo cryptsetup status <name>` and returns the parsed status.
-func Cryptsetup(client *ssh.Client, name string) (CryptsetupStatus, error) {
+func Cryptsetup(client *stormssh.Client, name string) (CryptsetupStatus, error) {
 	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo cryptsetup status %s", sshutils.ShellQuote(name)))
 	if err != nil {
 		return CryptsetupStatus{}, fmt.Errorf("failed to run cryptsetup status %s: %w", name, err)
@@ -106,7 +106,7 @@ type LuksDigest struct {
 
 // CryptsetupLuksDump runs `cryptsetup luksDump --dump-json-metadata <path>` and
 // returns the parsed metadata.
-func CryptsetupLuksDump(client *ssh.Client, devicePath string) (LuksDump, error) {
+func CryptsetupLuksDump(client *stormssh.Client, devicePath string) (LuksDump, error) {
 	out, err := sshutils.CommandOutput(client,
 		fmt.Sprintf("sudo cryptsetup luksDump --dump-json-metadata %s", sshutils.ShellQuote(devicePath)))
 	if err != nil {

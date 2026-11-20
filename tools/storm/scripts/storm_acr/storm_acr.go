@@ -12,8 +12,10 @@ package storm_acr
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
+	"github.com/microsoft/storm/facilities/ado"
 	"github.com/microsoft/storm/pkg/storm/core"
 	"github.com/sirupsen/logrus"
 
@@ -85,12 +87,18 @@ func (s *PushScript) Run(suite core.SuiteContext) error {
 	}
 
 	if suite.AzureDevops() {
-		setVar(s.TagVarName, tagBase)
+		if err := setVar(s.TagVarName, tagBase); err != nil {
+			return err
+		}
 		if plan.EmitRepo {
-			setVar(s.RepoVarName, plan.Repository)
+			if err := setVar(s.RepoVarName, plan.Repository); err != nil {
+				return err
+			}
 		}
 		if plan.EmitUrl {
-			setVar(s.UrlVarName, firstRef)
+			if err := setVar(s.UrlVarName, firstRef); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -133,9 +141,9 @@ func (s *DeleteScript) Run(core.SuiteContext) error {
 // zero, which is why this lives in a script rather than a test case: storm
 // indents output captured from a case, and an indented command is silently
 // ignored by the agent.
-func setVar(name, value string) {
+func setVar(name, value string) error {
 	if name == "" {
-		return
+		return nil
 	}
-	fmt.Printf("##vso[task.setvariable variable=%s]%s\n", name, value)
+	return ado.SetVariable(os.Stdout, name, value, false)
 }
