@@ -1009,7 +1009,7 @@ mod tests {
             .unwrap();
             datastore
                 .with_host_status(|status| {
-                    status.servicing_state = state;
+                    status.servicing_state = state.clone();
                     status.last_error = Some(original_error.clone());
                 })
                 .unwrap();
