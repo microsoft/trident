@@ -61,6 +61,12 @@ fn validate_hypervisor_identity(
     )
 }
 
+/// Checks a loader-image read result against the expected slot for `install_index`.
+///
+/// Normalizes EFI separators and ASCII case, recognizing only this installation's
+/// complete slot-local `second.efi` paths. Unavailable or unsupported evidence,
+/// including fallback paths, warns and succeeds. Only a recognized opposite A/B
+/// slot returns a mismatch error; success does not attest the running payload.
 fn validate_loader_origin(
     install_index: usize,
     expected_volume: AbVolumeSelection,
