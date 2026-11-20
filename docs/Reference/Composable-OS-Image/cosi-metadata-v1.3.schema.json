@@ -55,9 +55,58 @@
     "compression": {
       "description": "Compression metadata for the COSI file.",
       "$ref": "#/$defs/Compression"
+    },
+    "extensions": {
+      "description": "Bundled system and configuration extension images, separate from disk regions.",
+      "$ref": "#/$defs/Extensions"
     }
   },
   "$defs": {
+    "Extensions": {
+      "type": "object",
+      "properties": {
+        "sysexts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ExtensionImage" }
+        },
+        "confexts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ExtensionImage" }
+        }
+      }
+    },
+    "ExtensionImage": {
+      "type": "object",
+      "required": ["id", "image", "uncompressedSha384"],
+      "properties": {
+        "id": {
+          "description": "Extension identity matching SYSEXT_ID or CONFEXT_ID in the DDI, unique within its kind.",
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
+          "allOf": [
+            { "$ref": "#/$defs/ImageFile" },
+            {
+              "properties": {
+                "path": { "pattern": "^images/extensions/.+" }
+              }
+            }
+          ]
+        },
+        "uncompressedSha384": {
+          "description": "SHA-384 of every byte of the complete uncompressed .raw DDI, including any partition table, filesystem, verity data and signature partitions.",
+          "type": "string",
+          "maxLength": 96,
+          "pattern": "^[0-9a-fA-F]{96}$"
+        },
+        "path": {
+          "description": "Requested absolute destination ending in .raw; omitted when the consumer chooses placement.",
+          "type": "string",
+          "pattern": "^/.+\\.raw$"
+        }
+      }
+    },
     "ImageFile": {
       "type": "object",
       "required": ["path", "compressedSize", "uncompressedSize", "sha384"],
