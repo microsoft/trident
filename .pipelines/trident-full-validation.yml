@@ -1,8 +1,4 @@
 parameters:
-  - name: ACL_CUSTOMIZER_PIN
-    type: string
-    # From microsoft/azure-linux-image-tools branch user/frhuelsz/acl-baremetal.
-    default: a7526eb98a57b41b5d4a0789fcf72622e6a8729a
   - name: "debug"
     displayName: "Enable debug output"
     type: boolean
@@ -19,8 +15,7 @@ schedules:
 trigger: none
 
 variables:
-  - name: ACL_CUSTOMIZER_PIN
-    value: ${{ parameters.ACL_CUSTOMIZER_PIN }}
+  - template: templates/acl-variables.yml
   # For pipelines that do not produce any production artifacts, disable CodeQL analysis
   - name: Codeql.Enabled
     value: false
@@ -41,7 +36,7 @@ resources:
       type: github
       name: microsoft/azure-linux-image-tools
       endpoint: microsoft
-      ref: ${{ parameters.ACL_CUSTOMIZER_PIN }}
+      ref: ${{ variables.ACL_CUSTOMIZER_PIN }}
 
     - repository: platform-tests
       type: git

@@ -1,0 +1,4 @@
+variables:
+  # microsoft/azure-linux-image-tools branch user/frhuelsz/acl-baremetal.
+  # Includes native MSHV boot-chain metadata support.
+  ACL_CUSTOMIZER_PIN: a7526eb98a57b41b5d4a0789fcf72622e6a8729a
