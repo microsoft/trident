@@ -145,7 +145,7 @@ func (iv *ImageSelectorView) applySelection(selectedIndex int) {
 func (iv *ImageSelectorView) populateImageOptions() (err error) {
 	if len(iv.availableImages) == 0 {
 		errMsg := "No images available for selection"
-		logger.Log.Errorf(errMsg)
+		logger.Log.Errorf("%s", errMsg)
 		iv.navBar.SetUserFeedback(errMsg, tview.Styles.TertiaryTextColor)
 		return fmt.Errorf("no images available for selection")
 	}
