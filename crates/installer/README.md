@@ -108,7 +108,7 @@ and failures show recent logs and a short summary in a red result frame; `D`
 opens the full error chain with a compact header and Esc returns to the logs.
 Successful installs
 keep their logs in a green result frame. Each result is also the last highlighted
-log entry. Continue opens recovery: Shell,
+log entry. Continue opens recovery: Retry, Shell,
 Stream COSI URL, remote HC URL, Reboot, or Shutdown. Shell `exit` returns to the
 originating screen; a nonzero shell exit is logged without changing the
 installation result or reboot decision. The recovery shell is a root login
@@ -128,7 +128,8 @@ it owns the TTY.
 
 Before each recovery attempt the baked configuration is reloaded, so shell
 edits take effect. Invalid or missing configuration never supplies implicit
-defaults for an installation.
+defaults for an installation. Retry repeats the last operation, including a
+previously entered recovery URL; an autorun retry discovers its sources again.
 
 Display filtering never removes daemon log records. All received responses are
 also appended to the private `/var/log/trident-installer.log`. HTTP(S) URLs in

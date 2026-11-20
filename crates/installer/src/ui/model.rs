@@ -142,6 +142,8 @@ pub(super) struct Model {
     pub(super) screen: Screen,
     /// Sanitized description of the current Host Configuration or COSI source.
     pub(super) source: String,
+    /// Last launched operation, retaining its original source for Retry.
+    pub(super) last_request: Request,
     /// Short, most recent progress message above the log panel.
     pub(super) activity: String,
     /// Current result or failure, retained for the detailed error view.
@@ -184,6 +186,7 @@ impl Model {
         Self {
             screen: Screen::Progress,
             source: String::new(),
+            last_request: Request::Autorun,
             activity: "Preparing installer".into(),
             details: String::new(),
             logs: VecDeque::new(),
@@ -353,6 +356,7 @@ impl Model {
         match self.screen {
             Screen::Recovery => {
                 let mut actions = vec![
+                    "Retry",
                     "Shell",
                     "Stream COSI from URL",
                     "Install from Host Configuration URL",
@@ -513,22 +517,23 @@ impl Model {
             KeyCode::Down | KeyCode::Tab => self.selected = (self.selected + 1) % count,
             KeyCode::Enter => {
                 let action = match (self.screen, self.selected) {
-                    (Screen::Recovery, 0)
+                    (Screen::Recovery, 0) => Some(Action::Start(self.last_request.clone())),
+                    (Screen::Recovery, 1)
                     | (Screen::Success, 1)
                     | (Screen::Menu, 1)
                     | (Screen::Error, 1) => Some(Action::Shell),
-                    (Screen::Recovery, 1) => {
+                    (Screen::Recovery, 2) => {
                         self.url.clear();
                         self.screen = Screen::StreamUrl;
                         None
                     }
-                    (Screen::Recovery, 2) => {
+                    (Screen::Recovery, 3) => {
                         self.url.clear();
                         self.screen = Screen::HostConfigUrl;
                         None
                     }
-                    (Screen::Recovery, 3) | (Screen::Success, 0) => Some(Action::Reboot),
-                    (Screen::Recovery, 4) => Some(Action::Poweroff),
+                    (Screen::Recovery, 4) | (Screen::Success, 0) => Some(Action::Reboot),
+                    (Screen::Recovery, 5) => Some(Action::Poweroff),
                     (Screen::Menu, 0) => {
                         self.screen = Screen::Progress;
                         None
@@ -781,6 +786,7 @@ mod tests {
         model.fail("Complete diagnostic information".into(), false);
         assert!(model.key(enter(), false).is_none());
         assert_eq!(model.screen, Screen::Recovery);
+        model.selected = 1;
         assert_eq!(model.key(enter(), false), Some(Action::Shell));
         assert_eq!(model.screen, Screen::Recovery);
         assert_eq!(model.details, "Complete diagnostic information");
@@ -803,7 +809,7 @@ mod tests {
         assert_eq!(model.screen, Screen::Menu);
 
         model.screen = Screen::Recovery;
-        for (index, action) in [(3, Action::Reboot), (4, Action::Poweroff)] {
+        for (index, action) in [(4, Action::Reboot), (5, Action::Poweroff)] {
             model.selected = index;
             assert_eq!(model.key(enter(), true), Some(Action::BlockedPower));
             assert_eq!(model.key(enter(), false), Some(action));
@@ -824,7 +830,7 @@ mod tests {
         model.screen = Screen::Recovery;
         assert!(!model.choices().contains(&"Reboot"));
         assert!(!model.choices().contains(&"Shutdown"));
-        for index in [3, 4] {
+        for index in [4, 5] {
             model.selected = index;
             assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
         }
@@ -833,7 +839,7 @@ mod tests {
         assert!(!model.uncertain);
         assert!(model.choices().contains(&"Reboot"));
         assert!(model.choices().contains(&"Shutdown"));
-        for (index, action) in [(3, Action::Reboot), (4, Action::Poweroff)] {
+        for (index, action) in [(4, Action::Reboot), (5, Action::Poweroff)] {
             model.selected = index;
             assert_eq!(model.key(enter(), false), Some(action));
         }
@@ -851,5 +857,23 @@ mod tests {
         ))));
         assert!(!model.uncertain);
         assert_eq!(model.key(enter(), false), Some(Action::Reboot));
+    }
+
+    #[test]
+    fn recovery_retry_preserves_autorun_and_remote_sources() {
+        let url = source::remote_url("https://example.test/image.cosi?sig=secret").unwrap();
+        for request in [
+            Request::Autorun,
+            Request::Stream(url),
+            Request::HostConfiguration("https://example.test/host.yaml?sig=secret".into()),
+        ] {
+            let mut model = Model::new();
+            model.last_request = request.clone();
+            model.fail("Source temporarily unavailable".into(), true);
+            model.key(enter(), false);
+            assert_eq!(model.screen, Screen::Recovery);
+            assert_eq!(model.key(enter(), false), Some(Action::Start(request)));
+            assert!(model.uncertain);
+        }
     }
 }

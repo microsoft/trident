@@ -108,14 +108,15 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  START(("START: enter recovery")) --> R["RECOVERY: Shell; Stream COSI URL; Install HC URL; optional Reboot and Shutdown"]
+  START(("START: enter recovery")) --> R["RECOVERY: Retry; Shell; Stream COSI URL; Install HC URL; optional Reboot and Shutdown"]
+  R -->|Retry last attempt| P["PROGRESS: new attempt"]
   R -->|Stream COSI URL| U1["STREAM URL entry"]
   R -->|Install HC URL| U2["HOST CONFIG URL entry"]
   U1 -->|Esc| R
   U2 -->|Esc| R
   U1 -->|Invalid URL| E["ERROR"]
   U2 -->|Invalid URL| E
-  U1 -->|Enter valid URL| P["PROGRESS: new attempt"]
+  U1 -->|Enter valid URL| P
   U2 -->|Enter valid URL| P
   P -->|Success| S["SUCCESS"]
   P -->|Failure or unknown outcome| E
@@ -143,6 +144,7 @@ flowchart TD
 | Arrows, Tab, number keys, Enter | Select and activate an action. `V` changes only the display log filter; Page Up/Down scrolls logs or error details. |
 | Ctrl-C / Esc | On PROGRESS, open MENU without stopping work; MENU's Esc or Return returns to PROGRESS. On ERROR, Esc or Continue opens RECOVERY; Esc first closes full details if open. On a URL-entry screen, Esc returns to RECOVERY. On SUCCESS, Ctrl-C opens RECOVERY. |
 | `D` on ERROR | Toggle between recent logs with a short failure summary and the full, scrollable error chain. Details use a compact header to leave more room for diagnostics. |
+| Retry | Repeat the last operation, including an entered recovery URL, with freshly loaded installer settings. Autorun retries select their sources again; an uncertain prior outcome still requires a Trident status check before another write. |
 | Shell or `S` | Opens a root recovery shell from PROGRESS, MENU, ERROR, RECOVERY, or SUCCESS. Servicing continues and automatic reboot waits while the shell owns the terminal; `exit` returns to the latest screen. A nonzero shell exit is only a warning. |
 | Stream COSI URL / Install HC URL | Recovery accepts HTTP(S) URLs without embedded username or password. A new attempt reloads installer TOML. Explicit StreamDisk recovery skips local media; recovery HC checks it once without waiting. |
 | Reboot / Shutdown | RECOVERY offers both; SUCCESS also offers Reboot. A running worker blocks power actions, and neither is offered in RECOVERY while the outcome is uncertain. A later attempt first checks Trident's servicing state before another write. |

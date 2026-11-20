@@ -27,6 +27,10 @@ const WORDMARK_HEADER_HEIGHT: u16 = 12;
 const COMPACT_HEADER_HEIGHT: u16 = 2;
 /// Leave enough height for logs and actions beneath the full wordmark.
 const MIN_WORDMARK_TERMINAL_HEIGHT: u16 = 24;
+/// Leave at least one content row inside the panel borders.
+const MIN_CONTENT_HEIGHT: u16 = 3;
+/// Keep key hints and elapsed time below the action list.
+const FOOTER_HEIGHT: u16 = 2;
 /// Trident name drawn without relying on terminal-specific fonts or graphics.
 const TRIDENT_WORDMARK: [&str; 8] = [
     r#"88888888888      d8b      888                   888"#,
@@ -180,21 +184,27 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
     } else {
         u16::try_from(choices.len()).expect("invariant: static action lists fit in u16") + 2
     };
-    // Error details need reading space more than the decorative wordmark.
-    let header = if model.screen == Screen::Error && !model.showing_logs() {
+    let source_height = if model.screen == Screen::Recovery {
+        0
+    } else {
+        2
+    };
+    let full_header = header_height(frame.area());
+    // Keep diagnostics and every recovery action visible before reserving space for the wordmark.
+    let header = if (model.screen == Screen::Error && !model.showing_logs())
+        || full_header + source_height + MIN_CONTENT_HEIGHT + action_height + FOOTER_HEIGHT
+            > frame.area().height
+    {
         COMPACT_HEADER_HEIGHT
     } else {
-        header_height(frame.area())
+        full_header
     };
     let areas = Layout::vertical([
         Constraint::Length(header),
-        Constraint::Length(match model.screen {
-            Screen::Recovery => 0,
-            _ => 2,
-        }),
-        Constraint::Min(3),
+        Constraint::Length(source_height),
+        Constraint::Min(MIN_CONTENT_HEIGHT),
         Constraint::Length(action_height),
-        Constraint::Length(2),
+        Constraint::Length(FOOTER_HEIGHT),
     ])
     .split(frame.area());
     render_header(
@@ -798,6 +808,7 @@ mod tests {
                 assert!(text.contains("Reboot"), "{text}");
             }
             if screen == Screen::Recovery {
+                assert!(text.contains("Retry"), "{text}");
                 assert!(text.contains("Reboot"), "{text}");
                 assert!(text.contains("Shutdown"), "{text}");
             }
