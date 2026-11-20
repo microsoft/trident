@@ -141,7 +141,7 @@ flowchart TD
 | --- | --- |
 | Arrows, Tab, number keys, Enter | Select and activate an action. `V` changes only the display log filter; Page Up/Down scrolls logs or error details. |
 | Ctrl-C / Esc | On PROGRESS, open MENU without stopping work; MENU's Esc or Return returns to PROGRESS. On ERROR, Esc or Continue opens RECOVERY; Esc first closes full details if open. On a URL-entry screen, Esc returns to RECOVERY. On SUCCESS, Ctrl-C opens RECOVERY. |
-| `D` on ERROR | Toggle between the log panel and full error details. |
+| `D` on ERROR | Toggle between recent logs with a short failure summary and the full, scrollable error chain. Details use a compact header to leave more room for diagnostics. |
 | Shell or `S` | Opens a root recovery shell from PROGRESS, MENU, ERROR, RECOVERY, or SUCCESS. Servicing continues and automatic reboot waits while the shell owns the terminal; `exit` returns to the latest screen. A nonzero shell exit is only a warning. |
 | Stream COSI URL / Install HC URL | Recovery accepts HTTP(S) URLs without embedded username or password. A new attempt reloads installer TOML. Explicit StreamDisk recovery skips local media; recovery HC checks it once without waiting. |
 | Reboot / Shutdown | A running worker or uncertain outcome blocks power actions. Shutdown is not offered while the outcome is uncertain; a later attempt first checks Trident's servicing state before another write. |

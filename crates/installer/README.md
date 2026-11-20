@@ -104,8 +104,9 @@ Firmware, kernel and systemd output during boot is separate from the
 installer's stream and may precede it; scrapers should match tagged log lines.
 
 No ordinary source picker or confirmation precedes autorun. Missing sources
-and failures keep recent logs visible in a red result frame; `D` opens the
-scrollable full error details and Esc returns to the logs. Successful installs
+and failures show recent logs and a short summary in a red result frame; `D`
+opens the full error chain with a compact header and Esc returns to the logs.
+Successful installs
 keep their logs in a green result frame. Each result is also the last highlighted
 log entry. Continue opens recovery: Shell,
 Stream COSI URL, remote HC URL, or Shutdown. Shell `exit` returns to the

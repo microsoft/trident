@@ -182,8 +182,14 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
             .expect("invariant: static action lists have at most four items")
             + 2
     };
+    // Error details need reading space more than the decorative wordmark.
+    let header = if model.screen == Screen::Error && !model.showing_logs() {
+        COMPACT_HEADER_HEIGHT
+    } else {
+        header_height(frame.area())
+    };
     let areas = Layout::vertical([
-        Constraint::Length(header_height(frame.area())),
+        Constraint::Length(header),
         Constraint::Length(match model.screen {
             Screen::Recovery => 0,
             _ => 2,
@@ -342,11 +348,13 @@ mod tests {
     use super::*;
 
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use indoc::indoc;
     use log::LevelFilter;
     use ratatui::{backend::TestBackend, style::Color, Terminal};
 
     use trident_client::{
-        Completion as ClientCompletion, LogLevel, RebootDisposition, ServicingEvent, ServicingKind,
+        Completion as ClientCompletion, LogLevel, RebootDisposition, RemoteError,
+        RemoteErrorCategory, ServicingEvent, ServicingKind,
     };
 
     use crate::{client::Event, APPLICATION_NAME};
@@ -664,6 +672,84 @@ mod tests {
         model.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), false);
         assert_eq!(model.screen, Screen::Error);
         assert!(model.showing_logs());
+    }
+
+    #[test]
+    fn error_chain_does_not_spill_into_logs_and_keeps_its_detail_layout() {
+        let details = indoc! {"
+            Trident failed due to a servicing error
+
+            Context:
+                0: Failed to execute a clean install
+                1: Failed to execute in chroot
+                2: Step 'Configure' failed for subsystem 'network'
+                3: Failed to write Netplan config
+                4: Failed to open Netplan configuration file
+                5: No such file or directory (os error 2)
+        "};
+        let mut model = Model::new();
+        let record = model.event(Event::Response(ServicingEvent::Completed(Err(
+            RemoteError {
+                category: RemoteErrorCategory::Servicing,
+                subkind: "write-netplan-config".into(),
+                message: details.into(),
+                error_message: "Failed to write Netplan config".into(),
+                location: None,
+            },
+        ))));
+        assert!(record
+            .plain()
+            .contains("[INST:ERROR]     5: No such file or directory"));
+        assert!(model.details.contains(details));
+
+        for (width, height) in [(40, 16), (80, 24), (160, 50)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            let rows = |terminal: &Terminal<TestBackend>| {
+                terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .chunks(usize::from(width))
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                    .collect::<Vec<_>>()
+            };
+            terminal.draw(|frame| render(frame, &model)).unwrap();
+            let text = rows(&terminal).join("\n");
+            assert!(text.contains("FAILURE:"), "{width}x{height}:\n{text}");
+            assert!(!text.contains("Context:"), "{width}x{height}:\n{text}");
+            assert!(!text.contains("Category:"), "{width}x{height}:\n{text}");
+
+            model.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), false);
+            terminal.draw(|frame| render(frame, &model)).unwrap();
+            if width == 160 {
+                let text = rows(&terminal).join("\n");
+                assert!(text.contains("Context:"), "{text}");
+                assert!(
+                    text.contains("    0: Failed to execute a clean install"),
+                    "{text}"
+                );
+                assert!(text.contains("    5: No such file or directory"), "{text}");
+                assert!(text.contains("Code: write-netplan-config"), "{text}");
+            } else {
+                let mut found_cause = false;
+                for _ in 0..10 {
+                    if rows(&terminal)
+                        .join("\n")
+                        .contains("No such file or directory")
+                    {
+                        found_cause = true;
+                        break;
+                    }
+                    model.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE), false);
+                    terminal.draw(|frame| render(frame, &model)).unwrap();
+                }
+                assert!(
+                    found_cause,
+                    "{width}x{height}: error details are not reachable"
+                );
+            }
+            model.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), false);
+        }
     }
 
     /// Compact layouts retain the application heading and available actions.

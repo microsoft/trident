@@ -204,7 +204,8 @@ impl Model {
         }
     }
 
-    /// Records a failure, preserving any earlier uncertainty and cancelling automatic reboot.
+    /// Shows a short failure summary while keeping full details for serial output and `D`.
+    /// Preserves uncertainty from earlier failures and cancels automatic reboot.
     pub(super) fn fail(&mut self, details: String, uncertain: bool) -> LogEntry {
         self.details = details.clone();
         self.uncertain |= uncertain;
@@ -214,7 +215,11 @@ impl Model {
         self.selected = 0;
         self.screen = Screen::Error;
         self.error_details_open = false;
-        self.result_log(LogLevel::Error, format!("FAILURE: {details}"), COLOR_ERROR)
+        let summary = details.lines().next().unwrap_or(&details);
+        let mut entry =
+            self.result_log(LogLevel::Error, format!("FAILURE: {summary}"), COLOR_ERROR);
+        entry.message = display_text(&format!("FAILURE: {details}"));
+        entry
     }
 
     /// Retains a bounded, single-line display copy while returning the full diagnostic.
