@@ -24,12 +24,6 @@ variables:
 
 resources:
   repositories:
-    - repository: aclImageTools
-      type: github
-      name: microsoft/azure-linux-image-tools
-      endpoint: microsoft
-      ref: ${{ variables.ACL_CUSTOMIZER_PIN }}
-
     - repository: platform-tests
       type: git
       name: platform-tests

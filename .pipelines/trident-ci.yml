@@ -19,12 +19,6 @@ variables:
 
 resources:
   repositories:
-    - repository: aclImageTools
-      type: github
-      name: microsoft/azure-linux-image-tools
-      endpoint: microsoft
-      ref: ${{ variables.ACL_CUSTOMIZER_PIN }}
-
     - repository: templates
       type: git
       name: OneBranch.Pipelines/GovernedTemplates

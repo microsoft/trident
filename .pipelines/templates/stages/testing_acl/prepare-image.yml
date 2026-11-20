@@ -21,9 +21,6 @@ jobs:
     steps:
       - template: ../common_tasks/checkout_trident.yml
       - template: ../common_tasks/avoid-pypi-usage.yml
-      - checkout: aclImageTools
-        fetchDepth: 1
-        path: s/acl-image-tools
       - task: GoTool@0
         inputs:
           version: '1.26.3'
@@ -67,12 +64,17 @@ jobs:
             sudo apt-get install -y python3-yaml python3-cryptography
             sudo systemctl start docker
             chmod 600 '$(ACL_INPUT_DIR)/ssh/id_rsa'
-            source='$(Pipeline.Workspace)/s/acl-image-tools'
+            source='$(ACL_BUILD_DIR)/image-tools'
+            mkdir -p "$source" bin/RPMS artifacts/rpm-overrides
+            # Repository resources cannot resolve this YAML-defined pin.
+            git -C "$source" init
+            git -C "$source" fetch --depth 1 \
+              https://github.com/microsoft/azure-linux-image-tools.git '$(ACL_CUSTOMIZER_PIN)'
+            git -C "$source" checkout --detach FETCH_HEAD
             # The shared MIC downloader uses --branch, which cannot select a commit SHA.
             make -C "$source/toolkit" go-imagecustomizer REBUILD_TOOLS=y
             "$source/toolkit/tools/imagecustomizer/container/build-container.sh" \
               -t '$(ACL_CUSTOMIZER)'
-            mkdir -p bin/RPMS artifacts/rpm-overrides
             cp --reflink=auto '$(ACL_INPUT_DIR)/acl-t/acl_template_image.vhdx' artifacts/
             find '$(ACL_INPUT_DIR)/trident' -type f -name '*azl3*.rpm' -exec cp -- '{}' bin/RPMS/ \;
             if [[ '${{ parameters.variant }}' == mshv ]]; then

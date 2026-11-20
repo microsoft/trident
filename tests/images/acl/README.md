@@ -35,7 +35,9 @@ import yaml
 with open(".pipelines/templates/acl-variables.yml") as config:
     print(yaml.safe_load(config)["variables"]["ACL_CUSTOMIZER_PIN"])
 ')
-git -C "$IC_SOURCE" checkout --detach "$ACL_CUSTOMIZER_PIN"
+git -C "$IC_SOURCE" fetch --depth 1 \
+  https://github.com/microsoft/azure-linux-image-tools.git "$ACL_CUSTOMIZER_PIN"
+git -C "$IC_SOURCE" checkout --detach FETCH_HEAD
 make -C "$IC_SOURCE/toolkit" go-imagecustomizer REBUILD_TOOLS=y
 "$IC_SOURCE/toolkit/tools/imagecustomizer/container/build-container.sh" \
   -t acl-imagecustomizer:local
