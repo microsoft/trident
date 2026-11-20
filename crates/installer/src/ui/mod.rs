@@ -589,7 +589,7 @@ mod tests {
 
         let mut model = Model::new();
         model.screen = Screen::Recovery;
-        model.selected = 3;
+        model.selected = 4;
         assert!(!rx.is_empty());
         assert_eq!(
             model.key(enter(), !(rx.is_empty() && worker.is_finished())),
@@ -632,7 +632,7 @@ mod tests {
 
         let mut model = Model::new();
         model.screen = Screen::Recovery;
-        model.selected = 3;
+        model.selected = 4;
         assert!(!rx.is_empty());
         assert_eq!(
             model.key(enter(), !(rx.is_empty() && worker.is_finished())),
@@ -641,7 +641,7 @@ mod tests {
         model.event(rx.recv().await.unwrap());
         assert!(model.uncertain);
         model.screen = Screen::Recovery;
-        model.selected = 3;
+        model.selected = 4;
         assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
         worker.await.unwrap().unwrap();
     }
@@ -675,7 +675,7 @@ mod tests {
 
         let mut model = Model::new();
         model.screen = Screen::Recovery;
-        model.selected = 3;
+        model.selected = 4;
         assert_eq!(
             model.key(enter(), !(worker.is_finished() && rx.is_empty())),
             Some(Action::BlockedPower)
@@ -683,7 +683,7 @@ mod tests {
         model.event(rx.recv().await.unwrap());
         assert!(model.uncertain);
         model.screen = Screen::Recovery;
-        model.selected = 3;
+        model.selected = 4;
         assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
         worker.await.unwrap().unwrap();
     }

@@ -178,9 +178,7 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
     let action_height = if choices.is_empty() {
         0
     } else {
-        u16::try_from(choices.len())
-            .expect("invariant: static action lists have at most four items")
-            + 2
+        u16::try_from(choices.len()).expect("invariant: static action lists fit in u16") + 2
     };
     // Error details need reading space more than the decorative wordmark.
     let header = if model.screen == Screen::Error && !model.showing_logs() {
@@ -800,6 +798,7 @@ mod tests {
                 assert!(text.contains("Reboot"), "{text}");
             }
             if screen == Screen::Recovery {
+                assert!(text.contains("Reboot"), "{text}");
                 assert!(text.contains("Shutdown"), "{text}");
             }
         }

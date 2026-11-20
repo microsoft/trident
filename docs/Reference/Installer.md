@@ -108,7 +108,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  START(("START: enter recovery")) --> R["RECOVERY: Shell; Stream COSI URL; Install HC URL; optional Shutdown"]
+  START(("START: enter recovery")) --> R["RECOVERY: Shell; Stream COSI URL; Install HC URL; optional Reboot and Shutdown"]
   R -->|Stream COSI URL| U1["STREAM URL entry"]
   R -->|Install HC URL| U2["HOST CONFIG URL entry"]
   U1 -->|Esc| R
@@ -120,7 +120,8 @@ flowchart TD
   P -->|Success| S["SUCCESS"]
   P -->|Failure or unknown outcome| E
   R -->|Shutdown when safe| OFF["Power off"]
-  S -->|Reboot when safe| REBOOT["Reboot"]
+  R -->|Reboot when safe| REBOOT["Reboot"]
+  S -->|Reboot when safe| REBOOT
   S -->|Automatic reboot eligible| TIMER["5-second countdown"]
   TIMER --> REBOOT
   classDef startPoint fill:#07545b,stroke:#77e6db,color:#f0fffc,stroke-width:3px
@@ -144,7 +145,7 @@ flowchart TD
 | `D` on ERROR | Toggle between recent logs with a short failure summary and the full, scrollable error chain. Details use a compact header to leave more room for diagnostics. |
 | Shell or `S` | Opens a root recovery shell from PROGRESS, MENU, ERROR, RECOVERY, or SUCCESS. Servicing continues and automatic reboot waits while the shell owns the terminal; `exit` returns to the latest screen. A nonzero shell exit is only a warning. |
 | Stream COSI URL / Install HC URL | Recovery accepts HTTP(S) URLs without embedded username or password. A new attempt reloads installer TOML. Explicit StreamDisk recovery skips local media; recovery HC checks it once without waiting. |
-| Reboot / Shutdown | A running worker or uncertain outcome blocks power actions. Shutdown is not offered while the outcome is uncertain; a later attempt first checks Trident's servicing state before another write. |
+| Reboot / Shutdown | RECOVERY offers both; SUCCESS also offers Reboot. A running worker blocks power actions, and neither is offered in RECOVERY while the outcome is uncertain. A later attempt first checks Trident's servicing state before another write. |
 | Automatic reboot | Starts five seconds after success **only** when enabled, work was performed, and Trident says a reboot is required. |
 
 With `--system-console`, the installer uses tty1 for the UI and mirrors logs

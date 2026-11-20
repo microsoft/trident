@@ -109,7 +109,7 @@ opens the full error chain with a compact header and Esc returns to the logs.
 Successful installs
 keep their logs in a green result frame. Each result is also the last highlighted
 log entry. Continue opens recovery: Shell,
-Stream COSI URL, remote HC URL, or Shutdown. Shell `exit` returns to the
+Stream COSI URL, remote HC URL, Reboot, or Shutdown. Shell `exit` returns to the
 originating screen; a nonzero shell exit is logged without changing the
 installation result or reboot decision. The recovery shell is a root login
 Bash, so it reads `/etc/profile` and the root profile (if present); on the installer ISO,

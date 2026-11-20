@@ -358,7 +358,7 @@ impl Model {
                     "Install from Host Configuration URL",
                 ];
                 if !self.uncertain {
-                    actions.push("Shutdown");
+                    actions.extend(["Reboot", "Shutdown"]);
                 }
                 actions
             }
@@ -527,8 +527,8 @@ impl Model {
                         self.screen = Screen::HostConfigUrl;
                         None
                     }
-                    (Screen::Recovery, 3) => Some(Action::Poweroff),
-                    (Screen::Success, 0) => Some(Action::Reboot),
+                    (Screen::Recovery, 3) | (Screen::Success, 0) => Some(Action::Reboot),
+                    (Screen::Recovery, 4) => Some(Action::Poweroff),
                     (Screen::Menu, 0) => {
                         self.screen = Screen::Progress;
                         None
@@ -803,15 +803,17 @@ mod tests {
         assert_eq!(model.screen, Screen::Menu);
 
         model.screen = Screen::Recovery;
-        model.selected = 3;
-        assert_eq!(model.key(enter(), true), Some(Action::BlockedPower));
-        assert_eq!(model.key(enter(), false), Some(Action::Poweroff));
+        for (index, action) in [(3, Action::Reboot), (4, Action::Poweroff)] {
+            model.selected = index;
+            assert_eq!(model.key(enter(), true), Some(Action::BlockedPower));
+            assert_eq!(model.key(enter(), false), Some(action));
+        }
         model.screen = Screen::Success;
         model.selected = 0;
         assert_eq!(model.key(enter(), true), Some(Action::BlockedPower));
     }
 
-    /// Losing the client stream must not make shutdown safe until Trident confirms idleness.
+    /// Losing the client stream must not make power actions safe until Trident confirms idleness.
     #[test]
     fn uncertain_outcome_blocks_power_after_worker_exits() {
         let mut model = Model::new();
@@ -820,14 +822,21 @@ mod tests {
             uncertain: true,
         });
         model.screen = Screen::Recovery;
-        model.selected = 3;
+        assert!(!model.choices().contains(&"Reboot"));
         assert!(!model.choices().contains(&"Shutdown"));
-        assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
+        for index in [3, 4] {
+            model.selected = index;
+            assert_eq!(model.key(enter(), false), Some(Action::BlockedPower));
+        }
 
         model.event(Event::IdleConfirmed);
         assert!(!model.uncertain);
+        assert!(model.choices().contains(&"Reboot"));
         assert!(model.choices().contains(&"Shutdown"));
-        assert_eq!(model.key(enter(), false), Some(Action::Poweroff));
+        for (index, action) in [(3, Action::Reboot), (4, Action::Poweroff)] {
+            model.selected = index;
+            assert_eq!(model.key(enter(), false), Some(action));
+        }
 
         model.event(Event::Error {
             details: "Another stream disconnected".into(),
