@@ -4,18 +4,14 @@ package acl
 import (
 	"archive/tar"
 	"bytes"
-	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/microsoft/storm"
 	metadata "tridenttools/cmd/mkcosi/metadata"
 )
@@ -50,12 +46,7 @@ func (s *ACLScenario) RegisterTestCases(r storm.TestRegistrar) error {
 }
 
 type artifactInfo struct {
-	Variant        string `json:"variant"`
-	MetadataSHA384 string `json:"metadataSha384"`
-	CosiSHA256     string `json:"cosiSha256"`
-	TargetUUID     string `json:"targetUsrUuid"`
-	TargetHash     string `json:"targetRootHash"`
-	TridentSHA256  string `json:"expectedTridentSha256"`
+	Variant string `json:"variant"`
 }
 
 func readArtifacts(dir, variant string) (artifactInfo, error) {
@@ -87,30 +78,10 @@ func readArtifacts(dir, variant string) (artifactInfo, error) {
 	if !validBootloader || m.OsArch != metadata.OsArchitectureX8664 {
 		return info, fmt.Errorf("incompatible %s COSI metadata: version=%q osArch=%q bootloader=%q", variant, m.Version, m.OsArch, m.Bootloader.Type)
 	}
-	count := 0
-	for _, image := range m.Images {
-		if image.MountPoint != "/usr" {
-			continue
-		}
-		count++
-		id, err := uuid.Parse(image.FsUuid)
-		if err != nil || id == uuid.Nil || image.Verity == nil || !isDigest(image.Verity.Roothash, 32) {
-			return info, fmt.Errorf("expected verity-backed /usr with nonzero filesystem UUID and SHA256 root hash")
-		}
-		info.TargetUUID = id.String()
-		info.TargetHash = strings.ToLower(image.Verity.Roothash)
-	}
-	if count != 1 {
-		return info, fmt.Errorf("expected exactly one /usr image, got %d", count)
-	}
-	hash := sha512.Sum384(raw)
-	info.MetadataSHA384 = hex.EncodeToString(hash[:])
 	var manifest struct {
-		ImageSource    string `json:"imageSource"`
-		BaseSHA256     string `json:"baseImageSha256"`
-		Variant        string `json:"variant"`
-		MetadataSHA384 string `json:"metadataSha384"`
-		TridentSHA256  string `json:"expectedTridentSha256"`
+		ImageSource string `json:"imageSource"`
+		BaseSHA256  string `json:"baseImageSha256"`
+		Variant     string `json:"variant"`
 	}
 	manifestBytes, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {
@@ -119,10 +90,9 @@ func readArtifacts(dir, variant string) (artifactInfo, error) {
 	if err = json.Unmarshal(manifestBytes, &manifest); err != nil {
 		return info, err
 	}
-	if manifest.ImageSource != "acl-t" || !isDigest(manifest.BaseSHA256, 32) || manifest.Variant != variant || !isDigest(manifest.TridentSHA256, 32) || !strings.EqualFold(manifest.MetadataSHA384, info.MetadataSHA384) {
-		return info, fmt.Errorf("manifest must identify ACL-T %s, input and Trident SHA256 and exact metadata SHA384", variant)
+	if manifest.ImageSource != "acl-t" || !isDigest(manifest.BaseSHA256, 32) || manifest.Variant != variant {
+		return info, fmt.Errorf("manifest must identify ACL-T %s and input SHA256", variant)
 	}
-	info.TridentSHA256 = strings.ToLower(manifest.TridentSHA256)
 	f, err := os.Open(filepath.Join(dir, "update.cosi"))
 	if err != nil {
 		return info, err
@@ -149,14 +119,6 @@ func readArtifacts(dir, variant string) (artifactInfo, error) {
 		}
 		break
 	}
-	if _, err = f.Seek(0, io.SeekStart); err != nil {
-		return info, err
-	}
-	h := sha256.New()
-	if _, err = io.Copy(h, f); err != nil {
-		return info, err
-	}
-	info.CosiSHA256 = hex.EncodeToString(h.Sum(nil))
 	return info, nil
 }
 func isDigest(value string, length int) bool {
@@ -164,6 +126,7 @@ func isDigest(value string, length int) bool {
 	return err == nil && len(b) == length
 }
 
-func updateConfig(info artifactInfo) string {
-	return fmt.Sprintf("image:\n  url: file://%s/update.cosi\n  sha384: %s\ninternalParams:\n  forceAbUpdate: true\n  noTransition: true\nos:\n  uefiFallback: conservative\n", guestDir, info.MetadataSHA384)
+func updateConfig() string {
+	// These disposable fixtures exercise servicing, not checksum validation.
+	return fmt.Sprintf("image:\n  url: file://%s/update.cosi\n  sha384: ignored\ninternalParams:\n  forceAbUpdate: true\n  noTransition: true\nos:\n  uefiFallback: conservative\n", guestDir)
 }

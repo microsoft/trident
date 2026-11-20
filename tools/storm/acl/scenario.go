@@ -182,7 +182,7 @@ func (s *ACLScenario) run() (result error) {
 		return err
 	}
 	config := filepath.Join(runDir, "update.yaml")
-	if err := os.WriteFile(config, []byte(updateConfig(info)), 0600); err != nil {
+	if err := os.WriteFile(config, []byte(updateConfig()), 0600); err != nil {
 		return err
 	}
 	if err := r.upload(config, guestDir+"/update.yaml"); err != nil {

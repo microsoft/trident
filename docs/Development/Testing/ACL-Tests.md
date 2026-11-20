@@ -18,18 +18,18 @@ denial, using `testuser` with passwordless sudo instead. Images are unsigned;
 Secure Boot is disabled. A passing run does not validate production signing.
 
 The base QCOW2 and update COSI are separate normal `testimages.py` builds,
-with different `/usr` filesystem UUIDs and the same SSH key and Trident binary.
-Their actual UUIDs and verity hashes identify generations; no artificial
-os-release identity or generation marker is added.
+using the same SSH key and requested Trident RPM inputs. The scenario follows
+active slots rather than matching filesystem UUIDs, verity root hashes or
+Trident binary digests.
 
 The scenario requires:
 
-1. Baseline boot on USR-A with read-only verified `/usr` and the packaged Trident.
+1. Baseline boot on USR-A with read-only, verity-backed `/usr`.
 2. Update to B, rollback to A, update to B, then update to A.
 3. Explicit staging/finalization and commit at each operation, with Provisioned
    status on volumes B/A/B/A and another persistence reboot.
 
-It checks running boot IDs, `/usr` UUID/hash, native ACL identity, Trident hash,
+It checks running boot IDs, active slot partitions, native ACL identity,
 boot-tree preservation and bootctl selection. MSHV additionally requires its
 kernel, character device `/dev/mshv` and complete slot-owned loader bundle.
 The controller retains checkpoints across guest reboots.
@@ -47,7 +47,7 @@ command failures and timeouts fail the test without a host cold cycle.
 The shutdown excerpt is saved before domain start can truncate the serial log.
 This exercises MSHV rollback with a host cold cycle, not working warm reset.
 The next checkpoint still requires a new boot ID, working SSH, explicit commit
-and the expected slot and generation before servicing continues.
+and the expected slot before servicing continues.
 
 ## Local execution
 
@@ -82,12 +82,13 @@ sudo ./bin/storm-trident run acl -a -- --variant "$VARIANT" \
 
 Refresh ACL-T once before building all variants.
 
-Packaging verifies matching installed Trident binaries, native ACL identity,
-distinct `/usr` UUIDs and compressed payload hashes. The recorded binary hash
-checks consistency across the images and guest boots; it does not independently
-verify selection of the supplied candidate RPMs. Its MSHV-only metadata correction
-works around the pinned IC's hardcoded ACL bootloader tag; it neither rebuilds
-partitions nor rewrites UKIs. Do not use it to relabel arbitrary production COSIs.
+Packaging verifies native ACL identity and compressed payload hashes, but not
+filesystem UUIDs, verity root hashes or Trident binary digests. The disposable
+test's update configuration uses `image.sha384: ignored`; metadata-digest and
+whole-COSI checksum checks are outside this scenario. Its MSHV-only metadata
+correction works around the pinned IC's hardcoded ACL bootloader tag; it neither
+rebuilds partitions nor rewrites UKIs. Do not use it to relabel arbitrary production
+COSIs.
 
 ## Pipelines
 

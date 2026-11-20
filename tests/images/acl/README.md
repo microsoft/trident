@@ -77,10 +77,9 @@ for building and running a servicing pair.
 
 IC directly creates each COSI. `publish-servicing-artifacts.sh` packages the
 already-built QCOW2/COSI and SSH key for Storm; it does not customize images.
-It verifies native ACL identity, distinct `/usr` UUIDs, identical installed
-Trident binaries and the compressed `/usr` hash, and records RPM/input hashes.
-The binary checks establish consistency, not independent verification that
-the supplied candidate RPMs won package resolution.
+It verifies native ACL identity and the compressed `/usr` payload hash, and
+records RPM/input hashes. It does not compare filesystem UUIDs, verity root
+hashes or installed Trident binary digests.
 For MSHV it corrects IC's hardcoded `systemd-boot` metadata tag to COSI 1.3
 `efitreeloader-mshv-systemd-boot`, preserving compressed partition bytes.
 This workaround is restricted to these unsigned test artifacts.

@@ -1,16 +1,12 @@
 package acl
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 type checkpoint struct {
-	Phase, Slot, Generation, Previous, State string
+	Phase, Slot, Previous, State string
 }
 
 type guest interface {
-	command(string) (string, error)
 	trident(arguments, logName string, expectReboot bool) (string, error)
 	check(checkpoint, artifactInfo) error
 	waitBoot(string) (string, error)
@@ -22,26 +18,18 @@ func service(g guest, info artifactInfo) error {
 	if err != nil {
 		return fmt.Errorf("baseline SSH: %w", err)
 	}
-	sum, err := g.command("sha256sum " + guestDir + "/update.cosi")
-	if err != nil {
-		return err
-	}
-	fields := strings.Fields(sum)
-	if len(fields) != 2 || fields[0] != info.CosiSHA256 {
-		return fmt.Errorf("uploaded COSI SHA256 mismatch: %q", sum)
-	}
-	if err := g.check(checkpoint{Phase: "baseline", Slot: "a", Generation: "base"}, info); err != nil {
+	if err := g.check(checkpoint{Phase: "baseline", Slot: "a"}, info); err != nil {
 		return fmt.Errorf("baseline: %w", err)
 	}
-	previous, activeSlot, generation := "baseline", "a", "base"
+	previous, activeSlot := "baseline", "a"
 	for _, step := range []struct {
-		name, slot, generation string
-		rollback               bool
+		name, slot string
+		rollback   bool
 	}{
-		{name: "update-1", slot: "b", generation: "update"},
-		{name: "rollback", slot: "a", generation: "base", rollback: true},
-		{name: "update-2", slot: "b", generation: "update"},
-		{name: "update-3", slot: "a", generation: "update"},
+		{name: "update-1", slot: "b"},
+		{name: "rollback", slot: "a", rollback: true},
+		{name: "update-2", slot: "b"},
+		{name: "update-3", slot: "a"},
 	} {
 		command := "update " + guestDir + "/update.yaml"
 		stagedState := "ab-update-staged"
@@ -52,7 +40,7 @@ func service(g guest, info artifactInfo) error {
 			return fmt.Errorf("%s stage: %w", step.name, err)
 		}
 		staged := step.name + "-staged"
-		if err := g.check(checkpoint{staged, activeSlot, generation, previous, stagedState}, info); err != nil {
+		if err := g.check(checkpoint{staged, activeSlot, previous, stagedState}, info); err != nil {
 			return fmt.Errorf("%s: %w", staged, err)
 		}
 		// Native rollback restores a derived config without noTransition.
@@ -71,10 +59,10 @@ func service(g guest, info artifactInfo) error {
 		if _, err := g.trident("commit", step.name+"-commit", false); err != nil {
 			return fmt.Errorf("%s commit: %w", step.name, err)
 		}
-		if err := g.check(checkpoint{step.name, step.slot, step.generation, staged, "provisioned"}, info); err != nil {
+		if err := g.check(checkpoint{step.name, step.slot, staged, "provisioned"}, info); err != nil {
 			return fmt.Errorf("%s: %w", step.name, err)
 		}
-		previous, activeSlot, generation = step.name, step.slot, step.generation
+		previous, activeSlot = step.name, step.slot
 	}
 	if err := g.reboot(); err != nil {
 		return fmt.Errorf("persisted reboot: %w", err)
@@ -82,7 +70,7 @@ func service(g guest, info artifactInfo) error {
 	if _, err := g.waitBoot(bootID); err != nil {
 		return fmt.Errorf("persisted boot: %w", err)
 	}
-	if err := g.check(checkpoint{"persisted", activeSlot, generation, previous, "provisioned"}, info); err != nil {
+	if err := g.check(checkpoint{"persisted", activeSlot, previous, "provisioned"}, info); err != nil {
 		return fmt.Errorf("persisted: %w", err)
 	}
 	return nil

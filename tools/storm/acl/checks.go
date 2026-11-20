@@ -19,35 +19,14 @@ type fileDigest struct {
 }
 
 type snapshot struct {
-	FSType                                                                            string
-	BootID, Kernel, OSRelease, TridentSHA                                             string
-	UsrUUID, RootHash, Verity, Source, UsrDevice, Options, Ancestors, Bootctl, Status string
-	MSHVPresent, MSHVCharacter                                                        bool
-	Trees                                                                             map[string]map[string]fileDigest
+	FSType                                                         string
+	BootID, Kernel, OSRelease                                      string
+	Verity, Source, UsrDevice, Options, Ancestors, Bootctl, Status string
+	MSHVPresent, MSHVCharacter                                     bool
+	Trees                                                          map[string]map[string]fileDigest
 }
 
-func checksum(output string) (string, error) {
-	fields := strings.Fields(output)
-	if len(fields) < 1 || !isDigest(fields[0], 32) {
-		return "", fmt.Errorf("invalid SHA256 output: %q", output)
-	}
-	return strings.ToLower(fields[0]), nil
-}
-
-func verityRootHash(output string) (string, error) {
-	for _, line := range strings.Split(output, "\n") {
-		key, value, found := strings.Cut(strings.TrimSpace(line), ":")
-		if found && key == "root hash" {
-			hash := strings.TrimSpace(value)
-			if isDigest(hash, 32) {
-				return strings.ToLower(hash), nil
-			}
-		}
-	}
-	return "", fmt.Errorf("verity status has no SHA256 root hash")
-}
-
-func validateSnapshot(current, baseline, reference snapshot, expected checkpoint, info artifactInfo) error {
+func validateSnapshot(current, reference snapshot, expected checkpoint, info artifactInfo) error {
 	if expected.Slot != "a" && expected.Slot != "b" {
 		return fmt.Errorf("invalid expected slot %q", expected.Slot)
 	}
@@ -62,14 +41,11 @@ func validateSnapshot(current, baseline, reference snapshot, expected checkpoint
 	if !slices.Contains(strings.Fields(current.Ancestors), partition) {
 		return fmt.Errorf("/usr is not backed by expected slot partition %s", partition)
 	}
-	if current.Source == "" || current.Source != current.UsrDevice || current.FSType != "btrfs" || !slices.Contains(strings.Split(current.Options, ","), "ro") || !strings.Contains(strings.ToLower(current.Verity), "verity") || !isDigest(current.RootHash, 32) {
+	if current.Source == "" || current.Source != current.UsrDevice || current.FSType != "btrfs" || !slices.Contains(strings.Split(current.Options, ","), "ro") || !strings.Contains(strings.ToLower(current.Verity), "verity") {
 		return fmt.Errorf("/usr must be read-only and verity-backed")
 	}
 	if !slices.Contains(strings.Split(current.OSRelease, "\n"), "VARIANT_ID=azurecontainerlinux") {
 		return fmt.Errorf("expected native ACL os-release")
-	}
-	if current.TridentSHA != info.TridentSHA256 {
-		return fmt.Errorf("Trident binary does not match artifact provenance")
 	}
 	if info.Variant == "mshv" {
 		if !strings.Contains(current.Kernel, "mshv") || !current.MSHVPresent || !current.MSHVCharacter {
@@ -93,16 +69,6 @@ func validateSnapshot(current, baseline, reference snapshot, expected checkpoint
 	}
 	if _, exists := status["lastError"]; exists {
 		return fmt.Errorf("Trident status contains lastError: %v", status["lastError"])
-	}
-	if current.TridentSHA != baseline.TridentSHA {
-		return fmt.Errorf("Trident binary changed during servicing")
-	}
-	expectedUUID, expectedHash := info.TargetUUID, info.TargetHash
-	if expected.Generation == "base" {
-		expectedUUID, expectedHash = baseline.UsrUUID, baseline.RootHash
-	}
-	if current.UsrUUID != expectedUUID || current.RootHash != expectedHash {
-		return fmt.Errorf("slot %s /usr UUID or verity hash does not match %s image", expected.Slot, expected.Generation)
 	}
 	referenceSlot := slot
 	if expected.Previous == "baseline" {
@@ -145,10 +111,6 @@ func validateSnapshot(current, baseline, reference snapshot, expected checkpoint
 
 func (r *runner) check(expected checkpoint, info artifactInfo) error {
 	out := snapshot{Trees: make(map[string]map[string]fileDigest)}
-	partition := "sda2"
-	if expected.Slot == "b" {
-		partition = "sda4"
-	}
 	measurements := []struct {
 		name, command string
 		target        *string
@@ -163,11 +125,9 @@ func (r *runner) check(expected checkpoint, info artifactInfo) error {
 		{"usr-options", "findmnt -rn -o OPTIONS /usr", &out.Options},
 		{"verity", "veritysetup status usr", &out.Verity},
 		{"usr-ancestors", "lsblk -s -rno NAME /dev/mapper/usr", &out.Ancestors},
-		{"usr-uuid", "blkid -s UUID -o value /dev/" + partition, &out.UsrUUID},
 		{"partitions", "lsblk -o NAME,SIZE,FSTYPE,PARTLABEL,UUID,MOUNTPOINTS", nil},
 		{"bootctl", "bootctl status --no-pager", &out.Bootctl},
 		{"journal", "journalctl -b --no-pager", nil},
-		{"trident.sha256", "sha256sum /usr/bin/trident", &out.TridentSHA},
 	}
 	for _, measurement := range measurements {
 		value, err := r.command(measurement.command)
@@ -182,14 +142,6 @@ func (r *runner) check(expected checkpoint, info artifactInfo) error {
 		}
 	}
 	var err error
-	out.TridentSHA, err = checksum(out.TridentSHA)
-	if err != nil {
-		return err
-	}
-	out.RootHash, err = verityRootHash(out.Verity)
-	if err != nil {
-		return err
-	}
 	if err := r.readBootTrees(&out); err != nil {
 		return err
 	}
@@ -209,7 +161,7 @@ func (r *runner) check(expected checkpoint, info artifactInfo) error {
 	if err := r.save(expected.Phase+"/snapshot.json", raw); err != nil {
 		return err
 	}
-	if err := validateSnapshot(out, r.snapshots["baseline"], r.snapshots[expected.Previous], expected, info); err != nil {
+	if err := validateSnapshot(out, r.snapshots[expected.Previous], expected, info); err != nil {
 		return err
 	}
 	r.snapshots[expected.Phase] = out

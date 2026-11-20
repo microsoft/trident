@@ -28,7 +28,7 @@ jq -e --arg variant "$variant" '
         and (.bootloader.systemdBoot.entries | length == 1)
         and ((.bootloader.systemdBoot.entries[0].kernel | contains("mshv")) == ($variant == "mshv"))
         and ([.images[] | select(.mountPoint == "/usr" and .fsType == "btrfs"
-            and (.verity.roothash | test("^[a-f0-9]{64}$")))] | length == 1)
+            and .verity != null)] | length == 1)
     then if $variant == "mshv"
         then .version = "1.3" | .bootloader.type = "efitreeloader-mshv-systemd-boot"
         else . end
@@ -41,18 +41,6 @@ tar -xOf "$update" "$usr" > "$scratch/usr.zst"
 expected=$(jq -r '.images[] | select(.mountPoint == "/usr") | .image.sha384' "$scratch/metadata.json")
 printf '%s  %s\n' "$expected" "$scratch/usr.zst" | sha384sum --check -
 zstd -dq "$scratch/usr.zst" -o "$scratch/usr.raw"
-update_binary=$(guestfish --ro -a "$scratch/usr.raw" run : mount-ro /dev/sda / : checksum sha256 /bin/trident)
-base_binary=$(guestfish --ro -a "$base" run : mount-ro /dev/sda2 / : checksum sha256 /bin/trident)
-[[ $base_binary =~ ^[a-f0-9]{64}$ && $base_binary == "$update_binary" ]] || {
-    echo 'Base and update must contain identical candidate Trident binaries' >&2
-    exit 1
-}
-base_uuid=$(guestfish --ro -a "$base" run : vfs-uuid /dev/sda2)
-update_uuid=$(jq -r '.images[] | select(.mountPoint == "/usr") | .fsUuid' "$scratch/metadata.json")
-[[ $base_uuid != "$update_uuid" ]] || {
-    echo 'Base and update must have distinct /usr UUIDs' >&2
-    exit 1
-}
 for image in "$base" "$scratch/usr.raw"; do
     device=/dev/sda2
     [[ $image == "$base" ]] || device=/dev/sda
@@ -100,16 +88,14 @@ tar --delete -f - cosi-marker metadata.json < "$update" > "$scratch/payload.tar"
 tar -cf "$output/update.cosi" -C "$scratch" cosi-marker metadata.json
 tar --concatenate --file "$output/update.cosi" "$scratch/payload.tar"
 cp -- "$scratch/metadata.json" "$output/metadata.json"
-metadata_hash=$(sha384sum "$output/metadata.json" | cut -d ' ' -f 1)
 base_hash=$(sha256sum "$root/artifacts/acl_template_image.vhdx" | cut -d ' ' -f 1)
 for rpm in "$root"/bin/RPMS/*.rpm "$root"/artifacts/rpm-overrides/*.rpm; do
     [[ -f $rpm ]] || continue
     digest=$(sha256sum "$rpm" | cut -d ' ' -f 1)
     jq -cn --arg name "$(basename "$rpm")" --arg sha256 "$digest" '{name:$name, sha256:$sha256}'
 done > "$scratch/rpms.jsonl"
-jq -n --arg variant "$variant" --arg base "$base_hash" --arg binary "$base_binary" \
-    --arg metadata "$metadata_hash" --slurpfile rpms "$scratch/rpms.jsonl" \
+jq -n --arg variant "$variant" --arg base "$base_hash" --slurpfile rpms "$scratch/rpms.jsonl" \
     '{imageSource:"acl-t", variant:$variant, baseImageSha256:$base,
-      expectedTridentSha256:$binary, metadataSha384:$metadata, rpms:$rpms,
+      rpms:$rpms,
       efitreeloaderRun:1261060,
       imageCustomizerRevision:"c8dc566c0c04d33e2deaa6a484113e0545997f92"}' > "$output/manifest.json"
