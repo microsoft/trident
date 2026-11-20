@@ -133,9 +133,12 @@ stages:
           name: trident-ubuntu-1es-pool-eastus2
           hostArchitecture: amd64
 
+        strategy:
+          parallel: 20
+
         variables:
           ob_outputDirectory: /tmp/azl-installer-test-unattended
-          ob_artifactBaseName: azl-installer-test-unattended-$(System.JobAttempt)
+          ob_artifactBaseName: azl-installer-test-unattended-$(System.JobPositionInPhase)-$(System.JobAttempt)
 
         steps:
           - template: ../common_tasks/checkout_trident.yml

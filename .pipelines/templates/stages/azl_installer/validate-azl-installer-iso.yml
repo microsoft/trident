@@ -90,7 +90,7 @@ steps:
       fi
     timeoutInMinutes: 10
     displayName: "Test azl-installer ISO (unattended installation)"
-    retryCountOnTaskFailure: 3
+    retryCountOnTaskFailure: 0
   
   # Dump serial log of test vm
   - bash: |
