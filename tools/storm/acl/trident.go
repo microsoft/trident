@@ -4,7 +4,6 @@ package acl
 import (
 	"archive/tar"
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -102,7 +101,6 @@ func readArtifacts(dir string, variant imageVariant) (artifactInfo, error) {
 	}
 	var manifest struct {
 		ImageSource string       `json:"imageSource"`
-		BaseSHA256  string       `json:"baseImageSha256"`
 		Variant     imageVariant `json:"variant"`
 	}
 	manifestBytes, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
@@ -112,8 +110,8 @@ func readArtifacts(dir string, variant imageVariant) (artifactInfo, error) {
 	if err = json.Unmarshal(manifestBytes, &manifest); err != nil {
 		return info, err
 	}
-	if manifest.ImageSource != "acl-t" || !isDigest(manifest.BaseSHA256, 32) || manifest.Variant != variant {
-		return info, fmt.Errorf("manifest must identify ACL-T %s and input SHA256", variant)
+	if manifest.ImageSource != "acl-t" || manifest.Variant != variant {
+		return info, fmt.Errorf("manifest must identify ACL-T %s", variant)
 	}
 	f, err := os.Open(filepath.Join(dir, "update.cosi"))
 	if err != nil {
@@ -142,10 +140,6 @@ func readArtifacts(dir string, variant imageVariant) (artifactInfo, error) {
 		break
 	}
 	return info, nil
-}
-func isDigest(value string, length int) bool {
-	b, err := hex.DecodeString(value)
-	return err == nil && len(b) == length
 }
 
 func updateConfig() string {
