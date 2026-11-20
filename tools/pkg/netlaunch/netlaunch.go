@@ -28,6 +28,16 @@ import (
 	stormutils "tridenttools/storm/utils"
 )
 
+func isoHandler(iso []byte, isoLogFunc func(string), afterServe func()) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		isoLogFunc(r.RemoteAddr)
+		http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
+		if afterServe != nil {
+			afterServe()
+		}
+	}
+}
+
 func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 	// Read the ISO
 	iso, err := os.ReadFile(config.IsoPath)
@@ -205,20 +215,17 @@ func RunNetlaunch(ctx context.Context, config *NetLaunchConfig) error {
 			}
 		}
 
-		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
-			isoLogFunc(r.RemoteAddr)
-			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
-		})
+		mux.HandleFunc("/provision.iso", isoHandler(iso, isoLogFunc, nil))
 
 		// We injected the phonehome & logstream config, so we're expecting Trident to reach back
 		enable_phonehome_listening = true
 	} else {
 		// Otherwise, serve the iso as-is
-		mux.HandleFunc("/provision.iso", func(w http.ResponseWriter, r *http.Request) {
-			isoLogFunc(r.RemoteAddr)
-			http.ServeContent(w, r, "provision.iso", time.Now(), bytes.NewReader(iso))
-			terminateFunc()
-		})
+		var afterServe func()
+		if !enable_phonehome_listening {
+			afterServe = terminateFunc
+		}
+		mux.HandleFunc("/provision.iso", isoHandler(iso, isoLogFunc, afterServe))
 	}
 
 	// If we're expecting Trident to reach back, we need to listen for it.
