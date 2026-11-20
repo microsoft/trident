@@ -176,7 +176,7 @@ jobs:
 
   e2e:
     name: e2e (sample image builds)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     env:
       # Absolute path to the binary built below; the e2e steps run from the e2e
@@ -207,6 +207,22 @@ jobs:
         with:
           toolchain: "1.98.1"
           cache-workspaces: tools/tailor
+      # https://github.com/microsoft/azure-linux-image-tools/issues/953
+      - name: Allow lsblk to inspect loop devices
+        shell: python3 {0}
+        run: |
+          import subprocess
+
+          subprocess.run(
+              ["sudo", "tee", "-a", "/etc/apparmor.d/local/lsblk"],
+              input="/dev/loop@{int} rk,\n/dev/loop@{int}p@{int} rk,\n",
+              text=True,
+              check=True,
+          )
+          subprocess.run(
+              ["sudo", "apparmor_parser", "-r", "/etc/apparmor.d/lsblk"],
+              check=True,
+          )
       - name: Confirm Docker is available
         run: docker version
       - name: Build the tailor binary
