@@ -19,8 +19,8 @@ stages:
       - GetTridentBinaries_rpms_amd64
       - GetTridentBinaries_rpms_arm64
       - ${{ if eq(parameters.stageType, 'pre') }}:
-          - DeploymentTesting_host
-          - DeploymentTesting_container
+          - E2ETesting_VM_HOST
+          - E2ETesting_VM_CONTAINER
           - FunctionalTesting
           # - BaremetalDeploymentTesting_host
           # - BaremetalDeploymentTesting_container

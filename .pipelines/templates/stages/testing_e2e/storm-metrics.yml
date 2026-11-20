@@ -37,11 +37,7 @@ parameters:
     type: string
     default: "trident"
 
-  # While the legacy suite still runs, storm uploads to `dev` only. Both suites
-  # cover the same configurations, so pointing storm at `main` would double
-  # count every clean install on the perf dashboards - the same class of
-  # collision the sysext ACR tags hit in build 1174767. Flip this to the
-  # branch-based main/dev choice legacy makes once legacy VM E2E is retired.
+  # The caller selects main for mainline runs and dev for other branches.
   - name: kustoTableName
     type: string
     default: "dev"
@@ -50,8 +46,7 @@ parameters:
     type: string
     default: "metrics"
 
-  # Recorded as additional_fields.test_runner so dashboards can separate these
-  # rows from the legacy suite's for as long as both are ingesting.
+  # Distinguishes storm rows from historical legacy and current bare-metal rows.
   - name: testRunner
     type: string
     default: "storm"

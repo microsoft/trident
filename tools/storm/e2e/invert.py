@@ -42,7 +42,7 @@ header = """\
 # rerun) seal to PCR 7, which Trident forbids under a containerized runtime. On
 # the container runtime the Host Configuration is rewritten to drop PCR 7
 # (scenario.applyContainerPcrExclusion, mirroring the legacy #221 pipeline glue
-# in testing_vm/netlaunch-testing.yml), so they run in both runtimes just like
+# in the legacy VM pipeline), so they run in both runtimes just like
 # legacy. memory-constraint-combined is host-only purely because
 # target-configurations.yaml does not list it under container.
 #
