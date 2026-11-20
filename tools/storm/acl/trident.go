@@ -2,7 +2,6 @@
 package acl
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,7 +31,7 @@ type ACLScenario struct {
 
 type scenarioArgs struct {
 	Variant          imageVariant  `help:"ACL image variant" enum:"standard,mshv" default:"standard"`
-	ArtifactsDir     string        `help:"Directory containing ACL base.qcow2, update.cosi, manifest.json and id_rsa" required:""`
+	ArtifactsDir     string        `help:"Directory containing ACL base.qcow2, update.cosi and id_rsa" required:""`
 	OutputPath       string        `help:"Directory for evidence and private VM working disk" required:""`
 	VMName           string        `help:"Prefix for a uniquely named disposable QEMU VM" default:"acl"`
 	BootTimeout      time.Duration `help:"Maximum wait for each SSH-ready boot" default:"10m"`
@@ -71,7 +70,7 @@ func readArtifacts(dir string, variant imageVariant) (artifactInfo, error) {
 	if variant != variantStandard && variant != variantMSHV {
 		return info, fmt.Errorf("unsupported ACL variant %q; expected standard or mshv", variant)
 	}
-	for _, name := range []string{"base.qcow2", "update.cosi", "manifest.json", "id_rsa"} {
+	for _, name := range []string{"base.qcow2", "update.cosi", "id_rsa"} {
 		st, err := os.Stat(filepath.Join(dir, name))
 		if err != nil {
 			return info, err
@@ -79,20 +78,6 @@ func readArtifacts(dir string, variant imageVariant) (artifactInfo, error) {
 		if !st.Mode().IsRegular() || st.Size() == 0 {
 			return info, fmt.Errorf("%s must be a nonempty regular file", name)
 		}
-	}
-	var manifest struct {
-		ImageSource string       `json:"imageSource"`
-		Variant     imageVariant `json:"variant"`
-	}
-	manifestBytes, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
-	if err != nil {
-		return info, err
-	}
-	if err = json.Unmarshal(manifestBytes, &manifest); err != nil {
-		return info, err
-	}
-	if manifest.ImageSource != "acl-t" || manifest.Variant != variant {
-		return info, fmt.Errorf("manifest must identify ACL-T %s", variant)
 	}
 	return info, nil
 }
