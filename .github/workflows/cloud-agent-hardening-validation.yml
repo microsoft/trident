@@ -1,0 +1,64 @@
+name: Cloud Agent Hardening Validation
+
+on:
+  push:
+    branches:
+      - user/britel/cloud-agent-hardening-validation-20261120
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: trident-github-runner-ubuntu2204-amd64
+    timeout-minutes: 120
+    steps:
+      - name: Checkout validation harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: validation
+          persist-credentials: false
+
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: a489e73f4bb36117bef4cd560106c2d6f999f5af
+          path: candidate
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.x"
+          cache: false
+
+      - name: Validate candidate on real runner
+        timeout-minutes: 115
+        env:
+          ADO_UMI_CLIENT_ID: e2fd61e6-b160-4f02-a5ac-3d949a4fe01d
+        run: |
+          timeout --signal=INT --kill-after=90s 110m \
+            python3 validation/scripts/cloud-agent/hardening-validation.py \
+            "$GITHUB_WORKSPACE/candidate" "$RUNNER_TEMP/trident-hardening-reports"
+
+      - name: Persist workflow outcome
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/trident-hardening-reports"
+          printf 'Workflow job status before upload: %s\nCandidate: a489e73f4bb36117bef4cd560106c2d6f999f5af\n' \
+            "$JOB_STATUS" | tee "$RUNNER_TEMP/trident-hardening-reports/workflow-status.txt" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f "$RUNNER_TEMP/trident-hardening-reports/summary.md" ]]; then
+            cat "$RUNNER_TEMP/trident-hardening-reports/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload redacted evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trident-hardening-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/trident-hardening-reports/
+          if-no-files-found: error
+          retention-days: 14
