@@ -5,22 +5,34 @@ parent: Testing
 # ACL Tests
 
 `storm-trident run acl` exercises native Azure Container Linux adoption and
-manual A/B servicing in disposable Linux/QEMU VMs. It runs both regular-kernel
-and MSHV variants built from the same real ACL-T source as `acl-baremetal-devel`.
+manual A/B servicing in disposable Linux/QEMU VMs. This guide covers running
+the tests with images that have already been created, for both regular-kernel
+and MSHV variants.
 
 ## Image and test contract
 
-The static recipes in [`tests/images/acl`](../../../tests/images/acl/README.md)
-retain ACL's Btrfs `/usr`, verity, `/etc` OverlayFS and native partition layout.
-They request Trident from the pipeline's AZL3 RPMs; MSHV also replaces the
-kernel and installs its complete boot chain. They preserve ACL's root-SSH
-denial, using `testuser` with passwordless sudo instead. Images are unsigned;
-Secure Boot is disabled. A passing run does not validate production signing.
+For the non-MSHV (`standard`) variant, use **ACL images**, not ordinary Azure
+Linux images with altered identities. They must retain ACL's Btrfs `/usr`,
+verity, `/etc` OverlayFS and native A/B partition layout. The `mshv` variant
+requires ACL images with the MSHV kernel and complete boot chain.
+MSHV images are not publicly available.
 
-The base QCOW2 and update COSI are separate normal `testimages.py` builds,
-using the same SSH key and requested Trident RPM inputs. The scenario follows
-active slots rather than matching filesystem UUIDs, verity root hashes or
-Trident binary digests.
+Provide an already-created base QCOW2 and update COSI for the selected variant,
+plus the private SSH key authorized in both images:
+
+| File | Requirement |
+|------|-------------|
+| `base.qcow2` | Bootable ACL base image, initially on slot A |
+| `update.cosi` | Compatible ACL update image for the selected variant |
+| `id_rsa` | Matching private SSH key, restricted to mode 0600 |
+
+Both images must provide Trident and public-key SSH access as `testuser`
+with passwordless sudo. ACL's root-SSH denial can remain enabled.
+Secure Boot is disabled for these disposable VMs; a passing run does not
+validate production signing.
+
+The scenario follows active slots rather than matching filesystem UUIDs,
+verity root hashes or Trident binary digests.
 
 The scenario requires:
 
@@ -63,64 +75,50 @@ and the expected slot before servicing continues.
 
 ## Local execution
 
-See the image README for ACL-T selection and the pinned efitreeloader/ACL-enabled IC
-inputs. Stage AZL3 candidate RPMs in `bin/RPMS` and build `acl-ic:local`.
-The existing `requires_trident` setting supplies those RPMs; both recipes
-remove/install Trident and retain the base repositories for dependencies.
-Run from the Trident root on a KVM/libvirt-capable Linux host.
+Run from the Trident root on a KVM/libvirt-capable Linux host with QEMU,
+`virt-install`, OVMF firmware and the Storm build prerequisites described in
+[Building](../Building/Building.md). MSHV additionally requires host VMX/SVM support
+with nested KVM enabled; its VM uses four CPUs, 16 GiB RAM and the plain OVMF
+4M CODE/VARS firmware.
+
+Copy the already-created images and their matching key into a dedicated
+artifacts directory using the filenames below. Do not generate a new SSH key:
+it would not match the key authorized in the images.
 
 ```bash
-python3 tests/images/testimages.py download-image acl-t
 WORK="$(pwd)/artifacts/acl-local-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$WORK"
-ssh-keygen -q -t rsa -b 2048 -N '' -f "$WORK/id_rsa"
-IMAGE=acl                         # use acl-mshv for MSHV
+mkdir -p "$WORK/inputs"
+cp --reflink=auto /path/to/acl-base.qcow2 "$WORK/inputs/base.qcow2"
+cp /path/to/acl-update.cosi "$WORK/inputs/update.cosi"
+install -m 0600 /path/to/matching-private-key "$WORK/inputs/id_rsa"
 VARIANT=standard                  # use mshv for MSHV
-for PHASE in base update; do
-  TARGET="$IMAGE"
-  if [[ "$PHASE" == update ]]; then TARGET="$IMAGE-update"; fi
-  cp "$WORK/id_rsa.pub" tests/images/acl/files/id_rsa.pub
-  python3 tests/images/testimages.py build "$TARGET" --container acl-ic:local \
-    --output-dir "$WORK/$PHASE"
-done
-mkdir -p "$WORK/published"
-cp --reflink=auto "$WORK/base/$IMAGE.qcow2" "$WORK/published/base.qcow2"
-cp "$WORK/update/$IMAGE-update.cosi" "$WORK/published/update.cosi"
-install -m 0600 "$WORK/id_rsa" "$WORK/published/id_rsa"
 make bin/storm-trident
 sudo ./bin/storm-trident run acl -a -- --variant "$VARIANT" \
-  --artifacts-dir "$WORK/published" --output-path "$WORK/results"
+  --artifacts-dir "$WORK/inputs" --output-path "$WORK/results" \
+  --vm-name "acl-$VARIANT-$(date +%s)"
 ```
 
-Refresh ACL-T once before building all variants.
+If the input directory already contains `base.qcow2`, `update.cosi` and
+`id_rsa`, pass it directly with `--artifacts-dir` instead of copying the files.
+Use `--boot-timeout` (default `10m`) and `--operation-timeout` (default `30m`)
+to adjust the per-boot and per-operation limits.
 
-Publication copies the built images without inspection or modification. The
-pinned IC emits the correct MSHV COSI 1.3 bootloader metadata directly.
-The disposable test's update configuration uses `image.sha384: ignored`;
-artifact checksums, filesystem UUIDs, verity root hashes and Trident binary
-digests are outside this scenario.
+The disposable test's update configuration uses `image.sha384: ignored`.
+The scenario does not inspect COSI contents or validate artifact checksums,
+filesystem UUIDs, verity root hashes or Trident binary digests.
 
 ## Pipelines
 
 `testing_acl` builds and tests both variants in the four existing PR-e2e,
 CI, prerelease and full-validation entrypoints, which explicitly set
 `includeAclTests: true`. Other shared-template callers default to no ACL tests.
-Jobs use the Linux KVM pool without Windows/Hyper-V. `ResolveAclTemplate` downloads
-ACL-T once from pipeline **5304**: latest completed/successful **scheduled** run,
-`acl-pipelines` at `main` and resolved `azure_container_linux` at `aclmain`.
-Both image jobs consume the same ACL-T image artifact, build the pinned IC
-revision and invoke ordinary `testimages.py` targets with the pipeline Trident
-RPMs and SSH keys. MSHV additionally downloads the pinned producer efitreeloader
-artifact and uses `overlay.index=off` to permit switching `/usr` lower layers
-with persistent `/etc` OverlayFS state. Generic pipeline MIC version parameters
-do not override the ACL-enabled IC pin.
-The pipeline build service needs read access to ACL pipeline runs and artifacts
-and authorization for the `aclImageTools` repository resource.
+Jobs use the Linux KVM pool without Windows/Hyper-V.
 
 Published inputs are `acl-standard` and `acl-mshv`, each containing
-`base.qcow2`, `update.cosi` and `id_rsa`. The Storm scenario does not inspect
-COSI contents.
-The private key must remain restricted to the test artifact.
+`base.qcow2`, `update.cosi` and `id_rsa`, ready for `--artifacts-dir`.
+Keep the private key restricted to the test artifact and mode 0600 locally.
+
+## Results and diagnostics
 
 Results are `acl-standard-results` and `acl-mshv-results`. Each run preserves
 the controller log, serial console, command output and captured Trident status,
