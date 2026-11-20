@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/microsoft/storm"
 	qemu "tridenttools/storm/utils/vm/qemu"
 )
 
@@ -87,7 +89,126 @@ func (r *runner) evidence() error {
 	return errors.Join(result, walkErr, archive.Close(), compressed.Close(), destination.Close())
 }
 
-func (s *ACLScenario) run() (result error) {
+func (s *ACLScenario) recordFailure(err error) {
+	if err != nil && !errors.Is(s.failure, err) {
+		s.failure = errors.Join(s.failure, err)
+	}
+}
+
+func (s *ACLScenario) runTestCase(tc storm.TestCase, operation func() error) error {
+	if err := operation(); err != nil {
+		s.recordFailure(err)
+		tc.FailFromError(err)
+	}
+	return nil
+}
+
+func (s *ACLScenario) deployVm(tc storm.TestCase) error {
+	return s.runTestCase(tc, s.deploy)
+}
+
+func (s *ACLScenario) checkDeployment(tc storm.TestCase) error {
+	return s.runTestCase(tc, s.lifecycle.checkDeployment)
+}
+
+func (s *ACLScenario) runABUpdate(tc storm.TestCase) error {
+	return s.runTestCase(tc, func() error { return s.lifecycle.update("update-1", "b", false) })
+}
+
+func (s *ACLScenario) runRollback(tc storm.TestCase) error {
+	return s.runTestCase(tc, func() error { return s.lifecycle.update("rollback", "a", true) })
+}
+
+func (s *ACLScenario) runABUpdate2(tc storm.TestCase) error {
+	return s.runTestCase(tc, func() error { return s.lifecycle.update("update-2", "b", false) })
+}
+
+func (s *ACLScenario) runABUpdate3(tc storm.TestCase) error {
+	return s.runTestCase(tc, func() error { return s.lifecycle.update("update-3", "a", false) })
+}
+
+func (s *ACLScenario) checkPersistence(tc storm.TestCase) error {
+	return s.runTestCase(tc, func() error {
+		if err := s.lifecycle.checkPersistence(); err != nil {
+			return err
+		}
+		s.completed = true
+		return nil
+	})
+}
+
+func (s *ACLScenario) collectLogs(tc storm.TestCase) error {
+	return s.runTestCase(tc, s.gatherLogs)
+}
+
+func (s *ACLScenario) cleanupVm(tc storm.TestCase) error {
+	return s.runTestCase(tc, s.finish)
+}
+
+func (s *ACLScenario) OnFailure(ctx storm.FailureContext) error {
+	if s.failure == nil {
+		for _, failed := range ctx.FailedCases() {
+			s.recordFailure(fmt.Errorf("%s: %s", failed.Name(), failed.Reason()))
+		}
+	}
+	return s.gatherLogs()
+}
+
+func (s *ACLScenario) gatherLogs() error {
+	if s.runner == nil || s.logsCollected {
+		return nil
+	}
+	s.logsCollected = true
+	r := s.runner
+	err := collectAndSync(r.evidence, func() error {
+		if r.ip == "" {
+			return nil
+		}
+		previous := r.args.OperationTimeout
+		r.args.OperationTimeout = min(previous, 30*time.Second)
+		defer func() { r.args.OperationTimeout = previous }()
+		_, err := r.command("sync")
+		return err
+	})
+	s.recordFailure(err)
+	return err
+}
+
+func (s *ACLScenario) finish() error {
+	if s.runner == nil || s.finished {
+		return nil
+	}
+	r := s.runner
+	defer r.log.Close()
+	var incompleteErr error
+	if !s.completed && s.failure == nil {
+		incompleteErr = errors.New("ACL servicing did not complete")
+		s.recordFailure(incompleteErr)
+	}
+	evidenceErr := s.gatherLogs()
+	r.closeClient()
+	cleanupErr := r.qemu.CleanupQemuVM(r.vmName)
+	if cleanupErr == nil {
+		cleanupErr = cleanupVMFiles(r.args.OutputPath, s.completed && s.failure == nil)
+	}
+	s.recordFailure(cleanupErr)
+	summary := struct {
+		artifactInfo
+		VMName string `json:"vmName"`
+		Passed bool   `json:"passed"`
+		Error  string `json:"error,omitempty"`
+	}{artifactInfo: s.lifecycle.info, VMName: r.vmName, Passed: s.completed && s.failure == nil}
+	if s.failure != nil {
+		summary.Error = s.failure.Error()
+	}
+	raw, marshalErr := json.MarshalIndent(summary, "", "  ")
+	summaryErr := errors.Join(marshalErr, os.WriteFile(filepath.Join(r.args.OutputPath, "result.json"), raw, 0600))
+	s.recordFailure(summaryErr)
+	s.finished = true
+	return errors.Join(incompleteErr, evidenceErr, cleanupErr, summaryErr)
+}
+
+func (s *ACLScenario) deploy() error {
 	if s.args.BootTimeout <= 0 || s.args.OperationTimeout <= 0 {
 		return errors.New("timeouts must be positive")
 	}
@@ -119,43 +240,14 @@ func (s *ACLScenario) run() (result error) {
 	if err != nil {
 		return err
 	}
-	defer log.Close()
 	r := &runner{args: s.args, vmName: s.args.VMName + "-" + uuid.NewString(), log: log, snapshots: make(map[string]snapshot)}
-	r.qemu = qemu.QemuConfig{NestedVirtualization: s.args.Variant == "mshv", SecureBoot: false, SerialLog: filepath.Join(runDir, "serial-console.log"), ImagePattern: `^base\.qcow2$`}
-	if s.args.Variant == "mshv" {
+	r.qemu = qemu.QemuConfig{NestedVirtualization: s.args.Variant == variantMSHV, SecureBoot: false, SerialLog: filepath.Join(runDir, "serial-console.log"), ImagePattern: `^base\.qcow2$`}
+	if s.args.Variant == variantMSHV {
 		r.qemu.MemoryMiB = 16 * 1024
 		r.qemu.VCPUs = 4
 	}
-	defer func() {
-		evidenceErr := collectAndSync(r.evidence, func() error {
-			if r.ip == "" {
-				return nil
-			}
-			// A failed guest must not turn diagnostic collection into another long boot wait.
-			previous := r.args.OperationTimeout
-			r.args.OperationTimeout = min(previous, 30*time.Second)
-			defer func() { r.args.OperationTimeout = previous }()
-			_, err := r.command("sync")
-			return err
-		})
-		r.closeClient()
-		cleanupErr := r.qemu.CleanupQemuVM(r.vmName)
-		result = errors.Join(result, evidenceErr, cleanupErr)
-		if cleanupErr == nil {
-			result = errors.Join(result, cleanupVMFiles(runDir, result == nil))
-		}
-		summary := struct {
-			artifactInfo
-			VMName string `json:"vmName"`
-			Passed bool   `json:"passed"`
-			Error  string `json:"error,omitempty"`
-		}{artifactInfo: info, VMName: r.vmName, Passed: result == nil}
-		if result != nil {
-			summary.Error = result.Error()
-		}
-		raw, marshalErr := json.MarshalIndent(summary, "", "  ")
-		result = errors.Join(result, marshalErr, os.WriteFile(filepath.Join(runDir, "result.json"), raw, 0600))
-	}()
+	s.runner = r
+	s.lifecycle = lifecycle{g: r, info: info}
 	for _, name := range []string{"manifest.json", "metadata.json"} {
 		data, err := os.ReadFile(filepath.Join(s.args.ArtifactsDir, name))
 		if err != nil {
@@ -191,5 +283,5 @@ func (s *ACLScenario) run() (result error) {
 	if err := r.upload(filepath.Join(s.args.ArtifactsDir, "update.cosi"), guestDir+"/update.cosi"); err != nil {
 		return err
 	}
-	return service(r, info)
+	return nil
 }

@@ -47,7 +47,7 @@ func validateSnapshot(current, reference snapshot, expected checkpoint, info art
 	if !slices.Contains(strings.Split(current.OSRelease, "\n"), "VARIANT_ID=azurecontainerlinux") {
 		return fmt.Errorf("expected native ACL os-release")
 	}
-	if info.Variant == "mshv" {
+	if info.Variant == variantMSHV {
 		if !strings.Contains(current.Kernel, "mshv") || !current.MSHVPresent || !current.MSHVCharacter {
 			return fmt.Errorf("MSHV kernel and character device /dev/mshv required")
 		}
@@ -93,7 +93,7 @@ func validateSnapshot(current, reference snapshot, expected checkpoint, info art
 		return fmt.Errorf("inactive tree changed or committed fallback does not match %s", slot)
 	}
 	bootFile := `[^/]+\.efi`
-	if info.Variant == "mshv" {
+	if info.Variant == variantMSHV {
 		bootFile = `second\.efi`
 		for _, name := range []string{"bootx64.efi", "grubx64.efi", "second.efi", "HvLoader.efi", "lxhvloader.dll", "Windows/System32/hvix64.exe", "Windows/System32/hvax64.exe", "Windows/System32/kdstub.dll"} {
 			if current.Trees[slot][strings.ToLower(name)].Size <= 0 {

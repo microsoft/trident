@@ -32,7 +32,16 @@ The scenario requires:
 It checks running boot IDs, active slot partitions, native ACL identity,
 boot-tree preservation and bootctl selection. MSHV additionally requires its
 kernel, character device `/dev/mshv` and complete slot-owned loader bundle.
-The controller retains checkpoints across guest reboots.
+The controller retains checkpoints across guest reboots and test cases.
+
+Storm reports `deploy-vm`, `check-deployment`, `run-ab-update`, `run-rollback`,
+`run-ab-update-2`, `run-ab-update-3`, `check-persistence`, `collect-logs` and
+`cleanup-vm` separately. These are ordered cases sharing one disposable VM.
+A failed case stops later cases. The failure hook collects diagnostics before
+any cleanup pause, and the cleanup hook still removes the VM when its named
+case was skipped. Collection and cleanup are not repeated after their named
+cases succeed; failed working disks remain available for diagnosis.
+
 Controller-requested standard reboots invoke `sudo -n systemctl reboot --no-block`
 over SSH. MSHV instead invokes `sudo -n systemctl poweroff --no-block`, waits
 for libvirt shutoff, then starts the existing domain without replacing its disk

@@ -88,7 +88,7 @@ func (r *runner) trident(arguments, logName string, expectReboot bool) (string, 
 	err := r.withClient(func(ctx context.Context, client *ssh.Client) error {
 		var invokeErr error
 		var result error
-		if expectReboot && r.args.Variant == "mshv" {
+		if expectReboot && r.args.Variant == variantMSHV {
 			out, invokeErr = r.tridentWithRestart(ctx, client, arguments, logName)
 			result = invokeErr
 		} else {
@@ -145,7 +145,7 @@ func (r *runner) waitBoot(previous string) (string, error) {
 
 func (r *runner) reboot() error {
 	command := "sudo -n systemctl reboot --no-block"
-	if r.args.Variant == "mshv" {
+	if r.args.Variant == variantMSHV {
 		command = "sudo -n systemctl poweroff --no-block"
 	}
 	err := r.withClient(func(ctx context.Context, client *ssh.Client) error {
@@ -159,7 +159,7 @@ func (r *runner) reboot() error {
 		return errors.Join(stormtrident.CheckCommandResult(out, err, false), logErr)
 	})
 	r.closeClient()
-	if err != nil || r.args.Variant != "mshv" {
+	if err != nil || r.args.Variant != variantMSHV {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), r.args.BootTimeout)

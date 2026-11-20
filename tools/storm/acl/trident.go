@@ -18,9 +18,25 @@ import (
 
 const guestDir = "/var/lib/trident/acl"
 
-type ACLScenario struct{ args scenarioArgs }
+type imageVariant string
+
+const (
+	variantStandard imageVariant = "standard"
+	variantMSHV     imageVariant = "mshv"
+)
+
+type ACLScenario struct {
+	args          scenarioArgs
+	runner        *runner
+	lifecycle     lifecycle
+	failure       error
+	logsCollected bool
+	completed     bool
+	finished      bool
+}
+
 type scenarioArgs struct {
-	Variant          string        `help:"ACL image variant" enum:"standard,mshv" default:"standard"`
+	Variant          imageVariant  `help:"ACL image variant" enum:"standard,mshv" default:"standard"`
 	ArtifactsDir     string        `help:"Directory containing ACL base.qcow2, update.cosi, metadata.json, manifest.json and id_rsa" required:""`
 	OutputPath       string        `help:"Directory for evidence and private VM working disk" required:""`
 	VMName           string        `help:"Prefix for a uniquely named disposable QEMU VM" default:"acl"`
@@ -28,30 +44,36 @@ type scenarioArgs struct {
 	OperationTimeout time.Duration `help:"Maximum duration of each deployment or guest operation" default:"30m"`
 }
 
-func (s *ACLScenario) Name() string                            { return "acl" }
-func (s *ACLScenario) Args() any                               { return &s.args }
-func (s *ACLScenario) Tags() []string                          { return []string{"qemu", "acl"} }
-func (s *ACLScenario) StagePaths() []string                    { return nil }
-func (s *ACLScenario) RequiredFiles() []string                 { return nil }
-func (s *ACLScenario) Setup(storm.SetupCleanupContext) error   { return nil }
-func (s *ACLScenario) Cleanup(storm.SetupCleanupContext) error { return nil }
+func (s *ACLScenario) Name() string                          { return "acl" }
+func (s *ACLScenario) Args() any                             { return &s.args }
+func (s *ACLScenario) Tags() []string                        { return []string{"qemu", "acl"} }
+func (s *ACLScenario) StagePaths() []string                  { return nil }
+func (s *ACLScenario) RequiredFiles() []string               { return nil }
+func (s *ACLScenario) Setup(storm.SetupCleanupContext) error { return nil }
+
+// Storm skips remaining cases after a failure, so cleanup also needs a hook.
+func (s *ACLScenario) Cleanup(storm.SetupCleanupContext) error { return s.finish() }
+
 func (s *ACLScenario) RegisterTestCases(r storm.TestRegistrar) error {
-	r.RegisterTestCase("manual-ab-update", func(tc storm.TestCase) error {
-		if err := s.run(); err != nil {
-			tc.FailFromError(err)
-		}
-		return nil
-	})
+	r.RegisterTestCase("deploy-vm", s.deployVm)
+	r.RegisterTestCase("check-deployment", s.checkDeployment)
+	r.RegisterTestCase("run-ab-update", s.runABUpdate)
+	r.RegisterTestCase("run-rollback", s.runRollback)
+	r.RegisterTestCase("run-ab-update-2", s.runABUpdate2)
+	r.RegisterTestCase("run-ab-update-3", s.runABUpdate3)
+	r.RegisterTestCase("check-persistence", s.checkPersistence)
+	r.RegisterTestCase("collect-logs", s.collectLogs)
+	r.RegisterTestCase("cleanup-vm", s.cleanupVm)
 	return nil
 }
 
 type artifactInfo struct {
-	Variant string `json:"variant"`
+	Variant imageVariant `json:"variant"`
 }
 
-func readArtifacts(dir, variant string) (artifactInfo, error) {
+func readArtifacts(dir string, variant imageVariant) (artifactInfo, error) {
 	info := artifactInfo{Variant: variant}
-	if variant != "standard" && variant != "mshv" {
+	if variant != variantStandard && variant != variantMSHV {
 		return info, fmt.Errorf("unsupported ACL variant %q; expected standard or mshv", variant)
 	}
 	for _, name := range []string{"base.qcow2", "update.cosi", "metadata.json", "manifest.json", "id_rsa"} {
@@ -72,16 +94,16 @@ func readArtifacts(dir, variant string) (artifactInfo, error) {
 		return info, fmt.Errorf("COSI metadata: %w", err)
 	}
 	validBootloader := m.Bootloader.Type == metadata.BootloaderTypeSystemDBoot && (m.Version == "1.2" || m.Version == "1.3")
-	if variant == "mshv" {
+	if variant == variantMSHV {
 		validBootloader = m.Bootloader.Type == "efitreeloader-mshv-systemd-boot" && m.Version == "1.3"
 	}
 	if !validBootloader || m.OsArch != metadata.OsArchitectureX8664 {
 		return info, fmt.Errorf("incompatible %s COSI metadata: version=%q osArch=%q bootloader=%q", variant, m.Version, m.OsArch, m.Bootloader.Type)
 	}
 	var manifest struct {
-		ImageSource string `json:"imageSource"`
-		BaseSHA256  string `json:"baseImageSha256"`
-		Variant     string `json:"variant"`
+		ImageSource string       `json:"imageSource"`
+		BaseSHA256  string       `json:"baseImageSha256"`
+		Variant     imageVariant `json:"variant"`
 	}
 	manifestBytes, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {
