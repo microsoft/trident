@@ -1445,6 +1445,7 @@ fn convert_cell(input: &Path, dir: &Path, arch: Arch, format: OutputFormat, slug
         },
         base_image: None,
         rpm_sources: Vec::new(),
+        extra_dependencies: Vec::new(),
         extra_params: Vec::new(),
         signing: None,
         input_deps: Vec::new(),
