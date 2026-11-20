@@ -2,6 +2,7 @@
 set -ex
 trap '/bin/bash' ERR
 
+# Both VGA and serial autologins run this script; prevent competing disk writes.
 exec 9>/run/azl-installer.lock
 if ! flock -n 9; then
     echo "Installation is already running on another console."
