@@ -9,18 +9,22 @@ use log::{debug, info, warn};
 use osutils::{chroot, container};
 use trident_api::{
     constants::{internal_params::NO_TRANSITION, ROOT_MOUNT_POINT_PATH, USR_MOUNT_POINT_PATH},
-    error::{InternalError, ReportError, ServicingError, TridentError, TridentResultExt},
+    error::{
+        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
+        TridentResultExt,
+    },
     status::{HostStatus, ServicingState, ServicingType},
 };
 
 use crate::{
     datastore::DataStore,
     engine::{
-        self, bootentries,
+        self, bootentries, etc_overlay,
         storage::{self, verity},
         EngineContext, EngineContextParams, NewrootMount,
     },
     monitor_metrics,
+    osimage::bootloader::Bootloader,
     subsystems::esp,
     ExitKind,
 };
@@ -45,6 +49,16 @@ pub(super) fn stage_update(
         ));
     }
     info!("Staging A/B update");
+
+    if ctx.host_os_release.get_distro().is_acl()
+        && ctx.bootloader().is_some_and(Bootloader::uses_mshv)
+    {
+        let index_path = container::get_host_relative_path(PathBuf::from(
+            "/sys/module/overlay/parameters/index",
+        ))?;
+        etc_overlay::validate_index_disabled(&index_path)
+            .structured(InvalidInputError::InvalidBootConfiguration)?;
+    }
 
     // Best effort to measure memory, CPU, and network usage during execution
     let monitor = match monitor_metrics::MonitorMetrics::new("stage_ab_update".to_string()) {
