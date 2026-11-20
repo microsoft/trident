@@ -305,19 +305,19 @@ steps:
           ;;
       esac
 
-      manifest_path=tests/tailor-images/tailor.yaml
+      manifest_path=tests/images/tailor.yaml
       if [[ "${{ parameters.micBuildType }}" == "dev" ]]; then
-        manifest_path=tests/tailor-images/.tailor.pipeline.yaml
+        manifest_path=tests/images/.tailor.pipeline.yaml
         python3 - <<'PY'
       from pathlib import Path
-      text = Path('tests/tailor-images/tailor.yaml').read_text()
+      text = Path('tests/images/tailor.yaml').read_text()
       needle = 'toolchains:\n  default: ic\n  entries:\n    - name: ic\n      container: mcr.microsoft.com/azurelinux/imagecustomizer\n      tag: latest\n'
       replacement = 'toolchains:\n  default: ic-dev\n  entries:\n    - name: ic\n      container: mcr.microsoft.com/azurelinux/imagecustomizer\n      tag: latest\n    - name: ic-dev\n      container: imagecustomizer\n      tag: dev\n      pull: never\n'
-      Path('tests/tailor-images/.tailor.pipeline.yaml').write_text(text.replace(needle, replacement, 1))
+      Path('tests/images/.tailor.pipeline.yaml').write_text(text.replace(needle, replacement, 1))
       PY
       fi
 
-      rm -f tests/tailor-images/artifacts/ca_cert.pem
+      rm -f tests/images/artifacts/ca_cert.pem
       cargo run --manifest-path tools/tailor/Cargo.toml --quiet -- \
         -vvv \
         --log-dir $(ob_outputDirectory)/tailor-logs \
@@ -340,10 +340,10 @@ steps:
            "$(ob_outputDirectory)/${legacy_name}.${artifact_ext}"
       fi
 
-      if [ -f tests/tailor-images/artifacts/ca_cert.pem ]; then
-        cp tests/tailor-images/artifacts/ca_cert.pem "$(ob_outputDirectory)/ca_cert.pem"
+      if [ -f tests/images/artifacts/ca_cert.pem ]; then
+        cp tests/images/artifacts/ca_cert.pem "$(ob_outputDirectory)/ca_cert.pem"
       fi
 
-      rm -f tests/tailor-images/.tailor.pipeline.yaml
+      rm -f tests/images/.tailor.pipeline.yaml
     displayName: "Build ${{ parameters.imageName }}"
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
