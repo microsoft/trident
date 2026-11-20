@@ -20,6 +20,7 @@ type ipv4Iterator = ipaddr.Iterator[*ipaddr.IPv4Address]
 
 type virtDeployNetwork struct {
 	// Namespace to create resources in
+	namespace     namespace
 	name          string
 	ipNet         *ipaddr.IPv4Address
 	leaseIterator ipv4Iterator
@@ -122,6 +123,10 @@ func (n *virtDeployNetwork) lease(name string, mac macAddress) (net.IP, error) {
 }
 
 func (n *virtDeployNetwork) asXml() (string, error) {
+	metadata, err := n.namespace.ownershipMetadata("network")
+	if err != nil {
+		return "", fmt.Errorf("marshal network ownership: %w", err)
+	}
 	hosts := make([]libvirtxml.NetworkDHCPHost, len(n.leases))
 	for i, lease := range n.leases {
 		hosts[i] = libvirtxml.NetworkDHCPHost{
@@ -156,6 +161,9 @@ func (n *virtDeployNetwork) asXml() (string, error) {
 				},
 			},
 		},
+	}
+	if metadata != "" {
+		network.Metadata = &libvirtxml.NetworkMetadata{XML: metadata}
 	}
 
 	xmldoc, err := network.Marshal()

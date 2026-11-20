@@ -65,14 +65,35 @@ enter_libvirt_group() {
     exec sg libvirt -c "$command"
 }
 
+acquire_host_lock() {
+    local lock_path="/var/lib/trident-cloud-agent/functional.lock"
+
+    if [[ ! -f "$lock_path" || -L "$lock_path" ]]; then
+        echo "Missing or unsafe functional lock. Run scripts/cloud-agent/setup-functional.sh first." >&2
+        return 1
+    fi
+    # Setup owns the directory; libvirt members can read but cannot replace it.
+    # Read-only open avoids O_CREAT and fs.protected_regular across runner UIDs.
+    exec {host_lock}<"$lock_path"
+    if ! flock -n "$host_lock"; then
+        echo "Host is busy with another functional run" >&2
+        return 1
+    fi
+    if [[ -L "$lock_path" || ! -f "$lock_path" ||
+          ! "$lock_path" -ef "/proc/$$/fd/$host_lock" ||
+          "$(stat -Lc %h "/proc/$$/fd/$host_lock")" != 1 ]]; then
+        echo "Functional lock inode changed or is unsafe; refusing to run" >&2
+        return 1
+    fi
+}
+
 main() {
     local mode="${1:-smoke}"
     local functional_image
     local marker_expression
     local requested_namespace
     local virtdeploy_network
-    local namespace_lock_dir
-    local namespace_lock
+    local host_lock
     local -a network_args
     local -a test_paths
 
@@ -105,8 +126,9 @@ main() {
 
     cd "$REPO_ROOT"
     export PATH="$HOME/.local/bin:$PATH"
+    export LIBVIRT_DEFAULT_URI=qemu:///system
 
-    for command in az flock ip virsh qemu-system-x86_64 python3; do
+    for command in az flock ip virsh qemu-system-x86_64 python3 stat; do
         if ! command -v "$command" >/dev/null 2>&1; then
             echo "Missing $command. Run scripts/cloud-agent/setup-functional.sh first." >&2
             return 1
@@ -120,13 +142,9 @@ main() {
         echo "Namespace must contain only letters, digits, _ or -" >&2
         return 1
     fi
-    namespace_lock_dir="${XDG_RUNTIME_DIR:-$HOME/.cache}/trident-cloud-agent"
-    mkdir -p "$namespace_lock_dir"
-    exec {namespace_lock}>"$namespace_lock_dir/$requested_namespace.lock"
-    if ! flock -n "$namespace_lock"; then
-        echo "Namespace $requested_namespace is already in use by another run" >&2
-        return 1
-    fi
+    # Generators, reports and subnet selection are shared even across namespaces.
+    # Keep this descriptor open through the EXIT cleanup and never unlink the lock.
+    acquire_host_lock
     network_args=(
         python3 scripts/cloud-agent/select_functional_network.py
         "$requested_namespace"

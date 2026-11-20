@@ -48,6 +48,7 @@ func (c VirtDeployConfig) validate() error {
 
 type VirtDeployVM struct {
 	// Internal fields
+	namespace namespace
 
 	// Name of the VM
 	name string

@@ -117,6 +117,8 @@ def test_create_vm(
                 cloud_init_user_data,
                 "--ci-meta",
                 cloud_init_meta,
+                "--netlaunch",
+                work_dir / "vm-netlaunch.yaml",
             ]
         )
         vm_data = create_vm(create_params)
