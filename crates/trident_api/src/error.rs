@@ -715,8 +715,8 @@ pub enum ServicingError {
         hs_active_volume: String,
     },
 
-    #[error("Running hypervisor does not match expected slot '{expected_slot}' (observed: {observed_slot:?})")]
-    ValidateAbActiveHypervisor {
+    #[error("EFI loader origin does not match expected slot '{expected_slot}' (observed: {observed_slot:?})")]
+    ValidateAbActiveEfiLoader {
         expected_slot: String,
         observed_slot: Option<String>,
     },

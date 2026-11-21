@@ -997,7 +997,7 @@ mod tests {
             let mut datastore =
                 DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
             let original_error = serde_yaml::to_value(TridentError::new(
-                ServicingError::ValidateAbActiveHypervisor {
+                ServicingError::ValidateAbActiveEfiLoader {
                     expected_slot: "AZLB".into(),
                     observed_slot: Some("AZLA".into()),
                 },
