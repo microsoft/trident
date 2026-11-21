@@ -1,7 +1,9 @@
 package sftp
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/pkg/sftp"
@@ -111,4 +113,27 @@ func DownloadRemoteFile(client *ssh.Client, remotePath string, localPath string)
 	}
 
 	return localPath, nil
+}
+
+// UploadLocalFile copies a local file through the same privileged SFTP transport as downloads.
+func UploadLocalFile(client *ssh.Client, localPath, remotePath string) error {
+	source, err := os.Open(localPath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	remote, err := NewSftpSudoClient(client)
+	if err != nil {
+		return err
+	}
+	defer remote.Close()
+	target, err := remote.OpenFile(remotePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
+	if err != nil {
+		return err
+	}
+	if err := target.Chmod(0600); err != nil {
+		return errors.Join(err, target.Close())
+	}
+	_, copyErr := io.Copy(target, source)
+	return errors.Join(copyErr, target.Close())
 }

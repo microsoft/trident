@@ -1,6 +1,7 @@
 package trident
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -74,6 +75,22 @@ func InvokeTrident(runtime RuntimeType, client *ssh.Client, envVars []string, ar
 
 	logrus.Debug(fmt.Sprintf("Running command: %s %s %s", cmdPrefix, cmd, arguments))
 	return stormsshclient.RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments))
+}
+
+// CheckCommandResult accepts a reboot disconnect only when Trident announced that reboot.
+func CheckCommandResult(out *stormsshconfig.SshCmdOutput, err error, expectReboot bool) error {
+	var disconnected *ssh.ExitMissingError
+	if expectReboot && out != nil && errors.As(err, &disconnected) &&
+		strings.Contains(out.Stderr, REBOOTING_LOG_MESSAGE) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if out == nil {
+		return fmt.Errorf("Trident returned no command result")
+	}
+	return out.Check()
 }
 
 // Loads the Trident container stored in DOCKER_IMAGE_PATH int the remote host's

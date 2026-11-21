@@ -1034,7 +1034,8 @@ COSI_TARGETS = $(shell ./tests/images/testimages.py list --filter-type cosi)
 $(COSI_TARGETS): %: artifacts/%.cosi
 
 .PHONY: all-cosi
-all-cosi: $(COSI_TARGETS)
+# Native ACL images require the dedicated ACL toolchain and inputs.
+all-cosi: $(filter-out acl-update acl-mshv-update,$(COSI_TARGETS))
 
 #
 # Generic ISO image build target pattern

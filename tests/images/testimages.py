@@ -9,6 +9,7 @@ from builder import (
     BaseImageManifest,
     ImageConfig,
     OutputFormat,
+    PipelineArtifactBaseImageManifest,
     SystemArchitecture,
     cli,
 )
@@ -126,6 +127,37 @@ DEFINED_IMAGES: List[ImageConfig] = [
     ),
     # VM test images
     ImageConfig(
+        "acl",
+        base_image=BaseImage.ACL_T,
+        config_file="acl.yaml",
+        output_format=OutputFormat.QCOW2,
+        ssh_key="files/id_rsa.pub",
+    ),
+    ImageConfig(
+        "acl-mshv",
+        base_image=BaseImage.ACL_T,
+        config="acl",
+        config_file="acl-mshv.yaml",
+        output_format=OutputFormat.QCOW2,
+        ssh_key="files/id_rsa.pub",
+    ),
+    ImageConfig(
+        "acl-update",
+        base_image=BaseImage.ACL_T,
+        config="acl",
+        config_file="acl.yaml",
+        output_format=OutputFormat.COSI,
+        ssh_key="files/id_rsa.pub",
+    ),
+    ImageConfig(
+        "acl-mshv-update",
+        base_image=BaseImage.ACL_T,
+        config="acl",
+        config_file="acl-mshv.yaml",
+        output_format=OutputFormat.COSI,
+        ssh_key="files/id_rsa.pub",
+    ),
+    ImageConfig(
         "trident-vm-grub-testimage",
         base_image=BaseImage.QEMU_GUEST,
         config="trident-vm-testimage",
@@ -229,6 +261,18 @@ ARTIFACTS = ArtifactManifest(
     customizer_version=DEFAULT_IMAGE_CUSTOMIZER_VERSION,
     customizer_container="mcr.microsoft.com/azurelinux/imagecustomizer",
     base_images=[
+        PipelineArtifactBaseImageManifest(
+            image=BaseImage.ACL_T,
+            pipeline_id=5304,
+            artifact_name="drop_build_acl_template_amd64_customize_and_sign",
+            filename="acl_template_image.vhdx",
+            repository_name="acl-pipelines",
+            # The pipeline runs on main, independently of its ACL source branch.
+            repository_refs={
+                "self": "refs/heads/main",
+                "azure_container_linux": "refs/heads/aclmain",
+            },
+        ),
         BaseImageManifest(
             image=BaseImage.BAREMETAL,
             package_name="baremetal_vhdx-3.0-stable",
