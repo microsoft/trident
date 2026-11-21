@@ -594,7 +594,7 @@ def parse_args() -> argparse.Namespace:
         default=Path(
             os.environ.get(
                 "TRIDENT_FUNCTIONAL_CACHE_DIR",
-                "/mnt/storage/trident-cloud-agent/functional",
+                f"/mnt/storage/trident-cloud-agent/functional-{os.geteuid()}",
             )
         ),
     )

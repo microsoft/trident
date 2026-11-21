@@ -1,3 +1,4 @@
+import hashlib
 import os
 import shutil
 import stat
@@ -17,10 +18,15 @@ export USER="setup-test"
 export MOCK_LOG="$MOCK_ROOT/commands.log"
 mkdir -p "$HOME"
 mountpoint() { [[ "$*" == "--quiet /mnt/storage" ]]; }
-id() { printf '1000\n'; }
+id() { printf '%s\n' "$MOCK_UID"; }
 sudo() { printf 'sudo %s\n' "$*" >> "$MOCK_LOG"; }
 python3() { printf 'python3 %s\n' "$*" >> "$MOCK_LOG"; }
 ssh-keygen() {
+    if [[ "$MOCK_SSH_KEYGEN" == "real" ]]; then
+        printf 'ssh-keygen\n' >> "$MOCK_LOG"
+        builtin command ssh-keygen "$@"
+        return
+    fi
     echo "Unexpected key generation" >&2
     return 90
 }
@@ -46,6 +52,8 @@ sg() {
 }
 export LIBVIRT_DEFAULT_URI="test:///default"
 MOCK_XORRISOFS="$1"
+MOCK_UID="${2:-1000}"
+MOCK_SSH_KEYGEN="${3:-unexpected}"
 """
 
 
@@ -121,13 +129,88 @@ class FunctionalSetupTests(unittest.TestCase):
         self.script = self.root / "setup-test.sh"
         self.script.write_text(MOCKS + SETUP.read_text(), newline="\n")
 
-    def run_setup(self, executable="present"):
+    def run_setup(self, executable="present", uid=1000, ssh_keygen="unexpected"):
         return subprocess.run(
-            ["bash", f"{self.root.name}/{self.script.name}", executable],
+            [
+                "bash",
+                f"{self.root.name}/{self.script.name}",
+                executable,
+                str(uid),
+                ssh_keygen,
+            ],
             cwd=self.root.parent,
             capture_output=True,
             text=True,
+            timeout=15,
         )
+
+    def test_setup_provisions_separate_cache_roots_for_each_uid(self):
+        for uid in (1000, 2000, 1000):
+            result = self.run_setup(uid=uid)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = (self.root / "commands.log").read_text().splitlines()
+        cache_installs = [
+            line for line in commands if line.startswith("sudo install -d -m 0755")
+        ]
+        self.assertEqual(
+            cache_installs,
+            [
+                f"sudo install -d -m 0755 -o {uid} -g {uid} "
+                f"/mnt/storage/trident-cloud-agent/functional-{uid}"
+                for uid in (1000, 2000, 1000)
+            ],
+        )
+
+    def generate_test_key(self, passphrase=""):
+        private, public = self.keys
+        private.unlink()
+        public.unlink()
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                'ssh-keygen -t ed25519 -q -N "$1" -f "$2"',
+                "bash",
+                passphrase,
+                f"{self.root.name}/home/.ssh/id_rsa",
+            ],
+            cwd=self.root.parent,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        expected_public = public.read_text().split()[:2]
+        public.unlink()
+        return private, public, expected_public
+
+    @unittest.skipUnless(shutil.which("ssh-keygen"), "requires ssh-keygen")
+    def test_setup_derives_missing_public_key_and_preserves_private_key(self):
+        private, public, expected = self.generate_test_key()
+        digest = hashlib.sha256(private.read_bytes()).hexdigest()
+        for _ in range(2):
+            result = self.run_setup(ssh_keygen="real")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue(public.is_file())
+            self.assertEqual(public.read_text().split()[:2], expected)
+            self.assertEqual(hashlib.sha256(private.read_bytes()).hexdigest(), digest)
+            self.assertNotIn("PRIVATE KEY", result.stdout + result.stderr)
+        commands = (self.root / "commands.log").read_text().splitlines()
+        self.assertEqual(commands.count("ssh-keygen"), 1)
+
+    @unittest.skipUnless(shutil.which("ssh-keygen"), "requires ssh-keygen")
+    def test_setup_rejects_encrypted_key_without_leaving_public_key(self):
+        private, public, _ = self.generate_test_key("test-only-passphrase")
+        digest = hashlib.sha256(private.read_bytes()).hexdigest()
+        for _ in range(2):
+            result = self.run_setup(ssh_keygen="real")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "Cannot derive SSH public key noninteractively", result.stderr
+            )
+            self.assertFalse(public.exists())
+            self.assertEqual(hashlib.sha256(private.read_bytes()).hexdigest(), digest)
+            self.assertNotIn("PRIVATE KEY", result.stdout + result.stderr)
 
     def test_repeated_setup_preserves_config_and_keys_and_installs_xorriso(self):
         self.config.parent.mkdir(parents=True)

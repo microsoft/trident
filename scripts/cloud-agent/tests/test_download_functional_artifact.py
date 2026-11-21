@@ -23,6 +23,35 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+class ArtifactCacheDefaultTests(unittest.TestCase):
+    def parse_args(self, uid, arguments=(), environment=None):
+        with patch.object(MODULE.os, "geteuid", return_value=uid), patch.dict(
+            MODULE.os.environ, environment or {}, clear=True
+        ), patch.object(MODULE.sys, "argv", ["downloader", *arguments]):
+            return MODULE.parse_args()
+
+    def test_default_cache_is_separate_for_each_uid(self):
+        for uid in (1000, 2000):
+            with self.subTest(uid=uid):
+                self.assertEqual(
+                    self.parse_args(uid).output_root,
+                    Path(f"/mnt/storage/trident-cloud-agent/functional-{uid}"),
+                )
+
+    def test_explicit_cache_paths_still_override_uid_default(self):
+        environment = {"TRIDENT_FUNCTIONAL_CACHE_DIR": "/custom/cache"}
+        self.assertEqual(
+            self.parse_args(1000, environment=environment).output_root,
+            Path("/custom/cache"),
+        )
+        self.assertEqual(
+            self.parse_args(
+                1000, ("--output-root", "/cli/cache"), environment
+            ).output_root,
+            Path("/cli/cache"),
+        )
+
+
 class ArtifactRedirectTests(unittest.TestCase):
     metadata_url = "https://dev.azure.com/example/project/_apis/build/builds"
     artifact_url = "https://example.artifacts.visualstudio.com/content"

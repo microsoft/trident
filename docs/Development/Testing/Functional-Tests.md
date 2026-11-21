@@ -114,8 +114,11 @@ bash scripts/cloud-agent/setup-functional.sh
 ```
 
 Setup installs `xorriso` for cloud-init ISO generation and preserves existing
-libvirt configuration and SSH keys. Cloud functional runs explicitly select
-`qemu:///system` without rewriting the user's libvirt configuration.
+libvirt configuration and SSH keys. If an existing private key lacks its public
+key, setup derives the public key without changing the private key. This requires
+a readable, unencrypted private key; otherwise setup fails noninteractively.
+Cloud functional runs explicitly select `qemu:///system` without rewriting the
+user's libvirt configuration.
 
 Run the bounded smoke suite:
 
@@ -125,9 +128,15 @@ scripts/cloud-agent/validate.sh functional
 
 The smoke suite verifies the selected ADO build and artifact, creates the VM,
 proves SSH connectivity, and runs the positive `helpers` functional tests. It
-stores each image under a cache directory named for its immutable build ID and
-passes that immutable path directly to pytest. Cache preparation is locked per
-build, and an interrupted image/provenance publication is recovered on retry.
+stores each image under a cache directory named for its immutable build ID within
+`/mnt/storage/trident-cloud-agent/functional-$(id -u)` and passes that immutable
+path directly to pytest. Setup and the downloader use this per-UID cache so that
+different runner accounts do not reuse another account's private images or cache
+locks. The old shared `functional` cache is left untouched, not migrated.
+`TRIDENT_FUNCTIONAL_CACHE_DIR` or the downloader's `--output-root` can override
+the default; any override must be writable by the current account and should not
+be shared across UIDs. Cache preparation is locked per build, and an interrupted
+image/provenance publication is recovered on retry.
 An existing local `artifacts/trident-functest.qcow2` is left untouched. To
 explicitly publish a compatibility symlink, pass `--link-path` to
 `scripts/cloud-agent/download_functional_artifact.py`.

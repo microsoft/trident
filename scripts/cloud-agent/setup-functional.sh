@@ -3,7 +3,7 @@
 set -euxo pipefail
 
 readonly DATA_DISK_MOUNT="/mnt/storage"
-readonly FUNCTIONAL_CACHE_ROOT="$DATA_DISK_MOUNT/trident-cloud-agent/functional"
+readonly FUNCTIONAL_CACHE_ROOT="$DATA_DISK_MOUNT/trident-cloud-agent/functional-$(id -u)"
 readonly FUNCTIONAL_LOCK_DIR="/var/lib/trident-cloud-agent"
 
 if ! mountpoint --quiet "$DATA_DISK_MOUNT"; then
@@ -70,6 +70,14 @@ if [[ ! -f "$HOME/.ssh/id_rsa" ]]; then
     mkdir -p "$HOME/.ssh"
     chmod 0700 "$HOME/.ssh"
     ssh-keygen -t rsa -b 2048 -f "$HOME/.ssh/id_rsa" -q -N ""
+fi
+
+if [[ ! -f "$HOME/.ssh/id_rsa.pub" ]]; then
+    if ! public_key="$(ssh-keygen -y -P "" -f "$HOME/.ssh/id_rsa" </dev/null)"; then
+        echo "Cannot derive SSH public key noninteractively; id_rsa must be readable and unencrypted" >&2
+        exit 1
+    fi
+    (set -o noclobber; printf '%s\n' "$public_key" > "$HOME/.ssh/id_rsa.pub")
 fi
 
 test -e /dev/kvm
