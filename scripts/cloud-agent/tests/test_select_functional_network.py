@@ -1,5 +1,6 @@
 import importlib.util
 import ipaddress
+import tempfile
 import unittest
 
 from pathlib import Path
@@ -12,6 +13,69 @@ SPEC.loader.exec_module(MODULE)
 
 
 class FunctionalNetworkTests(unittest.TestCase):
+    def test_namespace_rejects_retained_storage_files_without_libvirt_resources(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            for name in ("disks", "nvram"):
+                with self.subTest(directory=name):
+                    directory = root / name
+                    directory.mkdir()
+                    sentinel = directory / "retained-volume"
+                    sentinel.write_text("preserve")
+                    with patch.object(
+                        MODULE, "run_command", return_value=""
+                    ), patch.object(
+                        MODULE, "namespace_storage_paths", return_value=(directory,)
+                    ):
+                        with self.assertRaisesRegex(
+                            MODULE.NetworkSelectionError, "unverified files"
+                        ):
+                            MODULE.ensure_namespace_available("foo")
+                    self.assertEqual(sentinel.read_text(), "preserve")
+
+    def test_namespace_accepts_missing_and_empty_storage_directories(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            empty = root / "empty"
+            empty.mkdir()
+            with patch.object(MODULE, "run_command", return_value=""), patch.object(
+                MODULE,
+                "namespace_storage_paths",
+                return_value=(empty, root / "missing"),
+            ):
+                MODULE.ensure_namespace_available("foo")
+
+    def test_namespace_rejects_unresolvable_or_non_directory_storage(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            file = root / "file"
+            file.write_text("preserve")
+            dangling = root / "dangling"
+            dangling.symlink_to(root / "missing")
+            loop = root / "loop"
+            loop.symlink_to(loop)
+            for directory in (file, dangling, dangling / "child", loop):
+                with self.subTest(directory=directory):
+                    with patch.object(
+                        MODULE, "run_command", return_value=""
+                    ), patch.object(
+                        MODULE, "namespace_storage_paths", return_value=(directory,)
+                    ):
+                        with self.assertRaisesRegex(
+                            MODULE.NetworkSelectionError, "Cannot (inspect|resolve)"
+                        ):
+                            MODULE.ensure_namespace_available("foo")
+            self.assertEqual(file.read_text(), "preserve")
+
+    def test_namespace_rejects_unreadable_storage_directory(self):
+        with patch.object(MODULE, "run_command", return_value=""), patch.object(
+            MODULE, "namespace_storage_paths", return_value=(Path("/private"),)
+        ), patch.object(Path, "iterdir", side_effect=PermissionError("denied")):
+            with self.assertRaisesRegex(
+                MODULE.NetworkSelectionError, "Cannot inspect.*denied"
+            ):
+                MODULE.ensure_namespace_available("foo")
+
     def test_namespace_rejects_existing_resources_and_prefix_collisions(self):
         for resource in ("list", "net-list", "pool-list"):
             for name in ("foo-vm-0", "foo-other-network", "foo-nvram-pool"):

@@ -30,6 +30,7 @@ type virtDeployResourceConfig struct {
 	nvramPool storagePool
 	vms       []VirtDeployVM
 	lv        libvirtClient
+	files     resourceFilesystem
 	startVms  bool
 }
 

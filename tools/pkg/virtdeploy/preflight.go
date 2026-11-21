@@ -1,9 +1,7 @@
 package virtdeploy
 
 import (
-	"encoding/xml"
 	"fmt"
-	"io"
 	"path"
 	"strings"
 
@@ -45,16 +43,25 @@ func (rc *virtDeployResourceConfig) preflight(replacing bool) (*resourceInventor
 	}
 
 	ns := rc.namespace
+	files := rc.files
+	if files == nil {
+		files = osResourceFilesystem{}
+	}
 	inventory := &resourceInventory{}
-	targets := map[string]bool{}
+	targets := resourceTargets{
+		networks: map[string]bool{},
+		bridges:  map[string]bool{},
+		pools:    map[string]bool{},
+	}
+	activePools := map[string]bool{}
 	if replacing {
-		targets[ns.libvirtNetworkName()] = true
-		targets[ns.storagePoolName()] = true
-		targets[ns.nvramPoolName()] = true
+		targets.networks[ns.libvirtNetworkName()] = true
+		targets.pools[ns.storagePoolName()] = true
+		targets.pools[ns.nvramPoolName()] = true
 	}
 	for _, nw := range networks {
 		if nw.Name == ns.libvirtNetworkName() {
-			targets[nw.Name] = true
+			targets.networks[nw.Name] = true
 			definition, err := rc.lv.NetworkGetXMLDesc(nw, 0)
 			if err != nil {
 				return nil, fmt.Errorf("get network %s XML: %w", nw.Name, err)
@@ -67,14 +74,14 @@ func (rc *virtDeployResourceConfig) preflight(replacing bool) (*resourceInventor
 				return nil, fmt.Errorf("inspect network %s: %w", nw.Name, err)
 			}
 			if parsed.Bridge != nil && parsed.Bridge.Name != "" {
-				targets[parsed.Bridge.Name] = true
+				targets.bridges[parsed.Bridge.Name] = true
 			}
 			inventory.networks = append(inventory.networks, nw)
 		}
 	}
 	for _, pool := range pools {
 		if pool.Name == ns.storagePoolName() || pool.Name == ns.nvramPoolName() {
-			targets[pool.Name] = true
+			targets.pools[pool.Name] = true
 			definition, err := rc.lv.StoragePoolGetXMLDesc(pool, 0)
 			if err != nil {
 				return nil, fmt.Errorf("get storage pool %s XML: %w", pool.Name, err)
@@ -82,7 +89,29 @@ func (rc *virtDeployResourceConfig) preflight(replacing bool) (*resourceInventor
 			if err := verifyOwnership(pool.Name, definition, ns.ownsPool); err != nil {
 				return nil, err
 			}
+			if replacing {
+				active, err := rc.lv.StoragePoolIsActive(pool)
+				if err != nil {
+					return nil, fmt.Errorf("check storage pool %s activity: %w", pool.Name, err)
+				}
+				activePools[pool.Name] = active != 0
+			}
 			inventory.pools = append(inventory.pools, pool)
+		}
+	}
+	for name, root := range map[string]string{
+		ns.storagePoolName(): ns.storagePoolPath(),
+		ns.nvramPoolName():   ns.nvramPoolPath(),
+	} {
+		if targets.pools[name] {
+			if err := targets.addPath(root, files); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if replacing {
+		if err := rc.verifyReplacementDirectories(files, activePools); err != nil {
+			return nil, err
 		}
 	}
 
@@ -103,7 +132,9 @@ func (rc *virtDeployResourceConfig) preflight(replacing bool) (*resourceInventor
 		if err := parsed.Unmarshal(definition); err != nil {
 			return nil, fmt.Errorf("inspect domain %s NVRAM: %w", dom.Name, err)
 		}
-		targets[domainNVRAMPath(&parsed)] = true
+		if err := targets.addPath(domainNVRAMPath(&parsed), files); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, dom := range domains {
@@ -135,9 +166,9 @@ func (rc *virtDeployResourceConfig) preflight(replacing bool) (*resourceInventor
 					return nil, err
 				}
 			} else {
-				dependent, err := ns.referencesResources(definition, targets)
+				dependent, err := targets.domainReferences(definition, files)
 				if err != nil {
-					return nil, fmt.Errorf("inspect domain %s dependencies: %w", dom.Name, err)
+					return nil, fmt.Errorf("inspect retained domain %s dependencies: %w", dom.Name, err)
 				}
 				if dependent {
 					return nil, fmt.Errorf("retained domain %s depends on namespace %s resources", dom.Name, ns)
@@ -163,13 +194,12 @@ func (rc *virtDeployResourceConfig) preflight(replacing bool) (*resourceInventor
 			return nil, fmt.Errorf("inspect storage pool %s: %w", pool.Name, err)
 		}
 		if parsed.Target != nil {
-			for name, root := range map[string]string{
-				ns.storagePoolName(): ns.storagePoolPath(),
-				ns.nvramPoolName():   ns.nvramPoolPath(),
-			} {
-				if targets[name] && pathsOverlap(parsed.Target.Path, root) {
-					return nil, fmt.Errorf("retained storage pool %s overlaps namespace %s storage", pool.Name, ns)
-				}
+			overlaps, err := targets.overlapsPath(parsed.Target.Path, files)
+			if err != nil {
+				return nil, fmt.Errorf("inspect retained storage pool %s: %w", pool.Name, err)
+			}
+			if overlaps {
+				return nil, fmt.Errorf("retained storage pool %s overlaps namespace %s storage", pool.Name, ns)
 			}
 		}
 	}
@@ -183,53 +213,4 @@ func pathsOverlap(a, b string) bool {
 	a, b = path.Clean(a), path.Clean(b)
 	return a == b || a == "/" || b == "/" ||
 		strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
-}
-
-func (ns namespace) referencesResources(definition string, targets map[string]bool) (bool, error) {
-	var domain libvirtxml.Domain
-	if err := domain.Unmarshal(definition); err != nil {
-		return false, err
-	}
-	references := func(value string) bool {
-		value = strings.TrimSpace(value)
-		if targets[value] {
-			return true
-		}
-		for target := range targets {
-			if strings.HasPrefix(target, "/") && pathsOverlap(value, target) {
-				return true
-			}
-		}
-		for name, root := range map[string]string{
-			ns.storagePoolName(): ns.storagePoolPath(),
-			ns.nvramPoolName():   ns.nvramPoolPath(),
-		} {
-			if targets[name] && (pathsOverlap(value, root) || strings.Contains(value, root+"/")) {
-				return true
-			}
-		}
-		return false
-	}
-	decoder := xml.NewDecoder(strings.NewReader(definition))
-	for {
-		token, err := decoder.Token()
-		if err == io.EOF {
-			return false, nil
-		}
-		if err != nil {
-			return false, err
-		}
-		switch token := token.(type) {
-		case xml.StartElement:
-			for _, attr := range token.Attr {
-				if references(attr.Value) {
-					return true, nil
-				}
-			}
-		case xml.CharData:
-			if references(string(token)) {
-				return true, nil
-			}
-		}
-	}
 }

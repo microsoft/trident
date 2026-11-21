@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import ipaddress
 import json
+from pathlib import Path
 import re
 import subprocess
 import sys
@@ -91,6 +92,13 @@ def libvirt_networks():
     return networks
 
 
+def namespace_storage_paths(namespace):
+    return (
+        Path("/var/lib/libvirt") / namespace,
+        Path("/var/lib") / f"{namespace}-nvram",
+    )
+
+
 def ensure_namespace_available(namespace):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", namespace):
         raise NetworkSelectionError(
@@ -109,6 +117,24 @@ def ensure_namespace_available(namespace):
                 raise NetworkSelectionError(
                     f"Namespace {namespace} conflicts with existing resource {name}"
                 )
+    for directory in namespace_storage_paths(namespace):
+        try:
+            if next(directory.iterdir(), None) is not None:
+                raise NetworkSelectionError(
+                    f"Namespace {namespace} has unverified files in storage directory "
+                    f"{directory}"
+                )
+        except FileNotFoundError as error:
+            # Missing directories are safe, dangling symlinks are not.
+            for ancestor in (directory, *directory.parents):
+                if ancestor.is_symlink() and not ancestor.exists():
+                    raise NetworkSelectionError(
+                        f"Cannot resolve namespace storage directory {directory}"
+                    ) from error
+        except OSError as error:
+            raise NetworkSelectionError(
+                f"Cannot inspect namespace storage directory {directory}: {error}"
+            ) from error
 
 
 def candidate_networks(namespace):

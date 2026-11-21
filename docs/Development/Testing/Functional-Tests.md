@@ -160,8 +160,11 @@ Virtdeploy checks resource ownership and dependencies before cleanup or
 replacement. New domains and networks carry ownership metadata; legacy resources
 must satisfy the expected generated configuration, including canonical pool
 paths. An ownership or dependency conflict fails before destruction rather than
-guessing which resources may be deleted. Inactive pool files are retained and
-reported for manual inspection.
+guessing which resources may be deleted. Filesystem dependency checks account
+for symlink aliases and file identity, and fail if references cannot be safely
+inspected. Inactive pool files are retained and reported for manual inspection.
+Nonempty inactive or unregistered namespace storage directories block recreation;
+inspect retained files before choosing another namespace or removing them.
 
 When reusing a functional-test VM, its namespace is restored from pytest's
 cache. A conflicting `--virtdeploy-namespace`, or a legacy cached environment
