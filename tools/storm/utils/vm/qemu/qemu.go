@@ -81,9 +81,15 @@ func (cfg QemuConfig) DeployQemuVMWithoutWaiting(ctx context.Context, vmName, ar
 	return nil
 }
 
-// GetVmIPAddresses queries the current DHCP leases once without retrying.
-func (cfg QemuConfig) GetVmIPAddresses(vmName string) ([]string, error) {
-	return cfg.getQemuVmIpAddresses(vmName)
+// GetVmIPAddresses queries current DHCP leases once within the caller's deadline.
+func (cfg QemuConfig) GetVmIPAddresses(ctx context.Context, vmName string) ([]string, error) {
+	var ips []string
+	err := withLibvirtDomain(ctx, vmName, func(lv *libvirt.Libvirt, domain libvirt.Domain) error {
+		var err error
+		ips, err = getDomainIPAddresses(lv, domain)
+		return err
+	})
+	return ips, err
 }
 
 func (cfg QemuConfig) CleanupQemuVM(vmName string) error {
@@ -154,13 +160,17 @@ func (cfg QemuConfig) getQemuVmIpAddresses(vmName string) ([]string, error) {
 		return nil, fmt.Errorf("failed to lookup domain by name '%s': %w", vmName, err)
 	}
 	defer lv.Disconnect()
-	logrus.Tracef("Found libvirt domain '%s' with ID %v", vmName, domain)
+	return getDomainIPAddresses(lv, domain)
+}
 
-	ifaces, err := lv.DomainInterfaceAddresses(domain, uint32(libvirt.DomainInterfaceAddressesSrcLease), 0) // VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_AGENT retrieves info from the guest agent
+func getDomainIPAddresses(lv *libvirt.Libvirt, domain libvirt.Domain) ([]string, error) {
+	logrus.Tracef("Found libvirt domain '%s' with ID %v", domain.Name, domain)
+
+	ifaces, err := lv.DomainInterfaceAddresses(domain, uint32(libvirt.DomainInterfaceAddressesSrcLease), 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get domain interface addresses: %w", err)
 	}
-	logrus.Tracef("Found %d interfaces for domain '%s'", len(ifaces), vmName)
+	logrus.Tracef("Found %d interfaces for domain '%s'", len(ifaces), domain.Name)
 
 	ipAddressesFound := make([]string, 0)
 

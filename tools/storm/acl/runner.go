@@ -57,7 +57,7 @@ func (r *runner) closeClient() {
 	}
 }
 
-// withClient reuses an SSH connection and closes it when the operation context is canceled.
+// withClient reuses successful connections without replaying failed operations.
 func (r *runner) withClient(operation func(context.Context, *ssh.Client) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), r.args.OperationTimeout)
 	defer cancel()
@@ -74,11 +74,11 @@ func (r *runner) withClient(operation func(context.Context, *ssh.Client) error) 
 	stop := context.AfterFunc(ctx, func() { _ = client.Close() })
 	defer stop()
 	err := operation(ctx, client)
-	if ctx.Err() != nil {
+	stop()
+	if err != nil || ctx.Err() != nil {
 		r.closeClient()
-		return errors.Join(err, ctx.Err())
 	}
-	return err
+	return errors.Join(err, ctx.Err())
 }
 
 // command runs a privileged guest shell command and records its output.
@@ -138,27 +138,33 @@ func (r *runner) waitBoot(previousBootID string) (string, error) {
 	r.closeClient()
 	ctx, cancel := context.WithTimeout(context.Background(), r.args.BootTimeout)
 	defer cancel()
+	var id string
+	var err error
 	if r.ip == "" {
-		address, err := stormretry.RetryContext(ctx, 2*time.Second, func(context.Context, int) (*string, error) {
-			ips, err := r.qemu.GetVmIPAddresses(r.vmName)
+		boot, err := stormretry.RetryContext(ctx, 2*time.Second, func(ctx context.Context, _ int) (*bootConnection, error) {
+			ips, err := r.qemu.GetVmIPAddresses(ctx, r.vmName)
 			if err != nil {
 				return nil, err
 			}
-			if len(ips) != 1 {
-				return nil, fmt.Errorf("expected one guest address, got %v", ips)
-			}
-			return &ips[0], nil
+			attempt, done := context.WithTimeout(ctx, 10*time.Second)
+			defer done()
+			settings := r.settings()
+			return waitForBootCandidates(attempt, ips, func(ctx context.Context, ip string) (*ssh.Client, string, error) {
+				candidate := settings
+				candidate.Host = ip
+				return stormsshcheck.WaitForBoot(ctx, candidate, previousBootID)
+			})
 		})
 		if err != nil {
 			return "", err
 		}
-		r.ip = *address
+		r.ip, r.client, id = boot.ip, boot.client, boot.id
+	} else {
+		r.client, id, err = stormsshcheck.WaitForBoot(ctx, r.settings(), previousBootID)
+		if err != nil {
+			return "", err
+		}
 	}
-	client, id, err := stormsshcheck.WaitForBoot(ctx, r.settings(), previousBootID)
-	if err != nil {
-		return "", err
-	}
-	r.client = client
 	_, err = fmt.Fprintf(r.log, "boot: %s (previous %q)\n", id, previousBootID)
 	return id, err
 }

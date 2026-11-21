@@ -43,12 +43,10 @@ func startDomainWhenShutoff(ctx context.Context, lv domainStarter, domain libvir
 
 // StartQemuVMWhenShutoff waits for guest-initiated shutdown without forcing it or replacing NVRAM.
 func (cfg QemuConfig) StartQemuVMWhenShutoff(ctx context.Context, vmName string) error {
-	lv, domain, err := getLibvirtDomainByname(vmName)
+	err := withLibvirtDomain(ctx, vmName, func(lv *libvirt.Libvirt, domain libvirt.Domain) error {
+		return startDomainWhenShutoff(ctx, lv, domain)
+	})
 	if err != nil {
-		return err
-	}
-	defer lv.Disconnect()
-	if err := startDomainWhenShutoff(ctx, lv, domain); err != nil {
 		return fmt.Errorf("starting domain %q after guest shutdown: %w", vmName, err)
 	}
 	return nil
@@ -87,14 +85,10 @@ func coldRestartDomain(ctx context.Context, lv domainColdRestarter, domain libvi
 // ColdRestartQemuVM stops and starts the existing domain, preserving its disk and NVRAM.
 // The ACL MSHV caller must first confirm Linux reached its final restart boundary.
 func (cfg QemuConfig) ColdRestartQemuVM(ctx context.Context, vmName string) error {
-	lv, domain, err := getLibvirtDomainByname(vmName)
+	err := withLibvirtDomain(ctx, vmName, func(lv *libvirt.Libvirt, domain libvirt.Domain) error {
+		return coldRestartDomain(ctx, lv, domain)
+	})
 	if err != nil {
-		return err
-	}
-	defer lv.Disconnect()
-	stop := context.AfterFunc(ctx, func() { _ = lv.Disconnect() })
-	defer stop()
-	if err := coldRestartDomain(ctx, lv, domain); err != nil {
 		return fmt.Errorf("cold-restarting domain %q after guest restart: %w", vmName, err)
 	}
 	return nil

@@ -170,12 +170,11 @@ func (s *ACLScenario) OnFailure(ctx storm.FailureContext) error {
 	return s.gatherLogs()
 }
 
-// gatherLogs collects diagnostics and syncs guest writes at most once.
+// gatherLogs skips completed collection so cleanup can retry earlier failures.
 func (s *ACLScenario) gatherLogs() error {
 	if s.runner == nil || s.logsCollected {
 		return nil
 	}
-	s.logsCollected = true
 	r := s.runner
 	err := collectAndSync(r.evidence, func() error {
 		if r.ip == "" {
@@ -187,6 +186,7 @@ func (s *ACLScenario) gatherLogs() error {
 		_, err := r.command("sync")
 		return err
 	})
+	s.logsCollected = err == nil
 	s.recordFailure(err)
 	return err
 }
