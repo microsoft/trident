@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, ensure, Context, Error};
 
-use osutils::container;
+use osutils::{container, sysfs};
 use sysdefs::arch::SystemArchitecture;
 use trident_api::{
     constants::ESP_EFI_DIRECTORY,
@@ -25,6 +25,7 @@ use crate::{
 /// Streamed deployments are skipped. Declared MSHV images require an x86-64
 /// build, an ACL UKI, and no PCR-bound encryption. All file-based A/B updates
 /// must match the retained slot's MSHV mode, using the host ESP when containerized.
+/// ACL MSHV A/B updates also require the host's OverlayFS index default to be off.
 /// Does not modify boot files or validate the running hypervisor.
 pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentError> {
     if ctx.is_stream_image {
@@ -55,10 +56,33 @@ pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
         }
     }
     if ctx.servicing_type == ServicingType::AbUpdate {
+        let sysfs_root = container::get_host_relative_path("/sys".into())?;
+        validate_overlay_index(ctx, &sysfs_root)
+            .structured(InvalidInputError::InvalidBootConfiguration)?;
+
         let esp_path = container::get_host_relative_path(ctx.esp_mount_path.clone())?;
         validate_transition(ctx, &esp_path)
             .structured(InvalidInputError::InvalidBootConfiguration)?;
     }
+    Ok(())
+}
+
+fn validate_overlay_index(ctx: &EngineContext, sysfs_root: &Path) -> Result<(), Error> {
+    if ctx.servicing_type != ServicingType::AbUpdate
+        || !ctx.host_os_release.get_distro().is_acl()
+        || !ctx.bootloader().is_some_and(Bootloader::uses_mshv)
+    {
+        return Ok(());
+    }
+
+    // ACL retains /etc's upper across /usr replacements. Indexing can bind that
+    // upper to the old lower filesystem and prevent the updated OS from booting.
+    ensure!(
+        !sysfs::overlay_index_enabled(sysfs_root)?,
+        "OverlayFS index is enabled; ACL MSHV A/B updates require it to be disabled \
+         to avoid persistent /etc overlay origin verification failures. \
+         Boot with overlay.index=off before staging an update"
+    );
     Ok(())
 }
 
@@ -103,6 +127,78 @@ mod tests {
         osimage::{bootloader::BootloaderType, mock::MockOsImage},
         subsystems::esp::EspSubsystem,
     };
+
+    #[test]
+    fn rejects_enabled_overlay_index_only_for_acl_mshv_ab_updates() {
+        let sysfs = TempDir::new().unwrap();
+        let path = sysfs.path().join("module/overlay/parameters/index");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "Y\n").unwrap();
+
+        for servicing_type in [
+            ServicingType::CleanInstall,
+            ServicingType::RuntimeUpdate,
+            ServicingType::AbUpdate,
+        ] {
+            for is_acl in [false, true] {
+                for is_mshv in [false, true] {
+                    let ctx = EngineContext {
+                        servicing_type,
+                        host_os_release: OsRelease {
+                            id: Some(AZURE_LINUX_DISTRO_ID.into()),
+                            variant_id: is_acl.then(|| AZURE_CONTAINER_LINUX_VARIANT_ID.into()),
+                            ..Default::default()
+                        },
+                        bootloader: Some(Bootloader::new(
+                            if is_mshv {
+                                BootloaderType::EfitreeloaderMshvSystemdBoot
+                            } else {
+                                BootloaderType::SystemdBoot
+                            },
+                            None,
+                        )),
+                        ..Default::default()
+                    };
+                    assert_eq!(
+                        validate_overlay_index(&ctx, sysfs.path()).is_err(),
+                        servicing_type == ServicingType::AbUpdate && is_acl && is_mshv,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn requires_disabled_overlay_index_and_preserves_probe_errors() {
+        let sysfs = TempDir::new().unwrap();
+        let ctx = EngineContext {
+            servicing_type: ServicingType::AbUpdate,
+            host_os_release: OsRelease {
+                id: Some(AZURE_LINUX_DISTRO_ID.into()),
+                variant_id: Some(AZURE_CONTAINER_LINUX_VARIANT_ID.into()),
+                ..Default::default()
+            },
+            bootloader: Some(Bootloader::new(
+                BootloaderType::EfitreeloaderMshvSystemdBoot,
+                None,
+            )),
+            ..Default::default()
+        };
+        assert!(validate_overlay_index(&ctx, sysfs.path())
+            .unwrap_err()
+            .is::<std::io::Error>());
+        let path = sysfs.path().join("module/overlay/parameters/index");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "invalid").unwrap();
+        assert!(validate_overlay_index(&ctx, sysfs.path()).is_err());
+        fs::write(&path, "N\n").unwrap();
+        validate_overlay_index(&ctx, sysfs.path()).unwrap();
+        fs::write(&path, "Y\n").unwrap();
+        assert!(validate_overlay_index(&ctx, sysfs.path())
+            .unwrap_err()
+            .to_string()
+            .contains("overlay.index=off"));
+    }
 
     /// Only file-based deployment of metadata-declared MSHV images receives these restrictions.
     #[test]
