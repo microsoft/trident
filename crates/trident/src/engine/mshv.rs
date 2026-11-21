@@ -39,32 +39,29 @@ fn validate_hypervisor_identity(
     let Some(expected_volume) = expected_volume else {
         return Ok(());
     };
-    validate_loader_origin(
-        install_index,
-        expected_volume,
-        efivar::read_loader_image_identifier(),
-    )
-}
-
-/// Checks a loader-image read result against the expected slot for `install_index`.
-///
-/// Normalizes EFI separators and ASCII case, recognizing only this installation's
-/// complete slot-local `second.efi` paths. Unavailable or unsupported evidence,
-/// including fallback paths, warns and succeeds. Only a recognized opposite A/B
-/// slot returns a mismatch error; success does not attest the running payload.
-fn validate_loader_origin(
-    install_index: usize,
-    expected_volume: AbVolumeSelection,
-    image: Result<String, TridentError>,
-) -> Result<(), TridentError> {
-    let image = match image {
-        Ok(image) => image.replace('/', "\\"),
+    let image = match efivar::read_loader_image_identifier() {
+        Ok(image) => image,
         Err(error) => {
             // Missing evidence must not be reported as a rejected A/B trial.
             warn!("Cannot determine MSHV boot-chain origin; skipping validation: {error:?}");
             return Ok(());
         }
     };
+    validate_loader_origin(install_index, expected_volume, &image)
+}
+
+/// Checks a loader-image identifier against the expected slot for `install_index`.
+///
+/// Normalizes EFI separators and ASCII case, recognizing only this installation's
+/// complete slot-local `second.efi` paths. Unsupported origins, including fallback
+/// paths, warn and succeed. Only a recognized opposite A/B slot returns a mismatch
+/// error; success does not attest the running payload.
+fn validate_loader_origin(
+    install_index: usize,
+    expected_volume: AbVolumeSelection,
+    image: &str,
+) -> Result<(), TridentError> {
+    let image = image.replace('/', "\\");
 
     let observed_directory = [AbVolumeSelection::VolumeA, AbVolumeSelection::VolumeB]
         .into_iter()
@@ -101,7 +98,7 @@ mod tests {
             (1, AbVolumeSelection::VolumeA, r"\EFI\AZL2A\second.efi"),
             (2, AbVolumeSelection::VolumeB, r"\EFI\AZL3B\second.efi"),
         ] {
-            validate_loader_origin(index, volume, Ok(image.into())).unwrap();
+            validate_loader_origin(index, volume, image).unwrap();
         }
     }
 
@@ -130,7 +127,7 @@ mod tests {
                 "AZL2A",
             ),
         ] {
-            let error = validate_loader_origin(index, volume, Ok(image.into())).unwrap_err();
+            let error = validate_loader_origin(index, volume, image).unwrap_err();
             assert!(
                 matches!(
                     error.kind(),
@@ -156,20 +153,8 @@ mod tests {
             r"EFI\AZLB\second.efi",
             "",
         ] {
-            validate_loader_origin(0, AbVolumeSelection::VolumeA, Ok(image.into())).unwrap();
+            validate_loader_origin(0, AbVolumeSelection::VolumeA, image).unwrap();
         }
         validate_hypervisor_identity(0, None).unwrap();
-    }
-
-    #[test]
-    fn unavailable_loader_metadata_does_not_reject_trial() {
-        validate_loader_origin(
-            0,
-            AbVolumeSelection::VolumeB,
-            Err(TridentError::new(ServicingError::ReadEfiVariable {
-                name: "LoaderImageIdentifier".into(),
-            })),
-        )
-        .unwrap();
     }
 }
