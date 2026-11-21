@@ -62,7 +62,7 @@ jobs:
           script: |
             set -euo pipefail
             sudo apt-get update
-            sudo apt-get install -y python3-yaml python3-cryptography
+            sudo apt-get install -y python3-yaml python3-cryptography rpm
             sudo systemctl start docker
             chmod 600 '$(ACL_INPUT_DIR)/ssh/id_rsa'
             source='$(ACL_BUILD_DIR)/image-tools'
@@ -71,6 +71,7 @@ jobs:
             git -C "$source" fetch --depth 1 \
               https://github.com/microsoft/azure-linux-image-tools.git '$(ACL_CUSTOMIZER_BRANCH)'
             git -C "$source" checkout --detach FETCH_HEAD
+            printf 'Image Customizer commit: %s\n' "$(git -C "$source" rev-parse HEAD)"
             make -C "$source/toolkit" go-imagecustomizer REBUILD_TOOLS=y
             "$source/toolkit/tools/imagecustomizer/container/build-container.sh" \
               -t '$(ACL_CUSTOMIZER)'
@@ -81,6 +82,13 @@ jobs:
               test "${#loaders[@]}" -eq 1
               cp -- "${loaders[0]}" artifacts/rpm-overrides/
             fi
+            printf 'ACL input SHA-256 hashes:\n'
+            sha256sum artifacts/acl_template_image.vhdx
+            find bin/RPMS artifacts/rpm-overrides -maxdepth 1 -type f -name '*.rpm' \
+              -exec sha256sum -- '{}' +
+            printf 'ACL input RPM packages (name-epoch:version-release.arch):\n'
+            find bin/RPMS artifacts/rpm-overrides -maxdepth 1 -type f -name '*.rpm' \
+              -exec rpm -qp --queryformat '%{NAME}-%{EPOCHNUM}:%{VERSION}-%{RELEASE}.%{ARCH}\n' '{}' +
       - task: Bash@3
         displayName: Build native images through testimages.py and publish servicing artifacts
         inputs:
