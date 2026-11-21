@@ -134,7 +134,9 @@ def junit_summary(text):
         "vm_created": any(case.get("name") == "test_create_vm" for case in passed),
         "ssh_deployment": any(case.get("name") == "test_deployment" for case in passed),
         "rust_functional_passed": sum(
-            case.get("classname", "").startswith("tests.functional_tests.ft.json.")
+            case.get("classname", "").startswith(
+                ("ft.json.", "tests.functional_tests.ft.json.")
+            )
             for case in passed
         ),
     }

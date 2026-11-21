@@ -61,6 +61,17 @@ class HardeningValidationTests(unittest.TestCase):
         self.assertTrue(counts["vm_created"])
         self.assertTrue(counts["ssh_deployment"])
 
+    def test_functional_directory_junit_counts_rust(self):
+        counts = validation.junit_summary(
+            '<testsuite><testcase name="test_tune2fs_run" '
+            'classname="ft.json.osutils.tune2fs.functional_test"/>'
+            '<testcase name="test_get" '
+            'classname="ft.json.osutils.sfdisk.functional_test"><skipped/>'
+            "</testcase></testsuite>"
+        )
+        self.assertEqual(counts["rust_functional_passed"], 1)
+        self.assertEqual(counts["skipped"], 1)
+
     def test_unrelated_junit_identities_do_not_count_as_rust(self):
         counts = validation.junit_summary(
             '<testsuite><testcase name="one" classname="functional.functest.helpers"/>'
