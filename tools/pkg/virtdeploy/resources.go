@@ -29,7 +29,8 @@ type virtDeployResourceConfig struct {
 	pool      storagePool
 	nvramPool storagePool
 	vms       []VirtDeployVM
-	lv        *libvirt.Libvirt
+	lv        libvirtClient
+	files     resourceFilesystem
 	startVms  bool
 }
 
@@ -46,6 +47,7 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network config: %w", err)
 	}
+	network.namespace = ns
 
 	// Connect to libvirt
 	lvConn, err := connect()
@@ -54,8 +56,8 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 	}
 
 	// Create the storage pool configuration
-	storagePool := newPool(ns.storagePoolName(), fmt.Sprintf("/var/lib/libvirt/%s", ns))
-	nvramPool := newPool(ns.nvramPoolName(), fmt.Sprintf("/var/lib/%s-nvram", ns))
+	storagePool := newPool(ns.storagePoolName(), ns.storagePoolPath())
+	nvramPool := newPool(ns.nvramPoolName(), ns.nvramPoolPath())
 	nvramPool.mode = "0777"
 
 	// Create the resource config
@@ -72,6 +74,7 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 	// Initialize all VMs
 	for i := range r.vms {
 		vm := &r.vms[i]
+		vm.namespace = ns
 		vm.name = ns.vmName(i)
 		vm.mac = NewRandomMacAddress(0x52, 0x54, 0x00)
 		lease, err := r.network.lease(vm.name, vm.mac)
@@ -139,54 +142,31 @@ func cleanupNamespace(namespaceRaw string) error {
 		namespace: ns,
 		lv:        lvConn,
 	}
+	defer rc.close()
 
-	// Delete all VMs in the namespace
-	domains, _, err := rc.lv.ConnectListAllDomains(1, libvirt.ConnectListDomainsActive|libvirt.ConnectListDomainsInactive)
+	return rc.cleanup()
+}
+
+func (rc *virtDeployResourceConfig) cleanup() error {
+	inventory, err := rc.preflight(false)
 	if err != nil {
-		return fmt.Errorf("list domains: %w", err)
+		return fmt.Errorf("ownership preflight: %w", err)
 	}
-
-	for _, dom := range domains {
-		if !ns.isInNamespace(dom.Name) {
-			continue
-		}
-
+	for _, dom := range inventory.domains {
 		log.Debugf("Tearing down domain %s", dom.Name)
 		err = rc.teardownDomain(dom)
 		if err != nil {
 			return fmt.Errorf("teardown domain %s: %w", dom.Name, err)
 		}
 	}
-
-	// Delete all networks in the namespace
-	networks, _, err := rc.lv.ConnectListAllNetworks(1, libvirt.ConnectListNetworksActive|libvirt.ConnectListNetworksInactive)
-	if err != nil {
-		return fmt.Errorf("list networks: %w", err)
-	}
-
-	for _, nw := range networks {
-		if !ns.isInNamespace(nw.Name) {
-			continue
-		}
-
+	for _, nw := range inventory.networks {
 		log.Debugf("Tearing down network %s", nw.Name)
 		err = rc.teardownNetwork(nw)
 		if err != nil {
 			return fmt.Errorf("teardown network %s: %w", nw.Name, err)
 		}
 	}
-
-	// Delete all storage pools in the namespace
-	pools, _, err := rc.lv.ConnectListAllStoragePools(1, libvirt.ConnectListStoragePoolsActive|libvirt.ConnectListStoragePoolsInactive)
-	if err != nil {
-		return fmt.Errorf("list storage pools: %w", err)
-	}
-
-	for _, pool := range pools {
-		if !ns.isInNamespace(pool.Name) {
-			continue
-		}
-
+	for _, pool := range inventory.pools {
 		log.Debugf("Tearing down storage pool %s", pool.Name)
 		err = rc.teardownStoragePool(pool)
 		if err != nil {
@@ -225,7 +205,17 @@ func (rc *virtDeployResourceConfig) close() {
 }
 
 func (rc *virtDeployResourceConfig) construct() (*VirtDeployStatus, error) {
-	err := rc.setupNetwork()
+	inventory, err := rc.preflight(true)
+	if err != nil {
+		return nil, fmt.Errorf("ownership preflight: %w", err)
+	}
+	// Stop verified replacement domains before touching their disks or network.
+	for _, dom := range inventory.domains {
+		if err := rc.teardownDomain(dom); err != nil {
+			return nil, fmt.Errorf("teardown replacement domain %s: %w", dom.Name, err)
+		}
+	}
+	err = rc.setupNetwork()
 	if err != nil {
 		return nil, fmt.Errorf("failed to set up network: %w", err)
 	}
@@ -331,6 +321,17 @@ func (rc *virtDeployResourceConfig) teardownNetworkByName(name string) error {
 }
 
 func (rc *virtDeployResourceConfig) teardownNetwork(lvNetwork libvirt.Network) error {
+	definition, err := rc.lv.NetworkGetXMLDesc(lvNetwork, 0)
+	if err != nil {
+		return fmt.Errorf("get network %s XML: %w", lvNetwork.Name, err)
+	}
+	owned, err := rc.namespace.ownsNetwork(lvNetwork.Name, definition)
+	if err != nil {
+		return fmt.Errorf("verify network %s ownership: %w", lvNetwork.Name, err)
+	}
+	if !owned {
+		return fmt.Errorf("%w: network %s", errResourceNotOwned, lvNetwork.Name)
+	}
 	active, err := rc.lv.NetworkIsActive(lvNetwork)
 	if err != nil {
 		return fmt.Errorf("check if network %s is active: %w", lvNetwork.Name, err)
@@ -425,31 +426,41 @@ func (rc *virtDeployResourceConfig) teardownStoragePoolByName(name string) error
 }
 
 func (rc *virtDeployResourceConfig) teardownStoragePool(lvPool libvirt.StoragePool) error {
-
-	vols, _, err := rc.lv.StoragePoolListAllVolumes(lvPool, 1, 0)
+	definition, err := rc.lv.StoragePoolGetXMLDesc(lvPool, 0)
 	if err != nil {
-		return fmt.Errorf("list volumes in storage pool %s: %w", lvPool.Name, err)
+		return fmt.Errorf("get storage pool %s XML: %w", lvPool.Name, err)
 	}
-
-	for _, vol := range vols {
-		log.Debugf("Tearing down volume %s in storage pool %s", vol.Name, lvPool.Name)
-		err = rc.teardownVolume(lvPool, vol.Name)
-		if err != nil {
-			return fmt.Errorf("teardown volume %s in pool %s: %w", vol.Name, lvPool.Name, err)
-		}
+	owned, err := rc.namespace.ownsPool(lvPool.Name, definition)
+	if err != nil {
+		return fmt.Errorf("verify storage pool %s ownership: %w", lvPool.Name, err)
 	}
-
+	if !owned {
+		return fmt.Errorf("%w: storage pool %s", errResourceNotOwned, lvPool.Name)
+	}
 	active, err := rc.lv.StoragePoolIsActive(lvPool)
 	if err != nil {
 		return fmt.Errorf("check if storage pool %s is active: %w", lvPool.Name, err)
 	}
 
 	if active != 0 {
+		vols, _, err := rc.lv.StoragePoolListAllVolumes(lvPool, 1, 0)
+		if err != nil {
+			return fmt.Errorf("list volumes in storage pool %s: %w", lvPool.Name, err)
+		}
+		for _, vol := range vols {
+			log.Debugf("Tearing down volume %s in storage pool %s", vol.Name, lvPool.Name)
+			err = rc.teardownVolume(lvPool, vol.Name)
+			if err != nil {
+				return fmt.Errorf("teardown volume %s in pool %s: %w", vol.Name, lvPool.Name, err)
+			}
+		}
 		log.Tracef("Storage pool %s is active, destroying.", lvPool.Name)
 		err = rc.lv.StoragePoolDestroy(lvPool)
 		if err != nil {
 			return fmt.Errorf("destroy storage pool %s: %w", lvPool.Name, err)
 		}
+	} else {
+		log.Warnf("Storage pool %s is inactive; retaining any files on disk", lvPool.Name)
 	}
 
 	err = rc.lv.StoragePoolUndefine(lvPool)
@@ -661,6 +672,17 @@ func (rc *virtDeployResourceConfig) teardownDomainByName(name string) error {
 }
 
 func (rc *virtDeployResourceConfig) teardownDomain(dom libvirt.Domain) error {
+	definition, err := rc.lv.DomainGetXMLDesc(dom, libvirt.DomainXMLInactive)
+	if err != nil {
+		return fmt.Errorf("get domain %s XML: %w", dom.Name, err)
+	}
+	owned, err := rc.namespace.ownsDomain(dom.Name, definition)
+	if err != nil {
+		return fmt.Errorf("verify domain %s ownership: %w", dom.Name, err)
+	}
+	if !owned {
+		return fmt.Errorf("%w: domain %s", errResourceNotOwned, dom.Name)
+	}
 	active, err := rc.lv.DomainIsActive(dom)
 	if err != nil {
 		return fmt.Errorf("check if domain %s is active: %w", dom.Name, err)
