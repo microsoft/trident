@@ -13,12 +13,14 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-CANDIDATE = "3029aad73e28f71b1c47ca8eecdce9e6ec445c9f"
+CANDIDATE = "8d7debc0b8d7d97e6a8ef3552f3647fdf814ac54"
 LOCK = Path("/var/lib/trident-cloud-agent/functional.lock")
 PLANNED = (
     "candidate runner-baseline source-setup functional-setup-1 functional-setup-2 "
     "source-regressions fixture-regressions privileged-cross-uid format go "
-    "host-lock-before smoke occupied ambiguous controlled-failure "
+    "host-lock-before smoke libvirt-safety-fixtures ssh-key-generation "
+    "ssh-public-key-derive-1 ssh-public-key-derive-2 root-setup-cache-regressions "
+    "root-downloader-cache-regressions occupied ambiguous controlled-failure "
     "graceful-interruption host-lock-reacquire full"
 ).split()
 PLUGIN = """
@@ -142,8 +144,22 @@ def junit_summary(text):
     }
 
 
+def storage_xml_digest(xml, pool=False):
+    root = ET.fromstring(xml)
+    # Free-space accounting and read timestamps are not storage configuration.
+    # Fixture file contents, inodes and mtime are checked separately.
+    for tag in ("allocation", "physical", *(("capacity", "available") if pool else ())):
+        for element in root.findall(tag):
+            root.remove(element)
+    target = root.find("target")
+    if target is not None:
+        for element in target.findall("timestamps"):
+            target.remove(element)
+    return hashlib.sha256(ET.tostring(root)).hexdigest()
+
+
 class Validation:
-    def __init__(self, source, reports):
+    def __init__(self, source, reports, namespace=None):
         self.source = Path(source).resolve()
         self.reports = Path(reports).resolve()
         self.reports.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -156,7 +172,7 @@ class Validation:
         self.env["LIBVIRT_DEFAULT_URI"] = "qemu:///system"
         self.env["LC_ALL"] = "C"
         self.env["PYTEST_ADDOPTS"] = ""
-        self.namespace = (
+        self.namespace = namespace or (
             f"hardening-{os.environ['GITHUB_RUN_ID']}-"
             f"{os.environ['GITHUB_RUN_ATTEMPT']}-{os.getpid()}"
         )
@@ -224,16 +240,15 @@ class Validation:
                 if kind == "domains":
                     entry["state"] = self.virsh("domstate", name).strip()
                 if kind == "pools":
+                    entry["xml_sha256"] = storage_xml_digest(xml, pool=True)
                     info = self.virsh("pool-info", name)
                     entry["state"] = re.search(r"^State:\s+(.+)$", info, re.M)[1]
                     entry["target"] = ET.fromstring(xml).findtext("target/path")
                     if entry["state"] == "running":
                         entry["volumes"] = {
-                            volume: hashlib.sha256(
-                                self.virsh(
-                                    "vol-dumpxml", volume, "--pool", name
-                                ).encode()
-                            ).hexdigest()
+                            volume: storage_xml_digest(
+                                self.virsh("vol-dumpxml", volume, "--pool", name)
+                            )
                             for volume in self.virsh(
                                 "vol-list", name, "--name"
                             ).splitlines()
@@ -390,6 +405,54 @@ class Validation:
             # Only the inactive network defined above is ours to undefine.
             self.virsh("net-undefine", network)
 
+    def ssh_public_key_derivation(self):
+        source = (self.source / "scripts/cloud-agent/setup-functional.sh").read_text()
+        start = source.index('if [[ ! -f "$HOME/.ssh/id_rsa" ]]')
+        end = source.index("test -e /dev/kvm", start)
+        key_setup = source[start:end]
+        if '"$HOME/.ssh/id_rsa.pub"' not in key_setup:
+            raise RuntimeError("Candidate setup lacks missing-public-key derivation")
+        # Execute only the candidate's SSH block, never package installation or
+        # the user's real key paths. No key material is placed in reports.
+        with tempfile.TemporaryDirectory(prefix="ssh-", dir=self.scratch) as home:
+            ssh = Path(home) / ".ssh"
+            ssh.mkdir(mode=0o700)
+            private, public = ssh / "id_rsa", ssh / "id_rsa.pub"
+            self.run(
+                "ssh-key-generation",
+                shlex.split("ssh-keygen -q -t rsa -b 2048 -N '' -f") + [str(private)],
+            )
+            private_hash = digest(private)
+            expected_public = public.read_text().split()[:2]
+            public.unlink()
+            first = None
+            for iteration in (1, 2):
+                self.run(
+                    f"ssh-public-key-derive-{iteration}",
+                    ["bash", "-euo", "pipefail", "-c", key_setup],
+                    env=dict(self.env, HOME=home),
+                )
+                if (
+                    digest(private) != private_hash
+                    or public.read_text().split()[:2] != expected_public
+                ):
+                    raise RuntimeError(
+                        "SSH derivation changed private key or derived the wrong public key"
+                    )
+                current = (public.stat().st_ino, digest(public))
+                if first is not None and current != first:
+                    raise RuntimeError("Repeated SSH setup replaced the public key")
+                first = current
+            self.save(
+                "ssh-derivation.json",
+                {
+                    "scope": "real ssh-keygen, extracted candidate SSH block, temporary HOME",
+                    "private_key_preserved": True,
+                    "derived_public_key_matches": True,
+                    "second_run_preserved_public_key_inode": True,
+                },
+            )
+
     def execute(self):
         if os.environ.get("GITHUB_ACTIONS") != "true":
             raise RuntimeError("This harness may only execute on GitHub Actions")
@@ -536,6 +599,52 @@ class Validation:
                 image.stat().st_size,
             )
             # Exercise bounded failure paths before the potentially long suite.
+            fixture_reports = self.reports / "safety-fixtures"
+            fixture_reports.mkdir(mode=0o700)
+            self.run(
+                "libvirt-safety-fixtures",
+                shlex.split(
+                    "timeout --signal=INT --kill-after=30s 180s "
+                    "sudo env GITHUB_ACTIONS=true python3"
+                )
+                + [
+                    str(Path(__file__).with_name("hardening-safety-fixtures.py")),
+                    str(self.source),
+                    str(fixture_reports),
+                    self.namespace,
+                ],
+            )
+            self.ssh_public_key_derivation()
+            for name, filename, required_test in (
+                (
+                    "root-setup-cache-regressions",
+                    "test_setup_functional.py",
+                    "test_setup_provisions_separate_cache_roots_for_each_uid",
+                ),
+                (
+                    "root-downloader-cache-regressions",
+                    "test_download_functional_artifact.py",
+                    "test_default_cache_is_separate_for_each_uid",
+                ),
+            ):
+                text = self.run(
+                    name,
+                    shlex.split(
+                        "sudo python3 -m unittest discover -s scripts/cloud-agent/tests -p"
+                    )
+                    + [filename, "-v"],
+                )
+                if required_test not in text or "skipped" in text.lower():
+                    raise RuntimeError(
+                        f"{name}: required cache source regression did not execute"
+                    )
+            self.save(
+                "cache-regression-scope.json",
+                {
+                    "scope": "root source regressions, mocked UID cache selection",
+                    "live_second_uid_download": False,
+                },
+            )
             self.occupied()
             (self.scratch / "hardening_inject.py").write_text(PLUGIN)
             self.functional("controlled-failure", "smoke", expected=1, inject="failure")
@@ -583,7 +692,8 @@ class Validation:
                     "unexecuted_gates": [
                         "SIGKILL cleanup (exit traps cannot execute)",
                         "Live lock contention during cleanup (only source regression scheduled)",
-                        "Occupied domain/pool/volume sentinels (only network sentinel scheduled live)",
+                        "Hard-link/inode alias dependencies (only symlink alias scheduled live)",
+                        "Live second-UID cache download (root source regressions scheduled instead)",
                     ],
                 },
             )

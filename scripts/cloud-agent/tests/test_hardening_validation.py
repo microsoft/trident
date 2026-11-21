@@ -25,6 +25,15 @@ class HardeningValidationTests(unittest.TestCase):
         ), patch.object(validation.tempfile, "mkdtemp", return_value=str(scratch)):
             return validation.Validation(root, root / "reports")
 
+    def test_workflow_checkout_and_report_match_exact_candidate_gate(self):
+        workflow = (
+            Path(__file__).resolve().parents[3]
+            / ".github/workflows/cloud-agent-hardening-validation.yml"
+        ).read_text()
+        self.assertEqual(workflow.count(validation.CANDIDATE), 2)
+        self.assertIn(f"ref: {validation.CANDIDATE}", workflow)
+        self.assertIn(f"Candidate: {validation.CANDIDATE}", workflow)
+
     def test_redacts_urls_credential_lines_and_jwts(self):
         unsafe = (
             "image https://storage.invalid/image?sig=example\n"
@@ -71,6 +80,40 @@ class HardeningValidationTests(unittest.TestCase):
         )
         self.assertEqual(counts["rust_functional_passed"], 1)
         self.assertEqual(counts["skipped"], 1)
+
+    def test_pool_digest_ignores_space_counters_but_preserves_identity_and_target(self):
+        xml = (
+            "<pool type='dir'><name>fixture</name><uuid>fixture-uuid</uuid>"
+            "<capacity>100</capacity><allocation>10</allocation><available>90</available>"
+            "<target><path>/task-owned</path></target></pool>"
+        )
+        changed_counters = xml.replace(">10<", ">20<").replace(">90<", ">80<")
+        self.assertEqual(
+            validation.storage_xml_digest(xml, pool=True),
+            validation.storage_xml_digest(changed_counters, pool=True),
+        )
+        for old, new in (("/task-owned", "/other"), ("fixture-uuid", "other-uuid")):
+            self.assertNotEqual(
+                validation.storage_xml_digest(xml, pool=True),
+                validation.storage_xml_digest(xml.replace(old, new), pool=True),
+            )
+
+    def test_volume_digest_preserves_capacity_ignores_volatile_fields(self):
+        xml = (
+            "<volume><name>fixture</name><capacity>100</capacity><allocation>10</allocation>"
+            "<target><path>/task-owned/volume</path><timestamps><atime>1</atime>"
+            "</timestamps></target></volume>"
+        )
+        self.assertEqual(
+            validation.storage_xml_digest(xml),
+            validation.storage_xml_digest(
+                xml.replace(">10<", ">20<").replace(">1<", ">2<")
+            ),
+        )
+        self.assertNotEqual(
+            validation.storage_xml_digest(xml),
+            validation.storage_xml_digest(xml.replace(">100<", ">200<")),
+        )
 
     def test_unrelated_junit_identities_do_not_count_as_rust(self):
         counts = validation.junit_summary(
@@ -272,6 +315,59 @@ class HardeningValidationTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(RuntimeError, "real VM/SSH/Rust"):
                     runner.functional("smoke", "smoke")
+
+    def test_temporary_home_ssh_probe_checks_derivation_without_actual_user_keys(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            script = root / "scripts/cloud-agent/setup-functional.sh"
+            script.parent.mkdir(parents=True)
+            script.write_text(
+                'if [[ ! -f "$HOME/.ssh/id_rsa" ]]; then :; fi\n'
+                'if [[ ! -f "$HOME/.ssh/id_rsa.pub" ]]; then :; fi\n'
+                "test -e /dev/kvm\n"
+            )
+            runner = self.runner(root)
+            homes = []
+
+            def run(name, args, **kwargs):
+                if name == "ssh-key-generation":
+                    private = Path(args[-1])
+                    self.assertTrue(private.is_relative_to(runner.scratch))
+                    private.write_text("test-only private key placeholder")
+                    private.with_suffix(".pub").write_text(
+                        "ssh-rsa placeholder comment\n"
+                    )
+                else:
+                    home = Path(kwargs["env"]["HOME"])
+                    self.assertNotEqual(home, Path.home())
+                    homes.append(home)
+                    public = home / ".ssh/id_rsa.pub"
+                    if not public.exists():
+                        public.write_text("ssh-rsa placeholder derived\n")
+                return ""
+
+            with patch.object(runner, "run", side_effect=run):
+                runner.ssh_public_key_derivation()
+            self.assertEqual(len(homes), 2)
+            self.assertEqual(homes[0], homes[1])
+            self.assertFalse(homes[0].exists())
+            report = (root / "reports/ssh-derivation.json").read_text()
+            self.assertNotIn("placeholder", report)
+            self.assertTrue(json.loads(report)["derived_public_key_matches"])
+
+    def test_ssh_probe_rejects_candidate_without_public_key_derivation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            script = root / "scripts/cloud-agent/setup-functional.sh"
+            script.parent.mkdir(parents=True)
+            script.write_text(
+                'if [[ ! -f "$HOME/.ssh/id_rsa" ]]; then :; fi\ntest -e /dev/kvm\n'
+            )
+            runner = self.runner(root)
+            with patch.object(runner, "run") as run:
+                with self.assertRaisesRegex(RuntimeError, "lacks missing-public-key"):
+                    runner.ssh_public_key_derivation()
+            run.assert_not_called()
 
 
 if __name__ == "__main__":
