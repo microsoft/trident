@@ -732,9 +732,8 @@ bareMetal:
       - ...
 ```
 
-The `invert.py` script in `tools/storm/e2e/` transforms this file into
-`configurations/configurations.yaml`, which storm-trident embeds at build time
-for scenario discovery.
+This legacy schedule is used by bare-metal tests. Storm owns its VM schedule
+in `tools/storm/e2e/configurations/configurations.yaml`.
 
 ### Configuration Summary
 
@@ -826,10 +825,9 @@ Rings are cumulative — all scenarios in inner rings also run when an outer rin
 is executed.
 
 :::note
-The `tests/e2e_tests/target-configurations.yaml` file uses pipeline-frequency
-labels (`pullrequest`, `post_merge`, `daily`, `weekly`) which `invert.py` maps
-to the ring constants above: `pullrequest` → `pr-e2e`, `post_merge` → `ci`,
-`daily`/`weekly` → `full-validation`.
+Edit `tools/storm/e2e/configurations/configurations.yaml` to select the lowest
+ring for each VM runtime. This schedule is independent of the legacy
+`tests/e2e_tests/target-configurations.yaml`.
 :::
 
 ### How E2E Discovery Works
@@ -837,17 +835,16 @@ to the ring constants above: `pullrequest` → `pr-e2e`, `post_merge` → `ci`,
 E2E scenario discovery automatically finds all configured Host Configurations
 and determines when each should run. The key components:
 
-- **Configuration definitions**: All Host Configurations live in
-  `tests/e2e_tests/trident_configurations/`, and the mapping of which
-  configurations run in which test rings is defined in
-  `tests/e2e_tests/target-configurations.yaml`.
+- **Configuration definitions**: Storm Host Configurations live in
+  `tools/storm/e2e/configurations/trident_configurations/`, and their runtime
+  rings and special parameters are defined in
+  `tools/storm/e2e/configurations/configurations.yaml`.
 - **Discovery function**: `DiscoverTridentScenarios` in
   `tools/storm/e2e/discover.go` produces instances of `TridentE2EScenario`
   (from `tools/storm/e2e/scenario/trident.go`) for each valid combination of
   Host Configuration, hardware type, and runtime.
-- **Go embed**: Discovery uses Go's `go:generate` and `go:embed` directives to
-  copy configurations into the binary. The `invert.py` script in
-  `tools/storm/e2e/` produces `configurations/configurations.yaml` with the
+- **Go embed**: Discovery embeds these checked-in files directly; no Python
+  conversion or copying from the legacy tests is needed. The schedule has the
   structure:
 
   ```yaml
