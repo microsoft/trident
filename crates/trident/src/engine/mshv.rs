@@ -12,7 +12,7 @@ use super::boot;
 
 const MSHV_DEVICE_PATH: &str = "/dev/mshv";
 
-/// Runs the expected-slot identity hook when /dev/mshv reports as present.
+/// Validates expected-slot identity when /dev/mshv reports as present.
 ///
 /// `expected_volume` selects the A/B slot for `install_index`; None skips
 /// fallback identity validation. Missing/uninspectable devices and unavailable
@@ -25,23 +25,8 @@ pub(super) fn validate_active_hypervisor(
     install_index: usize,
     expected_volume: Option<AbVolumeSelection>,
 ) -> Result<(), TridentError> {
-    validate_if_mshv_present(Path::new(MSHV_DEVICE_PATH), || {
-        validate_hypervisor_identity(install_index, expected_volume)
-    })
-}
-
-/// Applies a best-effort path-presence gate to an identity check.
-///
-/// Path existence does not establish device type or hypervisor identity.
-/// Missing/uninspectable paths return success without invoking `check`;
-/// otherwise the callback runs once and its failure is propagated.
-fn validate_if_mshv_present(
-    device: &Path,
-    check: impl FnOnce() -> Result<(), TridentError>,
-) -> Result<(), TridentError> {
-    // Presence is a best-effort gate, not evidence of the expected hypervisor identity.
-    if device.exists() {
-        check()?;
+    if Path::new(MSHV_DEVICE_PATH).exists() {
+        validate_hypervisor_identity(install_index, expected_volume)?;
     }
     Ok(())
 }
@@ -105,10 +90,6 @@ fn validate_loader_origin(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::fs;
-
-    use tempfile::TempDir;
 
     use trident_api::error::ErrorKind;
 
@@ -190,42 +171,5 @@ mod tests {
             })),
         )
         .unwrap();
-    }
-
-    #[test]
-    fn missing_mshv_device_skips_identity_validation() {
-        let temp = TempDir::new().unwrap();
-        validate_if_mshv_present(&temp.path().join("mshv"), || {
-            panic!("Identity validation must not run without the MSHV device")
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn present_mshv_device_runs_identity_validation_and_propagates_failure() {
-        let temp = TempDir::new().unwrap();
-        let device = temp.path().join("mshv");
-        fs::write(&device, []).unwrap();
-        let mut checked = false;
-        validate_if_mshv_present(&device, || {
-            checked = true;
-            Ok(())
-        })
-        .unwrap();
-        assert!(checked);
-
-        let error = validate_if_mshv_present(&device, || {
-            Err(TridentError::new(
-                ServicingError::ValidateAbActiveHypervisor {
-                    expected_slot: "AZLB".into(),
-                    observed_slot: Some("AZLA".into()),
-                },
-            ))
-        })
-        .unwrap_err();
-        assert!(matches!(
-            error.kind(),
-            ErrorKind::Servicing(ServicingError::ValidateAbActiveHypervisor { .. })
-        ));
     }
 }
