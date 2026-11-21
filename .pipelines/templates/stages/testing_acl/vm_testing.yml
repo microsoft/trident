@@ -89,6 +89,7 @@ stages:
                     sudo ./bin/storm-trident run acl -a \
                       -j '$(ob_outputDirectory)/acl-${{ variant }}.junit.xml' -- \
                       --variant '${{ variant }}' \
+                      --deploy-slot-validation NoDatastore \
                       --artifacts-dir '$(Build.ArtifactStagingDirectory)/acl' \
                       --output-path '$(ob_outputDirectory)'
               - bash: |

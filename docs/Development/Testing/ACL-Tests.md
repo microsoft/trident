@@ -20,7 +20,7 @@ plus the private SSH key authorized in both images:
 
 | File | Requirement |
 |------|-------------|
-| `base.qcow2` | Bootable ACL base image, initially on slot A |
+| `base.qcow2` | Bootable ACL base image matching the baseline options below |
 | `update.cosi` | Compatible ACL update image for the selected variant |
 | `id_rsa` | Matching private SSH key, restricted to mode 0600 |
 
@@ -32,12 +32,28 @@ validate production signing.
 The scenario follows active slots rather than matching filesystem UUIDs,
 verity root hashes or Trident binary digests.
 
+The baseline is configurable:
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `--expected-first-slot` | `a` | Expected initial active slot: `a` or `b` |
+| `--deploy-slot-validation` | `NoDatastore` | `NoDatastore` requires `/var/lib/trident/datastore.sqlite` to be absent; `CheckExpected` requires Provisioned status on the expected initial slot |
+
+Use the defaults for fresh native images that the first update will adopt.
+For an already-adopted baseline, use `--deploy-slot-validation CheckExpected`
+and set `--expected-first-slot` to its starting slot.
+
 The scenario requires:
 
-1. Baseline boot and SSH readiness.
-2. Update to B, rollback to A, update to B, then update to A.
+1. Baseline boot, SSH readiness and the selected baseline validation.
+2. Update to the opposite slot, rollback to the initial slot, then two updates
+   alternating slots.
 3. Explicit staging/finalization and commit at each operation, with Provisioned
-   status on volumes B/A/B/A and another persistence reboot.
+   status on the expected slots and another persistence reboot.
+
+With the default initial slot A, the sequence is B/A/B/A. Each transition checks
+the opposite of the last accepted slot and advances the tracked slot only after
+successful validation.
 
 After each commit and the persistence reboot, it checks that Trident status
 reports `servicingState: provisioned` and the expected `abActiveVolume`.
@@ -48,6 +64,7 @@ Storm reports `deploy-vm`, `check-deployment`, `run-ab-update`, `run-rollback`,
 `cleanup-vm` separately. These are ordered cases sharing one disposable VM.
 The first update case creates/uploads its host configuration and uploads the
 COSI; later updates reuse those files. Deployment only starts the VM and waits for SSH.
+The separate `check-deployment` case validates the selected baseline contract.
 A failed case stops later cases. The failure hook collects diagnostics before
 any cleanup pause, and the cleanup hook still removes the VM when its named
 case was skipped. Collection and cleanup are not repeated after their named
@@ -93,6 +110,7 @@ install -m 0600 /path/to/matching-private-key "$WORK/inputs/id_rsa"
 VARIANT=standard                  # use mshv for MSHV
 make bin/storm-trident
 sudo ./bin/storm-trident run acl -a -- --variant "$VARIANT" \
+  --expected-first-slot a --deploy-slot-validation NoDatastore \
   --artifacts-dir "$WORK/inputs" --output-path "$WORK/results" \
   --vm-name "acl-$VARIANT-$(date +%s)"
 ```

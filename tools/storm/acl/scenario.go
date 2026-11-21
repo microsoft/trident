@@ -109,34 +109,36 @@ func (s *ACLScenario) deployVm(tc storm.TestCase) error {
 	return s.runTestCase(tc, s.deploy)
 }
 
-// checkDeployment establishes the baseline boot and initial slot.
+// checkDeployment validates the configured baseline before servicing.
 func (s *ACLScenario) checkDeployment(tc storm.TestCase) error {
-	return s.runTestCase(tc, s.lifecycle.checkDeployment)
+	return s.runTestCase(tc, func() error {
+		return s.lifecycle.checkDeployment(s.args.DeploySlotValidation)
+	})
 }
 
-// runABUpdate uploads update inputs and commits the first transition to B.
+// runABUpdate uploads update inputs and commits the first slot transition.
 func (s *ACLScenario) runABUpdate(tc storm.TestCase) error {
 	return s.runTestCase(tc, func() error {
 		if err := s.runner.prepareUpdate(); err != nil {
 			return err
 		}
-		return s.lifecycle.update("update-1", "b", false)
+		return s.lifecycle.update("update-1", false)
 	})
 }
 
-// runRollback commits a return to the retained A slot.
+// runRollback commits a return to the retained initial slot.
 func (s *ACLScenario) runRollback(tc storm.TestCase) error {
-	return s.runTestCase(tc, func() error { return s.lifecycle.update("rollback", "a", true) })
+	return s.runTestCase(tc, func() error { return s.lifecycle.update("rollback", true) })
 }
 
-// runABUpdate2 verifies servicing can return to B after rollback.
+// runABUpdate2 verifies servicing after rollback.
 func (s *ACLScenario) runABUpdate2(tc storm.TestCase) error {
-	return s.runTestCase(tc, func() error { return s.lifecycle.update("update-2", "b", false) })
+	return s.runTestCase(tc, func() error { return s.lifecycle.update("update-2", false) })
 }
 
-// runABUpdate3 verifies another update can reuse A.
+// runABUpdate3 verifies another update can reuse the previous slot.
 func (s *ACLScenario) runABUpdate3(tc storm.TestCase) error {
-	return s.runTestCase(tc, func() error { return s.lifecycle.update("update-3", "a", false) })
+	return s.runTestCase(tc, func() error { return s.lifecycle.update("update-3", false) })
 }
 
 // checkPersistence marks the scenario complete only after a persisted-boot check.
@@ -257,7 +259,7 @@ func (s *ACLScenario) deploy() error {
 		r.qemu.VCPUs = 4
 	}
 	s.runner = r
-	s.lifecycle = lifecycle{g: r}
+	s.lifecycle = lifecycle{g: r, currentSlot: s.args.ExpectedFirstSlot}
 	ctx, cancel := context.WithTimeout(context.Background(), s.args.OperationTimeout)
 	defer cancel()
 	if err := r.qemu.DeployQemuVMWithoutWaiting(ctx, r.vmName, s.args.ArtifactsDir); err != nil {

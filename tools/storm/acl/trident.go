@@ -23,6 +23,13 @@ const (
 	variantMSHV     imageVariant = "mshv"
 )
 
+type deploySlotValidation string
+
+const (
+	validationNoDatastore   deploySlotValidation = "NoDatastore"
+	validationCheckExpected deploySlotValidation = "CheckExpected"
+)
+
 // ACLScenario runs ordered adoption and A/B servicing cases against one guest.
 type ACLScenario struct {
 	args          scenarioArgs
@@ -36,12 +43,14 @@ type ACLScenario struct {
 
 // scenarioArgs defines local artifacts, evidence paths and guest operation limits.
 type scenarioArgs struct {
-	Variant          imageVariant  `help:"ACL image variant" enum:"standard,mshv" default:"standard"`
-	ArtifactsDir     string        `help:"Directory containing ACL base.qcow2, update.cosi and id_rsa" required:""`
-	OutputPath       string        `help:"Directory for test evidence" required:""`
-	VMName           string        `help:"Name of the disposable QEMU VM" default:"acl"`
-	BootTimeout      time.Duration `help:"Maximum wait for each SSH-ready boot" default:"10m"`
-	OperationTimeout time.Duration `help:"Maximum duration of each deployment or guest operation" default:"30m"`
+	Variant              imageVariant         `help:"ACL image variant" enum:"standard,mshv" default:"standard"`
+	ExpectedFirstSlot    string               `help:"Expected active slot in the base image" enum:"a,b" default:"a"`
+	DeploySlotValidation deploySlotValidation `help:"Baseline validation: absent default datastore or Provisioned status on the expected slot" enum:"NoDatastore,CheckExpected" default:"NoDatastore"`
+	ArtifactsDir         string               `help:"Directory containing ACL base.qcow2, update.cosi and id_rsa" required:""`
+	OutputPath           string               `help:"Directory for test evidence" required:""`
+	VMName               string               `help:"Name of the disposable QEMU VM" default:"acl"`
+	BootTimeout          time.Duration        `help:"Maximum wait for each SSH-ready boot" default:"10m"`
+	OperationTimeout     time.Duration        `help:"Maximum duration of each deployment or guest operation" default:"30m"`
 }
 
 // Name identifies the ACL scenario to Storm.
