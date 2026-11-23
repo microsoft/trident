@@ -23,6 +23,19 @@ See the [schema reference](../reference/work-order.md) for all forms.
 engine/registry access, locks, cache writes or signer preflight. It does not predict freshness,
 duration or output bytes. It conflicts with the existing IC-invocation `--dry-run`.
 
+## JSON plan output
+
+The plan is not a work-order input. Its versioned fields are:
+
+| Field | Meaning |
+| --- | --- |
+| `schemaVersion` | `1`. |
+| `requested` | Exact requested cell slugs. |
+| `cells` | Scheduled nodes: `image`, `slug`, and whether explicitly `requested`. |
+| `edges` | Typed producer-to-consumer edges: `base`/`input` use `fromCell`/`toCell` (inputs add `input`); `dependsOn` uses `fromImage`/`toImage`. |
+| `order` | Dependency-first scheduled cell slugs, before clone expansion. |
+| `steps` | Numbered serial clone-expanded steps: `slug`, optional zero-based `cloneIndex`, final `output`, and configured `actions`. |
+
 ## Dependency-safe ADO jobs
 
 ```text

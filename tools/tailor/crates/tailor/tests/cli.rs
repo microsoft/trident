@@ -260,6 +260,56 @@ fn plan_is_offline_and_does_not_create_runtime_state_or_preflight_signers() {
 }
 
 #[test]
+fn text_plan_explains_required_cells_and_typed_dependencies() {
+    let ws = order_only_workspace();
+    tailor()
+        .current_dir(ws.path())
+        .args(["build", "consumer_stable_amd64_cosi", "--plan"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("required:")
+                .and(predicate::str::contains("foundation_arm64_cosi"))
+                .and(predicate::str::contains(
+                    "foundation --dependsOn--> prepare",
+                ))
+                .and(predicate::str::contains("execution order (serial):")),
+        );
+}
+
+#[test]
+fn plan_expands_clone_steps_without_duplicate_outputs() {
+    let ws = order_only_workspace();
+    let output = tailor()
+        .current_dir(ws.path())
+        .args([
+            "build",
+            "consumer_stable_amd64_cosi",
+            "--clones",
+            "2",
+            "--plan",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let plan: JsonValue = serde_json::from_slice(&output).unwrap();
+    assert_eq!(plan["cells"].as_array().unwrap().len(), 4);
+    let steps = plan["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 8);
+    let outputs: BTreeSet<_> = steps
+        .iter()
+        .map(|step| step["output"].as_str().unwrap())
+        .collect();
+    assert_eq!(outputs.len(), 8);
+    assert_eq!(steps[0]["cloneIndex"], 0);
+    assert_eq!(steps[2]["cloneIndex"], 1);
+}
+
+#[test]
 fn invalid_work_orders_report_their_source_and_fail_as_usage_errors() {
     let ws = order_only_workspace();
     for order in [

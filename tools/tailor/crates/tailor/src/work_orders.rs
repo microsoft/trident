@@ -176,7 +176,20 @@ pub(super) fn print_plan(
             }
             println!("dependencies:");
             for edge in document.edges {
-                println!("  {}", serde_json::to_string(edge)?);
+                match edge {
+                    DependencyEdge::Base { from_cell, to_cell } => {
+                        println!("  {from_cell} --base--> {to_cell}");
+                    }
+                    DependencyEdge::Input {
+                        from_cell,
+                        to_cell,
+                        input,
+                    } => println!("  {from_cell} --input:{input}--> {to_cell}"),
+                    DependencyEdge::DependsOn {
+                        from_image,
+                        to_image,
+                    } => println!("  {from_image} --dependsOn--> {to_image}"),
+                }
             }
             println!("execution order (serial):");
             for step in &document.steps {
