@@ -772,7 +772,7 @@ pub fn select_node_cells(
 /// Drop cells with a fragment-level `skip` (non-empty `skip_pins`) unless the selector specifically
 /// requests them (`meta/docs/2026-07-22-fragment-skip.md`). Image-wide `skip` carries no pins and is
 /// handled during image selection, so it is never dropped here.
-fn drop_skipped(cells: Vec<Cell>, selector: &Selector) -> Vec<Cell> {
+pub(crate) fn drop_skipped(cells: Vec<Cell>, selector: &Selector) -> Vec<Cell> {
     cells
         .into_iter()
         .filter(|cell| {

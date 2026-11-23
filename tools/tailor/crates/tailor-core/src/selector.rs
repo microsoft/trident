@@ -18,6 +18,13 @@ pub struct Selector {
 }
 
 impl Selector {
+    pub(crate) fn from_axes(axes: &BTreeMap<String, Vec<String>>) -> Self {
+        Self {
+            axes: axes.clone(),
+            slugs: Vec::new(),
+        }
+    }
+
     /// Build a selector from CLI inputs: `select` entries (`axis=value[,axis=value…]`, repeatable),
     /// exact cell `slugs`, and any `--arch` values (folded in as the `arch` axis).
     pub fn parse(
