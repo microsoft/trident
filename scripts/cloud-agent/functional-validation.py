@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Temporary functional-only proof on an exclusive disposable 1ES runner."""
 
+import argparse
 import hashlib
 import json
 import os
@@ -16,6 +17,10 @@ from collections import Counter
 from pathlib import Path
 
 SOURCE = "985a0a70b88ea5576805c6fccae6a6ff4d8800a4"
+SOURCE_TEST_COUNTS = {
+    SOURCE: 51,
+    "18dd6cd99d50a4268afd936acb1ee4d2b64881ea": 70,
+}
 PREREQ = "ed0688f628ef5be84a6c06e555ed317ffd4ee49c"
 LOCK = "/var/lib/trident-cloud-agent/functional.lock"
 MAX_LOG = 24 * 1024 * 1024
@@ -194,8 +199,30 @@ def verify_junit(root, manifest, mode):
     return {"tests": len(cases), "rust_passed": sum(actual.values()), "skipped": 0}
 
 
+def qualified_source_revision(value):
+    if not re.fullmatch(r"[0-9a-f]{40}", value) or value not in SOURCE_TEST_COUNTS:
+        raise argparse.ArgumentTypeError(
+            "Expected source revision must be a supported full lowercase SHA"
+        )
+    return value
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("source")
+    parser.add_argument("reports")
+    parser.add_argument(
+        "--expected-source-revision", type=qualified_source_revision, default=SOURCE
+    )
+    return parser.parse_args(argv)
+
+
 class Validation:
-    def __init__(self, source, reports):
+    def __init__(self, source, reports, expected_source_revision=SOURCE):
+        self.expected_source_revision = qualified_source_revision(
+            expected_source_revision
+        )
+        self.source_test_count = SOURCE_TEST_COUNTS[self.expected_source_revision]
         self.source = Path(source).resolve()
         self.reports = Path(reports).resolve()
         self.reports.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -351,7 +378,7 @@ class Validation:
                     self.save(
                         f"{name}-binaries.json",
                         {
-                            "candidate": SOURCE,
+                            "candidate": self.expected_source_revision,
                             "binaries": json.loads(binary_report.read_text()),
                         },
                     )
@@ -424,6 +451,17 @@ class Validation:
         elif identity != self.image_identity or not provenance["cacheHit"]:
             raise RuntimeError("Subsequent run did not reuse the same immutable cache")
 
+    def validate_source_tests(self, output):
+        skips = [line for line in output.splitlines() if "... skipped" in line]
+        if any(
+            "test_provisioned_lock_reopens_across_uids_with_protected_regular"
+            not in line
+            for line in skips
+        ):
+            raise RuntimeError("Unexpected source test skip")
+        if not re.search(rf"Ran {self.source_test_count} tests\b", output):
+            raise RuntimeError("Pinned source test count changed")
+
     def validate_go(self):
         self.save(
             "go-exclusions.json",
@@ -457,7 +495,7 @@ class Validation:
         self.save(
             "identity.json",
             {
-                "candidate": SOURCE,
+                "candidate": self.expected_source_revision,
                 "harness": os.environ["GITHUB_SHA"],
                 "runner": os.environ.get("RUNNER_NAME"),
                 "scope": "FUNCTIONAL smoke/full, not full E2E slice C",
@@ -471,7 +509,10 @@ class Validation:
                 ),
             },
         )
-        if self.run("source-identity", ["git", "rev-parse", "HEAD"]).strip() != SOURCE:
+        if (
+            self.run("source-identity", ["git", "rev-parse", "HEAD"]).strip()
+            != self.expected_source_revision
+        ):
             raise RuntimeError("Wrong pinned source")
         self.run(
             "prerequisite-identity",
@@ -558,17 +599,7 @@ class Validation:
             for name, command in checks.items():
                 output = self.run(name, shlex.split(command))
                 if name == "source-tests":
-                    skips = [
-                        line for line in output.splitlines() if "... skipped" in line
-                    ]
-                    if any(
-                        "test_provisioned_lock_reopens_across_uids_with_protected_regular"
-                        not in line
-                        for line in skips
-                    ):
-                        raise RuntimeError("Unexpected source test skip")
-                    if not re.search(r"Ran 51 tests\b", output):
-                        raise RuntimeError("Pinned source test count changed")
+                    self.validate_source_tests(output)
                 if (
                     name in ("fixture-tests", "privileged-lock-tests")
                     and "skipped" in output.lower()
@@ -614,7 +645,8 @@ class Validation:
 
 
 def main():
-    validation = Validation(*sys.argv[1:])
+    args = parse_args()
+    validation = Validation(args.source, args.reports, args.expected_source_revision)
 
     def interrupted(signum, frame):
         validation.interrupted = True
