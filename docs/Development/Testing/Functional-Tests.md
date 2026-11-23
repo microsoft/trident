@@ -145,6 +145,90 @@ propagate and retain the cache. With `--keep-environment`, coverage is still
 downloaded, but the VM and cache are retained. The caller or enclosing runner
 owns subsequent cleanup.
 
+### GitHub cloud agent
+
+The cloud runner requires an **exclusive, disposable outer 1ES test runner**
+with nested virtualization and the data disk mounted at `/mnt/storage`. Multiple
+nested VMs are legitimate, but unrelated workloads and shared-host dependency
+safety are outside this contract. Do not use these scripts on a shared developer
+host. Source setup and `scripts/cloud-agent/validate.sh` default to source-only
+validation; functional execution is always explicit.
+
+Install the optional libvirt/QEMU dependencies once:
+
+```bash
+bash scripts/cloud-agent/setup-functional.sh
+```
+
+Setup installs `xorriso` for cloud-init ISO generation and preserves existing
+libvirt configuration and SSH keys. If an existing private key lacks its public
+key, setup derives it without changing the private key. This requires a readable,
+unencrypted private key; otherwise setup fails noninteractively. Runs explicitly
+select `qemu:///system` without rewriting the user's libvirt configuration.
+
+Run the bounded functional smoke suite:
+
+```bash
+scripts/cloud-agent/validate.sh functional
+```
+
+The downloader resolves the latest successful completed `trident-ci` build from
+`main`. It records the immutable build ID, source commit, artifact metadata,
+image size and SHA-256 in `provenance.json` beside the cached image. The smoke
+suite creates the VM, proves SSH connectivity and runs positive `helpers`
+functional tests. To run the complete functional suite instead:
+
+```bash
+bash scripts/cloud-agent/run-functional.sh full
+```
+
+Both `smoke` and `full` run **functional tests only**, not all E2E suites.
+Record the mode, result, build ID, source commit and image SHA-256 as validation
+evidence. To select the same build again:
+
+```bash
+TRIDENT_FUNCTIONAL_BUILD_ID=<build-id> scripts/cloud-agent/validate.sh functional
+```
+
+Images are cached by immutable build ID under
+`/mnt/storage/trident-cloud-agent/functional-$(id -u)`. Setup and the downloader
+use per-UID caches so accounts do not reuse another account's images or cache
+locks. The old shared `functional` cache is left untouched, not migrated.
+`TRIDENT_FUNCTIONAL_CACHE_DIR` or the downloader's `--output-root` can override
+the default; overrides must be writable by the current account and should not be
+shared across UIDs. Cache preparation is locked per build, and interrupted
+image/provenance publication is recovered on retry. The immutable image path is
+passed directly to pytest; an existing `artifacts/trident-functest.qcow2` is left
+untouched. Publishing a compatibility symlink requires the downloader's explicit
+`--link-path`.
+
+Runs hold `/var/lib/trident-cloud-agent/functional.lock`, provisioned for the
+`libvirt` group, from artifact preparation and shared build generation through
+namespace cleanup. Competing runs exit with a host-busy error. This lock only
+coordinates participating updated scripts, not independent libvirt tools or
+older runners.
+
+Cloud allocation conservatively rejects existing or prefix-colliding libvirt
+resource names and nonempty or uninspectable namespace storage directories.
+It selects a subnet that does not overlap host IPv4 routes or defined libvirt
+networks; `TRIDENT_FUNCTIONAL_NETWORK` may request a noncolliding subnet.
+`TRIDENT_FUNCTIONAL_NAMESPACE` must start with a letter or digit and contain
+only letters, digits, underscores or hyphens. These are allocation checks, not
+proof that other VMs do not reference the same files.
+
+The runner passes `--virtdeploy-namespace`, `--virtdeploy-network` and
+`--functional-base-image` to the shared fixtures. Its pytest cache and the
+fixture's netlaunch configuration are private temporary files, leaving the
+checkout's existing cache and `tools/vm-netlaunch.yaml` untouched.
+`--keep-environment` defers VM cleanup to the runner's EXIT trap, which cleans
+the matching namespace on success or failure.
+
+Virtdeploy uses type-aware namespace selection and narrow canonical pool target
+validation. It does not scan arbitrary cross-namespace filesystem dependencies,
+migrate ownership metadata or provide an unsafe bypass. Bind mounts, backing
+chains, QEMU passthrough files and TFTP roots are not universally protected by
+these checks. The exclusive disposable runner contract remains required.
+
 ## Architecture
 
 This section explains the architecture of how functional tests work and

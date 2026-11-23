@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "organization": "mariner-org",
+  "project": "ECF",
+  "definitionId": 5067,
+  "sourceBranch": "refs/heads/main",
+  "buildStatus": "completed",
+  "buildResult": "succeeded",
+  "artifactName": "trident-functest",
+  "artifactType": "PipelineArtifact",
+  "imageFilename": "trident-functest.qcow2"
+}
