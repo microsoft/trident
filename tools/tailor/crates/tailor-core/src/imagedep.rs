@@ -14,6 +14,7 @@ use std::{
     sync::Arc,
 };
 
+use serde::Serialize;
 use serde_yaml_ng::Value;
 
 use tailor_config::{BaseSource, OutputFormat, render_image};
@@ -24,6 +25,35 @@ use crate::{
     orchestrator::{cells, cells_selected, published_artifact_name},
     selector::Selector,
 };
+
+/// Effective dependency provenance, directed from producer to consumer.
+/// Order-only barriers are image-level rather than a quadratic product of cell pairs.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum DependencyEdge {
+    Base {
+        from_cell: String,
+        to_cell: String,
+    },
+    Input {
+        from_cell: String,
+        to_cell: String,
+        input: String,
+    },
+    DependsOn {
+        from_image: String,
+        to_image: String,
+    },
+}
+
+pub(crate) struct RequiredProducers {
+    pub(crate) cells: Vec<(String, String)>,
+    pub(crate) edges: Vec<DependencyEdge>,
+}
 
 /// The dependency-closed set of `selected` images: `selected` plus every workspace image reachable
 /// through `base: { image }` / `dependsOn` edges, so a consumer is never scheduled without its
@@ -247,13 +277,7 @@ fn resolve_image_base(
     // producer's artifact to IC as the base image. IC cannot consume a compressed (`.zst`) base, so a
     // producer whose matched output sets `compression:` is rejected here rather than failing deep in
     // the IC run with an unreadable base.
-    let (_producer, matched) = resolve_producer(consumer, image, output, pins, members)?;
-    if matched.output.compression.is_some() {
-        return Err(CoreError::CompressedImageBase {
-            image: consumer.target.name().to_owned(),
-            dependency: image.to_owned(),
-        });
-    }
+    let (_producer, matched) = resolve_base_producer(consumer, image, output, pins, members)?;
     let path = output_dir.join(published_artifact_name(
         matched.slug.as_ref(),
         matched.output.format,
@@ -263,6 +287,23 @@ fn resolve_image_base(
         path,
         arch: Some(consumer.arch),
     })
+}
+
+fn resolve_base_producer(
+    consumer: &Cell,
+    image: &str,
+    output: Option<OutputFormat>,
+    pins: &BTreeMap<String, String>,
+    members: &[Arc<Target>],
+) -> Result<(String, Cell), CoreError> {
+    let matched = resolve_producer(consumer, image, output, pins, members)?;
+    if matched.1.output.compression.is_some() {
+        return Err(CoreError::CompressedImageBase {
+            image: consumer.target.name().to_owned(),
+            dependency: image.to_owned(),
+        });
+    }
+    Ok(matched)
 }
 
 /// Resolve one `image` reference (a `base: { image }` or an `${inputs}` entry) for a single consumer
@@ -348,19 +389,36 @@ pub fn required_producers(
     consumer: &Cell,
     members: &[Arc<Target>],
 ) -> Result<Vec<(String, String)>, CoreError> {
+    Ok(required_producers_with_edges(consumer, members)?.cells)
+}
+
+pub(crate) fn required_producers_with_edges(
+    consumer: &Cell,
+    members: &[Arc<Target>],
+) -> Result<RequiredProducers, CoreError> {
     let mut required = Vec::new();
+    let mut edges = Vec::new();
     if let BaseSource::Image {
         image,
         output,
         cell: pins,
     } = &consumer.base
     {
-        let (producer, matched) = resolve_producer(consumer, image, *output, pins, members)?;
+        let (producer, matched) = resolve_base_producer(consumer, image, *output, pins, members)?;
+        edges.push(DependencyEdge::Base {
+            from_cell: matched.slug.to_string(),
+            to_cell: consumer.slug.to_string(),
+        });
         required.push((producer, matched.slug.as_ref().to_owned()));
     }
     for spec in &consumer.target.definition.inputs {
         let (producer, matched) =
             resolve_producer(consumer, &spec.image, spec.output, &spec.cell, members)?;
+        edges.push(DependencyEdge::Input {
+            from_cell: matched.slug.to_string(),
+            to_cell: consumer.slug.to_string(),
+            input: spec.name.clone(),
+        });
         required.push((producer, matched.slug.as_ref().to_owned()));
     }
     for name in &consumer.target.definition.depends_on {
@@ -368,8 +426,15 @@ pub fn required_producers(
         for cell in cells_selected(prerequisite, &Selector::default())? {
             required.push((name.clone(), cell.slug.to_string()));
         }
+        edges.push(DependencyEdge::DependsOn {
+            from_image: name.clone(),
+            to_image: consumer.target.name().to_owned(),
+        });
     }
-    Ok(required)
+    Ok(RequiredProducers {
+        cells: required,
+        edges,
+    })
 }
 
 fn resolve_output(

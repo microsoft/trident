@@ -15,12 +15,13 @@ pub mod imagedep;
 pub mod lockfile;
 pub mod orchestrator;
 pub mod ports;
+pub mod schedule;
 pub mod selector;
 pub mod signing;
 pub mod stamp;
 pub mod testing;
 
-pub use ado::{ado_matrix, is_valid_var_name};
+pub use ado::{WorkOrderJob, ado_matrix, escape_logging_value, is_valid_var_name, work_order_jobs};
 pub use catalogue::{
     SlotOutcome, SlotReport, SlotSource, SlotSummary, download, summarize, verify,
 };
@@ -39,6 +40,7 @@ pub use ports::{
     ExecutionContext, ExecutionResult, Executor, FetchedBase, FilesystemOps, LocalImage, LogSource,
     ResolvedBase, RuntimeConfig, Signer, SigningPlan, SigningResult, ToolsDirPlan,
 };
+pub use schedule::{BuildSchedule, DependencyEdge, schedule, select_work_order};
 pub use selector::Selector;
 pub use signing::{
     MissingPrerequisite, SignError, SigningRequirement, preflight, preflight_profile,

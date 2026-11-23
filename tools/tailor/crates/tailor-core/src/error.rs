@@ -64,6 +64,12 @@ pub enum ResolveError {
 /// Top-level orchestration errors.
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
+    #[error("invalid work-order selection at `{field}`: {detail}")]
+    WorkOrder { field: String, detail: String },
+
+    #[error("work-order job key collision: `{key}`")]
+    WorkOrderJobCollision { key: String },
+
     #[error(transparent)]
     Config(#[from] tailor_config::ConfigError),
 

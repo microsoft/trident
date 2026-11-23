@@ -17,6 +17,7 @@ mod path;
 mod render;
 mod schema;
 mod types;
+mod work_order;
 mod workspace;
 
 pub mod defaults;
@@ -28,4 +29,5 @@ pub use path::absolutize;
 pub use render::{MergeStep, RenderedCell, merge_plan, render_image, write_golden};
 pub use schema::*;
 pub use types::*;
+pub use work_order::{WorkOrder, WorkOrderSelection};
 pub use workspace::{DiscoveredImage, Workspace, discover, find_manifest};
