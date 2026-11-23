@@ -99,6 +99,52 @@ To run a subset of tests, use the `FILTER` variable:
 make functional-test FILTER="custom/test_trident_e2e.py -k test_name"
 ```
 
+### Selecting the Functional VM
+
+The functional pytest suite accepts these optional arguments:
+
+| Argument | Default for a new environment |
+|----------|-------------------------------|
+| `--virtdeploy-namespace` | `virtdeploy` |
+| `--virtdeploy-network` | `192.168.242.0/24` (virtdeploy's default) |
+| `--functional-base-image` | `artifacts/trident-functest.qcow2` in the repository |
+
+An explicit base-image path expands `~` and resolves relative to the caller's
+working directory. The image must already exist. For example:
+
+```bash
+make functional-test \
+  FUNCTIONAL_TEST_EXTRA_PARAMS="--virtdeploy-namespace functional-run --virtdeploy-network 192.168.243.0/24 --functional-base-image /path/to/trident-functest.qcow2"
+```
+
+These arguments select the VM created by the functional fixtures, not other E2E
+runners. They do not bypass the Make target's normal build/image prerequisites.
+
+### Reuse and Cleanup
+
+Creation caches the VM address, namespace, network and resolved base-image path
+after the VM comes online. `--reuse-environment` skips creation and restores the
+cached namespace. Each explicitly supplied selection argument must match its
+cached value (network strings are compared exactly); missing or mismatched
+metadata fails with a request to recreate the environment.
+
+Legacy caches without namespace metadata remain usable when none of the three
+selection arguments is supplied. This logs a warning and uses the default
+`virtdeploy` namespace. Explicit selection requires verifiable cached metadata,
+including the namespace.
+
+To reuse an environment, retain the pytest cache and pass `--test-dir` pointing
+to its existing test directory, including `known_hosts`. `make functional-test`
+and `make patch-functional-test` use `/tmp/trident-test` by default and both pass
+`--keep-environment`; the patch target also passes `--reuse-environment`.
+
+The `vm` fixture downloads coverage, then, unless `--keep-environment` is set,
+runs `bin/virtdeploy clean --namespace` with the created or restored namespace.
+Cached VM metadata is cleared only after successful cleanup; cleanup failures
+propagate and retain the cache. With `--keep-environment`, coverage is still
+downloaded, but the VM and cache are retained. The caller or enclosing runner
+owns subsequent cleanup.
+
 ## Architecture
 
 This section explains the architecture of how functional tests work and
