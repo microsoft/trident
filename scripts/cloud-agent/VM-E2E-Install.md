@@ -23,7 +23,8 @@ the bundle. Computing a new pin for an arbitrary local manifest is not proof
 that its assertions are true.
 
 The v1 manifest is a **new local handoff contract**, not an existing ADO
-artifact format. The resolver/build integration that emits it is still required.
+artifact format. `prepare_vm_e2e_artifacts.py` emits it from the existing
+definition 5073 producer, subject to the reviewed-evidence gate below.
 It must attest that all packaged Trident binaries (installer **and** target
 COSIs, including v2 images) and Storm were built from `candidateRevision`.
 The runner verifies the attestation's pin, exact candidate/source SHA,
@@ -63,6 +64,114 @@ If images are built separately or candidate packages are injected, the producer
 must first provide verifiable build/injection lineage, not merely assert a new SHA
 on baseline images. Normal PR binaries alone are insufficient installation inputs.
 No mapping from functional artifact definition 5067 to these images is assumed.
+
+## Candidate producer resolution and preparation
+
+Run preparation on Linux, using the caller's existing Azure CLI session.
+The B downloader supplies credential acquisition, authenticated HTTPS metadata,
+redirect credential stripping, ZIP member selection and extraction. There is no
+login, latest-build lookup, queue, publishing, permission change or VM execution.
+Only the selected six image/tool artifacts are downloaded, once per invocation.
+`trident-binaries` is qualified through reviewed RPM lineage, not downloaded.
+
+```bash
+python3 scripts/cloud-agent/prepare_vm_e2e_artifacts.py \
+    --build-id "$APPROVED_IMMUTABLE_BUILD_ID" --expected-definition-id 5073 \
+    --expected-revision "$CANDIDATE_SHA" --expected-ref "$CANDIDATE_REF" \
+    --evidence "$REVIEWED_PACKET" --evidence-sha256 "$INDEPENDENT_PACKET_SHA256" \
+    --timeout-seconds "$PREPARATION_TIMEOUT" --output "$NEW_PREPARATION_OUTPUT"
+```
+
+The explicit build must be completed/succeeded, with matching server-reported
+project, definition, sourceVersion and sourceBranch. Its timeline must have exactly
+one completed/succeeded record for each of these seven stages:
+`BuildingTools`, `GetTridentBinaries_rpms_amd64`, and
+`TridentTestImg_` plus each underscore-normalized installer/COSI artifact name.
+Missing, skipped, failed or ambiguous stages fail closed. Queue approval and safe
+stage selection remain the caller's responsibility.
+
+Preparation verifies reviewed hashes/sizes before executing the candidate Storm
+helper. It rejects unsafe ZIP paths, special entries and ambiguous basenames.
+It uses the exact `download-test-images.yml` command:
+`storm-trident helper prepare-images -a -- <regular-dir> <verity-dir> <usrverity-dir>
+trident-testimage trident-verity-testimage trident-usrverity-testimage <target> -v 4`.
+Installer artifacts each supply `<artifact>.iso`. Each COSI artifact must supply
+both `<artifact>_0.cosi` and `<artifact>_1.cosi`, built separately with distinct
+hashes. The existing helper maps these to `regular.cosi`, `regular_v2.cosi` (and
+`verity`/`usrverity` equivalents), then hard-links v3/v4 to v1/v2. Every prepared
+file is checked against its reviewed source hash and inventoried with `sourceFile`.
+The five existing pipeline tools are included from `go-tools`.
+No keys or installer-tools are needed. Add `--include-uki-certificate` only when
+relevant; this requires reviewed `ca_cert.pem` from `trident-usrverity-testimage`.
+
+Success publishes `bundle/provenance.json` only after the unchanged C reader
+accepts the exact bundle. Stdout returns its path and SHA256. Transfer that pin
+through a trusted channel, then use the existing invocation below. The output
+also retains `prepare-images.log`. Failed preparation never publishes the final
+manifest; discard its incomplete output and retry with a new directory.
+The manifest records artifact IDs, advertised sizes, downloaded ZIP sizes/hashes,
+source-to-prepared mapping, successful stage IDs and the minimal reviewed packet.
+It never records download URLs or free-form timeline issues.
+
+### Required independently reviewed evidence packet (v1)
+
+**Remaining proof gate:** stage success, artifact names and sourceVersion alone
+do not prove which candidate checkout produced an RPM, which current-run RPMs
+were consumed, or which package identity was installed in every ISO/COSI clone.
+There is no reliable automatic installed-package attestation established here.
+An independent reviewer must bind those facts to exact output hashes, and the
+resolved floating upstream Azure Linux base VHDX and MIC identities, using the
+producer's qualified logs and, where logs are insufficient, package/image
+inspection. If that evidence does not exist, do not approve a packet. The
+resolver does not fabricate it or label reviewed claims as automatic proof.
+
+The packet is JSON, independently SHA256-pinned after review. All objects have
+exact fields; unknown fields fail. It contains **no raw producer logs**, log
+excerpts, environment, request headers, tokens/prefixes, private keys or SAS URLs.
+Raw logs, if needed for private parsing/review, stay ephemeral outside upload
+selection and must never be printed or attached to the handoff or GitHub.
+Existing producer logging includes a token-prefix echo and environment dumps;
+masking is not assumed to establish safety. These producer tasks are unchanged.
+
+Packet fields:
+
+- `schemaVersion`: `1`; `producer`: exactly the manifest producer fields, including
+  `sourceBranch`, matching all explicit caller inputs.
+- `review`: `reviewer` (reviewer ID), `reference` (immutable review ID/reference).
+  Obtain the packet pin through that independent review, not from arbitrary local
+  assertions. Presence of these fields is not itself authentication.
+- `logs`: object keyed by numeric producer log ID, each containing only `sha256`
+  (digest of the privately reviewed log export) and `lineCount`. ADO log metadata
+  must report the same ID/count. Log content authenticity and semantics are the
+  reviewer's responsibility; content is not fetched by this resolver.
+- All evidence citations are `{logId, startLine, endLine}`, using inclusive,
+  positive line numbers. IDs must belong to a succeeded task/job under the
+  appropriate succeeded stage in the server timeline.
+- `rpms`: `checkoutRevision`, `packages`, `evidence`. The cited successful RPM
+  build must prove candidate checkout and source-built package identities, not
+  download an old finished image. Each package is exactly `{name, nevra, sha256}`,
+  including `trident` and the target's `trident-service` when needed.
+- `artifacts`: exactly `go-tools`, `trident-installer`, `trident-split-installer`,
+  `trident-testimage`, `trident-verity-testimage`, `trident-usrverity-testimage`.
+  Each has `checkoutRevision`, `checkoutEvidence`, `files`.
+  `files` is keyed by the exact filenames described above; each entry has positive
+  `size` and `sha256`. Every non-certificate image additionally has
+  `installedPackages` (the installed subset of the reviewed RPM identities) and
+  `installEvidence`, tied to that exact output hash. Installers must install
+  `trident`, targets must install `trident-service`.
+- Each non-tool artifact additionally has `rpmBuildId` (same explicit build),
+  `rpmArtifact` (`trident-binaries`), `rpmEvidence` (successful current-run download
+  and consumption), `baseVhdx` and `mic`. Both resolved inputs are exactly
+  `{identity, sha256, evidence}`. Record concrete base image release/content
+  identity and MIC version/container digest from producer evidence, never the
+  original wildcard, latest selector or signed download URL.
+- Identity/version/review strings admit only letters, digits and `._/@:+-`,
+  starting with a letter/digit. This intentionally excludes query strings,
+  whitespace and environment/log prose. All digests are lowercase SHA256.
+
+The manifest labels its lineage basis `independently-reviewed-pinned-evidence`.
+The synthetic unit fixtures are not candidate evidence. No candidate build ID is
+assumed, and another PR's successful build cannot satisfy candidate equality.
 
 ## Invocation
 
