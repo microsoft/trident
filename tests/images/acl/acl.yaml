@@ -1,0 +1,57 @@
+# Customize the real ACL-T template; keep ACL's native partitions and verity.
+previewFeatures:
+  - preview-distro-version
+  - package-manifest
+  - uki
+  - reinitialize-verity
+  - acl-oem-id
+  - acl-regenerate-usr-fs-uuid
+
+acl:
+  oemId: metal
+  regenerateUsrFsUuid: true
+
+storage:
+  reinitializeVerity: all
+
+os:
+  uki:
+    mode: create
+  kernelCommandLine:
+    extraCommandLine:
+      - console=ttyS0,115200n8
+  packages:
+    manifest:
+      mode: create
+    # Remove first so an installed newer version does not make update a no-op.
+    remove:
+      - trident-acl
+      - trident-selinux
+      - trident-static-pcrlock-files
+      - trident
+    install:
+      - trident
+      - trident-acl
+      - trident-selinux
+      - trident-static-pcrlock-files
+      - sudo
+  users:
+    - name: testuser
+      sshPublicKeyPaths:
+        - files/id_rsa.pub
+      secondaryGroups:
+        - wheel
+  services:
+    enable:
+      - sshd
+      - systemd-networkd
+    disable:
+      - trident-acl-agent
+  additionalFiles:
+    - source: files/10-dhcp.network
+      destination: /etc/systemd/network/10-dhcp.network
+    - source: files/sshd.conf
+      destination: /etc/ssh/sshd_config.d/90-acl-test.conf
+    - source: files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+      permissions: "440"

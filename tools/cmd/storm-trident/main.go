@@ -1,6 +1,7 @@
 package main
 
 import (
+	"tridenttools/storm/acl"
 	"tridenttools/storm/aclagent"
 	"tridenttools/storm/e2e"
 	"tridenttools/storm/helpers"
@@ -34,6 +35,8 @@ func main() {
 
 	// Add Trident servicing scenario
 	storm.AddScenario(&servicing.TridentServicingScenario{})
+
+	storm.AddScenario(&acl.ACLScenario{})
 
 	// Add Trident ACL agent scenario
 	storm.AddScenario(&aclagent.TridentAclAgentScenario{})
