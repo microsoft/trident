@@ -622,8 +622,8 @@ def inspect(work, facts):
     del facts["activeInspection"]
 
 
-def execute(output, scratch):
-    report = {
+def new_report():
+    return {
         "schemaVersion": 1,
         "status": "failure",
         "reviewStatus": "UNREVIEWED",
@@ -650,6 +650,72 @@ def execute(output, scratch):
         "unavailable": [],
         "failure": None,
     }
+
+
+def write_report(output, report):
+    text = json.dumps(report, indent=2) + "\n"
+    if isinstance(output, int):
+        # Privileged writes must never resolve the publication pathname again.
+        with os.fdopen(os.dup(output), "w", encoding="utf-8") as target:
+            target.seek(0)
+            target.write(text)
+            target.flush()
+            target.truncate()
+    else:
+        output.write_text(text, encoding="utf-8")
+
+
+def failed_publication(output, fact):
+    report = new_report()
+    report["failure"] = {"kind": "Failure", "missingFact": fact}
+    report["unavailable"] = [fact]
+    write_report(output, report)
+
+
+def prepare_publication(output):
+    require(output.name == "inspection.json", "invalid-publication-file")
+    output.parent.mkdir(mode=0o700, exist_ok=False)
+    fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        failed_publication(fd, "privileged-inspection-not-started")
+    finally:
+        os.close(fd)
+
+
+def ensure_guestfish():
+    if not shutil.which("guestfish"):
+        require(os.geteuid() == 0, "guestfish-bootstrap-requires-root")
+        command(
+            ["apt-get", "-o", "DPkg::Lock::Timeout=60", "update"],
+            timeout=180,
+            failure_fact="guestfish-package-index-failed",
+        )
+        command(
+            [
+                "env",
+                "DEBIAN_FRONTEND=noninteractive",
+                "NEEDRESTART_MODE=l",
+                "apt-get",
+                "-o",
+                "DPkg::Lock::Timeout=60",
+                "install",
+                "-y",
+                "--no-install-recommends",
+                "guestfish",
+            ],
+            timeout=300,
+            failure_fact="guestfish-package-install-failed",
+        )
+    require(shutil.which("guestfish"), "guestfish-missing-after-bootstrap")
+    command(
+        ["guestfish", "--version"],
+        timeout=30,
+        failure_fact="guestfish-readiness-failed",
+    )
+
+
+def execute(output, scratch, bootstrap_guestfish=False):
+    report = new_report()
     code = 1
     try:
         require(
@@ -657,6 +723,8 @@ def execute(output, scratch):
             and os.environ.get("EXCLUSIVE_DISPOSABLE_1ES") == "true",
             "authorized-disposable-linux-1es-required",
         )
+        if bootstrap_guestfish:
+            ensure_guestfish()
         missing = [name for name in COMMANDS if not shutil.which(name)]
         if missing:
             report["unavailable"] = ["command:" + name for name in missing]
@@ -761,17 +829,122 @@ def execute(output, scratch):
             report["failure"]["measurement"] = active
         if code:
             report["unavailable"].append("qualification-incomplete-see-primary-failure")
-        output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        write_report(output, report)
     return code
+
+
+def privileged_inspection(args):
+    require(os.geteuid() == 0, "privileged-inspection-requires-root")
+    require(
+        args.output.name == "inspection.json"
+        and args.publication_uid is not None
+        and args.publication_uid >= 0
+        and args.publication_gid is not None
+        and args.publication_gid >= 0,
+        "invalid-publication-owner",
+    )
+    directory = os.open(
+        args.output.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    )
+    try:
+        original_directory = os.fstat(directory)
+        report_file = os.open(
+            args.output.name,
+            os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+            dir_fd=directory,
+        )
+        try:
+            original = os.fstat(report_file)
+            for fd, mode in ((directory, 0o700), (report_file, 0o600)):
+                info = os.fstat(fd)
+                require(
+                    (info.st_uid, info.st_gid)
+                    == (args.publication_uid, args.publication_gid)
+                    and stat.S_IMODE(info.st_mode) == mode,
+                    "publication-not-private-and-job-owned",
+                )
+            require(
+                stat.S_ISREG(original.st_mode) and original.st_nlink == 1,
+                "invalid-publication-file",
+            )
+            code = 1
+            inspected = False
+            try:
+                with tempfile.TemporaryDirectory(
+                    dir=args.scratch,
+                    prefix="trident-root-context-",
+                ) as home:
+                    os.environ.update(
+                        HOME=home,
+                        AZURE_CONFIG_DIR=str(Path(home) / ".azure"),
+                        AZURE_EXTENSION_USE_DYNAMIC_INSTALL="no",
+                        LIBGUESTFS_BACKEND="direct",
+                        LIBGUESTFS_DEBUG="0",
+                        LIBGUESTFS_TRACE="0",
+                        GIT_CONFIG_COUNT="1",
+                        GIT_CONFIG_KEY_0="safe.directory",
+                        GIT_CONFIG_VALUE_0=str(Path(__file__).resolve().parents[2]),
+                    )
+                    code = execute(report_file, args.scratch, bootstrap_guestfish=True)
+                    inspected = True
+            except Cancelled:
+                if not inspected or code == 0:
+                    failed_publication(report_file, "privileged-inspection-cancelled")
+                    code = 130
+            except Exception:
+                if not inspected or code == 0:
+                    failed_publication(
+                        report_file, "privileged-inspection-setup-failed"
+                    )
+                code = code or 1
+            finally:
+                try:
+                    current_directory = os.stat(
+                        args.output.parent, follow_symlinks=False
+                    )
+                    require(
+                        (current_directory.st_dev, current_directory.st_ino)
+                        == (original_directory.st_dev, original_directory.st_ino),
+                        "publication-directory-replaced",
+                    )
+                    current = os.stat(args.output, follow_symlinks=False)
+                    require(
+                        (current.st_dev, current.st_ino)
+                        == (original.st_dev, original.st_ino),
+                        "publication-file-replaced",
+                    )
+                    for fd, mode in ((report_file, 0o600), (directory, 0o700)):
+                        os.fchmod(fd, mode)
+                        os.fchown(fd, args.publication_uid, args.publication_gid)
+                except (OSError, Failure):
+                    print("Exact report publication failed", file=sys.stderr)
+                    if code == 0:
+                        code = 1
+                        failed_publication(
+                            report_file, "exact-report-publication-failed"
+                        )
+            return code
+        finally:
+            os.close(report_file)
+    finally:
+        os.close(directory)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scratch", type=Path, required=True)
+    parser.add_argument("--prepare-publication", action="store_true")
+    parser.add_argument("--bootstrap-guestfish", action="store_true")
+    parser.add_argument("--publication-uid", type=int)
+    parser.add_argument("--publication-gid", type=int)
     args = parser.parse_args()
     os.umask(0o077)
-    args.output.parent.mkdir(parents=True, exist_ok=False)
+    if args.prepare_publication:
+        prepare_publication(args.output)
+        return 0
+    if not args.bootstrap_guestfish:
+        args.output.parent.mkdir(parents=True, exist_ok=False)
     stopping = False
 
     def cancel(signum, frame):
@@ -782,6 +955,12 @@ def main():
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, cancel)
+    if args.bootstrap_guestfish:
+        try:
+            return privileged_inspection(args)
+        except Exception:
+            print("Private privileged inspection setup failed", file=sys.stderr)
+            return 1
     return execute(args.output, args.scratch)
 
 

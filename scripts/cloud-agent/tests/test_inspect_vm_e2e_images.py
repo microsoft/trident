@@ -1,3 +1,4 @@
+import argparse
 import hashlib
 import contextlib
 import importlib.util
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import textwrap
 import time
 import unittest
 import zipfile
@@ -176,6 +178,387 @@ class ImageInspectionTests(unittest.TestCase):
             "      - user/britel/vm-e2e-image-inspection-20261123\n",
             workflow.read_text(),
         )
+
+    def test_guestfish_readiness_skips_apt_when_present(self):
+        with (
+            patch.object(inspector.shutil, "which", return_value="/usr/bin/guestfish"),
+            patch.object(inspector, "command") as run,
+        ):
+            inspector.ensure_guestfish()
+        run.assert_called_once_with(
+            ["guestfish", "--version"],
+            timeout=30,
+            failure_fact="guestfish-readiness-failed",
+        )
+
+    def test_guestfish_installs_only_missing_minimal_package_with_bounds(self):
+        with (
+            patch.object(
+                inspector.shutil, "which", side_effect=[None, "/usr/bin/guestfish"]
+            ),
+            patch.object(inspector.os, "geteuid", return_value=0),
+            patch.object(inspector, "command") as run,
+        ):
+            inspector.ensure_guestfish()
+        self.assertEqual(
+            run.call_args_list[0].args[0],
+            ["apt-get", "-o", "DPkg::Lock::Timeout=60", "update"],
+        )
+        self.assertEqual(
+            run.call_args_list[1].args[0],
+            [
+                "env",
+                "DEBIAN_FRONTEND=noninteractive",
+                "NEEDRESTART_MODE=l",
+                "apt-get",
+                "-o",
+                "DPkg::Lock::Timeout=60",
+                "install",
+                "-y",
+                "--no-install-recommends",
+                "guestfish",
+            ],
+        )
+        self.assertEqual(
+            [call.kwargs["timeout"] for call in run.call_args_list], [180, 300, 30]
+        )
+
+    def publication_args(self, name="publication"):
+        output = self.root / name / "inspection.json"
+        inspector.prepare_publication(output)
+        return argparse.Namespace(
+            output=output,
+            scratch=self.root,
+            publication_uid=os.getuid(),
+            publication_gid=os.getgid(),
+        )
+
+    def test_privileged_context_keeps_profile_private_and_handoff_exact(self):
+        args = self.publication_args()
+        touched = []
+
+        def inspect(output, scratch, bootstrap_guestfish):
+            self.assertTrue(bootstrap_guestfish)
+            self.assertEqual(os.environ["LIBGUESTFS_BACKEND"], "direct")
+            self.assertNotEqual(os.environ["AZURE_CONFIG_DIR"], "caller-cache")
+            self.assertEqual(
+                Path(os.environ["AZURE_CONFIG_DIR"]).parent, Path(os.environ["HOME"])
+            )
+            self.assertEqual(
+                os.environ["AZURE_EXTENSION_DIR"], "fixture-installed-extension-code"
+            )
+            self.assertEqual(os.environ["GIT_CONFIG_KEY_0"], "safe.directory")
+            self.assertEqual(os.environ["GIT_CONFIG_VALUE_0"], str(SCRIPT.parents[2]))
+            inspector.failed_publication(output, "fixture-primary-inspection-failure")
+            return 7
+
+        def handoff(fd, uid, gid):
+            touched.append(Path(os.readlink(f"/proc/self/fd/{fd}")))
+            self.assertEqual((uid, gid), (os.getuid(), os.getgid()))
+
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "AZURE_CONFIG_DIR": "caller-cache",
+                    "AZURE_EXTENSION_DIR": "fixture-installed-extension-code",
+                },
+            ),
+            patch.object(inspector.os, "geteuid", return_value=0),
+            patch.object(inspector, "execute", side_effect=inspect),
+            patch.object(inspector.os, "fchown", side_effect=handoff),
+        ):
+            self.assertEqual(inspector.privileged_inspection(args), 7)
+        self.assertEqual(touched, [args.output, args.output.parent])
+        self.assertEqual(stat.S_IMODE(args.output.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(args.output.parent.stat().st_mode), 0o700)
+        self.assertEqual(
+            json.loads(args.output.read_text())["failure"]["missingFact"],
+            "fixture-primary-inspection-failure",
+        )
+        self.assertEqual(list(self.root.iterdir()), [args.output.parent])
+
+    def test_handoff_failure_preserves_primary_exit_and_redacts_error(self):
+        args = self.publication_args()
+        stderr = io.StringIO()
+        for primary, expected in ((7, 7), (130, 130), (0, 1)):
+            with (
+                patch.dict(os.environ),
+                patch.object(inspector.os, "geteuid", return_value=0),
+                patch.object(inspector, "execute", return_value=primary),
+                patch.object(
+                    inspector.os,
+                    "fchown",
+                    side_effect=PermissionError("fixture-sensitive"),
+                ),
+                contextlib.redirect_stderr(stderr),
+            ):
+                self.assertEqual(inspector.privileged_inspection(args), expected)
+        self.assertNotIn("fixture-sensitive", stderr.getvalue())
+        self.assertIn("Exact report publication failed", stderr.getvalue())
+
+    def test_publication_rejects_symlink_before_inspection_or_ownership_change(self):
+        args = self.publication_args()
+        other = self.root / "unrelated-fixture"
+        other.write_bytes(b"fixture-only-do-not-touch")
+        args.output.unlink()
+        args.output.symlink_to(other)
+        with (
+            patch.object(inspector.os, "geteuid", return_value=0),
+            patch.object(inspector, "execute") as run,
+            patch.object(inspector.os, "fchown") as chown,
+            self.assertRaises(OSError),
+        ):
+            inspector.privileged_inspection(args)
+        run.assert_not_called()
+        chown.assert_not_called()
+        self.assertEqual(other.read_bytes(), b"fixture-only-do-not-touch")
+
+    def publication_substitution_fixture(self, kind):
+        for phase in (
+            "complete",
+            "failure",
+            "cancelled",
+            "setup-failure",
+            "setup-cancelled",
+        ):
+            with self.subTest(kind=kind, phase=phase):
+                args = self.publication_args(f"{kind}-{phase}")
+                unrelated = self.root / f"{kind}-{phase}-unrelated"
+                unrelated.mkdir(mode=0o700)
+                sentinel = unrelated / "inspection.json"
+                sentinel.write_bytes(b"fixture-unrelated-private-sentinel")
+                sentinel.chmod(0o600)
+                before = sentinel.stat()
+                retained = (
+                    args.output.with_name("retained.json")
+                    if kind == "file"
+                    else args.output.parent.with_name(
+                        args.output.parent.name + "-retained"
+                    )
+                    / args.output.name
+                )
+
+                def substitute(*unused, **unused_kwargs):
+                    if kind == "file":
+                        args.output.rename(retained)
+                        args.output.symlink_to(sentinel)
+                    else:
+                        args.output.parent.rename(retained.parent)
+                        args.output.parent.symlink_to(
+                            unrelated, target_is_directory=True
+                        )
+                    if phase.endswith("cancelled"):
+                        raise inspector.Cancelled()
+                    if phase == "setup-failure":
+                        raise RuntimeError("fixture-sensitive-setup-error")
+                    if phase == "failure":
+                        raise inspector.Failure("fixture-primary-inspection-failure")
+
+                stderr = io.StringIO()
+                with contextlib.ExitStack() as stack:
+                    stack.enter_context(
+                        patch.dict(os.environ, {"EXCLUSIVE_DISPOSABLE_1ES": "true"})
+                    )
+                    stack.enter_context(
+                        patch.object(inspector.os, "geteuid", return_value=0)
+                    )
+                    chown = stack.enter_context(patch.object(inspector.os, "fchown"))
+                    stack.enter_context(contextlib.redirect_stderr(stderr))
+                    if phase.startswith("setup-"):
+                        stack.enter_context(
+                            patch.object(inspector, "execute", side_effect=substitute)
+                        )
+                    else:
+                        stack.enter_context(patch.object(inspector, "ensure_guestfish"))
+                        stack.enter_context(
+                            patch.object(
+                                inspector.shutil, "which", return_value=str(SCRIPT)
+                            )
+                        )
+                        stack.enter_context(
+                            patch.object(
+                                inspector,
+                                "command",
+                                side_effect=lambda argv, **kw: (
+                                    "a" * 40 if argv[0] == "git" else str(self.root)
+                                ),
+                            )
+                        )
+                        stack.enter_context(
+                            patch.object(inspector, "inspect", side_effect=substitute)
+                        )
+                    code = inspector.privileged_inspection(args)
+                self.assertEqual(
+                    sentinel.read_bytes(), b"fixture-unrelated-private-sentinel"
+                )
+                after = sentinel.stat()
+                self.assertEqual(
+                    (after.st_ino, after.st_mode, after.st_uid, after.st_gid),
+                    (before.st_ino, before.st_mode, before.st_uid, before.st_gid),
+                )
+                chown.assert_not_called()
+                self.assertEqual(code, 130 if phase.endswith("cancelled") else 1)
+                self.assertIn("Exact report publication failed", stderr.getvalue())
+                self.assertNotIn("fixture-sensitive", stderr.getvalue())
+                report = json.loads(retained.read_text())
+                self.assertEqual(report["status"], "failure")
+                self.assertEqual(report["reviewStatus"], "UNREVIEWED")
+                if phase == "complete":
+                    self.assertEqual(
+                        report["failure"]["missingFact"],
+                        "exact-report-publication-failed",
+                    )
+                elif phase == "failure":
+                    self.assertEqual(
+                        report["failure"]["missingFact"],
+                        "fixture-primary-inspection-failure",
+                    )
+                elif phase == "cancelled":
+                    self.assertEqual(report["failure"], {"kind": "cancelled"})
+                else:
+                    expected = (
+                        "privileged-inspection-cancelled"
+                        if phase.endswith("cancelled")
+                        else "privileged-inspection-setup-failed"
+                    )
+                    self.assertEqual(report["failure"]["missingFact"], expected)
+
+    def test_pinned_report_rejects_file_replacement_for_all_writers(self):
+        self.publication_substitution_fixture("file")
+
+    def test_pinned_report_rejects_parent_substitution_for_all_writers(self):
+        self.publication_substitution_fixture("parent")
+
+    def test_bootstrap_failures_use_unchanged_unreviewed_report_before_login(self):
+        for fact in (
+            "guestfish-package-index-failed",
+            "guestfish-package-install-failed",
+            "guestfish-readiness-failed",
+            "guestfish-missing-after-bootstrap",
+        ):
+            with self.subTest(fact=fact):
+                args = self.publication_args(fact)
+
+                def fail_stage(argv, **kwargs):
+                    self.assertNotIn("az", argv)
+                    if kwargs["failure_fact"] == fact:
+                        raise inspector.Failure(fact)
+
+                found = None if fact.endswith("after-bootstrap") else "/bin/guestfish"
+                with (
+                    patch.dict(os.environ, {"EXCLUSIVE_DISPOSABLE_1ES": "true"}),
+                    patch.object(inspector.os, "geteuid", return_value=0),
+                    patch.object(inspector.os, "fchown"),
+                    patch.object(inspector.shutil, "which", side_effect=[None, found]),
+                    patch.object(inspector, "command", side_effect=fail_stage),
+                ):
+                    self.assertEqual(inspector.privileged_inspection(args), 1)
+                report = json.loads(args.output.read_text())
+                self.assertEqual(set(report), set(inspector.new_report()))
+                self.assertEqual(report["status"], "failure")
+                self.assertEqual(report["reviewStatus"], "UNREVIEWED")
+                self.assertEqual(report["complete"], {})
+                self.assertEqual(report["failure"]["missingFact"], fact)
+
+    def test_privileged_setup_cancellation_and_owner_validation_fail_closed(self):
+        args = self.publication_args()
+        with (
+            patch.dict(os.environ),
+            patch.object(inspector.os, "geteuid", return_value=0),
+            patch.object(inspector.os, "fchown"),
+            patch.object(inspector, "execute", side_effect=inspector.Cancelled()),
+        ):
+            self.assertEqual(inspector.privileged_inspection(args), 130)
+        report = json.loads(args.output.read_text())
+        self.assertEqual(
+            report["failure"]["missingFact"], "privileged-inspection-cancelled"
+        )
+        args.publication_uid += 1
+        with (
+            patch.object(inspector.os, "geteuid", return_value=0),
+            patch.object(inspector.os, "fchown") as chown,
+            patch.object(inspector, "execute") as run,
+            self.assertRaisesRegex(
+                inspector.Failure, "publication-not-private-and-job-owned"
+            ),
+        ):
+            inspector.privileged_inspection(args)
+        run.assert_not_called()
+        chown.assert_not_called()
+
+    def test_missing_guestfish_never_installs_without_root(self):
+        with (
+            patch.object(inspector.shutil, "which", return_value=None),
+            patch.object(inspector.os, "geteuid", return_value=1000),
+            patch.object(inspector, "command") as run,
+            self.assertRaisesRegex(
+                inspector.Failure, "guestfish-bootstrap-requires-root"
+            ),
+        ):
+            inspector.ensure_guestfish()
+        run.assert_not_called()
+
+    def test_workflow_sudo_failure_and_primary_exit_remain_readable_and_redacted(self):
+        workflow = SCRIPT.parents[2] / ".github/workflows/vm-e2e-image-inspection.yml"
+        body = textwrap.dedent(
+            workflow.read_text()
+            .split("        run: |\n", 1)[1]
+            .split("\n      - name:", 1)[0]
+        )
+        self.assertIn("--prepare-publication", body)
+        self.assertIn("sudo -n env", body)
+        self.assertLess(body.index("sudo -n env"), body.index("timeout --signal"))
+        stub = """
+sudo() {
+  "$TEST_PYTHON" -c 'import json,os,sys; from pathlib import Path; Path(os.environ["TEST_ARGS"]).write_text(json.dumps(sys.argv[1:]))' "$@"
+  printf 'fixture-sensitive-output\\n' >&2
+  return "$TEST_EXIT"
+}
+id() {
+  if [[ "$1" == "-u" ]]; then printf '12345\\n'; else printf '23456\\n'; fi
+}
+"""
+        for exit_code in (1, 7):
+            with self.subTest(exit_code=exit_code):
+                scratch = self.root / str(exit_code)
+                scratch.mkdir()
+                captured = scratch / "sudo-args.json"
+                result = subprocess.run(
+                    ["bash", "-e", "-o", "pipefail", "-c", stub + body],
+                    cwd=SCRIPT.parents[2],
+                    env={
+                        **os.environ,
+                        "RUNNER_TEMP": str(scratch),
+                        "TEST_PYTHON": sys.executable,
+                        "TEST_ARGS": str(captured),
+                        "TEST_EXIT": str(exit_code),
+                        "AZURE_EXTENSION_DIR": "fixture-installed-extension-code",
+                    },
+                    capture_output=True,
+                    timeout=5,
+                )
+                self.assertEqual(result.returncode, exit_code)
+                self.assertNotIn(b"fixture-sensitive", result.stdout + result.stderr)
+                argv = json.loads(captured.read_text())
+                self.assertEqual(argv[:2], ["-n", "env"])
+                self.assertIn(
+                    "AZURE_EXTENSION_DIR=fixture-installed-extension-code", argv
+                )
+                self.assertIn("EXCLUSIVE_DISPOSABLE_1ES=true", argv)
+                self.assertEqual(argv[argv.index("--publication-uid") + 1], "12345")
+                self.assertEqual(argv[argv.index("--publication-gid") + 1], "23456")
+                self.assertIn("--bootstrap-guestfish", argv)
+                report_path = (
+                    scratch / "trident-image-inspection-report/inspection.json"
+                )
+                report = json.loads(report_path.read_text())
+                self.assertEqual(
+                    report["failure"]["missingFact"],
+                    "privileged-inspection-not-started",
+                )
+                self.assertEqual(stat.S_IMODE(report_path.stat().st_mode), 0o600)
+                self.assertEqual(stat.S_IMODE(report_path.parent.stat().st_mode), 0o700)
 
     @contextlib.contextmanager
     def leader_first_fixture(self, *, overflow=False, cancel=False):

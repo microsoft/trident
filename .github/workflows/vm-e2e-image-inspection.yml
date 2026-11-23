@@ -32,10 +32,22 @@ jobs:
           EXCLUSIVE_DISPOSABLE_1ES: "true"
         working-directory: validation
         run: |
-          timeout --signal=INT --kill-after=60s 80m \
-            python3 scripts/cloud-agent/inspect_vm_e2e_images.py \
+          umask 077
+          publication="$RUNNER_TEMP/trident-image-inspection-report/inspection.json"
+          python3 scripts/cloud-agent/inspect_vm_e2e_images.py \
+            --prepare-publication --scratch "$RUNNER_TEMP" --output "$publication"
+          job_uid="$(id -u)"
+          job_gid="$(id -g)"
+          extension_root="${AZURE_EXTENSION_DIR:-${AZURE_CONFIG_DIR:-$HOME/.azure}/cliextensions}"
+          status=0
+          sudo -n env "PATH=$PATH" "AZURE_EXTENSION_DIR=$extension_root" \
+            EXCLUSIVE_DISPOSABLE_1ES=true \
+            timeout --signal=INT --kill-after=60s 80m \
+              python3 scripts/cloud-agent/inspect_vm_e2e_images.py \
+              --bootstrap-guestfish --publication-uid "$job_uid" --publication-gid "$job_gid" \
               --scratch "$RUNNER_TEMP" \
-              --output "$RUNNER_TEMP/trident-image-inspection-report/inspection.json"
+              --output "$publication" >/dev/null 2>&1 || status=$?
+          exit "$status"
 
       - name: Upload only bounded unreviewed facts
         if: always()

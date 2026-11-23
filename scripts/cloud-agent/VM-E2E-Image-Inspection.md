@@ -17,10 +17,52 @@ It initializes the normal existing UMI with bounded, suppressed account output.
 It neither assumes ECF permission nor uses another principal if access fails.
 Missing commands (`az`, `rpm`, `rpm2cpio`, `cpio`, `guestfish`, `zstd`) fail
 explicitly before login.
+The first actual attempt, run `45272985758`, stopped on missing `guestfish`;
+it did not establish ADO content access or image qualification. Its original
+failure report is preserved separately, not overwritten by this correction.
+The workflow now conditionally installs only the missing `guestfish` binary
+package using the already configured Ubuntu apt repositories, with bounded
+update/install commands and `--no-install-recommends`. It does not pin the old
+version shown in the [official Jammy package metadata](https://packages.ubuntu.com/jammy/guestfish),
+add repositories/mirrors, or install the broader `libguestfs-tools` collection.
+If the command exists, apt is skipped. Version readiness and all original
+inspection dependencies still fail closed.
+
+The whole bootstrap and inspector run under the existing noninteractive sudo
+context, including the timeout and owned child-group teardown. Individual
+guestfish commands are not wrapped in sudo. No runner UID is assumed: the
+workflow captures its numeric UID/GID before elevation. Only executable PATH
+and the installed Azure DevOps extension-code directory are carried into the
+root context, not credentials or the existing Azure profile. A fresh private
+HOME/AZURE_CONFIG_DIR is used before Azure CLI discovery, and the unchanged UMI
+login initializes another fresh private inspection profile under that same root
+context. Git trusts only this exact checkout through process-local configuration,
+not a global safe-directory or ownership change.
+
+Before sudo, the normal job creates a new 0700 publication directory and 0600
+`inspection.json` containing an UNREVIEWED failure in the unchanged report shape.
+Sudo failure therefore leaves readable bounded evidence and its original exit.
+The root inspector pins a writable descriptor before inspection. All privileged
+report writes, including failure/cancellation reports, use that descriptor,
+never a reopened pathname. Before publication succeeds, the pathname's directory
+and file identities must still match both pinned descriptors. A post-validation
+file replacement or parent-directory rename/symlink substitution cannot redirect
+writes and fails publication with a bounded diagnostic. Only the exact pinned
+file and directory are mode/ownership-restored. Symlinks, hard links and mismatched
+initial owners are rejected. An inspection failure/cancellation exit and report
+are retained even if publication restoration also fails; a publication failure
+after successful measurement instead records a failure through the same pinned
+descriptor. Workspace ancestors, images, keys and authentication caches are
+never chmod/chowned or uploaded.
+
 The existing Azure DevOps CLI extension must already be installed. No automatic
 extension installation, host-service setup, Docker or product VM execution occurs.
 The inspection appliance uses libguestfs's direct backend without network
 enablement. Its own trusted kernel reads filesystems; image payloads never run.
+The [official libguestfs FAQ](https://libguestfs.org/guestfs-faq.1.html)
+documents the direct backend for root-owned/private image access without
+libvirt's separate qemu user; no kernel/private-file permission workaround,
+libvirt daemon, new account or group is configured here.
 The platform must provide the appliance and its kernel, QEMU, and squashfs/ext4
 support. This is inspection infrastructure, not Storm product execution.
 
