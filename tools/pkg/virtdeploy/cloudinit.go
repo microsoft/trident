@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/microsoft/storm/facilities/iso"
+	"github.com/microsoft/storm/utils/iso"
 )
 
 func buildCloudInitIso(ciConfig *CloudInitConfig, isoPath string) error {

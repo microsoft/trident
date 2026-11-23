@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/microsoft/storm"
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"github.com/sirupsen/logrus"
 
 	"tridenttools/pkg/hostconfig"
@@ -315,7 +315,11 @@ func (s *TridentE2EScenario) uploadNewConfig(tc storm.TestCase) error {
 		return fmt.Errorf("failed to render host configuration: %w", err)
 	}
 
-	if err := s.sshClient.Upload(tc.Context(), hostConfigRemotePath, bytes.NewReader(hostConfigFile)); err != nil {
+	files, err := s.sshClient.SudoSFTP()
+	if err != nil {
+		return fmt.Errorf("failed to open sudo SFTP: %w", err)
+	}
+	if err := files.Upload(tc.Context(), hostConfigRemotePath, bytes.NewReader(hostConfigFile)); err != nil {
 		return fmt.Errorf("failed to upload Host Config: %w", err)
 	}
 

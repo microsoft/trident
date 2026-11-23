@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/Jeffail/gabs/v2"
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"gopkg.in/yaml.v3"
 
 	"tridenttools/pkg/hostconfig"

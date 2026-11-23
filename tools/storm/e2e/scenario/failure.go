@@ -9,8 +9,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/microsoft/storm"
-	stormssh "github.com/microsoft/storm/facilities/ssh"
 	"github.com/microsoft/storm/pkg/storm/artifacts"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	log "github.com/sirupsen/logrus"
 
 	"tridenttools/storm/utils/sshutils"

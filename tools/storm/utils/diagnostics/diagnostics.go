@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"github.com/sirupsen/logrus"
 
 	stormsshclient "tridenttools/storm/utils/ssh/client"

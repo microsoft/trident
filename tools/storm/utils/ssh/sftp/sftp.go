@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"os"
 
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 )
 
 func DownloadRemoteFile(client *stormssh.Client, remotePath, localPath string) (string, error) {
+	files, err := client.SudoSFTP()
+	if err != nil {
+		return "", fmt.Errorf("open sudo SFTP: %w", err)
+	}
 	var file *os.File
-	var err error
 	if localPath == "" {
 		file, err = os.CreateTemp("", "sftp-*")
 	} else {
@@ -20,7 +23,7 @@ func DownloadRemoteFile(client *stormssh.Client, remotePath, localPath string) (
 	if err != nil {
 		return "", fmt.Errorf("create download destination: %w", err)
 	}
-	err = errors.Join(client.Fetch(context.Background(), remotePath, file), file.Close())
+	err = errors.Join(files.Download(context.Background(), remotePath, file), file.Close())
 	if err != nil {
 		if removeErr := os.Remove(file.Name()); removeErr != nil {
 			err = errors.Join(err, removeErr)

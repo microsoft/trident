@@ -58,7 +58,7 @@ The update loop alternates between these two images across iterations.
 - **libvirt and QEMU** installed and configured
 - **Docker** (for building images with Image Customizer)
 - **[oras](https://oras.land/)** CLI (for downloading base images from MCR)
-- **Go 1.24+** (for building Go tools)
+- **Go 1.26.6+** (for building Go tools)
 - **Rust** (latest stable, for building Trident)
 
 See [Dependencies](../Building/Dependencies.md) for full build dependency details.

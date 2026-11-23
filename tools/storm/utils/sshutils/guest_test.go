@@ -49,11 +49,15 @@ func TestFacilitiesGuest(t *testing.T) {
 		}
 	}()
 	const contents = "host-configuration: facilities\n"
-	if err := client.Upload(ctx, path, strings.NewReader(contents)); err != nil {
+	files, err := client.SudoSFTP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := files.Upload(ctx, path, strings.NewReader(contents)); err != nil {
 		t.Fatal(err)
 	}
 	var fetched bytes.Buffer
-	if err := client.Fetch(ctx, path, &fetched); err != nil {
+	if err := files.Download(ctx, path, &fetched); err != nil {
 		t.Fatal(err)
 	}
 	if fetched.String() != contents {

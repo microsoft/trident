@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"github.com/sirupsen/logrus"
 
 	stormretry "tridenttools/storm/utils/retry"

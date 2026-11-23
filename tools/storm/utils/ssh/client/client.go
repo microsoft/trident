@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/storm/utils/ssh/config"
 	"tridenttools/storm/utils/ssh/sftp"

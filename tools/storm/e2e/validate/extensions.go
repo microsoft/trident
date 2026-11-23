@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/utils/sshutils"

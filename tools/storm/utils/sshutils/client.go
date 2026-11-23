@@ -7,11 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"golang.org/x/crypto/ssh"
 )
-
-const sudoSFTPCommand = "sudo -n /usr/libexec/sftp-server"
 
 type SshClientConfig struct {
 	User       string
@@ -44,7 +42,6 @@ func (c *SshClientConfig) facilitiesConfig() (stormssh.Config, error) {
 		HostKey:          stormssh.InsecureHostKey(),
 		DialTimeout:      c.Timeout,
 		RetryAuthFailure: true, // A booting guest may not have installed its authorized key yet.
-		SFTPCommand:      sudoSFTPCommand,
 	}, nil
 }
 

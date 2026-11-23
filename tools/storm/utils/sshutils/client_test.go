@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 )
 
 func TestCreateSshClientCancelsStalledHandshake(t *testing.T) {

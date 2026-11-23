@@ -92,7 +92,7 @@ preview feature (`previewFeatures: uki`). Requires `ukify` on the build host.
   group)
 - **Docker** (for building images with Image Customizer)
 - **[oras](https://oras.land/)** CLI (for downloading base images from MCR)
-- **Go 1.25+** (for building Go tools)
+- **Go 1.26.6+** (for building Go tools)
 - **Rust** (latest stable, for building Trident)
 - **Python 3.8+** with packages:
 

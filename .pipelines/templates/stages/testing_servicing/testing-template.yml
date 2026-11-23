@@ -187,7 +187,7 @@ jobs:
                 set -eux
 
                 cd $(TRIDENT_SOURCE_DIR)
-                ./bin/storm-trident run servicing $(STORM_FLAGS) \
+                ./bin/storm-trident run servicing --junit-omit-skipped $(STORM_FLAGS) \
                   --artifacts-dir $(Build.ArtifactStagingDirectory) \
                   --output-path $(ob_outputDirectory) \
                   --subscription $(SUBSCRIPTION) \
@@ -226,7 +226,7 @@ jobs:
                     FLAGS="$FLAGS --verbose"
                   fi
 
-                  ./bin/storm-trident run servicing -a $FLAGS \
+                  ./bin/storm-trident run servicing -a --junit-omit-skipped $FLAGS \
                     --output-path $(ob_outputDirectory) \
                     --subscription $(SUBSCRIPTION) \
                     --test-resource-group $(TEST_RESOURCE_GROUP) \
@@ -241,7 +241,7 @@ jobs:
       - ${{ else }}:
           - bash: |
               set -eux
-              sudo ./bin/storm-trident run servicing $(STORM_FLAGS) \
+              sudo ./bin/storm-trident run servicing --junit-omit-skipped $(STORM_FLAGS) \
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \
                 --output-path $(ob_outputDirectory) \
                 --platform ${{ parameters.platform }} \

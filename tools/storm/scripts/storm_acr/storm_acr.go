@@ -15,8 +15,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/microsoft/storm/facilities/ado"
 	"github.com/microsoft/storm/pkg/storm/core"
+	"github.com/microsoft/storm/utils/ado"
 	"github.com/sirupsen/logrus"
 
 	"tridenttools/storm/utils/acr"

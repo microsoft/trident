@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/microsoft/storm"
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 	"oras.land/oras-go/v2"
@@ -194,7 +194,11 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 	if _, err := stormsshclient.CommandOutput(h.client, "sudo mkdir -p -- "+sshutils.ShellQuote(path.Dir(h.args.TridentConfig))); err != nil {
 		return fmt.Errorf("failed to create directory for new Host Config file: %w", err)
 	}
-	if err := h.client.Upload(tc.Context(), h.args.TridentConfig, bytes.NewReader(hc_yaml)); err != nil {
+	files, err := h.client.SudoSFTP()
+	if err != nil {
+		return fmt.Errorf("failed to open sudo SFTP: %w", err)
+	}
+	if err := files.Upload(tc.Context(), h.args.TridentConfig, bytes.NewReader(hc_yaml)); err != nil {
 		return fmt.Errorf("failed to upload Host Config: %w", err)
 	}
 

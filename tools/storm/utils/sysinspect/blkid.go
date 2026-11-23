@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )

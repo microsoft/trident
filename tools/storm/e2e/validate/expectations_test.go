@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"golang.org/x/crypto/ssh"
 
 	"tridenttools/pkg/hostconfig"

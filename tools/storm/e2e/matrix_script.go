@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/microsoft/storm/facilities/ado"
 	"github.com/microsoft/storm/pkg/storm/core"
+	"github.com/microsoft/storm/utils/ado"
 
 	"tridenttools/storm/e2e/scenario"
 	"tridenttools/storm/e2e/testrings"

@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"

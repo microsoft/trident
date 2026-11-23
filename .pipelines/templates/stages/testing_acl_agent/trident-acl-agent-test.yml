@@ -185,7 +185,7 @@ stages:
               # sudo is required here: storm-trident shells out to
               # virt-install to create the VM, and virt-install fails
               # without root privileges.
-              sudo ./bin/storm-trident run aclagent $FLAGS \
+              sudo ./bin/storm-trident run aclagent --junit-omit-skipped $FLAGS \
                 --force-cleanup \
                 --output-path $(ob_outputDirectory) \
                 --artifacts-dir $(Build.ArtifactStagingDirectory) \

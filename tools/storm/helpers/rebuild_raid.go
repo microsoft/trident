@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/microsoft/storm"
-	stormssh "github.com/microsoft/storm/facilities/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 	"libvirt.org/go/libvirtxml"

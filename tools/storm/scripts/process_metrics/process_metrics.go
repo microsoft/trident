@@ -17,7 +17,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/microsoft/storm/facilities/ado"
+	"github.com/microsoft/storm/utils/ado"
 	"github.com/sirupsen/logrus"
 
 	"tridenttools/storm/e2e/scenario"
