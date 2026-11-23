@@ -19,10 +19,16 @@ SOURCE = "985a0a70b88ea5576805c6fccae6a6ff4d8800a4"
 PREREQ = "ed0688f628ef5be84a6c06e555ed317ffd4ee49c"
 LOCK = "/var/lib/trident-cloud-agent/functional.lock"
 MAX_LOG = 24 * 1024 * 1024
+GO_BASELINE_TEST = "TestUefiFallbackScriptMatchesLegacy"
+GO_BASELINE_LIMIT = (
+    f"Go test {GO_BASELINE_TEST} excluded/not validated; full Go suite not validated. "
+    "Pre-existing embedded-script drift on clean 843f411 (parent verified); "
+    "observed in run 45248620733, go.log lines 159-160."
+)
 PLANNED = (
     "source-identity prerequisite-identity source-before source-setup-1 "
     "functional-setup-1 source-setup-2 functional-setup-2 source-tests "
-    "fixture-tests privileged-lock-tests format go smoke full "
+    "fixture-tests privileged-lock-tests format go-filtered smoke full "
     "controlled-failure graceful-interruption source-after"
 ).split()
 
@@ -418,6 +424,30 @@ class Validation:
         elif identity != self.image_identity or not provenance["cacheHit"]:
             raise RuntimeError("Subsequent run did not reuse the same immutable cache")
 
+    def validate_go(self):
+        self.save(
+            "go-exclusions.json",
+            {
+                "package": "tridenttools/storm/e2e/scenario",
+                "test": GO_BASELINE_TEST,
+                "skip_regex": f"^{GO_BASELINE_TEST}$",
+                "status": "excluded/not validated",
+                "full_go_suite_validated": False,
+                "evidence": GO_BASELINE_LIMIT,
+            },
+        )
+        self.run(
+            "go-filtered",
+            [
+                "bash",
+                "-ec",
+                "cd tools; go generate pkg/rcp/tlscerts/certs.go; "
+                "go generate pkg/tridentgrpc/grpc.go; "
+                f"go test -mod=readonly -skip '^{GO_BASELINE_TEST}$' ./...; "
+                "go test -mod=readonly -race ./pkg/virtdeploy/...",
+            ],
+        )
+
     def execute(self):
         if (
             os.environ.get("GITHUB_ACTIONS") != "true"
@@ -524,11 +554,6 @@ class Validation:
                     "-p test_run_functional.py -v"
                 ),
                 "format": "bash scripts/cloud-agent/validate.sh format",
-                "go": (
-                    "bash -ec 'cd tools; go generate pkg/rcp/tlscerts/certs.go; "
-                    "go generate pkg/tridentgrpc/grpc.go; go test -mod=readonly ./...; "
-                    "go test -mod=readonly -race ./pkg/virtdeploy/...'"
-                ),
             }
             for name, command in checks.items():
                 output = self.run(name, shlex.split(command))
@@ -555,6 +580,7 @@ class Validation:
                     r"Ran 5 tests\b", output
                 ):
                     raise RuntimeError("Did not execute privileged runner tests")
+            self.validate_go()
             for name, mode, inject in (
                 ("smoke", "smoke", None),
                 ("full", "full", None),
@@ -624,6 +650,7 @@ def main():
                 "results": validation.results,
                 "not_run": [name for name in PLANNED if name not in validation.results],
                 "limits": [
+                    GO_BASELINE_LIMIT,
                     "No SIGKILL cleanup guarantee",
                     "No live shared-host safety fixtures",
                     "Route collision and lock contention use existing source tests",

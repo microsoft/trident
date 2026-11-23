@@ -2,6 +2,7 @@ import copy
 import importlib.util
 import json
 import os
+import shlex
 import sys
 import tempfile
 import unittest
@@ -148,6 +149,57 @@ class EvidenceTests(unittest.TestCase):
             self.assertTrue(result["expected-failure"]["log_bounded"])
             with self.assertRaises(RuntimeError):
                 harness.run("wrong-exit", [sys.executable, "-c", "raise SystemExit(1)"])
+
+    def test_go_excludes_only_exact_baseline_test_and_records_limitation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = validation.Validation(directory, Path(directory) / "reports")
+            with patch.object(harness, "run") as run:
+                harness.validate_go()
+            name, args = run.call_args.args
+            self.assertEqual(name, "go-filtered")
+            self.assertEqual(args[:2], ["bash", "-ec"])
+            self.assertEqual(
+                [shlex.split(step) for step in args[2].split(";")],
+                [
+                    ["cd", "tools"],
+                    ["go", "generate", "pkg/rcp/tlscerts/certs.go"],
+                    ["go", "generate", "pkg/tridentgrpc/grpc.go"],
+                    [
+                        "go",
+                        "test",
+                        "-mod=readonly",
+                        "-skip",
+                        "^TestUefiFallbackScriptMatchesLegacy$",
+                        "./...",
+                    ],
+                    [
+                        "go",
+                        "test",
+                        "-mod=readonly",
+                        "-race",
+                        "./pkg/virtdeploy/...",
+                    ],
+                ],
+            )
+            excluded = json.loads((harness.reports / "go-exclusions.json").read_text())
+            self.assertEqual(excluded["test"], "TestUefiFallbackScriptMatchesLegacy")
+            self.assertEqual(excluded["package"], "tridenttools/storm/e2e/scenario")
+            self.assertEqual(excluded["status"], "excluded/not validated")
+            self.assertFalse(excluded["full_go_suite_validated"])
+            self.assertIn("45248620733", excluded["evidence"])
+            self.assertIn("full Go suite not validated", validation.GO_BASELINE_LIMIT)
+            self.assertIn("go-filtered", validation.PLANNED)
+            self.assertNotIn("go", validation.PLANNED)
+
+    def test_filtered_go_keeps_other_failures_fatal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            harness = validation.Validation(directory, Path(directory) / "reports")
+            with patch.object(
+                harness, "run", side_effect=RuntimeError("unrelated Go failure")
+            ):
+                with self.assertRaisesRegex(RuntimeError, "unrelated Go failure"):
+                    harness.validate_go()
+            self.assertTrue((harness.reports / "go-exclusions.json").exists())
 
     def test_plugin_hashes_candidate_binary_without_modifying_it(self):
         with tempfile.TemporaryDirectory() as directory:
