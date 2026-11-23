@@ -372,6 +372,9 @@ pub enum InvalidInputError {
 #[derive(Debug, Eq, thiserror::Error, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServicingError {
+    #[error("A/B update hypervisor validation failed; rollback to the retained OS succeeded")]
+    AbUpdateHypervisorCommitCheck,
+
     #[error(
         "A/B update failed as host booted from '{root_device_path}' instead of the expected device \
         '{expected_device_path}'"
@@ -712,6 +715,12 @@ pub enum ServicingError {
         hs_active_volume: String,
     },
 
+    #[error("EFI loader origin does not match expected slot '{expected_slot}' (observed: {observed_slot:?})")]
+    ValidateAbActiveEfiLoader {
+        expected_slot: String,
+        observed_slot: Option<String>,
+    },
+
     #[error("Trident rebuild-raid validation failed")]
     ValidateRebuildRaid,
 
@@ -776,6 +785,8 @@ pub enum DatastoreError {
 }
 
 impl ServicingError {
+    pub const AB_UPDATE_HYPERVISOR_COMMIT_CHECK_SUBKIND: &str = "ab-update-hypervisor-commit-check";
+
     /// Kebab-case serde subkind for [`ServicingError::AbUpdateRebootCheck`],
     /// matching this enum's `#[serde(rename_all = "kebab-case")]` attribute.
     /// Verified against `serde_variant::to_variant_name` in this module's tests.

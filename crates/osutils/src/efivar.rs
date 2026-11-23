@@ -15,6 +15,7 @@ const SECURE_BOOT: &str = "SecureBoot";
 const LOADER_ENTRY_ONESHOT: &str = "LoaderEntryOneShot";
 const LOADER_ENTRY_DEFAULT: &str = "LoaderEntryDefault";
 pub const LOADER_ENTRY_SELECTED: &str = "LoaderEntrySelected";
+const LOADER_IMAGE_IDENTIFIER: &str = "LoaderImageIdentifier";
 
 /// Converts a UTF‑8 Rust string to a UTF-16LE byte array.
 pub fn encode_utf16le(data: &str) -> Vec<u8> {
@@ -136,6 +137,22 @@ pub fn read_current_var() -> Result<String, TridentError> {
     Ok(decode_utf16le(&data))
 }
 
+/// Returns the boot loader's executable path, not the selected UKI's path.
+pub fn read_loader_image_identifier() -> Result<String, TridentError> {
+    let data = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_IMAGE_IDENTIFIER)?;
+    decode_loader_image_identifier(&data)
+}
+
+fn decode_loader_image_identifier(data: &[u8]) -> Result<String, TridentError> {
+    if !data.len().is_multiple_of(2) {
+        return Err(TridentError::new(ServicingError::ReadEfiVariable {
+            name: LOADER_IMAGE_IDENTIFIER.into(),
+        }))
+        .message("Loader image identifier has an incomplete UTF-16 code unit");
+    }
+    Ok(decode_utf16le(data))
+}
+
 /// Sets the LoaderEntryDefault EFI variable to the current boot entry.
 pub fn set_default_to_current() -> Result<(), TridentError> {
     let current = read_efi_variable(BOOTLOADER_INTERFACE_GUID, LOADER_ENTRY_SELECTED)?;
@@ -152,6 +169,23 @@ pub fn set_default_to_current() -> Result<(), TridentError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use trident_api::error::ErrorKind;
+
+    #[test]
+    fn test_decode_loader_image_identifier() {
+        let path = r"\EFI\AZLA\second.efi";
+        assert_eq!(
+            decode_loader_image_identifier(&encode_utf16le(path)).unwrap(),
+            path
+        );
+        let error = decode_loader_image_identifier(&[b'A', 0, b'B']).unwrap_err();
+        assert!(matches!(
+            error.kind(),
+            ErrorKind::Servicing(ServicingError::ReadEfiVariable { name })
+                if name == LOADER_IMAGE_IDENTIFIER
+        ));
+    }
 
     #[test]
     fn test_encode_utf16le() {

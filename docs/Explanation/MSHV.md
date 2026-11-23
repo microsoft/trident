@@ -165,10 +165,32 @@ slot's files, not a recorded configuration flag.
 
 ### Hypervisor Identity
 
-**Hypervisor identity validation is not implemented.** Commit and rollback
-do not query `/dev/mshv` or inspect ESP files to establish hypervisor identity.
+Boot validation checks managed-slot boot-chain consistency when `/dev/mshv`
+appears present. After validating the OS device, it compares the boot loader's
+`LoaderImageIdentifier` EFI variable with the expected slot's
+`\EFI\AZLA\second.efi` or `\EFI\AZLB\second.efi` path (including installation-index
+suffixes). EFI path separators and ASCII case are normalized for comparison.
+In the slot-owned chain, efitreeloader resolves both the MSHV payload and
+systemd-boot from its executing directory; the loader directory is therefore a
+slot-origin proxy, not a query of the running hypervisor's binary paths.
 
-Commit and rollback do not yet identify the running hypervisor or detect a
-mixed hypervisor/OS boot. Root-device validation and health checks still
-apply; passing them does not establish hypervisor/OS consistency or
-production readiness.
+Only a recognized opposite-slot path for the same installation fails this
+check. Missing or uninspectable devices skip validation. Missing, unreadable,
+malformed or unsupported loader metadata logs a warning and skips validation;
+it does not reject the candidate. Fallback identity (`EFI/BOOT`) is not checked.
+This does not parse `BootCurrent`/`Boot####`, distinguish ESPs, inspect installed
+payload bytes or attest hypervisor identity. The loader variable must describe
+the slot-owned chain; deployed systemd behavior and same-boot chain retries
+require VM validation.
+
+The recovery scaffolding reserves `CommitFailed` (stored as `commit-failed`) for
+a rejected A/B trial that requires returning to the retained OS. An identity-hook
+failure persists this state and the original error before requesting a reboot.
+Recovery validates the retained configuration and slot, preserves the original
+failure if recovery fails, and does not request another rollback on an identity
+failure during recovery. Health-check rejection remains the separate
+`AbUpdateHealthCheckFailed` state.
+
+A recognized loader/OS slot mismatch can trigger `CommitFailed`; unavailable
+evidence cannot. Root-device validation and health checks still apply. Passing
+these checks does not establish payload identity or production readiness.
