@@ -321,18 +321,14 @@ impl Trident {
         ) {
             datastore.host_status().last_error.clone()
         } else {
-            None
-        };
-
-        // Keep the original error durable if recovery is interrupted.
-        if last_error_to_preserve.is_none() {
             datastore.with_host_status(|host_status| {
                 if let Some(e) = host_status.last_error.take() {
                     warn!("Previously encountered error: {e:?}");
                     info!("Clearing last error");
                 }
             })?;
-        }
+            None
+        };
 
         match f(datastore) {
             Ok(t) => Ok(t),
