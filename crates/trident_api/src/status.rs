@@ -150,6 +150,9 @@ impl Serialize for ServicingState {
     }
 }
 
+/// Reads known names or preserves well-formed unfamiliar names without normalizing them.
+/// Writer-version validation requires the enclosing HostStatus and runs in decode_host_status.
+/// Non-string YAML values are rejected rather than coerced into state names.
 impl<'de> Deserialize<'de> for ServicingState {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct StateVisitor;
@@ -177,10 +180,12 @@ impl<'de> Deserialize<'de> for ServicingState {
                     )));
                 }
 
+                // EnumString recognizes known names; its default variant captures unfamiliar names.
                 name.parse().map_err(E::custom)
             }
         }
 
+        // Only visit_str is supported: deserializing String directly could coerce YAML numbers.
         deserializer.deserialize_any(StateVisitor)
     }
 }
@@ -352,7 +357,6 @@ pub fn decode_host_status(
 
     if let ServicingState::Unknown(name) = &host_status.servicing_state {
         // A newer writer does not prove integrity: well-formed corruption can still pass.
-        // Older binaries may also have overwritten the original writer version.
         let newer_writer = matches!(
             &host_status.trident_version,
             TridentVersion::SemVer(writer_version)
