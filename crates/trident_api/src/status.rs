@@ -63,7 +63,7 @@ pub struct HostStatus {
     #[serde(default, skip_serializing_if = "is_default")]
     pub is_management_os: bool,
 
-    /// Version of Trident that last updated this HostStatus.
+    /// Version of Trident that last updated this HostStatus with a recognized servicing state.
     #[serde(default, skip_serializing_if = "TridentVersion::is_none")]
     pub trident_version: TridentVersion,
 }
@@ -135,7 +135,7 @@ pub enum ServicingState {
     AbUpdateHealthCheckFailed,
     /// Commit failed and rollback to the retained OS is required.
     CommitFailed,
-    /// A state written by another Trident version, preserved for inspection only.
+    /// An unfamiliar state name preserved for inspection, not servicing or recovery.
     #[strum(default)]
     Unknown(String),
 }
@@ -162,6 +162,20 @@ impl<'de> Deserialize<'de> for ServicingState {
             }
 
             fn visit_str<E: serde::de::Error>(self, name: &str) -> Result<Self::Value, E> {
+                if !matches!(name.as_bytes().first(), Some(b'a'..=b'z'))
+                    || name.split('-').any(|part| {
+                        part.is_empty()
+                            || !part
+                                .bytes()
+                                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+                    })
+                {
+                    return Err(E::custom(format!(
+                        "invalid servicing state {name:?}: expected a non-empty \
+                         lowercase kebab-case name beginning with a letter"
+                    )));
+                }
+
                 name.parse().map_err(E::custom)
             }
         }
@@ -328,7 +342,33 @@ fn fix_old_host_status(yaml: &mut Value) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-pub fn decode_host_status(mut yaml: Value) -> Result<HostStatus, serde_yaml::Error> {
+pub fn decode_host_status(
+    yaml: Value,
+    reader_version: &Version,
+) -> Result<HostStatus, serde_yaml::Error> {
+    let host_status = decode_host_status_unchecked(yaml)?;
+
+    if let ServicingState::Unknown(name) = &host_status.servicing_state {
+        // A newer writer does not prove integrity: well-formed corruption can still pass.
+        // Older binaries may also have overwritten the original writer version.
+        let newer_writer = matches!(
+            &host_status.trident_version,
+            TridentVersion::SemVer(writer_version)
+                if writer_version.cmp_precedence(reader_version).is_gt()
+        );
+        if !newer_writer {
+            return Err(<serde_yaml::Error as serde::de::Error>::custom(format!(
+                "unknown servicing state {name:?} requires a writer version newer \
+                 than {reader_version}; stored version: {:?}",
+                host_status.trident_version
+            )));
+        }
+    }
+
+    Ok(host_status)
+}
+
+fn decode_host_status_unchecked(mut yaml: Value) -> Result<HostStatus, serde_yaml::Error> {
     let decoded = serde_yaml::from_value(yaml.clone());
     if let Ok(host_status) = decoded {
         return Ok(host_status);
@@ -390,8 +430,6 @@ mod tests {
                 "ab-update-hypervisor-check-failed",
                 ServicingState::Unknown("ab-update-hypervisor-check-failed".into()),
             ),
-            ("Provisioned", ServicingState::Unknown("Provisioned".into())),
-            ("", ServicingState::Unknown(String::new())),
         ];
         for (name, expected) in cases {
             let yaml = serde_yaml::to_string(name).unwrap();
@@ -412,11 +450,95 @@ mod tests {
     }
 
     #[test]
+    fn servicing_state_rejects_malformed_names() {
+        for name in [
+            "",
+            "Provisioned",
+            "future_state",
+            "-future",
+            "future-",
+            "future--state",
+            "future state",
+            " future",
+            "future\nstate",
+            "1future",
+            "futur\u{e9}",
+        ] {
+            let yaml = serde_yaml::to_string(name).unwrap();
+            assert!(
+                serde_yaml::from_str::<ServicingState>(&yaml).is_err(),
+                "{name:?}"
+            );
+        }
+        let yaml = serde_yaml::to_string("future-v2-state").unwrap();
+        assert!(serde_yaml::from_str::<ServicingState>(&yaml).is_ok());
+    }
+
+    #[test]
+    fn unknown_servicing_state_requires_a_newer_writer() {
+        let reader = Version::parse("1.2.3").unwrap();
+        for (writer, accepted) in [
+            (TridentVersion::None, false),
+            (TridentVersion::Other("development".into()), false),
+            (
+                TridentVersion::SemVer(Version::parse("1.2.2").unwrap()),
+                false,
+            ),
+            (TridentVersion::SemVer(reader.clone()), false),
+            (
+                TridentVersion::SemVer(Version::parse("1.2.3+other").unwrap()),
+                false,
+            ),
+            (
+                TridentVersion::SemVer(Version::parse("1.2.3-rc.1").unwrap()),
+                false,
+            ),
+            (
+                TridentVersion::SemVer(Version::parse("1.2.4").unwrap()),
+                true,
+            ),
+        ] {
+            let mut status = HostStatus {
+                servicing_state: ServicingState::Unknown("future-recovery-step".into()),
+                trident_version: writer.clone(),
+                ..Default::default()
+            };
+            let result = decode_host_status(serde_yaml::to_value(&status).unwrap(), &reader);
+            assert_eq!(result.is_ok(), accepted, "{writer:?}");
+            if let Ok(decoded) = result {
+                assert_eq!(decoded, status);
+            }
+            status.servicing_state = ServicingState::Provisioned;
+            assert_eq!(
+                decode_host_status(serde_yaml::to_value(&status).unwrap(), &reader).unwrap(),
+                status,
+            );
+        }
+    }
+
+    #[test]
+    fn newer_writer_does_not_establish_unknown_state_integrity() {
+        let status = HostStatus {
+            servicing_state: ServicingState::Unknown("provisione".into()),
+            trident_version: TridentVersion::SemVer(Version::new(2, 0, 0)),
+            ..Default::default()
+        };
+        assert_eq!(
+            decode_host_status(
+                serde_yaml::to_value(&status).unwrap(),
+                &Version::new(1, 0, 0),
+            )
+            .unwrap(),
+            status,
+        );
+    }
+
+    #[test]
     fn load_old_format() {
         let old_yaml = include_str!("test/preview12_host_status.yaml");
         let yaml: Value = serde_yaml::from_str(old_yaml).unwrap();
 
-        let hs = decode_host_status(yaml).unwrap();
+        let hs = decode_host_status(yaml, &Version::new(1, 0, 0)).unwrap();
         hs.spec.validate().unwrap();
     }
 

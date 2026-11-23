@@ -622,6 +622,12 @@ impl Trident {
         datastore: &mut DataStore,
         allowed_operations: Operations,
     ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
+        if let ServicingState::Unknown(_) = &datastore.host_status().servicing_state {
+            return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                state: datastore.host_status().servicing_state.clone(),
+            }));
+        }
+
         let mut host_config = self
             .host_config
             .clone()
@@ -822,6 +828,12 @@ impl Trident {
         &mut self,
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
+        if let ServicingState::Unknown(_) = &datastore.host_status().servicing_state {
+            return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                state: datastore.host_status().servicing_state.clone(),
+            }));
+        }
+
         // Re-evaluate finalized or rejected servicing to validate
         // either the target boot or the recovery boot.
         let servicing_state = &datastore.host_status().servicing_state;
@@ -925,6 +937,12 @@ impl Trident {
         invoke_available_ab: bool,
         allowed_operations: Operations,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
+        if let ServicingState::Unknown(_) = &datastore.host_status().servicing_state {
+            return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                state: datastore.host_status().servicing_state.clone(),
+            }));
+        }
+
         // If host's servicing state is not in Provisioned or ManualRollback*, cannot
         // execute a rollback.
         if !matches!(
@@ -985,7 +1003,7 @@ mod tests {
     use trident_api::{
         config::{Disk, DiskSelector, HostConfigurationStaticValidationError, Operation, Storage},
         error::ErrorKind,
-        status::HostStatus,
+        status::{HostStatus, TridentVersion},
     };
 
     #[test]
@@ -1145,13 +1163,15 @@ mod tests {
     }
 
     #[test]
-    fn unknown_servicing_state_is_readable_and_preserves_commit_and_rollback_noops() {
+    fn unknown_servicing_state_is_readable_but_rejects_servicing_without_mutation() {
         let temp = TempDir::new().unwrap();
         let path = temp.path().join("datastore.sqlite");
         let mut datastore = DataStore::open_or_create(&path).unwrap();
         datastore
             .with_host_status(|status| {
                 status.servicing_state = ServicingState::Unknown("future-recovery-step".into());
+                status.trident_version =
+                    TridentVersion::SemVer(Version::new(TRIDENT_SEMVER_VERSION.major + 1, 0, 0));
                 status.last_error = Some(serde_yaml::Value::String("original failure".into()));
             })
             .unwrap();
@@ -1186,16 +1206,33 @@ mod tests {
             orchestrator: None,
             is_stream_image: false,
         };
+        let expected = ErrorKind::Internal(InternalError::UnexpectedServicingState {
+            state: datastore.host_status().servicing_state.clone(),
+        });
         assert_eq!(
-            trident.commit(&mut datastore).unwrap(),
-            (ExitKind::Done, ServicingType::NoActiveServicing),
+            trident.commit(&mut datastore).unwrap_err().kind(),
+            &expected
         );
-        assert_eq!(
-            trident
-                .rollback(&mut datastore, false, false, Operations::all())
-                .unwrap(),
-            (ExitKind::Done, ServicingType::NoActiveServicing),
-        );
+        for operations in [
+            Operation::Stage.into(),
+            Operation::Finalize.into(),
+            Operations::all(),
+        ] {
+            assert_eq!(
+                trident
+                    .update(&mut datastore, operations.clone())
+                    .unwrap_err()
+                    .kind(),
+                &expected,
+            );
+            assert_eq!(
+                trident
+                    .rollback(&mut datastore, false, false, operations)
+                    .unwrap_err()
+                    .kind(),
+                &expected,
+            );
+        }
         assert_eq!(
             serde_yaml::to_value(datastore.host_status()).unwrap(),
             original
@@ -1215,7 +1252,11 @@ mod tests {
         let mut datastore = DataStore::open_or_create(&path).unwrap();
         let unknown = ServicingState::Unknown("future-recovery-step".into());
         datastore
-            .with_host_status(|status| status.servicing_state = unknown.clone())
+            .with_host_status(|status| {
+                status.servicing_state = unknown.clone();
+                status.trident_version =
+                    TridentVersion::SemVer(Version::new(TRIDENT_SEMVER_VERSION.major + 1, 0, 0));
+            })
             .unwrap();
         let last_error = Some(serde_yaml::Value::String("updated failure".into()));
         datastore
@@ -1226,17 +1267,28 @@ mod tests {
         let persisted = DataStore::open(&destination).unwrap();
         assert_eq!(persisted.host_status().servicing_state, unknown);
         assert_eq!(persisted.host_status().last_error, last_error);
+        assert_eq!(
+            persisted.host_status().trident_version,
+            datastore.host_status().trident_version,
+        );
+        assert!(persisted.get_host_statuses().unwrap().iter().all(|row| {
+            row.as_ref().is_some_and(|status| {
+                status.trident_version == datastore.host_status().trident_version
+            })
+        }));
         drop(persisted);
 
         datastore
             .with_host_status(|status| status.servicing_state = ServicingState::NotProvisioned)
             .unwrap();
+        let persisted = DataStore::open(&destination).unwrap();
         assert_eq!(
-            DataStore::open(&destination)
-                .unwrap()
-                .host_status()
-                .servicing_state,
+            persisted.host_status().servicing_state,
             ServicingState::NotProvisioned,
+        );
+        assert_eq!(
+            persisted.host_status().trident_version,
+            TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone()),
         );
     }
 
@@ -1249,6 +1301,8 @@ mod tests {
         datastore
             .with_host_status(|status| {
                 status.servicing_state = unknown.clone();
+                status.trident_version =
+                    TridentVersion::SemVer(Version::new(TRIDENT_SEMVER_VERSION.major + 1, 0, 0));
                 status.last_error = Some(serde_yaml::Value::String("original failure".into()));
             })
             .unwrap();

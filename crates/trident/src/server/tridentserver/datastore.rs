@@ -25,14 +25,17 @@ pub(super) fn stored_image_hash(datastore: &DataStore) -> Option<Sha384Hash> {
 mod preview {
     use super::*;
 
-    use trident_api::status::ServicingState;
+    use trident_api::{
+        error::{InternalError, TridentError},
+        status::ServicingState,
+    };
     use trident_proto::v1preview::ServicingState as ProtoServicingState;
 
     /// Maps the servicing state from the internal datastore representation to the Proto API representation.
     pub(in crate::server::tridentserver) fn servicing_state_from_datastore(
         datastore: &DataStore,
-    ) -> ProtoServicingState {
-        match &datastore.host_status().servicing_state {
+    ) -> Result<ProtoServicingState, TridentError> {
+        Ok(match &datastore.host_status().servicing_state {
             ServicingState::NotProvisioned => ProtoServicingState::NotProvisioned,
             ServicingState::CleanInstallStaged => ProtoServicingState::InstallStaged,
             ServicingState::AbUpdateStaged => ProtoServicingState::UpdateAbStaged,
@@ -51,8 +54,12 @@ mod preview {
                 ProtoServicingState::UpdateAbHealthCheckFailed
             }
             ServicingState::CommitFailed => ProtoServicingState::CommitFailed,
-            ServicingState::Unknown(_) => ProtoServicingState::Unspecified,
-        }
+            state @ ServicingState::Unknown(_) => {
+                return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                    state: state.clone(),
+                }));
+            }
+        })
     }
 
     #[cfg(test)]
@@ -63,7 +70,7 @@ mod preview {
         use tempfile::TempDir;
 
         #[test]
-        fn unknown_servicing_state_is_reported_as_unspecified() {
+        fn unknown_servicing_state_returns_an_explicit_error() {
             let temp = TempDir::new().unwrap();
             let mut datastore =
                 DataStore::open_or_create(&temp.path().join("datastore.sqlite")).unwrap();
@@ -73,8 +80,12 @@ mod preview {
                 })
                 .unwrap();
             assert_eq!(
-                servicing_state_from_datastore(&datastore),
-                ProtoServicingState::Unspecified,
+                servicing_state_from_datastore(&datastore)
+                    .unwrap_err()
+                    .kind(),
+                &trident_api::error::ErrorKind::Internal(InternalError::UnexpectedServicingState {
+                    state: datastore.host_status().servicing_state.clone(),
+                }),
             );
         }
 
@@ -152,7 +163,7 @@ mod preview {
                     .with_host_status(|hs| hs.servicing_state = input.clone())
                     .unwrap();
 
-                let result = servicing_state_from_datastore(&datastore);
+                let result = servicing_state_from_datastore(&datastore).unwrap();
                 assert_eq!(
                     result, expected,
                     "Failed for input: {input:?}, result: {result:?}, expected: {expected:?}"

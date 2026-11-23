@@ -29,7 +29,7 @@ use trident_api::{
 };
 use uuid::Uuid;
 
-use crate::{datastore::DataStore, subsystems::esp};
+use crate::{datastore::DataStore, subsystems::esp, TRIDENT_SEMVER_VERSION};
 
 #[derive(Clone, Debug, serde::Deserialize)]
 struct PrismPartition {
@@ -473,9 +473,15 @@ pub fn execute(
             .structured(InitializationError::ParseHostStatus)
             .message("Failed to parse Host Status as YAML")?;
 
-        let mut host_status = decode_host_status(host_status_yaml)
+        let mut host_status = decode_host_status(host_status_yaml, &TRIDENT_SEMVER_VERSION)
             .structured(InitializationError::ParseHostStatus)
             .message("Failed to load Host Status")?;
+
+        if let ServicingState::Unknown(_) = &host_status.servicing_state {
+            return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                state: host_status.servicing_state.clone(),
+            }));
+        }
 
         host_status
             .spec
@@ -592,6 +598,32 @@ mod tests {
     use super::*;
     use osutils::lsblk::LsBlkOutput;
     use tempfile::NamedTempFile;
+
+    #[test]
+    fn unknown_servicing_state_rejects_offline_initialization() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let path = temp.path().join("status.yaml");
+        let status = HostStatus {
+            servicing_state: ServicingState::Unknown("future-recovery-step".into()),
+            trident_version: trident_api::status::TridentVersion::SemVer(semver::Version::new(
+                TRIDENT_SEMVER_VERSION.major + 1,
+                0,
+                0,
+            )),
+            ..Default::default()
+        };
+        let contents = serde_yaml::to_string(&status).unwrap();
+        fs::write(&path, &contents).unwrap();
+        let error = execute(Some(&path), &[], &"/nonexistent".into(), None).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &trident_api::error::ErrorKind::Internal(InternalError::UnexpectedServicingState {
+                state: status.servicing_state,
+            }),
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), contents);
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
+    }
 
     // lsblk.json was adding a postCustomization step to the
     // usr-verity configuration in test-images
