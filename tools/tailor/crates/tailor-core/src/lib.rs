@@ -21,7 +21,7 @@ pub mod signing;
 pub mod stamp;
 pub mod testing;
 
-pub use ado::{ado_matrix, is_valid_var_name};
+pub use ado::{WorkOrderJob, ado_matrix, escape_logging_value, is_valid_var_name, work_order_jobs};
 pub use catalogue::{
     SlotOutcome, SlotReport, SlotSource, SlotSummary, download, summarize, verify,
 };

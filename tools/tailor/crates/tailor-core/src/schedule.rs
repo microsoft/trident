@@ -176,7 +176,7 @@ pub fn schedule(roots: &[Cell], members: &[Arc<Target>]) -> Result<BuildSchedule
         let Some(slugs) = required.get(target.name()) else {
             continue;
         };
-        let mut chosen: Vec<Cell> = orchestrator::cells(target)?
+        let chosen: Vec<Cell> = orchestrator::cells(target)?
             .into_iter()
             .filter(|cell| slugs.contains(cell.slug.as_ref()))
             .collect();
@@ -189,7 +189,6 @@ pub fn schedule(roots: &[Cell], members: &[Arc<Target>]) -> Result<BuildSchedule
                 ),
             ));
         }
-        chosen.sort_by(|a, b| a.slug.as_ref().cmp(b.slug.as_ref()));
         for cell in &chosen {
             let producers = imagedep::required_producers_with_edges(cell, members)?;
             for (producer, slug) in producers.cells {
@@ -428,6 +427,16 @@ mod tests {
             .flat_map(|target| selection.cells_for(target).unwrap())
             .collect();
         assert_eq!(slugs(&executed), slugs(plan.cells()));
+        assert_eq!(
+            executed
+                .iter()
+                .map(|cell| cell.slug.as_ref())
+                .collect::<Vec<_>>(),
+            plan.cells()
+                .iter()
+                .map(|cell| cell.slug.as_ref())
+                .collect::<Vec<_>>()
+        );
         let mut permuted = members.to_vec();
         permuted.reverse();
         let reversed = schedule(&roots, &permuted).unwrap();
@@ -463,7 +472,27 @@ mod tests {
         let plan = schedule(&roots, &members).unwrap();
         assert_eq!(plan.targets().len(), 1);
         assert_eq!(plan.targets()[0].name(), "leaf");
+        let exact = select("cells: [leaf_skipped_arm64_cosi]", &members).unwrap();
+        let required = schedule(&exact, &members).unwrap();
+        assert_eq!(
+            slugs(required.cells()),
+            BTreeSet::from([
+                "base_arm64_cosi".to_owned(),
+                "leaf_skipped_arm64_cosi".to_owned()
+            ])
+        );
         schedule(&[], &members).unwrap_err();
+        let cyclic = workspace.target("cyclic", &format!("{PATH_BASE}\ndependsOn: [leaf]"));
+        fragment(
+            &leaf,
+            "by-variant/skipped.yaml",
+            "base: {$set: {image: cyclic}}\nskip: true",
+        );
+        let error = schedule(&roots, &[Arc::clone(&leaf), cyclic]).unwrap_err();
+        assert!(
+            matches!(error, CoreError::DependencyCycle { .. }),
+            "got {error:?}"
+        );
         let a = workspace.target("a", &format!("{PATH_BASE}\ndependsOn: [b]"));
         let b = workspace.target("b", &format!("{PATH_BASE}\ndependsOn: [a]"));
         let members = [a, b];
@@ -472,6 +501,56 @@ mod tests {
         assert!(
             matches!(error, CoreError::DependencyCycle { .. }),
             "got {error:?}"
+        );
+    }
+
+    #[test]
+    fn paired_skipped_cells_override_skips_but_depends_on_only_adds_enabled_cells() {
+        let workspace = WorkOrderWorkspace::new();
+        let base = workspace.target("base", &format!(
+            "{PATH_BASE}\nmatrix: {{variant: [normal, skipped], arch: [amd64, arm64]}}\nsigning: release\nskip: true"
+        ));
+        fragment(&base, "by-variant/skipped.yaml", "skip: true");
+        let leaf = workspace.target("leaf", "base: {image: base}\nmatrix: {variant: [normal, skipped], arch: [amd64, arm64]}\ndependsOn: [base]");
+        let members = [base, leaf];
+        let roots = select("cells: [leaf_skipped_arm64_cosi]", &members).unwrap();
+        let plan = schedule(&roots, &members).unwrap();
+        assert_eq!(
+            slugs(plan.cells()),
+            BTreeSet::from([
+                "base_normal_amd64_cosi".to_owned(),
+                "base_normal_arm64_cosi".to_owned(),
+                "base_skipped_arm64_cosi".to_owned(),
+                "leaf_skipped_arm64_cosi".to_owned()
+            ])
+        );
+        assert_eq!(plan.requested(), &slugs(&roots));
+        let selector = plan.selector().unwrap();
+        let executed: Vec<Cell> = plan
+            .targets()
+            .iter()
+            .flat_map(|target| {
+                BuildSelection::from_selector(&selector)
+                    .cells_for(target)
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(
+            executed
+                .iter()
+                .map(|cell| cell.slug.as_ref())
+                .collect::<Vec<_>>(),
+            plan.cells()
+                .iter()
+                .map(|cell| cell.slug.as_ref())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            plan.edges()
+                .iter()
+                .filter(|edge| matches!(edge, DependencyEdge::DependsOn { .. }))
+                .count(),
+            1
         );
     }
 }
