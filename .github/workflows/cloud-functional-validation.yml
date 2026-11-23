@@ -1,0 +1,72 @@
+name: Temporary cloud functional validation
+
+on:
+  push:
+    branches:
+      - user/britel/cloud-functional-validation-20261123
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-functional-validation-20261123
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: trident-github-runner-ubuntu2204-amd64
+    timeout-minutes: 90
+    steps:
+      - name: Checkout harness branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: validation
+          persist-credentials: false
+
+      - name: Checkout reviewed source (not harness HEAD)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 985a0a70b88ea5576805c6fccae6a6ff4d8800a4
+          path: candidate
+          fetch-depth: 2 # Includes the reviewed prerequisite merge parent.
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.x"
+          cache: false
+
+      # The earlier successful validation job took 21 minutes. Allow cold builds
+      # and four VM runs, but bound execution and leave time for evidence upload.
+      - name: Validate on exclusive disposable 1ES host
+        timeout-minutes: 80
+        env:
+          ADO_UMI_CLIENT_ID: e2fd61e6-b160-4f02-a5ac-3d949a4fe01d
+          EXCLUSIVE_DISPOSABLE_1ES: "true"
+        run: |
+          timeout --signal=INT --kill-after=120s 75m \
+            python3 validation/scripts/cloud-agent/functional-validation.py \
+            "$GITHUB_WORKSPACE/candidate" "$RUNNER_TEMP/cloud-functional-reports"
+
+      - name: Record workflow outcome
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/cloud-functional-reports"
+          printf 'Job status before upload: %s\nTarget: 985a0a70b88ea5576805c6fccae6a6ff4d8800a4\n' \
+            "$JOB_STATUS" | tee "$RUNNER_TEMP/cloud-functional-reports/workflow-status.txt" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f "$RUNNER_TEMP/cloud-functional-reports/summary.json" ]]; then
+            cat "$RUNNER_TEMP/cloud-functional-reports/summary.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload bounded redacted evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cloud-functional-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cloud-functional-reports/
+          if-no-files-found: error
+          retention-days: 14
