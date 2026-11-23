@@ -6,6 +6,9 @@ use std::path::PathBuf;
 /// `meta/docs/2026-06-22-architecture.md` §6.
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
+    #[error("invalid work order at `{field}`: {detail}")]
+    WorkOrder { field: String, detail: String },
+
     #[error("failed to read config file `{}`", .path.display())]
     Read {
         path: PathBuf,
