@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tailor work order v1",
+  "description": "Structural schema; workspace selection requires semantic validation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion"],
+  "properties": {
+    "schemaVersion": {"type": "integer", "const": 1},
+    "description": {"type": "string"},
+    "images": {"$ref": "#/$defs/names"},
+    "select": {"$ref": "#/$defs/filter"},
+    "selections": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/selection"}},
+    "slugs": {"$ref": "#/$defs/names"},
+    "cells": {"$ref": "#/$defs/names"}
+  },
+  "oneOf": [
+    {"required": ["images"], "not": {"anyOf": [{"required": ["selections"]}, {"required": ["cells"]}]}},
+    {"required": ["selections"], "not": {"anyOf": [{"required": ["images"]}, {"required": ["select"]}, {"required": ["cells"]}]}},
+    {"required": ["slugs"], "not": {"anyOf": [{"required": ["images"]}, {"required": ["select"]}, {"required": ["selections"]}, {"required": ["cells"]}]}},
+    {"required": ["cells"], "not": {"anyOf": [{"required": ["images"]}, {"required": ["select"]}, {"required": ["selections"]}, {"required": ["slugs"]}]}}
+  ],
+  "$defs": {
+    "names": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "pattern": "\\S"}
+    },
+    "filter": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"minLength": 1, "pattern": "\\S"},
+      "additionalProperties": {"$ref": "#/$defs/names"}
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["images"],
+      "properties": {
+        "images": {"$ref": "#/$defs/names"},
+        "select": {"$ref": "#/$defs/filter"}
+      }
+    }
+  }
+}

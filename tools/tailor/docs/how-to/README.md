@@ -23,6 +23,7 @@ base-image **catalogue**. Each guide notes anything extra it needs.
 ## Build and select
 
 - [Select and build one cell](select-and-build-one-cell.md)
+- [Build work orders](build-work-orders.md)
 - [Cross-arch building](cross-arch-building.md)
 - [Build clones of a cell](build-clones.md)
 - [Change an output format](change-an-output-format.md)

@@ -1,6 +1,6 @@
 //! The clap command-line surface (`meta/docs/2026-06-22-design.md` §11).
 
-use std::{fmt, path::PathBuf};
+use std::{fmt, num::NonZeroUsize, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
@@ -303,7 +303,7 @@ pub(crate) enum MatrixFormat {
     Json,
     /// One cell slug per line — feeds `tailor build --cell <slug>` directly.
     Slugs,
-    /// The bare Azure DevOps matrix object (`{ leg: { var: string, … } }`); see `--ado` to wrap it.
+    /// Dependency-safe jobs carrying work orders; see `--ado` to wrap the matrix.
     Ado,
 }
 
@@ -324,6 +324,17 @@ pub(crate) struct MatrixArgs {
     /// `--format ado` plus the logging-command wrapper. Empty selection fails non-zero.
     #[arg(long, value_name = "VAR_NAME", conflicts_with = "format")]
     pub(crate) ado: Option<String>,
+
+    /// Pack whole dependency components into at most N jobs (ADO output only).
+    #[arg(long, value_name = "N")]
+    pub(crate) max_jobs: Option<NonZeroUsize>,
+}
+
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub(crate) enum PlanFormat {
+    #[default]
+    Text,
+    Json,
 }
 
 /// Args for `tailor build`.
@@ -334,6 +345,31 @@ pub(crate) struct BuildArgs {
 
     #[command(flatten)]
     pub(crate) select: SelectArgs,
+
+    /// Read a YAML or JSON work order instead of CLI selection.
+    #[arg(
+        short = 'w',
+        long,
+        value_name = "PATH",
+        conflicts_with_all = ["work_order_env", "images", "select", "cell", "arch"]
+    )]
+    pub(crate) work_order: Option<PathBuf>,
+
+    /// Read a YAML or JSON work order from the named environment variable.
+    #[arg(
+        long,
+        value_name = "NAME",
+        conflicts_with_all = ["work_order", "images", "select", "cell", "arch"]
+    )]
+    pub(crate) work_order_env: Option<String>,
+
+    /// Print the dependency-complete schedule without engine access or writes.
+    #[arg(long, conflicts_with = "dry_run")]
+    pub(crate) plan: bool,
+
+    /// Output format for --plan (default: text).
+    #[arg(long = "format", value_enum, requires = "plan")]
+    pub(crate) plan_format: Option<PlanFormat>,
 
     /// Require a complete `tailor.lock`; fail on a missing entry or drift.
     #[cfg(feature = "lock-preview")]
@@ -426,4 +462,50 @@ fn parse_convert_format(value: &str) -> Result<tailor_config::OutputFormat, Stri
         }
     };
     Ok(format)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn work_order_sources_conflict_with_each_other_and_cli_selection() {
+        for extra in [
+            vec!["--work-order-env", "ORDER"],
+            vec!["image"],
+            vec!["--cell", "image_amd64_cosi"],
+            vec!["--select", "arch=amd64"],
+            vec!["--arch", "amd64"],
+        ] {
+            let mut args = vec!["tailor", "build", "-w", "order.yaml"];
+            args.extend(extra);
+            Cli::try_parse_from(args).unwrap_err();
+        }
+        Cli::try_parse_from(["tailor", "build", "--work-order-env", "ORDER", "image"]).unwrap_err();
+    }
+
+    #[test]
+    fn plan_format_requires_plan_and_plan_conflicts_with_dry_run() {
+        Cli::try_parse_from(["tailor", "build", "--format", "json"]).unwrap_err();
+        Cli::try_parse_from(["tailor", "build", "--plan", "--dry-run"]).unwrap_err();
+        Cli::try_parse_from([
+            "tailor",
+            "build",
+            "-w",
+            "order.yaml",
+            "--plan",
+            "--format",
+            "json",
+        ])
+        .unwrap();
+    }
+
+    #[test]
+    fn job_limit_must_be_positive() {
+        for limit in ["0", "-1", "invalid"] {
+            Cli::try_parse_from(["tailor", "matrix", "--ado", "MATRIX", "--max-jobs", limit])
+                .unwrap_err();
+        }
+        Cli::try_parse_from(["tailor", "matrix", "--format", "ado", "--max-jobs", "2"]).unwrap();
+    }
 }
