@@ -15,4 +15,6 @@ type TestConfig struct {
 	SkipExtensionTesting      bool   `help:"Skip extension testing during the test" default:"false"`
 	SkipNetplanRuntimeTesting bool   `help:"Skip netplan runtime testing during the test" default:"false"`
 	Uki                       bool   `help:"Whether the image is UKI or not" default:"false"`
+
+	ImageCustomizerContainerName string `help:"Optional owned Image Customizer Docker container name" default:""`
 }

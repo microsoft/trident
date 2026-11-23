@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 
 	stormrollbackconfig "tridenttools/storm/rollback/utils/config"
 	stormfile "tridenttools/storm/utils/file"
@@ -17,6 +18,10 @@ import (
 // Use Image Customizer to prepare the qcow2 image for rollback testing
 // by injecting the extension v1.0.0
 func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmconfig.AllVMConfig) error {
+	containerArgs, err := imageCustomizerContainerArgs(testConfig.ImageCustomizerContainerName)
+	if err != nil {
+		return err
+	}
 	if testConfig.SkipExtensionTesting {
 		logrus.Infof("Skipping qcow2 preparation since SkipExtensionTesting is set")
 		return nil
@@ -99,22 +104,7 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 
 	// Run Image Customizer
 	customizedImageFileName := "tmp-adjusted-rollback-testimage.qcow2"
-	icRunArgs := []string{
-		"run",
-		"--pull=never",
-		"--rm",
-		"--privileged",
-		"-v", fmt.Sprintf("%s:/input-image:z", imageFileFolder),
-		"-v", fmt.Sprintf("%s:/artifacts", testConfig.ArtifactsDir),
-		"-v", "/dev:/dev",
-		testConfig.ImageCustomizerImage,
-		"--log-level", "debug",
-		"--build-dir", "/build",
-		"--image-file", fmt.Sprintf("/input-image/%s", imageFileName),
-		"--output-image-file", fmt.Sprintf("/artifacts/%s", customizedImageFileName),
-		"--output-image-format", "qcow2",
-		"--config-file", fmt.Sprintf("/artifacts/%s", customizerConfigFile),
-	}
+	icRunArgs := imageCustomizerRunArgs(testConfig, imageFileFolder, imageFileName, customizedImageFileName, customizerConfigFile, containerArgs)
 	logrus.Tracef("Running Image Customizer command: %v", icRunArgs)
 	icRunOutput, err := exec.Command("docker", icRunArgs...).CombinedOutput()
 	logrus.Tracef("Run Image Customizer (%v):\n%s", err, string(icRunOutput))
@@ -137,4 +127,31 @@ func PrepareQcow2(testConfig stormrollbackconfig.TestConfig, vmConfig stormvmcon
 	logrus.Tracef("Moved new image file to original location: %s", imageFilePath)
 
 	return nil
+}
+
+func imageCustomizerContainerArgs(name string) ([]string, error) {
+	if name == "" {
+		return nil, nil
+	}
+	if len(name) > 128 || !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]+$`).MatchString(name) {
+		return nil, fmt.Errorf("invalid Image Customizer container name")
+	}
+	return []string{"--name", name, "--label", "com.microsoft.trident.lifecycle-owner=" + name}, nil
+}
+
+func imageCustomizerRunArgs(testConfig stormrollbackconfig.TestConfig, imageFileFolder, imageFileName, customizedImageFileName, customizerConfigFile string, containerArgs []string) []string {
+	args := []string{"run", "--pull=never", "--rm", "--privileged"}
+	args = append(args, containerArgs...)
+	return append(args,
+		"-v", fmt.Sprintf("%s:/input-image:z", imageFileFolder),
+		"-v", fmt.Sprintf("%s:/artifacts", testConfig.ArtifactsDir),
+		"-v", "/dev:/dev",
+		testConfig.ImageCustomizerImage,
+		"--log-level", "debug",
+		"--build-dir", "/build",
+		"--image-file", fmt.Sprintf("/input-image/%s", imageFileName),
+		"--output-image-file", fmt.Sprintf("/artifacts/%s", customizedImageFileName),
+		"--output-image-format", "qcow2",
+		"--config-file", fmt.Sprintf("/artifacts/%s", customizerConfigFile),
+	)
 }
