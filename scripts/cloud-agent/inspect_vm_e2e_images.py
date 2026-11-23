@@ -97,7 +97,9 @@ MAX_RAW_SIZE = 16 * 1024**3
 
 
 class Failure(RuntimeError):
-    pass
+    def __init__(self, fact, *, diagnostic=None):
+        super().__init__(fact)
+        self.diagnostic = diagnostic
 
 
 class Cancelled(BaseException):
@@ -112,6 +114,102 @@ def require(condition, fact):
 def measure(path):
     require(path.is_file() and not path.is_symlink(), "regular-file-required")
     return {"size": path.stat().st_size, "sha256": ado.hash_file(path)}
+
+
+def base_cli_versions():
+    versions = {"status": "unavailable", "azureCli": None, "azureDevopsExtension": None}
+    try:
+        data = json.loads(
+            command(
+                ["az", "version", "--output", "json"],
+                timeout=30,
+                failure_fact="base-cli-version-unavailable",
+            )
+        )
+    except Cancelled:
+        versions["status"] = "cancelled"
+        return versions
+    except (Failure, OSError, ValueError, TypeError, subprocess.TimeoutExpired):
+        return versions
+    if not isinstance(data, dict):
+        return versions
+    extensions = data.get("extensions")
+    for key, value in (
+        ("azureCli", data.get("azure-cli")),
+        (
+            "azureDevopsExtension",
+            extensions.get("azure-devops") if isinstance(extensions, dict) else None,
+        ),
+    ):
+        if isinstance(value, str) and re.fullmatch(
+            r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}", value
+        ):
+            versions[key] = value
+    count = sum(
+        versions[key] is not None for key in ("azureCli", "azureDevopsExtension")
+    )
+    versions["status"] = (
+        "available" if count == 2 else "partial" if count else "unavailable"
+    )
+    return versions
+
+
+def base_download_diagnostic(returncode, stderr):
+    sample = b""
+    stderr_status = "available"
+    try:
+        stderr.seek(0)
+        sample = stderr.read(64 * 1024 + 1)
+    except OSError:
+        stderr_status = "unavailable"
+    patterns = (
+        (
+            "authentication-message",
+            rb"before you can run azure devops commands|please run ['\"]az login|aadsts[0-9]+|authentication failed|tenant shouldn't be specified",
+        ),
+        (
+            "access-message",
+            rb"\bunauthorized\b|\bforbidden\b|\baccess denied\b|\bTF400813\b|\bVS30063\b",
+        ),
+        ("http-401", rb"(?:HTTP(?:Error)?|status(?: code)?)[: =]{1,10}401\b"),
+        ("http-403", rb"(?:HTTP(?:Error)?|status(?: code)?)[: =]{1,10}403\b"),
+        (
+            "cli-contract-or-version-message",
+            rb"unrecognized arguments:|is misspelled or not recognized|requires.*azure.cli|minimum.*extension",
+        ),
+        (
+            "artifacttool-bootstrap-message",
+            rb"failed to update universal packages tooling|an error occurred while extracting the universal packages tooling|failed to download artifacttool",
+        ),
+        (
+            "artifacttool-runtime-message",
+            rb"you must install or update \.net|no usable version of libssl|couldn't find a valid icu package|failed to load.*hostfxr",
+        ),
+        (
+            "package-or-feed-message",
+            rb"cannot find the (?:feed|package)|(?:feed|package|version)[^\r\n]{0,160}(?:not found|does not exist)",
+        ),
+        (
+            "transport-message",
+            rb"certificate verify failed|name or service not known|temporary failure in name resolution|connection (?:timed out|refused|reset)|proxyerror|sslerror",
+        ),
+    )
+    markers = [
+        name
+        for name, pattern in patterns
+        if re.search(pattern, sample[: 64 * 1024], re.I)
+    ]
+    return {
+        "exitCode": returncode,
+        "basis": "bounded-stderr-markers-not-root-cause",
+        "stderrStatus": stderr_status,
+        "stderrMarkers": markers or ["unclassified"],
+        "stderrTruncated": (
+            len(sample) > 64 * 1024 if stderr_status == "available" else None
+        ),
+        # A secondary metadata failure must not replace the original download failure.
+        "versions": base_cli_versions(),
+    }
 
 
 def command(
@@ -144,6 +242,14 @@ def command(
             finally:
                 raise primary
         VM_RUNNER.signal_group(process, signal.SIGKILL)
+        if (
+            process.returncode
+            and failure_fact == "exact-base-universal-download-failed"
+        ):
+            raise Failure(
+                failure_fact,
+                diagnostic=base_download_diagnostic(process.returncode, stderr),
+            )
         require(process.returncode == 0, failure_fact)
         stdout.seek(0)
         result = stdout.read(1024 * 1024 + 1)
@@ -823,6 +929,8 @@ def execute(output, scratch, bootstrap_guestfish=False):
         status = re.search(r"\bHTTP ([0-9]{3})\b", str(error))
         if status:
             report["failure"]["httpStatus"] = int(status[1])
+        if type(error) is Failure and error.diagnostic is not None:
+            report["failure"]["diagnostic"] = error.diagnostic
     finally:
         active = report["complete"].pop("activeInspection", None)
         if active and report["failure"]:

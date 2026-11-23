@@ -123,6 +123,39 @@ SuperRoot are never treated as file SHA256. The recorded MIC SHA256 is a
 previously qualified consumed container digest, not a new tag lookup or file hash.
 Each image's original inclusive input citations are retained separately.
 
+## Exact-base download failure diagnostics
+
+Replacement run `45281312918` reported `exact-base-universal-download-failed`
+after recording archive/file and candidate RPM measurements. It recorded neither
+a base VHDX measurement nor installed image payload proof. Its preserved report
+does not contain the child exit code, CLI/extension versions or distinguishing
+error evidence. It proves a nonzero CLI exit, not a specific authentication,
+permission, ArtifactTool or version defect.
+
+The invocation matches the [official CLI reference](https://learn.microsoft.com/en-us/cli/azure/artifacts/universal?view=azure-cli-latest)
+and [project-scoped download/file-filter examples](https://learn.microsoft.com/en-us/azure/devops/artifacts/quickstarts/download-universal-packages?view=azure-devops).
+Official extension sources separately perform credential resolution
+([services.py](https://github.com/Azure/azure-devops-cli-extension/blob/master/azure-devops/azext_devops/dev/common/services.py))
+and ArtifactTool release lookup/bootstrap
+([artifacttool_updater.py](https://github.com/Azure/azure-devops-cli-extension/blob/master/azure-devops/azext_devops/dev/common/artifacttool_updater.py)).
+Those references are not evidence of the versions installed in the failed run.
+Successful ECF byte reads do not prove this separate feed/tool/CLI path works.
+No deterministic contract correction or actual access denial is established.
+
+Only a nonzero exit from the exact-base command adds `failure.diagnostic`:
+the child exit code, fixed marker labels from at most the first 64 KiB of private
+stderr, truncation/read availability, and allowlisted installed CLI/extension
+numeric-triplet versions. The local metadata-only `az version --output json`
+query is bounded to 30 seconds; its failure/cancellation cannot replace the
+original download failure. Unrecognized evidence stays explicitly unclassified
+or unavailable. Markers describe observed text, not an independently established
+root cause or feed denial. No stderr/stdout fragments, hashes, matched text,
+paths, environment, tokens or URLs are emitted. Timeouts/cancellation of the
+original command retain their original handling and owned-group teardown.
+The download command, identity, immutable selectors and proof gates are unchanged.
+There is no retry, CLI/extension upgrade, alternate principal/endpoint, package
+or version fallback. A subsequently established access denial remains a blocker.
+
 ## Review handoff and remaining gates
 
 `status: complete` means measurements completed, **not** independent approval,

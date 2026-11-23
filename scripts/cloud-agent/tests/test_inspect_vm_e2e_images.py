@@ -963,6 +963,34 @@ while True:
 
         def run(argv, **kwargs):
             if argv[:4] == ["az", "artifacts", "universal", "download"]:
+                self.assertEqual(
+                    argv[4:-3],
+                    [
+                        "--organization",
+                        "https://dev.azure.com/mariner-org",
+                        "--project",
+                        "36d030d6-1d99-4ebd-878b-09af1f4f722f",
+                        "--scope",
+                        "project",
+                        "--feed",
+                        "AzureLinuxArtifacts",
+                        "--name",
+                        "baremetal_vhdx-3.0-stable",
+                        "--version",
+                        "3.0.20261116",
+                        "--file-filter",
+                        "core-3.0.20261116.vhdx",
+                    ],
+                )
+                self.assertEqual(argv[-3], "--path")
+                self.assertEqual(argv[-1], "--only-show-errors")
+                self.assertEqual(
+                    kwargs,
+                    {
+                        "timeout": 1200,
+                        "failure_fact": "exact-base-universal-download-failed",
+                    },
+                )
                 self.assertEqual(argv[argv.index("--version") + 1], "3.0.20261116")
                 self.assertEqual(
                     argv[argv.index("--file-filter") + 1],
@@ -1076,6 +1104,235 @@ while True:
                     "print('fixture-sensitive-body'); raise SystemExit(4)",
                 ]
             )
+
+    def test_base_download_stderr_classification_is_allowlisted_not_a_root_cause(self):
+        examples = (
+            (
+                b"Before you can run Azure DevOps commands, you need to run the login command",
+                "authentication-message",
+            ),
+            (b"HTTP 401 Unauthorized", "access-message"),
+            (b"HTTPError: 403 Forbidden", "http-403"),
+            (
+                b"unrecognized arguments: --file-filter",
+                "cli-contract-or-version-message",
+            ),
+            (
+                b"Failed to update Universal Packages tooling",
+                "artifacttool-bootstrap-message",
+            ),
+            (
+                b"You must install or update .NET to run this application",
+                "artifacttool-runtime-message",
+            ),
+            (b"Cannot find the package", "package-or-feed-message"),
+            (
+                b"CERTIFICATE_VERIFY_FAILED: certificate verify failed",
+                "transport-message",
+            ),
+            (b"\xff\x00fixture-sensitive-unknown", "unclassified"),
+        )
+        for body, marker in examples:
+            with (
+                self.subTest(marker=marker),
+                patch.object(
+                    inspector,
+                    "base_cli_versions",
+                    return_value={"status": "unavailable"},
+                ),
+            ):
+                diagnostic = inspector.base_download_diagnostic(
+                    7,
+                    io.BytesIO(
+                        body
+                        + b"\nBearer fixture-sensitive-token https://fixture.invalid/?sig=fixture-sensitive"
+                    ),
+                )
+            self.assertIn(marker, diagnostic["stderrMarkers"])
+            self.assertEqual(diagnostic["exitCode"], 7)
+            self.assertEqual(
+                diagnostic["basis"], "bounded-stderr-markers-not-root-cause"
+            )
+            self.assertNotIn("fixture-sensitive", json.dumps(diagnostic))
+            self.assertNotIn("fixture.invalid", json.dumps(diagnostic))
+
+    def test_base_download_diagnostic_reads_only_bounded_private_prefix(self):
+        stderr = io.BytesIO(b"x" * (64 * 1024) + b"HTTP 403 Forbidden")
+        with (
+            patch.object(
+                inspector, "base_cli_versions", return_value={"status": "unavailable"}
+            ),
+            patch.object(stderr, "read", wraps=stderr.read) as read,
+        ):
+            diagnostic = inspector.base_download_diagnostic(1, stderr)
+        read.assert_called_once_with(64 * 1024 + 1)
+        self.assertTrue(diagnostic["stderrTruncated"])
+        self.assertEqual(diagnostic["stderrMarkers"], ["unclassified"])
+
+    def test_base_cli_versions_emit_only_numeric_allowlisted_metadata(self):
+        with patch.object(
+            inspector,
+            "command",
+            return_value=json.dumps(
+                {
+                    "azure-cli": "2.77.0",
+                    "extensions": {"azure-devops": "1.0.2"},
+                    "unknown": "fixture-sensitive",
+                }
+            ),
+        ) as run:
+            self.assertEqual(
+                inspector.base_cli_versions(),
+                {
+                    "status": "available",
+                    "azureCli": "2.77.0",
+                    "azureDevopsExtension": "1.0.2",
+                },
+            )
+        run.assert_called_once_with(
+            ["az", "version", "--output", "json"],
+            timeout=30,
+            failure_fact="base-cli-version-unavailable",
+        )
+        for value in (
+            "not-json fixture-sensitive",
+            "[]",
+            json.dumps(
+                {
+                    "azure-cli": "fixture-sensitive-token",
+                    "extensions": {
+                        "azure-devops": "https://fixture.invalid/?sig=fixture-sensitive"
+                    },
+                }
+            ),
+        ):
+            with patch.object(inspector, "command", return_value=value):
+                versions = inspector.base_cli_versions()
+            self.assertIsNone(versions["azureCli"])
+            self.assertIsNone(versions["azureDevopsExtension"])
+            self.assertEqual(versions["status"], "unavailable")
+            self.assertNotIn("fixture-sensitive", json.dumps(versions))
+
+    def test_base_download_primary_exit_survives_secondary_metadata_failures(self):
+        real_command = inspector.command
+        errors = (
+            inspector.Failure("fixture-sensitive"),
+            OSError("fixture-sensitive"),
+            subprocess.TimeoutExpired("fixture-sensitive", 30),
+            inspector.Cancelled(),
+        )
+        for error in errors:
+
+            def invoke(argv, **kwargs):
+                if argv == ["az", "version", "--output", "json"]:
+                    raise error
+                self.assertEqual(argv, [sys.executable, "-c", "raise SystemExit(17)"])
+                return real_command(argv, **kwargs)
+
+            with (
+                self.subTest(error=type(error).__name__),
+                patch.object(inspector, "command", side_effect=invoke),
+                self.assertRaisesRegex(
+                    inspector.Failure, "^exact-base-universal-download-failed$"
+                ) as caught,
+            ):
+                inspector.command(
+                    [sys.executable, "-c", "raise SystemExit(17)"],
+                    failure_fact="exact-base-universal-download-failed",
+                )
+            diagnostic = caught.exception.diagnostic
+            self.assertEqual(diagnostic["exitCode"], 17)
+            self.assertEqual(
+                diagnostic["versions"]["status"],
+                (
+                    "cancelled"
+                    if isinstance(error, inspector.Cancelled)
+                    else "unavailable"
+                ),
+            )
+            self.assertNotIn("fixture-sensitive", json.dumps(diagnostic))
+
+    def test_base_download_stderr_read_failure_preserves_exit_without_raw_error(self):
+        stderr = io.BytesIO()
+        with (
+            patch.object(
+                inspector, "base_cli_versions", return_value={"status": "unavailable"}
+            ),
+            patch.object(stderr, "read", side_effect=OSError("fixture-sensitive")),
+        ):
+            diagnostic = inspector.base_download_diagnostic(-9, stderr)
+        self.assertEqual(diagnostic["exitCode"], -9)
+        self.assertEqual(diagnostic["stderrStatus"], "unavailable")
+        self.assertIsNone(diagnostic["stderrTruncated"])
+        self.assertNotIn("fixture-sensitive", json.dumps(diagnostic))
+
+    def test_base_diagnostics_only_run_for_exact_download_nonzero_exit(self):
+        with patch.object(inspector, "base_download_diagnostic") as diagnostic:
+            self.assertEqual(
+                inspector.command(
+                    [sys.executable, "-c", "print('fixture')"],
+                    failure_fact="exact-base-universal-download-failed",
+                ),
+                "fixture\n",
+            )
+            with self.assertRaisesRegex(
+                inspector.Failure, "^inspection-command-failed$"
+            ):
+                inspector.command([sys.executable, "-c", "raise SystemExit(4)"])
+            with self.assertRaises(subprocess.TimeoutExpired):
+                inspector.command(
+                    [sys.executable, "-c", "import time; time.sleep(20)"],
+                    timeout=0.1,
+                    failure_fact="exact-base-universal-download-failed",
+                )
+        diagnostic.assert_not_called()
+
+    def test_real_base_failure_report_preserves_partial_facts_and_redacts_all_output(
+        self,
+    ):
+        with (
+            patch.object(
+                inspector, "base_cli_versions", return_value={"status": "unavailable"}
+            ),
+            self.assertRaises(inspector.Failure) as caught,
+        ):
+            inspector.command(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('fixture-sensitive-stdout'); "
+                    "sys.stderr.write('Failed to update Universal Packages tooling HTTP 403 Forbidden "
+                    "Bearer fixture-sensitive-token https://fixture.invalid/?sig=fixture-sensitive'); "
+                    "raise SystemExit(17)",
+                ],
+                failure_fact="exact-base-universal-download-failed",
+            )
+
+        def partial(work, facts):
+            facts["rpms"] = self.packages
+            raise caught.exception
+
+        code, raw, report = self.execute_fixture(partial)
+        self.assertEqual(code, 1)
+        self.assertEqual(report["status"], "failure")
+        self.assertEqual(report["reviewStatus"], "UNREVIEWED")
+        self.assertEqual(report["complete"]["rpms"], self.packages)
+        self.assertNotIn("baseVhdx", report["complete"])
+        self.assertEqual(
+            report["failure"]["missingFact"], "exact-base-universal-download-failed"
+        )
+        self.assertEqual(report["failure"]["diagnostic"]["exitCode"], 17)
+        self.assertEqual(
+            report["failure"]["diagnostic"]["stderrMarkers"],
+            [
+                "access-message",
+                "http-403",
+                "artifacttool-bootstrap-message",
+            ],
+        )
+        self.assertNotIn("fixture-sensitive", raw)
+        self.assertNotIn("fixture.invalid", raw)
+        self.assertNotIn("Bearer", raw)
 
     def test_real_command_timeout_reaps_only_owned_process(self):
         processes = []
