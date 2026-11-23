@@ -6,6 +6,7 @@ use std::{
     env, fs,
     future::Future,
     io,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -24,9 +25,8 @@ use tailor_core::{
     CoreError, ExecutionContext, Executor, LocalImage, LockedBase, LockedContainer, LockedRuntime,
     Lockfile, MissingPrerequisite, Orchestrator, ResolveError, ResolvedBase, ResolvedToolchain,
     ResolvedToolsDirSource, Selector, SignError, Signer, SigningRequirement, SlotSource,
-    SlotSummary, Target, ado_matrix, cells, cells_selected, download, imagedep, is_valid_var_name,
-    runtime_config, select_node_cells, summarize, toolchain_for, toolchain_key, tools_dir_key,
-    verify,
+    SlotSummary, Target, ado, cells, cells_selected, download, imagedep, runtime_config, schedule,
+    summarize, toolchain_for, toolchain_key, tools_dir_key, verify,
 };
 use tailor_exec::{
     BollardRuntime, IcExecutor, NoopRuntime, ResolveInputs, WorktreeLock, ca_cert_name, resolve,
@@ -40,7 +40,7 @@ use crate::{
         InitTemplate, MatrixFormat, SelectArgs, TimestampMode,
     },
     error::AppError,
-    scaffold,
+    scaffold, work_orders,
 };
 
 const LOCK_FILE: &str = "tailor.lock";
@@ -159,12 +159,14 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<(), AppError> {
             &selector(&args.select, &[])?,
             args.format,
             args.ado.as_deref(),
+            args.max_jobs,
         ),
         Command::Slugs(args) => matrix(
             &workspace,
             &args.images,
             &selector(&args.select, &[])?,
             MatrixFormat::Slugs,
+            None,
             None,
         ),
         Command::Resolve(args) => resolve_verb(&workspace, &args.images, &engine).await,
@@ -593,6 +595,7 @@ fn matrix(
     selector: &Selector,
     format: MatrixFormat,
     ado_var: Option<&str>,
+    max_jobs: Option<NonZeroUsize>,
 ) -> Result<(), AppError> {
     // `--ado <VAR>` is `--format ado` plus the setvariable wrapper.
     let format = if ado_var.is_some() {
@@ -600,6 +603,70 @@ fn matrix(
     } else {
         format
     };
+    if matches!(format, MatrixFormat::Ado) {
+        if let Some(var) = ado_var
+            && !ado::is_valid_var_name(var)
+        {
+            return Err(AppError::Request(format!(
+                "invalid --ado variable name `{var}` (expected [A-Za-z_][A-Za-z0-9_]*)"
+            )));
+        }
+        let members = all_member_targets(workspace)?;
+        for name in names {
+            if !members.iter().any(|target| target.name() == name) {
+                return Err(AppError::Request(format!("unknown matrix image `{name}`")));
+            }
+        }
+        let mut roots = Vec::new();
+        for target in build_targets(workspace, names)? {
+            match cells_selected(&target, selector) {
+                Ok(mut selected) => roots.append(&mut selected),
+                Err(CoreError::NoCellsSelected { .. }) => {}
+                Err(source) => return Err(source.into()),
+            }
+        }
+        if roots.is_empty() {
+            return Err(AppError::Request(
+                "matrix selection matched no cells; cannot emit an empty job matrix".to_owned(),
+            ));
+        }
+        let schedule = schedule::schedule(&roots, &members)?;
+        let jobs = ado::work_order_jobs(&schedule, &members, max_jobs)?;
+        let mut matrix = BTreeMap::new();
+        for job in &jobs {
+            matrix.insert(
+                job.key(),
+                BTreeMap::from([(
+                    "TAILOR_WORK_ORDER",
+                    serde_json::to_string(job.work_order())?,
+                )]),
+            );
+        }
+        let json = serde_json::to_string(&matrix)?;
+        if let Some(var) = ado_var {
+            println!(
+                "{ADO_SETVAR_PREFIX}{var}{ADO_SETVAR_SUFFIX}{}",
+                ado::escape_logging_value(&json)
+            );
+        } else {
+            println!("{json}");
+        }
+        eprintln!("Published {} work-order job(s):", jobs.len());
+        for job in &jobs {
+            eprintln!(
+                "  {}  {} cell(s)  {}",
+                job.key(),
+                job.cell_count(),
+                job.images().join(", ")
+            );
+        }
+        return Ok(());
+    }
+    if max_jobs.is_some() {
+        return Err(AppError::Request(
+            "--max-jobs requires --ado or --format ado".to_owned(),
+        ));
+    }
     let mut cells = Vec::new();
     for target in build_targets(workspace, names)? {
         match cells_selected(&target, selector) {
@@ -628,45 +695,9 @@ fn matrix(
                 println!("{}", cell.slug);
             }
         }
-        MatrixFormat::Ado => {
-            let matrix = ado_matrix(&cells);
-            let json = serde_json::to_string(&matrix)?;
-            match ado_var {
-                Some(var) => {
-                    if !is_valid_var_name(var) {
-                        return Err(AppError::Message(format!(
-                            "invalid --ado variable name `{var}` (expected [A-Za-z_][A-Za-z0-9_]*)"
-                        )));
-                    }
-                    if cells.is_empty() {
-                        return Err(AppError::Message(
-                            "--ado selection matched no cells; ADO cannot expand an empty matrix"
-                                .to_owned(),
-                        ));
-                    }
-                    println!("{ADO_SETVAR_PREFIX}{var}{ADO_SETVAR_SUFFIX}{json}");
-                    eprint_ado_legs(var, &matrix);
-                }
-                None => println!("{json}"),
-            }
-        }
+        MatrixFormat::Ado => unreachable!("job output handled before cell inventories"),
     }
     Ok(())
-}
-
-/// `--ado <VAR>` emits only the `##vso[task.setvariable …]` line, which the ADO agent consumes and
-/// hides from the build log. Echo a human-readable leg roster to stderr (which the log *does* show)
-/// so an operator can see which legs were published and map each ADO leg key back to its cell slug.
-fn eprint_ado_legs(var: &str, matrix: &BTreeMap<String, BTreeMap<String, String>>) {
-    eprintln!(
-        "Published {} matrix leg(s) to ADO variable {var}:",
-        matrix.len()
-    );
-    let width = matrix.keys().map(String::len).max().unwrap_or(0);
-    for (key, vars) in matrix {
-        let slug = vars.get("slug").map_or("", String::as_str);
-        eprintln!("  {key:<width$}  {slug}");
-    }
 }
 
 // ───────────────────────────── base-image catalogue verbs ─────────────────────────────
@@ -1438,59 +1469,52 @@ async fn build(
     logging: &LogOverrides,
 ) -> Result<(), AppError> {
     let mut tool = tool_config(workspace);
-    resolve_image_cache_dir(&mut tool, &workspace.root);
-    apply_log_overrides(&mut tool, logging, &workspace.root)?;
-    apply_build_dir_base_override(&mut tool, args.build_dir_base.as_deref())?;
     // All workspace images supply producer definitions for resolving `base: { image }` references,
     // and let a positional cell slug resolve to its owning image.
     let all_members = all_member_targets(workspace)?;
     // Positionals may name images *or* cell slugs: a slug builds exactly that cell (of its owning
     // image), so `tailor build <slug>` works without naming the image.
-    let (image_names, positional_slugs) = classify_build_positionals(&args.images, &all_members)?;
-    let targets = build_targets(workspace, &image_names)?;
-    // Build the selected images plus their transitive producers, in topological order, so a consumer
-    // is planned *after* its producers (its base hashes then reflect the fresh artifacts —
-    // `meta/docs/2026-09-09-inter-image-dependencies.md` §4). This also detects dependency cycles. Both the
-    // dry-run and real-build paths schedule over this order.
-    let closure = imagedep::dependency_closure(&targets, &all_members)?;
-    let ordered = imagedep::topological_order(&closure, &all_members)?;
-    // Positional slugs join any explicit `--cell` selection.
-    let mut cell_selectors = args.select.cell.clone();
-    cell_selectors.extend(positional_slugs);
-    let selection = Selector::parse(&args.select.select, &cell_selectors, &args.arch)?;
-    // The user selector applies only to the explicitly requested images; a transitively pulled-in
-    // producer instead builds exactly the cells its consumers need. Walk the schedule upstream
-    // (reverse topological order) so each consumer registers the producer coordinates it requires
-    // *before* those producers are planned, so a `-s`/`--cell` selection meant for a consumer never
-    // drops (or errors on) a producer's paired cell (`inter-image-dependencies.md` §4).
-    let requested: BTreeSet<String> = targets.iter().map(|t| t.name().to_owned()).collect();
-    let mut required: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    let mut scheduled_targets = Vec::new();
-    for node in ordered.iter().rev() {
-        let apply_selector = requested.contains(node.name());
-        let node_cells =
-            select_node_cells(node, &selection, apply_selector, required.get(node.name()))?;
-        if !node_cells.is_empty() {
-            scheduled_targets.push(Arc::clone(node));
+    let roots = if let Some(roots) = work_orders::requested(&args, &all_members)? {
+        roots
+    } else {
+        let (image_names, positional_slugs) =
+            classify_build_positionals(&args.images, &all_members)?;
+        let targets = build_targets(workspace, &image_names)?;
+        let closure = imagedep::dependency_closure(&targets, &all_members)?;
+        imagedep::topological_order(&closure, &all_members)?;
+        let mut cell_selectors = args.select.cell.clone();
+        cell_selectors.extend(positional_slugs);
+        let selection = Selector::parse(&args.select.select, &cell_selectors, &args.arch)?;
+        let mut roots = Vec::new();
+        for target in targets {
+            roots.extend(cells_selected(&target, &selection)?);
         }
-        for cell in &node_cells {
-            for (producer, slug) in imagedep::required_producers(cell, &all_members)? {
-                required.entry(producer).or_default().insert(slug);
-            }
-        }
-    }
-    scheduled_targets.reverse();
-    let build_selection = BuildSelection {
-        selector: &selection,
-        requested,
-        required,
+        roots
     };
+    let schedule = schedule::schedule(&roots, &all_members)?;
+    let ordered = schedule.targets().to_vec();
+    let selection = schedule.selector()?;
+    let build_selection = BuildSelection::from_selector(&selection);
     let output_dir = tailor_config::absolutize(
         args.output_dir
             .clone()
             .unwrap_or_else(|| workspace.root.join(ARTIFACTS_DIR)),
         env::current_dir().map_err(|e| AppError::Message(format!("current dir: {e}")))?,
     );
+    if args.plan {
+        let signing = signing_requirements(&ordered, tool.signing.as_ref())?;
+        ensure_signing_preview(&tool, &signing)?;
+        return work_orders::print_plan(
+            &schedule,
+            &tool,
+            &output_dir,
+            args.clones,
+            args.plan_format.unwrap_or_default(),
+        );
+    }
+    resolve_image_cache_dir(&mut tool, &workspace.root);
+    apply_log_overrides(&mut tool, logging, &workspace.root)?;
+    apply_build_dir_base_override(&mut tool, args.build_dir_base.as_deref())?;
     // Default the build directory to a tailor-owned location under the output directory when
     // `runtime.buildDirBase` is unset, so builds — including tools-dir images, which need a writable
     // scratch dir — work with no host-specific path. The output directory is a real, bound
@@ -1506,7 +1530,7 @@ async fn build(
             .get_or_insert_with(Runtime::default)
             .build_dir_base = Some(output_dir.join(TAILOR_STATE_DIR).join(BUILD_DIR));
     }
-    let signing = signing_requirements(&scheduled_targets, tool.signing.as_ref())?;
+    let signing = signing_requirements(&ordered, tool.signing.as_ref())?;
     ensure_signing_preview(&tool, &signing)?;
     // Build one signer per required profile (a shared CA per build); `signer_for` resolves a cell to
     // its signer via the image name (meta/docs/2026-06-29-signing.md §6). Empty when nothing signs.
