@@ -460,14 +460,17 @@ These rules apply to agents writing code:
   (`format`, `rust`, `go`, `tailor`, or `cloud-agent`) before rerunning the
   default full suite.
 - For changes that affect host interaction, storage, filesystems, boot,
-  servicing, or functional-test infrastructure, also run
+  servicing, or functional-test infrastructure, functional validation requires
+  an exclusive, disposable outer 1ES test runner with nested virtualization.
+  Multiple nested VMs are legitimate; these scripts do not provide universal
+  shared-host filesystem dependency safety. On that runner, also run
   `bash scripts/cloud-agent/setup-functional.sh` followed by
   `scripts/cloud-agent/validate.sh functional`. This resolves the latest
   successful `trident-ci` image from `main`, records its immutable build and
   SHA-256 provenance, creates a libvirt VM, and runs the bounded positive helper
   suite. Use
   `bash scripts/cloud-agent/run-functional.sh full` when the change requires
-  the complete functional suite.
+  the complete functional suite. Both modes are functional-only, not all E2E.
 - Functional validation is explicit and is not included in the default `all`
   group because it requires the 1ES runner's nested virtualization and the
   ADO-produced VM artifact.

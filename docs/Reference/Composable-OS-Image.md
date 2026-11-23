@@ -9,6 +9,7 @@ title: COSI Spec
 
 | Revision            | Spec Date  |
 | ------------------- | ---------- |
+| [1.3](#revision-13) | TBD        |
 | [1.2](#revision-12) | 2026-01-30 |
 | [1.1](#revision-11) | 2025-05-08 |
 | [1.0](#revision-10) | 2024-10-09 |
@@ -60,8 +61,8 @@ The tar file MUST contain the following files:
   MUST exist in the same physical order as they appear in the source disk image.
 
 To allow for future extensions, the tar file MAY contain other files, but
-Trident MUST ignore them. The tar file SHOULD NOT contain any extra files that
-will not be used by Trident. Any extra files, if present, MUST exist after the
+readers MUST ignore files not referenced by metadata fields they support. The
+tar file SHOULD NOT contain unused files. Any extra files MUST exist after the
 `cosi-marker` and `metadata.json` files.
 
 ### Tar File Layout
@@ -176,6 +177,22 @@ However, writers MUST populate the `compression` field in the metadata with
 parameters that will guarantee successful decompression of all images by
 readers. See [`Compression Object`](#compression-object) for more details.
 
+### Extension Images
+
+Starting from COSI revision 1.3, the archive MAY also contain system extension
+(sysext) and configuration extension (confext) images described by the
+[`extensions` metadata](#extensions-object).
+
+Each payload MUST be a complete
+[Discoverable Disk Image (DDI)](https://uapi-group.org/specifications/specs/discoverable_disk_image/),
+compressed using ZSTD and stored as a regular tar member under
+`images/extensions/`. Extension members MUST follow all disk region images.
+Their compression windows MUST be included in `compression.maxWindowLog`.
+
+Extension images are separate payloads, not regions of the source disk. They
+MUST NOT appear in `images` or `disk.gptRegions`, and do not replace the required
+disk metadata or primary GPT image.
+
 ### GUID Partition Table (GPT) File
 
 Starting from COSI version 1.2, the immediate next file after the metadata file
@@ -223,6 +240,7 @@ compatibility.
 
 Machine-readable JSON Schema:
 
+- [1.3](https://raw.githubusercontent.com/microsoft/trident/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.3.schema.json)
 - [1.2](https://raw.githubusercontent.com/microsoft/trident/main/docs/Reference/Composable-OS-Image/cosi-metadata-v1.2.schema.json)
 
 ##### Root Object
@@ -240,6 +258,7 @@ The metadata file MUST contain a JSON object with the following fields:
 | `bootloader`  | [Bootloader](#bootloader-object)       | 1.1      | Yes (since 1.1) | Information about the bootloader used by the OS. |
 | `id`          | UUID (string, case insensitive)        | 1.0      | No              | A unique identifier for the COSI file.           |
 | `compression` | [Compression](#compression-object)     | 1.2      | Yes (since 1.2) | Compression metadata for the COSI file.          |
+| `extensions`  | [Extensions](#extensions-object)       | 1.3      | No              | Bundled system and configuration extension images. |
 
 If the object contains other fields, readers MUST ignore them. A writer SHOULD
 NOT add any other fields to the object.
@@ -299,6 +318,49 @@ device on top of a data device.
 | `compressedSize`   | number | 1.0      | Yes (since 1.0) | Size of the compressed image in bytes.                                            |
 | `uncompressedSize` | number | 1.0      | Yes (since 1.0) | Size of the raw uncompressed image in bytes.                                      |
 | `sha384`           | string | 1.0      | Yes (since 1.1) | SHA-384 hash of the compressed image.                                             |
+
+##### `Extensions` Object
+
+| Field | Type | Added in | Required | Description |
+| --- | --- | --- | --- | --- |
+| `sysexts` | [ExtensionImage](#extensionimage-object)[] | 1.3 | No | System extension images. |
+| `confexts` | [ExtensionImage](#extensionimage-object)[] | 1.3 | No | Configuration extension images. |
+
+Omitted arrays and empty arrays select no images of that kind. An empty
+`extensions` object is valid.
+
+##### `ExtensionImage` Object
+
+| Field | Type | Added in | Required | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string | 1.3 | Yes | Nonempty extension identity, unique within its kind. |
+| `image` | [ImageFile](#imagefile-object) | 1.3 | Yes | Compressed DDI member under `images/extensions/`. |
+| `uncompressedSha384` | string | 1.3 | Yes | SHA-384 of the complete uncompressed DDI, as 96 hexadecimal characters, case-insensitive. |
+| `path` | string | 1.3 | No | Requested absolute destination ending in `.raw`. Omit to let the consumer choose placement. |
+
+The array determines the extension kind. The `id` MUST match `SYSEXT_ID` or
+`CONFEXT_ID` in the DDI's `extension-release` file, according to its kind.
+It is not the root COSI `id`, the OS's `ID`, or the discovery filename.
+Duplicate IDs within a kind and archive paths reused by different payloads
+MUST be rejected. A resolved destination's filename stem MUST match the
+`extension-release.<name>` suffix.
+
+`image.sha384` validates the compressed member's delivery integrity.
+`uncompressedSha384` identifies its exact uncompressed content: every byte of
+the `.raw` DDI, including any partition table, filesystem, verity data and
+signature partitions. It is not a hash of individual files inside the image.
+Readers consuming a member MUST verify both hashes when decompressing it.
+
+A consumer MAY reuse a previously verified local DDI with the same
+`(kind, id, uncompressedSha384)` without fetching or extracting the member.
+Recompression does not change this identity. The raw hash has the same scope as
+Host Configuration's `Extension.sha384`; reuse does not waive extension
+compatibility checks.
+
+This specification does not define placement policy, slot-store layout or
+boot-time activation. Consumers that require bundled extensions MUST ensure
+the reader supports them: a version number alone does not establish feature
+support, and older readers ignore the unknown metadata and additional members.
 
 ##### `Disk` Object
 
@@ -385,26 +447,28 @@ rpm -qa --queryformat "%{NAME} %{VERSION} %{RELEASE} %{ARCH}\n"
 
 ##### `Bootloader` Object
 
-| Field         | Type                                     | Added in | Required                         | Description                 |
-| ------------- | ---------------------------------------- | -------- | -------------------------------- | --------------------------- |
-| `type`        | [`BootloaderType`](#bootloadertype-enum) | 1.1      | Yes (since 1.1)                  | The type of the bootloader. |
-| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` == `systemd-boot`[1] | systemd-boot configuration. |
+| Field         | Type                                     | Added in | Required                            | Description                 |
+| ------------- | ---------------------------------------- | -------- | ----------------------------------- | --------------------------- |
+| `type`        | [`BootloaderType`](#bootloadertype-enum) | 1.1      | Yes (since 1.1)                     | The type of the bootloader. |
+| `systemdBoot` | [`SystemDBoot`](#systemdboot-object)     | 1.1      | When `type` uses systemd-boot[1] | systemd-boot configuration. |
 
 _Notes:_
 
-- **[1]** The `systemd-boot` field is required if the `type` field is set to
-    `systemd-boot`. It MUST be omitted OR set to `null` if the `type`
-    field is set to any other value.
+- **[1]** The `systemdBoot` field is required for bootloader types that use
+    systemd-boot, currently `systemd-boot` and
+    `efitreeloader-mshv-systemd-boot`. It MUST be omitted OR set to `null` for
+    other bootloader types.
 
 ##### `BootloaderType` Enum
 
 A string that represents the primary bootloader used in the contained OS. These
 are the valid values for the `type` field in the `bootloader` object:
 
-| Value          | Description                                         |
-| -------------- | --------------------------------------------------- |
-| `systemd-boot` | The system is using systemd-boot as the bootloader. |
-| `grub`         | The system is using GRUB as the bootloader.         |
+| Value                                  | Added in | Description                                                        |
+| -------------------------------------- | -------- | ------------------------------------------------------------------ |
+| `systemd-boot`                         | 1.1      | The system is using systemd-boot as the bootloader.                |
+| `grub`                                 | 1.1      | The system is using GRUB as the bootloader.                        |
+| `efitreeloader-mshv-systemd-boot`      | 1.3      | The system boots through efitreeloader and MSHV before systemd-boot. |
 
 ##### `SystemDBoot` Object
 
@@ -456,6 +520,37 @@ _Notes:_
   decompression of all images by readers.
 
 #### Samples
+
+##### Bundled Extensions
+
+This fragment is the optional `extensions` field of a complete metadata
+document. Existing disk, filesystem and bootloader metadata is still required.
+
+```json
+{
+    "sysexts": [{
+        "id": "node-tools",
+        "image": {
+            "path": "images/extensions/node-tools.raw.zst",
+            "compressedSize": 41943040,
+            "uncompressedSize": 134217728,
+            "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
+        },
+        "uncompressedSha384": "84a7c0032b78e8567104cdec33051891fac15b642ca72c2159d9bbad1d943a16568e8e381c56651d75a427aab933f330"
+    }],
+    "confexts": [{
+        "id": "node-defaults",
+        "image": {
+            "path": "images/extensions/node-defaults.raw.zst",
+            "compressedSize": 262144,
+            "uncompressedSize": 1048576,
+            "sha384": "98ea4adbbb8ce0220d109d53d65825bd5a565248e4af3a9346d088918e7856ac2c42e13461cac67dbf3711ff69695ec3"
+        },
+        "uncompressedSha384": "173e55ea6d116742b4f9ed6e214f132c428fbcce0ebfb2ea4228d3f919069338932ec80ff705d2f8a3c97c78b319bfea",
+        "path": "/var/lib/confexts/node-defaults.raw"
+    }]
+}
+```
 
 ##### Simple Image
 
@@ -629,6 +724,13 @@ making them invalid JSON. They are provided for illustration purposes only.
 ```
 
 ## Changelog
+
+### Revision 1.3
+
+- Added the `efitreeloader-mshv-systemd-boot` bootloader type.
+- Added optional `extensions` metadata and compressed sysext/confext members.
+- Added `ExtensionImage.uncompressedSha384` for raw-DDI content identity,
+  separate from the compressed member's `ImageFile.sha384`.
 
 ### Revision 1.2
 

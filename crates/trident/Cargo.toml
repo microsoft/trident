@@ -3,7 +3,7 @@ name = "trident"
 version = "0.31.0"
 edition = "2024"
 publish = false
-rust-version = "1.85.0"
+rust-version = "1.87.0"
 license = "MIT"
 default-run = "trident"
 
@@ -57,6 +57,7 @@ tracing-journald = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
+walkdir = { workspace = true }
 zstd = { workspace = true }
 
 # gRPC API Dependencies
@@ -73,6 +74,7 @@ sysdefs = { path = "../sysdefs" }
 osmodifier = { path = "../osmodifier" }
 osutils = { path = "../osutils" }
 trident_api = { path = "../trident_api" }
+trident-client = { path = "../trident-client" }
 trident-proto = { path = "../trident-proto", features = ["server", "log"] }
 
 # Optional dependencies used by functional tests
@@ -103,4 +105,4 @@ functional-test = [
     "inventory",
 ]
 pytest-generator = ["pytest", "osutils/pytest-generator"]
-grpc-preview = ["trident-proto/grpc-preview"]
+grpc-preview = ["trident-client/preview", "trident-proto/grpc-preview"]

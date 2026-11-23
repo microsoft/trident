@@ -1,3 +1,4 @@
+use crate::telemetry::events;
 use anyhow::{Error, Result};
 use log::{error, trace};
 use procfs::{net::DeviceStatus, process::Process, ticks_per_second};
@@ -54,7 +55,7 @@ impl CpuStat {
     fn summary_trace(&mut self) {
         let total_cpu_time = self.get_cpu_time();
         tracing::info!(
-            metric_name = "total_cpu_time",
+            metric_name = events::TOTAL_CPU_TIME,
             phase = &self.phase,
             total_cpu_time = total_cpu_time,
         );
@@ -105,7 +106,7 @@ impl MemoryStat {
         let average_memory_usage = self.get_average_memory_usage();
         let peak_memory_usage = self.get_peak_memory_usage();
         tracing::info!(
-            metric_name = "average_memory_usage",
+            metric_name = events::AVERAGE_MEMORY_USAGE,
             phase = &self.phase,
             average_memory_usage = average_memory_usage,
         );
@@ -115,7 +116,7 @@ impl MemoryStat {
             average_memory_usage
         );
         tracing::info!(
-            metric_name = "peak_memory_usage",
+            metric_name = events::PEAK_MEMORY_USAGE,
             phase = &self.phase,
             peak_memory_usage = peak_memory_usage,
         );
@@ -162,7 +163,7 @@ impl NetworkStat {
     fn summary_trace(&mut self) {
         for (name, trace_measurement) in &self.iface_bytes {
             tracing::info!(
-                metric_name = "total_network_usage",
+                metric_name = events::TOTAL_NETWORK_USAGE,
                 phase = &self.phase,
                 iface_name = &name,
                 rx_bytes = trace_measurement.0,

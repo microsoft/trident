@@ -96,6 +96,8 @@ Options:
 
 The new configuration to apply
 
+Ignored during finalize-only operations.
+
 Default: `/etc/trident/config.yaml`
 
 

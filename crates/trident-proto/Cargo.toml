@@ -1,6 +1,6 @@
 [package]
 name = "trident-proto"
-version = "1.2.0"
+version.workspace = true
 edition = "2024"
 publish = false
 license = "MIT"

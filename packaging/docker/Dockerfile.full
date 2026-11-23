@@ -5,7 +5,7 @@ FROM ${AZL_IMAGE} as build
 
 ARG DISTRO_PACKAGES=build-essential
 ARG RPM_PACKAGES=
-ARG RUST_PACKAGE=rust-1.86.0
+ARG RUST_PACKAGE=rust-1.98.1
 
 RUN tdnf install -y \
     rpmdevtools \

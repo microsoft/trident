@@ -1,3 +1,4 @@
+use crate::telemetry::events;
 use std::{
     path::{Path, PathBuf},
     sync::MutexGuard,
@@ -49,7 +50,7 @@ pub(crate) fn clean_install(
     is_stream_image: bool,
 ) -> Result<ExitKind, TridentError> {
     info!("Starting clean install");
-    tracing::info!(metric_name = "clean_install_start", value = true);
+    tracing::info!(metric_name = events::CLEAN_INSTALL_START, value = true);
     let clean_install_start_time = Instant::now();
 
     if Path::new(UPDATE_ROOT_PATH).exists()
@@ -347,7 +348,7 @@ pub(crate) fn finalize_clean_install(
     // Metric for clean install provisioning time in seconds
     if let Some(start_time) = clean_install_start_time {
         tracing::info!(
-            metric_name = "clean_install_provisioning_secs",
+            metric_name = events::CLEAN_INSTALL_PROVISIONING_SECS,
             value = start_time.elapsed().as_secs_f64()
         );
     }

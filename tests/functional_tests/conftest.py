@@ -31,8 +31,11 @@ KNOWN_HOSTS_FILENAME = "known_hosts"
 
 VM_SSH_NODE_CACHE_KEY = "vm_ssh_node"
 VM_NAMESPACE_CACHE_KEY = "vm_virtdeploy_namespace"
+VM_NETWORK_CACHE_KEY = "vm_virtdeploy_network"
+VM_BASE_IMAGE_CACHE_KEY = "vm_functional_base_image"
 
 FT_BASE_IMAGE = TRIDENT_REPO_DIR_PATH / "artifacts" / "trident-functest.qcow2"
+FT_NETWORK = "192.168.242.0/24"
 
 
 def pytest_addoption(parser):
@@ -49,25 +52,23 @@ def pytest_addoption(parser):
         help="Reuse VM environment from previous tests.",
     )
 
+    parser.addoption("--test-dir", action="store", help="Location to store test files.")
+
     parser.addoption(
         "--virtdeploy-namespace",
         action="store",
         help="Namespace used to create the functional-test VM.",
     )
-
     parser.addoption(
         "--virtdeploy-network",
         action="store",
         help="Network used to create the functional-test VM.",
     )
-
     parser.addoption(
         "--functional-base-image",
         action="store",
         help="Functional-test base image passed to virtdeploy.",
     )
-
-    parser.addoption("--test-dir", action="store", help="Location to store test files.")
 
     parser.addoption(
         "--ssh-key",
@@ -304,18 +305,51 @@ def functional_base_image(request) -> Path:
 
 
 @pytest.fixture(scope="session")
-def virtdeploy_namespace(request, reuse_environment) -> str:
+def virtdeploy_namespace(request, reuse_environment, functional_base_image) -> str:
     namespace = request.config.getoption("--virtdeploy-namespace")
-    if reuse_environment:
-        cached_namespace = request.config.cache.get(VM_NAMESPACE_CACHE_KEY, None)
-        if cached_namespace is None:
-            pytest.fail("No cached VM namespace found. Recreate the test environment.")
-        if namespace is not None and namespace != cached_namespace:
-            pytest.fail(
-                "The supplied namespace does not match the cached VM namespace."
+    if not reuse_environment:
+        return namespace if namespace is not None else "virtdeploy"
+
+    for option, cache_key, requested in (
+        ("--virtdeploy-namespace", VM_NAMESPACE_CACHE_KEY, namespace),
+        (
+            "--virtdeploy-network",
+            VM_NETWORK_CACHE_KEY,
+            request.config.getoption("--virtdeploy-network"),
+        ),
+        (
+            "--functional-base-image",
+            VM_BASE_IMAGE_CACHE_KEY,
+            str(functional_base_image),
+        ),
+    ):
+        if request.config.getoption(option) is not None:
+            if request.config.cache.get(cache_key, None) != requested:
+                pytest.fail(
+                    f"{option} does not match cached VM metadata (or metadata is missing). "
+                    "Recreate the test environment."
+                )
+
+    cached_namespace = request.config.cache.get(VM_NAMESPACE_CACHE_KEY, None)
+    if cached_namespace is None:
+        if any(
+            request.config.getoption(option) is not None
+            for option in (
+                "--virtdeploy-namespace",
+                "--virtdeploy-network",
+                "--functional-base-image",
             )
-        return cached_namespace
-    return namespace or "virtdeploy"
+        ):
+            pytest.fail(
+                "No cached VM namespace found for explicit VM selection. "
+                "Recreate the test environment."
+            )
+        logging.warning(
+            "Legacy VM cache has no namespace metadata; reusing the default "
+            "'virtdeploy' namespace. Recreate the environment to use explicit VM selection."
+        )
+        return "virtdeploy"
+    return cached_namespace
 
 
 @pytest.fixture(scope="session")
@@ -399,15 +433,21 @@ def vm(request, ssh_key_path, known_hosts_path, virtdeploy_namespace) -> SshNode
         return
 
     # Fixture cleanup.
-    cleanup_command = [
-        TRIDENT_REPO_DIR_PATH / "bin" / "virtdeploy",
-        "clean",
-        "--namespace",
-        virtdeploy_namespace,
-    ]
-    trident_runcmd(cleanup_command)
-    request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
-    request.config.cache.set(VM_NAMESPACE_CACHE_KEY, None)
+    trident_runcmd(
+        [
+            TRIDENT_REPO_DIR_PATH / "bin" / "virtdeploy",
+            "clean",
+            "--namespace",
+            virtdeploy_namespace,
+        ]
+    )
+    for key in (
+        VM_SSH_NODE_CACHE_KEY,
+        VM_NAMESPACE_CACHE_KEY,
+        VM_NETWORK_CACHE_KEY,
+        VM_BASE_IMAGE_CACHE_KEY,
+    ):
+        request.config.cache.set(key, None)
 
 
 def pytest_collection_modifyitems(session, config, items: List[pytest.Item]):

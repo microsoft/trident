@@ -24,30 +24,26 @@ func (n namespace) nvramPoolName() string {
 	return string(n) + "-nvram-pool"
 }
 
-func (n namespace) storagePoolPath() string {
-	return fmt.Sprintf("/var/lib/libvirt/%s", n)
-}
-
-func (n namespace) nvramPoolPath() string {
-	return fmt.Sprintf("/var/lib/%s-nvram", n)
-}
-
 func (n namespace) vmName(index int) string {
 	return string(n) + "-vm-" + fmt.Sprintf("%d", index)
 }
 
-func (n namespace) isInNamespace(name string) bool {
-	if name == n.libvirtNetworkName() || name == n.storagePoolName() || name == n.nvramPoolName() {
-		return true
-	}
-	return n.ownsDomainName(name)
-}
-
-func (n namespace) ownsDomainName(name string) bool {
+func (n namespace) matchesDomainName(name string) bool {
 	index, found := strings.CutPrefix(name, string(n)+"-vm-")
 	if !found {
 		return false
 	}
 	vmIndex, err := strconv.Atoi(index)
 	return err == nil && vmIndex >= 0 && name == n.vmName(vmIndex)
+}
+
+func (n namespace) poolTarget(name string) (string, bool) {
+	switch name {
+	case n.storagePoolName():
+		return "/var/lib/libvirt/" + string(n), true
+	case n.nvramPoolName():
+		return "/var/lib/" + string(n) + "-nvram", true
+	default:
+		return "", false
+	}
 }

@@ -10,7 +10,6 @@ use log::{debug, info, trace, warn};
 use osutils::path::join_relative;
 use trident_api::{
     config::Storage,
-    constants,
     error::{InternalError, TridentError, TridentResultExt},
     is_default,
     status::{ServicingState, ServicingType},
@@ -18,10 +17,10 @@ use trident_api::{
 };
 
 use crate::{
-    engine::boot::BootSubsystem,
     subsystems::{
         esp::EspSubsystem,
         extensions::ExtensionsSubsystem,
+        grub::GrubSubsystem,
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
         management::ManagementSubsystem,
@@ -40,6 +39,7 @@ mod clean_install;
 mod context;
 mod kexec;
 pub mod manual_rollback;
+mod mshv;
 mod newroot;
 pub mod provisioning_network;
 pub mod rollback;
@@ -145,7 +145,7 @@ lazy_static::lazy_static! {
         Box::<MosConfigSubsystem>::default(),
         Box::<EspSubsystem>::default(),
         Box::<StorageSubsystem>::default(),
-        Box::<BootSubsystem>::default(),
+        Box::<GrubSubsystem>::default(),
         Box::<NetworkSubsystem>::default(),
         Box::<OsConfigSubsystem>::default(),
         Box::<ManagementSubsystem>::default(),
@@ -462,20 +462,9 @@ fn clean_up(subsystems: &[Box<dyn Subsystem>], ctx: &EngineContext) -> Result<()
 pub(super) fn build_storage_graph(storage: &Storage) -> Result<StorageGraph, TridentError> {
     debug!("Rebuilding storage graph for engine context");
 
-    // Temporarily override the log level to only show warnings and above to
-    // avoid producing the graph building logs again. We can safely do this
-    // because at this point we are only running in a single thread, but this
-    // should be re-visited if we ever go more async/multithreaded.
-    let old_level = log::max_level();
-    log::set_max_level(log::LevelFilter::Warn);
-
-    // Build the storage graph
-    let graph_res = storage.build_graph();
-
-    // Reset the log level to the original level
-    log::set_max_level(old_level);
-
-    graph_res.map_err(|e| TridentError::new(InternalError::from(e)))
+    storage
+        .build_graph()
+        .map_err(|e| TridentError::new(InternalError::from(e)))
 }
 
 #[cfg(feature = "functional-test")]

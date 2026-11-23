@@ -1,3 +1,4 @@
+use crate::telemetry::events;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -11,7 +12,11 @@ use semver::Version;
 use url::Url;
 
 use engine::{bootentries, EngineContext, EngineContextParams};
-use osutils::{block_devices, container, dependencies::Dependency, osrelease::OsRelease};
+use osutils::{
+    block_devices, container,
+    dependencies::Dependency,
+    osrelease::{self, OsRelease},
+};
 use trident_api::{
     config::{
         HostConfiguration, HostConfigurationSource, ImageSha384, Operations,
@@ -22,8 +27,9 @@ use trident_api::{
         WAIT_FOR_SYSTEMD_NETWORKD,
     },
     error::{
-        ExecutionEnvironmentMisconfigurationError, InitializationError, InternalError,
-        InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt,
+        DatastoreError, ExecutionEnvironmentMisconfigurationError, InitializationError,
+        InternalError, InvalidInputError, ReportError, ServicingError, TridentError,
+        TridentResultExt,
     },
     primitives::hash::Sha384Hash,
     status::{ServicingState, ServicingType},
@@ -33,6 +39,7 @@ pub mod agentconfig;
 pub mod cli;
 mod datastore;
 mod diagnostics;
+mod disk_selector;
 mod engine;
 mod grpc_client;
 mod health;
@@ -46,6 +53,7 @@ mod reboot;
 mod server;
 pub mod stream;
 mod subsystems;
+mod telemetry;
 pub mod validation;
 
 pub use crate::{
@@ -65,7 +73,13 @@ pub use crate::{
 };
 
 use crate::{
-    engine::{ab_update, rollback, runtime_update, storage::rebuild, SUBSYSTEMS},
+    engine::{
+        ab_update,
+        rollback::{self, BootValidationResult},
+        runtime_update,
+        storage::rebuild,
+        SUBSYSTEMS,
+    },
     init::acl,
     osimage::OsImage,
     stream::DiskSelectionStrategy,
@@ -228,7 +242,7 @@ impl Trident {
             ));
         }
 
-        tracing::info!(metric_name = "trident_start");
+        tracing::info!(metric_name = events::TRIDENT_START);
 
         Ok(Self {
             host_config,
@@ -286,6 +300,7 @@ impl Trident {
         Ok(())
     }
 
+    /// Records operation errors, preserving the original A/B validation error if recovery fails.
     fn execute_and_record_error<F, T>(
         &mut self,
         datastore: &mut DataStore,
@@ -294,17 +309,16 @@ impl Trident {
     where
         F: FnOnce(&mut DataStore) -> Result<T, TridentError>,
     {
-        // AbUpdateHealthCheckFailed is a special case where we would like
-        // to preserve the last error across any recovery. This aids in
-        // surfacing the original error.
+        // Preserve the original candidate rejection across failed recovery attempts.
         debug!(
             "Execute and record error with servicing state: {:?} and last error: {:?}",
             datastore.host_status().servicing_state,
             datastore.host_status().last_error
         );
-        let last_error_to_preserve = if datastore.host_status().servicing_state
-            == ServicingState::AbUpdateHealthCheckFailed
-        {
+        let last_error_to_preserve = if matches!(
+            datastore.host_status().servicing_state,
+            ServicingState::AbUpdateHealthCheckFailed | ServicingState::CommitFailed
+        ) {
             datastore.host_status().last_error.clone()
         } else {
             None
@@ -435,18 +449,51 @@ impl Trident {
         multiboot: bool,
         prefetched_image: Option<OsImage>,
     ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
-        let mut host_config = self
-            .host_config
-            .clone()
-            .structured(InternalError::Internal(
-                "install called without Host Configuration set",
-            ))?;
+        let finalize_only = !allowed_operations.has_stage() && allowed_operations.has_finalize();
+
+        // If we are doing finalize only, we need to use the existing host
+        // configuration from the datastore instead of the newly loaded file.
+        let mut host_config = if finalize_only {
+            // However, if we are doing a multiboot install and a persistent
+            // datastore exists, we need to check if there is an ephemeral
+            // datastore left around by the staging process.
+            if multiboot && datastore.is_persistent() {
+                // Reject a missing staged datastore before the existing loader can create it.
+                let staged_datastore_path = temporary_datastore_path()?;
+                let staged_datastore = fs::metadata(&staged_datastore_path)
+                    .structured(ServicingError::Datastore {
+                        inner: DatastoreError::LoadDatastore {
+                            path: staged_datastore_path.display().to_string(),
+                        },
+                    })
+                    .and_then(|_| DataStore::open(&staged_datastore_path))
+                    .message("Failed to open staged multiboot datastore")?;
+
+                // Close the current persistent datastore and replace it with the staged one.
+                datastore.close();
+                *datastore = staged_datastore;
+            }
+
+            // Use the host configuration from the ephemeral datastore.
+            datastore.host_status().spec.clone()
+        } else {
+            // Use the newly provided host configuration.
+            self.host_config
+                .clone()
+                .structured(InternalError::Internal(
+                    "install called without Host Configuration set",
+                ))?
+        };
 
         let is_stream_image = self.is_stream_image;
 
         self.execute_and_record_error(datastore, |datastore| {
-            host_config
-                .validate()
+            if finalize_only {
+                disk_selector::check_no_selectors(&host_config)?;
+            }
+
+            let storage_graph = host_config
+                .validate_with_storage_graph()
                 .map_err(Into::into)
                 .message("Invalid Host Configuration provided")?;
 
@@ -481,8 +528,9 @@ impl Trident {
                         multiboot install"
                     );
 
+                    let staged_datastore_path = temporary_datastore_path()?;
                     datastore.close();
-                    *datastore = DataStore::open_or_create(Path::new(TEMPORARY_DATASTORE_PATH))
+                    *datastore = DataStore::open_or_create(&staged_datastore_path)
                         .message("Failed to create temporary datastore for multiboot install")?;
                 }
             }
@@ -494,6 +542,10 @@ impl Trident {
                 None => Self::get_cosi_image(&mut host_config)?,
             };
             let image_hash = Some(image.metadata_sha384());
+
+            if allowed_operations.has_stage() {
+                disk_selector::resolve_install(&mut host_config, &image, &storage_graph)?;
+            }
 
             if datastore.host_status().spec != host_config {
                 debug!("Host Configuration has been updated");
@@ -539,6 +591,7 @@ impl Trident {
                             Ok((ExitKind::Done, None, ServicingType::NoActiveServicing))
                         }
                     }
+
                     ServicingState::NotProvisioned => {
                         // Otherwise, if servicing state is NotProvisioned, need to either re-execute the
                         // failed clean install OR inform the user that no update is needed.
@@ -586,7 +639,7 @@ impl Trident {
         self.execute_and_record_error(datastore, |datastore| {
             // Ensure that the datastore exists.
             if !datastore.is_persistent() {
-                if acl::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
+                if osrelease::is_acl().structured(InvalidInputError::DeriveHostConfiguration).message("Failed to determine if host is running ACL")? {
                     // For ACL, initialize datastore with known initial state when
                     // the datastore is not already created.
                     let initial_host_status = acl::initial_host_status()
@@ -725,7 +778,7 @@ impl Trident {
         image_url: &Url,
         hash: &str,
     ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
-        tracing::info!(metric_name = "stream_image_start", value = true,);
+        tracing::info!(metric_name = events::STREAM_IMAGE_START, value = true,);
         let mut image_source = ConfigOsImage {
             url: image_url.clone(),
             sha384: ImageSha384::new(hash)?,
@@ -764,18 +817,20 @@ impl Trident {
         self.install(datastore, Operations::all(), false, Some(image))
     }
 
+    /// Validates finalized servicing/recovery and returns whether a reboot is needed.
     pub fn commit(
         &mut self,
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
-        // If host's servicing state is *Finalized or *HealthCheckFailed, need to
-        // re-evaluate the current state of the host.
+        // Re-evaluate finalized or rejected servicing to validate
+        // either the target boot or the recovery boot.
         let servicing_state = datastore.host_status().servicing_state;
         if !matches!(
             servicing_state,
             ServicingState::CleanInstallFinalized
                 | ServicingState::AbUpdateFinalized
                 | ServicingState::AbUpdateHealthCheckFailed
+                | ServicingState::CommitFailed
                 | ServicingState::ManualRollbackAbFinalized
         ) {
             info!(
@@ -786,9 +841,9 @@ impl Trident {
         }
 
         let servicing_type = match servicing_state {
-            ServicingState::AbUpdateFinalized | ServicingState::AbUpdateHealthCheckFailed => {
-                ServicingType::AbUpdate
-            }
+            ServicingState::AbUpdateFinalized
+            | ServicingState::AbUpdateHealthCheckFailed
+            | ServicingState::CommitFailed => ServicingType::AbUpdate,
             ServicingState::CleanInstallFinalized => ServicingType::CleanInstall,
             ServicingState::ManualRollbackAbFinalized => ServicingType::ManualRollbackAb,
             _ => ServicingType::NoActiveServicing,
@@ -800,21 +855,20 @@ impl Trident {
             )
         });
 
-        if rollback_result.is_ok() {
-            if let Some(ref orchestrator) = self.orchestrator {
-                orchestrator.report_success(Some(
-                    serde_yaml::to_string(&datastore.host_status())
-                        .unwrap_or("Failed to serialize Host Status".into()),
-                ))
-            }
-        }
-
         match rollback_result {
-            Ok(rollback::BootValidationResult::ValidBootProvisioned) => {
+            Ok(BootValidationResult::ValidBootProvisioned) => {
+                if let Some(ref orchestrator) = self.orchestrator {
+                    orchestrator.report_success(Some(
+                        serde_yaml::to_string(&datastore.host_status())
+                            .unwrap_or("Failed to serialize Host Status".into()),
+                    ))
+                }
                 Ok((ExitKind::Done, servicing_type))
             }
-            Ok(rollback::BootValidationResult::ValidBootHealthCheckFailed(e)) => {
-                debug!("Correct boot, but health check(s) failed: {e:?}");
+            Ok(BootValidationResult::InvalidHypervisor(e))
+            | Ok(BootValidationResult::ValidBootHealthCheckFailed(e)) => {
+                // The caller must reboot to complete automatic recovery.
+                debug!("Boot validation requires rollback: {e:?}");
                 Ok((ExitKind::NeedsReboot, servicing_type))
             }
             Err(e) => {
@@ -914,5 +968,178 @@ impl Trident {
     pub fn diagnose(output_path: &Path, full: bool, selinux: bool) -> Result<(), TridentError> {
         diagnostics::generate_and_bundle(output_path, full, selinux)?;
         Ok(())
+    }
+}
+
+/// Keeps multiboot state reachable across separate container invocations.
+pub(crate) fn temporary_datastore_path() -> Result<PathBuf, TridentError> {
+    container::get_host_relative_path(TEMPORARY_DATASTORE_PATH.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tempfile::TempDir;
+
+    use trident_api::{
+        config::{Disk, DiskSelector, HostConfigurationStaticValidationError, Operation, Storage},
+        error::ErrorKind,
+    };
+
+    #[test]
+    fn failed_recovery_preserves_original_validation_error() {
+        for state in [
+            ServicingState::CommitFailed,
+            ServicingState::AbUpdateHealthCheckFailed,
+        ] {
+            let directory = TempDir::new().unwrap();
+            let mut datastore =
+                DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
+            let original_error = serde_yaml::to_value(TridentError::new(
+                ServicingError::ValidateAbActiveEfiLoader {
+                    expected_slot: "AZLB".into(),
+                    observed_slot: Some("AZLA".into()),
+                },
+            ))
+            .unwrap();
+            datastore
+                .with_host_status(|status| {
+                    status.servicing_state = state;
+                    status.last_error = Some(original_error.clone());
+                })
+                .unwrap();
+            let mut trident = Trident {
+                host_config: None,
+                orchestrator: None,
+                is_stream_image: false,
+            };
+
+            let error = trident
+                .execute_and_record_error(&mut datastore, |_| {
+                    Err::<(), _>(TridentError::new(InternalError::SerializeError))
+                })
+                .unwrap_err();
+            assert_eq!(
+                error.kind(),
+                &ErrorKind::Internal(InternalError::SerializeError)
+            );
+            assert_eq!(
+                datastore.host_status().last_error.as_ref(),
+                Some(&original_error)
+            );
+            assert_eq!(datastore.host_status().servicing_state, state);
+        }
+    }
+
+    #[test]
+    fn finalize_only_rejects_saved_selectors() {
+        let saved = HostConfiguration {
+            storage: Storage {
+                disks: vec![
+                    Disk {
+                        id: "resolved".into(),
+                        device: "/dev/sda".into(),
+                        ..Default::default()
+                    },
+                    Disk {
+                        id: "saved-selector".into(),
+                        selector: Some(DiskSelector::default()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for supplied in [None, Some(HostConfiguration::default())] {
+            let directory = TempDir::new().unwrap();
+            let mut datastore =
+                DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
+            datastore
+                .with_host_status(|status| {
+                    status.servicing_state = ServicingState::CleanInstallStaged;
+                    status.spec = saved.clone();
+                })
+                .unwrap();
+            let mut trident = Trident {
+                host_config: supplied,
+                orchestrator: None,
+                is_stream_image: false,
+            };
+
+            let error = trident
+                .install(&mut datastore, Operation::Finalize.into(), false, None)
+                .unwrap_err();
+            assert_eq!(
+                error.kind(),
+                &ErrorKind::InvalidInput(InvalidInputError::DiskSelection {
+                    disk_id: "saved-selector".into(),
+                })
+            );
+            assert_eq!(&datastore.host_status().spec, &saved);
+            assert_eq!(
+                datastore.host_status().servicing_state,
+                ServicingState::CleanInstallStaged
+            );
+        }
+    }
+
+    #[test]
+    fn finalize_only_uses_saved_host_configuration() {
+        // Fail validation before image loading or disk I/O.
+        let saved = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "saved".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let ignored = HostConfiguration {
+            storage: Storage {
+                disks: vec![Disk {
+                    id: "ignored".into(),
+                    selector: Some(DiskSelector::default()),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        for supplied in [None, Some(ignored)] {
+            let directory = TempDir::new().unwrap();
+            let mut datastore =
+                DataStore::open_or_create(&directory.path().join("datastore.sqlite")).unwrap();
+            datastore
+                .with_host_status(|status| {
+                    status.servicing_state = ServicingState::CleanInstallStaged;
+                    status.spec = saved.clone();
+                })
+                .unwrap();
+            let mut trident = Trident {
+                host_config: supplied,
+                orchestrator: None,
+                is_stream_image: false,
+            };
+
+            let error = trident
+                .install(&mut datastore, Operation::Finalize.into(), false, None)
+                .unwrap_err();
+            assert_eq!(
+                error.kind(),
+                &ErrorKind::InvalidInput(InvalidInputError::InvalidHostConfigurationStatic {
+                    inner: HostConfigurationStaticValidationError::InvalidDiskTarget {
+                        disk_id: "saved".into(),
+                    },
+                })
+            );
+            assert_eq!(
+                datastore.host_status().servicing_state,
+                ServicingState::CleanInstallStaged
+            );
+        }
     }
 }

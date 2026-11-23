@@ -214,6 +214,7 @@ mod tests {
             ],
             adopted_partitions: vec![],
             partition_table_type: PartitionTableType::Gpt,
+            selector: None,
         };
 
         add_repart_entries(&disk, &mut repart);
@@ -280,6 +281,7 @@ mod tests {
             ],
             adopted_partitions: vec![],
             partition_table_type: PartitionTableType::Gpt,
+            selector: None,
         };
 
         add_repart_entries(&disk, &mut repart);

@@ -14,6 +14,9 @@ from .conftest import (
     TRIDENT_REPO_DIR_PATH,
     VM_SSH_NODE_CACHE_KEY,
     VM_NAMESPACE_CACHE_KEY,
+    VM_NETWORK_CACHE_KEY,
+    VM_BASE_IMAGE_CACHE_KEY,
+    FT_NETWORK,
     TEST_USER,
 )
 from .ssh_node import SshNode
@@ -82,10 +85,12 @@ def test_create_vm(
 
     request.config.cache.set(VM_SSH_NODE_CACHE_KEY, None)
     request.config.cache.set(VM_NAMESPACE_CACHE_KEY, None)
+    request.config.cache.set(VM_NETWORK_CACHE_KEY, None)
+    request.config.cache.set(VM_BASE_IMAGE_CACHE_KEY, None)
     create_params = ["--namespace", virtdeploy_namespace]
-    virtdeploy_network = request.config.getoption("--virtdeploy-network")
-    if virtdeploy_network:
-        create_params.extend(["--network", virtdeploy_network])
+    network = request.config.getoption("--virtdeploy-network")
+    if network is not None:
+        create_params.extend(["--network", network])
 
     with tempfile.TemporaryDirectory() as temp_dir:
         work_dir = Path(temp_dir)
@@ -134,6 +139,10 @@ def test_create_vm(
     wait_online(vm_ip, known_hosts_path, timeout=60)
 
     request.config.cache.set(VM_NAMESPACE_CACHE_KEY, virtdeploy_namespace)
+    request.config.cache.set(
+        VM_NETWORK_CACHE_KEY, network if network is not None else FT_NETWORK
+    )
+    request.config.cache.set(VM_BASE_IMAGE_CACHE_KEY, str(functional_base_image))
     request.config.cache.set(VM_SSH_NODE_CACHE_KEY, vm_ip)
 
 

@@ -150,7 +150,12 @@ flock() {
             sentinel = shared_cache / "existing-vm"
             sentinel.write_text("developer-vm")
             virtdeploy = root / "bin" / "virtdeploy"
-            virtdeploy.write_text("#!/usr/bin/env bash\nexit 0\n", newline="\n")
+            virtdeploy.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '%s\\n' \"$@\" > "
+                '"$(dirname "$0")/../$TRIDENT_FUNCTIONAL_NAMESPACE.cleanup"\n',
+                newline="\n",
+            )
             virtdeploy.chmod(0o755)
             script = script_dir / "run-functional.sh"
             source, entrypoint = RUNNER.read_text().rsplit('\nmain "$@"', 1)
@@ -183,6 +188,7 @@ python3() {
             printf '192.168.50.0/24\n'
             ;;
         *)
+            printf '%s\n' "$@" > "$REPO_ROOT/$TRIDENT_FUNCTIONAL_NAMESPACE.pytest-args"
             local cache=""
             local argument
             for argument in "$@"; do
@@ -197,30 +203,57 @@ python3() {
             ;;
     esac
 }
-export TRIDENT_FUNCTIONAL_NAMESPACE="run-$1"
+export TRIDENT_FUNCTIONAL_NAMESPACE="run-$1-$2"
 export MOCK_PYTEST_EXIT="$1"
 export XDG_RUNTIME_DIR="."
-main smoke
+main "$2"
 """,
                 newline="\n",
             )
 
-            def invoke(run):
+            def invoke(run, mode):
                 return subprocess.run(
-                    ["bash", "scripts/cloud-agent/run-functional.sh", str(run)],
+                    ["bash", "scripts/cloud-agent/run-functional.sh", str(run), mode],
                     cwd=root,
                     env=dict(os.environ, LIBVIRT_DEFAULT_URI="qemu:///session"),
                     capture_output=True,
                     text=True,
                 )
 
-            results = [invoke(run) for run in (0, 1)]
-            for code, result in enumerate(results):
+            runs = [(code, mode) for code in (0, 1) for mode in ("smoke", "full")]
+            for code, mode in runs:
+                result = invoke(code, mode)
                 self.assertEqual(result.returncode, code, result.stdout + result.stderr)
+                namespace = f"run-{code}-{mode}"
+                arguments = (root / f"{namespace}.pytest-args").read_text().splitlines()
+                self.assertEqual(arguments[:3], ["-u", "-m", "pytest"])
+                arguments = arguments[3:]
+                for option, value in (
+                    ("--virtdeploy-namespace", namespace),
+                    ("--virtdeploy-network", "192.168.50.0/24"),
+                    ("--functional-base-image", str(root / "image.qcow2")),
+                ):
+                    self.assertEqual(arguments[arguments.index(option) + 1], value)
+                self.assertIn("--keep-environment", arguments)
+                self.assertIn("tests/functional_tests/test_setup.py", arguments)
+                if mode == "smoke":
+                    self.assertIn("tests/functional_tests/ft.json", arguments)
+                    self.assertEqual(
+                        arguments[arguments.index("-m") + 1],
+                        "(helpers and positive) or not functional",
+                    )
+                else:
+                    self.assertIn("tests/functional_tests/", arguments)
+                    self.assertNotIn("-m", arguments)
+                self.assertEqual(
+                    (root / f"{namespace}.cleanup").read_text().splitlines(),
+                    ["clean", "--namespace", namespace],
+                )
             cache_paths = [
-                (root / f"run-{run}.cache-path").read_text().strip() for run in (0, 1)
+                (root / f"run-{code}-{mode}.cache-path").read_text().strip()
+                for code, mode in runs
             ]
-            self.assertNotEqual(*cache_paths)
+            self.assertEqual(len(set(cache_paths)), len(runs))
             for cache_path in cache_paths:
                 result = subprocess.run(
                     ["bash", "-c", 'test ! -e "$1"', "bash", cache_path]

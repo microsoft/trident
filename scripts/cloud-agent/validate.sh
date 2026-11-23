@@ -53,13 +53,20 @@ validate_go() {
 }
 
 validate_tailor() (
+    local cargo_target_base
     local scratch_dir
+    cargo_target_base="${CARGO_TARGET_DIR:-target}"
+    if [[ "$cargo_target_base" != /* ]]; then
+        cargo_target_base="$REPO_ROOT/$cargo_target_base"
+    fi
+    export CARGO_TARGET_DIR="$cargo_target_base/tailor"
     scratch_dir="$(mktemp -d)"
     trap 'rm -rf "$scratch_dir"' EXIT
 
     # Tailor uses public crates.io. Copy its self-contained workspace outside
     # the repository so both Cargo and nested Cargo commands from build scripts
-    # cannot inherit Trident's private crates.io replacement.
+    # cannot inherit Trident's private crates.io replacement. Keep Cargo output
+    # under the repository target, which cloud-agent setup maps to mounted storage.
     tar --exclude=target -C "$REPO_ROOT/tools/tailor" -cf - . |
         tar -C "$scratch_dir" -xf -
     cd "$scratch_dir"

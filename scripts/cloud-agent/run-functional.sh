@@ -14,6 +14,7 @@ Usage: scripts/cloud-agent/run-functional.sh [smoke|full]
 
 smoke runs VM deployment plus the positive helper functional tests.
 full runs the complete functional test suite.
+Both modes require an exclusive disposable outer 1ES runner, not a shared host.
 EOF
 }
 

@@ -13,13 +13,6 @@ import (
 // will auto-assign them. Extend if deterministic addressing is required.
 func (vm *VirtDeployVM) asXml() (string, error) {
 	dom := vm.createDomain()
-	metadata, err := vm.namespace.ownershipMetadata("domain")
-	if err != nil {
-		return "", fmt.Errorf("marshal domain ownership: %w", err)
-	}
-	if metadata != "" {
-		dom.Metadata = &libvirtxml.DomainMetadata{XML: metadata}
-	}
 	xml, err := dom.Marshal()
 	if err != nil {
 		return "", fmt.Errorf("marshal domain to XML: %w", err)
