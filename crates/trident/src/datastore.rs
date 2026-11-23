@@ -225,6 +225,7 @@ impl DataStore {
             let persistent_db = Self::make_datastore(path)?;
             let mut persistent_status = self.host_status.clone();
             persistent_status.is_management_os = false;
+            // Promotion must retain an unknown state's original writer version.
             if !matches!(
                 &persistent_status.servicing_state,
                 ServicingState::Unknown(_)
@@ -384,6 +385,7 @@ impl DataStore {
         host_status: &HostStatus,
     ) -> Result<(), TridentError> {
         let mut host_status_with_trident_version = host_status.clone();
+        // Rewriting errors must not make an unfamiliar state appear locally authored.
         if !matches!(&host_status.servicing_state, ServicingState::Unknown(_)) {
             host_status_with_trident_version.trident_version =
                 TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());

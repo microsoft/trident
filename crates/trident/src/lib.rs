@@ -622,6 +622,7 @@ impl Trident {
         datastore: &mut DataStore,
         allowed_operations: Operations,
     ) -> Result<(ExitKind, Option<Sha384Hash>, ServicingType), TridentError> {
+        // Staging replaces the configuration baseline; unknown states cannot be normalized safely.
         if let ServicingState::Unknown(_) = &datastore.host_status().servicing_state {
             return Err(TridentError::new(InternalError::UnexpectedServicingState {
                 state: datastore.host_status().servicing_state.clone(),
@@ -828,6 +829,7 @@ impl Trident {
         &mut self,
         datastore: &mut DataStore,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
+        // An unknown state does not establish that there is no servicing to commit.
         if let ServicingState::Unknown(_) = &datastore.host_status().servicing_state {
             return Err(TridentError::new(InternalError::UnexpectedServicingState {
                 state: datastore.host_status().servicing_state.clone(),
@@ -937,6 +939,7 @@ impl Trident {
         invoke_available_ab: bool,
         allowed_operations: Operations,
     ) -> Result<(ExitKind, ServicingType), TridentError> {
+        // Do not report a successful no-op when rollback eligibility is unknown.
         if let ServicingState::Unknown(_) = &datastore.host_status().servicing_state {
             return Err(TridentError::new(InternalError::UnexpectedServicingState {
                 state: datastore.host_status().servicing_state.clone(),

@@ -54,6 +54,7 @@ mod preview {
                 ProtoServicingState::UpdateAbHealthCheckFailed
             }
             ServicingState::CommitFailed => ProtoServicingState::CommitFailed,
+            // The enum-only response cannot distinguish unknown data from an unspecified value.
             state @ ServicingState::Unknown(_) => {
                 return Err(TridentError::new(InternalError::UnexpectedServicingState {
                     state: state.clone(),

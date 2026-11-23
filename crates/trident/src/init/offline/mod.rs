@@ -477,6 +477,7 @@ pub fn execute(
             .structured(InitializationError::ParseHostStatus)
             .message("Failed to load Host Status")?;
 
+        // Read compatibility does not authorize ESP changes based on an unfamiliar state.
         if let ServicingState::Unknown(_) = &host_status.servicing_state {
             return Err(TridentError::new(InternalError::UnexpectedServicingState {
                 state: host_status.servicing_state.clone(),

@@ -162,6 +162,7 @@ impl<'de> Deserialize<'de> for ServicingState {
             }
 
             fn visit_str<E: serde::de::Error>(self, name: &str) -> Result<Self::Value, E> {
+                // Future names must follow the persisted naming contract too.
                 if !matches!(name.as_bytes().first(), Some(b'a'..=b'z'))
                     || name.split('-').any(|part| {
                         part.is_empty()
@@ -342,6 +343,7 @@ fn fix_old_host_status(yaml: &mut Value) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+/// Decodes current or legacy Host Status, requiring a strictly newer writer for unknown states.
 pub fn decode_host_status(
     yaml: Value,
     reader_version: &Version,
