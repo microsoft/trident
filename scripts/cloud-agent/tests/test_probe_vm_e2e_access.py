@@ -317,6 +317,17 @@ class AccessProbeTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, workflow)
 
+    def test_job_report_directory_uses_job_available_github_context(self):
+        workflow = (
+            SCRIPT.parents[2] / ".github/workflows/vm-e2e-access-validation.yml"
+        ).read_text()
+        job_env = workflow.split("    env:\n", 1)[1].split("    steps:\n", 1)[0]
+        self.assertEqual(
+            job_env.strip(),
+            "REPORT_DIR: ${{ github.workspace }}/vm-e2e-access-"
+            "${{ github.run_id }}-${{ github.run_attempt }}",
+        )
+
     def test_exact_workflow_initialization_is_silent_bounded_and_fail_closed(self):
         workflow = (
             SCRIPT.parents[2] / ".github/workflows/vm-e2e-access-validation.yml"
