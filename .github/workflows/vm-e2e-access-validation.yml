@@ -1,0 +1,92 @@
+name: Temporary VM E2E artifact metadata access validation
+
+on:
+  push:
+    branches:
+      - user/britel/vm-e2e-access-validation-20261123
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vm-e2e-access-validation-20261123
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: trident-github-runner-ubuntu2204-amd64
+    timeout-minutes: 10
+    env:
+      REPORT_DIR: ${{ runner.temp }}/vm-e2e-access-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout harness branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: validation
+          persist-credentials: false
+
+      - name: Initialize only the already-approved runner UMI
+        timeout-minutes: 2
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          output = Path(os.environ["REPORT_DIR"])
+          output.mkdir(parents=True, exist_ok=False)
+          report = {
+              "scope": "approved-runner-umi-initialization-only",
+              "clientId": "e2fd61e6-b160-4f02-a5ac-3d949a4fe01d",
+              "outcome": "failed",
+              "code": "initialization_incomplete",
+          }
+          path = output / "identity-initialization.json"
+          path.write_text(json.dumps(report) + "\n")
+          status = 1
+          try:
+              result = subprocess.run(
+                  ["az", "login", "--identity", "--client-id", report["clientId"],
+                   "--allow-no-subscriptions"],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                  timeout=60, check=False,
+              )
+              if result.returncode == 0:
+                  report.update(outcome="passed", code="runner_identity_initialized")
+                  status = 0
+              else:
+                  report["code"] = "runner_identity_initialization_failed"
+          except FileNotFoundError:
+              report["code"] = "azure_cli_unavailable"
+          except subprocess.TimeoutExpired:
+              report["code"] = "runner_identity_initialization_timeout"
+          except Exception:
+              report["code"] = "runner_identity_initialization_execution_failed"
+          finally:
+              path.write_text(json.dumps(report) + "\n")
+          sys.exit(status)
+          PY
+
+      - name: Probe initialized caller access without further login or artifact downloads
+        timeout-minutes: 7
+        run: |
+          python3 validation/scripts/cloud-agent/probe_vm_e2e_access.py \
+            --output "$REPORT_DIR/probe"
+
+      - name: Record workflow outcome without raw diagnostics
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          python3 -c 'import json, os; from pathlib import Path; p = Path(os.environ["REPORT_DIR"]); p.mkdir(parents=True, exist_ok=True); s = os.environ["JOB_STATUS"]; p.joinpath("workflow-status.json").write_text(json.dumps({"jobStatus": s if s in ("success", "failure", "cancelled", "skipped") else "unknown", "scope": "metadata-access-only"}) + "\n")'
+
+      - name: Upload only bounded access reports, including failures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vm-e2e-access-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.REPORT_DIR }}/identity-initialization.json
+            ${{ env.REPORT_DIR }}/probe/summary.json
+            ${{ env.REPORT_DIR }}/workflow-status.json
+          if-no-files-found: error
+          retention-days: 14
