@@ -10,7 +10,6 @@ use log::{debug, info, trace, warn};
 use osutils::path::join_relative;
 use trident_api::{
     config::Storage,
-    constants,
     error::{InternalError, TridentError, TridentResultExt},
     is_default,
     status::{ServicingState, ServicingType},
@@ -18,10 +17,10 @@ use trident_api::{
 };
 
 use crate::{
-    engine::boot::BootSubsystem,
     subsystems::{
         esp::EspSubsystem,
         extensions::ExtensionsSubsystem,
+        grub::GrubSubsystem,
         hooks::HooksSubsystem,
         initrd::InitrdSubsystem,
         management::ManagementSubsystem,
@@ -40,6 +39,7 @@ mod clean_install;
 mod context;
 mod kexec;
 pub mod manual_rollback;
+mod mshv;
 mod newroot;
 pub mod provisioning_network;
 pub mod rollback;
@@ -145,7 +145,7 @@ lazy_static::lazy_static! {
         Box::<MosConfigSubsystem>::default(),
         Box::<EspSubsystem>::default(),
         Box::<StorageSubsystem>::default(),
-        Box::<BootSubsystem>::default(),
+        Box::<GrubSubsystem>::default(),
         Box::<NetworkSubsystem>::default(),
         Box::<OsConfigSubsystem>::default(),
         Box::<ManagementSubsystem>::default(),

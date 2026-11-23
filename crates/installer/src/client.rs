@@ -146,6 +146,7 @@ fn recognized_servicing_state(state: ServicingState) -> bool {
             | ServicingState::ManualRollbackAbFinalized
             | ServicingState::Provisioned
             | ServicingState::AbUpdateHealthCheckFailed
+            | ServicingState::CommitFailed
     )
 }
 
@@ -467,6 +468,10 @@ mod tests {
         assert!(recognized_servicing_state(
             ServicingState::CleanInstallFinalized
         ));
+        assert!(recognized_servicing_state(
+            ServicingState::AbUpdateHealthCheckFailed
+        ));
+        assert!(recognized_servicing_state(ServicingState::CommitFailed));
         assert!(!recognized_servicing_state(ServicingState::Unspecified));
         assert!(!recognized_servicing_state(ServicingState::Unknown(42)));
     }

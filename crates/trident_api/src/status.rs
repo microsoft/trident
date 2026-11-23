@@ -133,6 +133,8 @@ pub enum ServicingState {
     Provisioned,
     /// A/B update has been completed, the host booted into the target OS but the health checks failed.
     AbUpdateHealthCheckFailed,
+    /// Commit failed and rollback to the retained OS is required.
+    CommitFailed,
     /// A state written by another Trident version, preserved for inspection only.
     #[strum(default)]
     Unknown(String),
@@ -379,9 +381,14 @@ mod tests {
                 "ab-update-health-check-failed",
                 ServicingState::AbUpdateHealthCheckFailed,
             ),
+            ("commit-failed", ServicingState::CommitFailed),
             (
                 "future-recovery-step",
                 ServicingState::Unknown("future-recovery-step".into()),
+            ),
+            (
+                "ab-update-hypervisor-check-failed",
+                ServicingState::Unknown("ab-update-hypervisor-check-failed".into()),
             ),
             ("Provisioned", ServicingState::Unknown("Provisioned".into())),
             ("", ServicingState::Unknown(String::new())),

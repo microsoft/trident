@@ -181,23 +181,13 @@ impl ContainerRuntime for BollardRuntime {
         let cell_slug = config.cell_slug.clone();
         let log_source = config.log_source;
         let log_file = config.log_file.clone();
-        let docker_config = DockerConfig {
-            image: Some(config.image_ref),
-            cmd: Some(config.args),
-            attach_stdout: Some(true),
-            attach_stderr: Some(true),
-            host_config: Some(HostConfig {
-                binds: Some(config.binds),
-                privileged: Some(config.privileged),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
+        let platform = config.platform.clone();
+        let docker_config = container_docker_config(config);
         self.docker
             .create_container(
                 Some(CreateContainerOptions {
                     name: name.clone(),
-                    platform: Some(config.platform),
+                    platform: Some(platform),
                 }),
                 docker_config,
             )
@@ -310,6 +300,24 @@ impl ContainerRuntime for BollardRuntime {
         Ok(parse_daemon_info(
             &info.security_options.unwrap_or_default(),
         ))
+    }
+}
+
+fn container_docker_config(config: ContainerConfig) -> DockerConfig<String> {
+    DockerConfig {
+        image: Some(config.image_ref),
+        cmd: Some(config.args),
+        attach_stdout: Some(true),
+        attach_stderr: Some(true),
+        host_config: Some(HostConfig {
+            binds: Some(config.binds),
+            privileged: Some(config.privileged),
+            security_opt: config
+                .disable_selinux_label
+                .then(|| vec!["label=disable".to_owned()]),
+            ..Default::default()
+        }),
+        ..Default::default()
     }
 }
 
@@ -478,6 +486,50 @@ fn map_runtime_error(err: &BollardError) -> ExecError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selinux_label_opt_out_is_per_container_not_a_runtime_default() {
+        let ic = ContainerConfig {
+            image_ref: "example/ic".to_owned(),
+            platform: "linux/amd64".to_owned(),
+            name: "ic".to_owned(),
+            args: vec!["customize".to_owned()],
+            binds: vec!["/build:/build".to_owned()],
+            privileged: true,
+            disable_selinux_label: false,
+            cell_slug: "cell".to_owned(),
+            log_source: LogSource::ImageCustomizer,
+            log_file: None,
+        };
+        let normal = container_docker_config(ic.clone());
+        let host = normal.host_config.as_ref().unwrap();
+        assert!(host.security_opt.is_none());
+        assert_eq!(host.privileged, Some(true));
+        assert!(
+            serde_json::to_value(&normal).unwrap()["HostConfig"]
+                .get("SecurityOpt")
+                .is_none()
+        );
+
+        let janitor = container_docker_config(ContainerConfig {
+            privileged: false,
+            disable_selinux_label: true,
+            log_source: LogSource::Janitor,
+            ..ic
+        });
+        let host = janitor.host_config.as_ref().unwrap();
+        assert_eq!(
+            host.security_opt.as_deref(),
+            Some(&["label=disable".to_owned()][..])
+        );
+        assert_eq!(host.privileged, Some(false));
+        let payload = serde_json::to_value(&janitor).unwrap();
+        assert_eq!(
+            payload["HostConfig"]["SecurityOpt"],
+            serde_json::json!(["label=disable"])
+        );
+        assert_eq!(payload["HostConfig"]["Privileged"], false);
+    }
 
     #[test]
     fn parse_daemon_info_detects_docker_rootless_and_userns() {

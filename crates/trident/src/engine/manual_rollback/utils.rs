@@ -350,7 +350,7 @@ impl ManualRollbackContext {
                         current_operation.kind = OperationKind::RuntimeManualRollback;
                         current_operation.operation_host_status = Some(current_hs.clone());
                     }
-                    ServicingState::AbUpdateHealthCheckFailed => {
+                    ServicingState::AbUpdateHealthCheckFailed | ServicingState::CommitFailed => {
                         current_operation.kind = OperationKind::AbUpdateAutoRollback;
                         trace!("Detected AbUpdateAutoRollback operation, ending parsing here.");
                         break;
@@ -1068,6 +1068,29 @@ mod tests {
             prov_e(VOL_B, false, vec![], MIN, Some("failure".to_string())),
         ];
         rollback_context_testing(&host_status_list, "Validate A/B update health check failed");
+    }
+
+    #[test]
+    fn test_commit_failed_auto_rollback_history() {
+        let host_status_list = vec![
+            inter(None, CI_FINAL, MIN),
+            inter(None, CI_FINAL, MIN),
+            prov(VOL_A, false, vec![], MIN),
+            inter(VOL_A, AB_STAGE, MIN),
+            inter(VOL_A, AB_FINAL, MIN),
+            inter(VOL_A, ServicingState::CommitFailed, MIN),
+            prov_e(
+                VOL_A,
+                false,
+                vec![],
+                MIN,
+                Some("hypervisor failure".to_string()),
+            ),
+        ];
+        rollback_context_testing(
+            &host_status_list,
+            "Validate hypervisor auto-rollback history",
+        );
     }
 
     #[test]

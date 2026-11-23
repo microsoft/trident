@@ -1,0 +1,116 @@
+stages:
+  - stage: BuildAclImages
+    displayName: Build ACL images (regular kernel and MSHV)
+    dependsOn:
+      - GetTridentBinaries_rpms_amd64
+      - PrepareSSHKeys
+      - BuildingTools
+    jobs:
+      - job: ResolveAclTemplate
+        displayName: Select and download latest scheduled ACL-T
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+        variables:
+          ob_outputDirectory: $(Pipeline.Workspace)/acl-template-source
+          ob_artifactBaseName: acl-template-source
+        steps:
+          - template: ../common_tasks/checkout_trident.yml
+          - template: ../common_tasks/avoid-pypi-usage.yml
+          - task: Bash@3
+            displayName: Download latest successful scheduled aclmain/main source
+            inputs:
+              targetType: inline
+              workingDirectory: $(TRIDENT_SOURCE_DIR)
+              script: |
+                set -euo pipefail
+                sudo apt-get update
+                sudo apt-get install -y python3-yaml python3-cryptography
+                az extension show --name azure-devops > /dev/null 2>&1 || az extension add --name azure-devops
+                python3 tests/images/testimages.py download-image acl-t
+                mkdir -p '$(ob_outputDirectory)'
+                cp --reflink=auto artifacts/acl_template_image.vhdx '$(ob_outputDirectory)/'
+            env:
+              AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
+          - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+            parameters:
+              outputDir: $(ob_outputDirectory)
+              condition: always()
+      - template: prepare-image.yml
+        parameters:
+          variant: standard
+      - template: prepare-image.yml
+        parameters:
+          variant: mshv
+
+  - stage: TestAcl
+    displayName: ACL manual A/B updates (Linux QEMU)
+    dependsOn: BuildAclImages
+    jobs:
+      - ${{ each variant in split('standard,mshv', ',') }}:
+          - job: AclQemu_${{ variant }}
+            displayName: Boot ${{ variant }} ACL image and exercise update/rollback cycle
+            timeoutInMinutes: 90
+            pool:
+              type: linux
+              name: trident-ubuntu-1es-pool-eastus2
+              hostArchitecture: amd64
+            variables:
+              ob_outputDirectory: $(Pipeline.Workspace)/acl-${{ variant }}-results
+              ob_artifactBaseName: acl-${{ variant }}-results
+            steps:
+              - template: ../common_tasks/checkout_trident.yml
+              - template: ../testing_vm/netlaunch-prep.yml
+              - task: DownloadPipelineArtifact@2
+                displayName: Download ACL ${{ variant }} image and COSI
+                inputs:
+                  buildType: current
+                  artifactName: acl-${{ variant }}
+                  targetPath: $(Build.ArtifactStagingDirectory)/acl
+              - task: DownloadPipelineArtifact@2
+                displayName: Download storm tool
+                inputs:
+                  buildType: current
+                  artifactName: go-tools
+                  patterns: storm-trident
+                  targetPath: $(TRIDENT_SOURCE_DIR)/bin
+              - task: Bash@3
+                displayName: Run ACL update, rollback, update, update with explicit commits
+                inputs:
+                  targetType: inline
+                  workingDirectory: $(TRIDENT_SOURCE_DIR)
+                  script: |
+                    set -euo pipefail
+                    chmod +x ./bin/storm-trident
+                    chmod 600 '$(Build.ArtifactStagingDirectory)/acl/id_rsa'
+                    mkdir -p '$(ob_outputDirectory)'
+                    sudo ./bin/storm-trident run acl -a \
+                      -j '$(ob_outputDirectory)/acl-${{ variant }}.junit.xml' -- \
+                      --variant '${{ variant }}' \
+                      --deploy-slot-validation NoDatastore \
+                      --artifacts-dir '$(Build.ArtifactStagingDirectory)/acl' \
+                      --output-path '$(ob_outputDirectory)'
+              - bash: |
+                  set -euo pipefail
+                  disk='$(Build.ArtifactStagingDirectory)/acl/booted.qcow2'
+                  if [[ -f "$disk" ]]; then
+                    sudo zstd -T0 "$disk"
+                    sudo mv "$disk.zst" '$(ob_outputDirectory)/'
+                  else
+                    echo "##vso[task.logissue type=warning]No booted.qcow2 was created; no failed VM disk to publish."
+                  fi
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
+                condition: failed()
+                displayName: Publish failed ACL VM disk
+              - template: ../testing_common/fix-output-directory-for-one-branch-step.yml
+                parameters:
+                  outputDir: $(ob_outputDirectory)
+                  condition: always()
+              - template: ../junit/handle-junit-test-results.yml
+                parameters:
+                  testRunName: ACL ${{ variant }}
+                  junitTestFile: $(ob_outputDirectory)/acl-${{ variant }}.junit.xml
+                  displayNameSpecifier: ACL ${{ variant }}
+                  artifactName: junit_acl_${{ variant }}
