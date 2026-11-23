@@ -4,7 +4,9 @@ import json
 import os
 import signal
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 from contextlib import nullcontext
@@ -345,13 +347,101 @@ class InstallRunnerTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "posix", "requires POSIX process signals and locks")
     def test_interruption_forwards_cancellation(self):
-        with patch.object(runner.subprocess, "Popen") as popen:
+        with (
+            patch.object(runner.subprocess, "Popen") as popen,
+            patch.object(runner.os, "killpg") as kill,
+        ):
             child = popen.return_value
+            child.pid = 12345
             child.wait.side_effect = [KeyboardInterrupt(), 0]
             self.assertEqual(
                 runner.command(["mock"], self.root, self.root / "log", 1, 2), 130
             )
             child.terminate.assert_called_once()
+            kill.assert_called_once_with(12345, signal.SIGKILL)
+
+    @unittest.skipUnless(sys.platform == "linux", "requires Linux child subreaping")
+    def test_default_timeout_kills_surviving_child_before_lock_release(self):
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        previous = ctypes.c_int()
+        # Adopt the synthetic grandchild so the test can reap it, not host PID 1.
+        self.assertEqual(libc.prctl(37, ctypes.byref(previous), 0, 0, 0), 0)
+        self.assertEqual(libc.prctl(36, 1, 0, 0, 0), 0)
+        pidfile = self.root / "child.pid"
+        parent_exit = self.root / "parent-exited"
+        lock = self.root / "host.lock"
+        lock.touch()
+        child_pid = None
+        reaped = False
+        original_signal_group = runner.signal_group
+
+        def signal_group(process, sig):
+            with self.assertRaises(BlockingIOError), runner.host_lock():
+                self.fail("Host lock released before descendant cleanup")
+            return original_signal_group(process, sig)
+
+        fixture = """
+import os
+from pathlib import Path
+import signal
+import sys
+import time
+pidfile, parent_exit = map(Path, sys.argv[1:])
+def exit_parent(signum, frame):
+    parent_exit.write_text("graceful exit")
+    sys.exit(0)
+signal.signal(signal.SIGTERM, exit_parent)
+if os.fork() == 0:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    pidfile.write_text(str(os.getpid()))
+while True:
+    time.sleep(0.01)
+"""
+        try:
+            with (
+                patch.object(runner, "HOST_LOCK", lock),
+                patch.object(
+                    runner, "signal_group", side_effect=signal_group
+                ) as grouped,
+                runner.host_lock(),
+            ):
+                status = runner.command(
+                    [sys.executable, "-c", fixture, str(pidfile), str(parent_exit)],
+                    self.root,
+                    self.root / "parent-child.log",
+                    1,
+                    2,
+                )
+                self.assertEqual(status, 124)
+                self.assertTrue(
+                    parent_exit.exists(), "Parent did not exit within grace"
+                )
+                child_pid = int(pidfile.read_text())
+                grouped.assert_called_once()
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    pid, child_status = os.waitpid(child_pid, os.WNOHANG)
+                    if pid:
+                        reaped = True
+                        break
+                    time.sleep(0.01)
+                self.assertTrue(reaped, "Descendant survived default command timeout")
+                self.assertTrue(os.WIFSIGNALED(child_status))
+                self.assertEqual(os.WTERMSIG(child_status), signal.SIGKILL)
+            with patch.object(runner, "HOST_LOCK", lock), runner.host_lock():
+                self.assertTrue(reaped)
+        finally:
+            if not reaped and pidfile.exists():
+                child_pid = int(pidfile.read_text())
+                try:
+                    os.kill(child_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    child_pid = None
+                if child_pid is not None:
+                    os.waitpid(child_pid, 0)
+            self.assertEqual(libc.prctl(36, previous.value, 0, 0, 0), 0)
 
     @unittest.skipUnless(os.name == "posix", "requires POSIX process signals and locks")
     def test_repeated_cancellation_cannot_interrupt_cleanup_or_reaping(self):

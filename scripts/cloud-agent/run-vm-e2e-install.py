@@ -139,7 +139,46 @@ def parse_matrix(text):
     return matrix
 
 
-def command(argv, cwd, log, timeout, grace):
+@contextmanager
+def cleanup_signals():
+    handlers = {
+        sig: signal.signal(sig, signal.SIG_IGN)
+        for sig in (signal.SIGINT, signal.SIGTERM)
+    }
+    try:
+        yield
+    finally:
+        for sig, handler in handlers.items():
+            signal.signal(sig, handler)
+
+
+def reap(process, grace, group=False):
+    with cleanup_signals():
+        if group:
+            signal_group(process, signal.SIGTERM)
+        else:
+            process.terminate()
+        timed_out = False
+        try:
+            process.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        finally:
+            # The leader may exit before a descendant, including netlisten.
+            # This also applies to Storm's default leader-first cancellation.
+            signal_group(process, signal.SIGKILL)
+            if timed_out:
+                process.wait()
+
+
+def signal_group(process, sig):
+    try:
+        os.killpg(process.pid, sig)
+    except ProcessLookupError:
+        return  # The entire group has already exited.
+
+
+def command(argv, cwd, log, timeout, grace, group_cleanup=False):
     with log.open("wb") as stream:
         process = subprocess.Popen(
             argv,
@@ -149,24 +188,13 @@ def command(argv, cwd, log, timeout, grace):
             start_new_session=True,
         )
         try:
-            return process.wait(timeout=timeout)
+            status = process.wait(timeout=timeout)
+            signal_group(process, signal.SIGKILL)
+            return status
         except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
             # Storm handles SIGTERM by cancelling the suite and running Cleanup.
             # Repeated cancellation must not release the host lock before reaping.
-            handlers = {
-                sig: signal.signal(sig, signal.SIG_IGN)
-                for sig in (signal.SIGINT, signal.SIGTERM)
-            }
-            try:
-                process.terminate()
-                try:
-                    process.wait(timeout=grace)
-                except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
-            finally:
-                for sig, handler in handlers.items():
-                    signal.signal(sig, handler)
+            reap(process, grace, group=group_cleanup)
             return 130 if isinstance(error, KeyboardInterrupt) else 124
 
 
