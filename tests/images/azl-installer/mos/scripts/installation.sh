@@ -2,6 +2,14 @@
 set -ex
 trap '/bin/bash' ERR
 
+# Both VGA and serial autologins run this script; prevent competing disk writes.
+# The open descriptor holds the lock for this attempt; other consoles get a shell.
+exec 9>/run/azl-installer.lock
+if ! flock -n 9; then
+    echo "Installation is already running on another console."
+    exec /bin/bash
+fi
+
 CDROM_MOUNT="/mnt/cdrom"
 WORKING_DIR="/root/installer"
 MAGIC_PLACEHOLDER="8505c8ab802dd717290331acd0592804c4e413b030150c53f5018ac998b7831d"
