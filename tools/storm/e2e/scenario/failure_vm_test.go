@@ -43,25 +43,18 @@ func TestFailureArtifactsSurviveVMCleanup(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	volumeRoot, err := os.MkdirTemp("/var/tmp", "storm-capture-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(volumeRoot); err != nil {
-			t.Error(err)
-		}
-	})
-	if err := os.Chmod(volumeRoot, 0755); err != nil {
-		t.Fatal(err)
-	}
-	volumeDir := filepath.Join(volumeRoot, "pool")
+	namespace := "storm-capture-test-" + uuid.NewString()
+	volumeDir := filepath.Join("/var/lib/libvirt", namespace)
 	if err := os.Mkdir(volumeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	namespace := "storm-capture-test-" + uuid.NewString()
 	t.Cleanup(func() {
 		if err := virtdeploy.DeleteResources(namespace); err != nil {
+			t.Error(err)
+			return
+		}
+		// Remove only the empty pool directory after libvirt cleanup succeeds.
+		if err := os.Remove(volumeDir); err != nil {
 			t.Error(err)
 		}
 	})
