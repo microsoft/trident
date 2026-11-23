@@ -1,0 +1,47 @@
+name: Temporary VM E2E image inspection (validation only)
+
+on:
+  push:
+    branches:
+      - user/britel/vm-e2e-image-inspection-20261123
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vm-e2e-image-inspection-20261123
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/user/britel/vm-e2e-image-inspection-20261123'
+    runs-on: trident-github-runner-ubuntu2204-amd64
+    timeout-minutes: 90
+    steps:
+      - name: Checkout inspection harness (not producer image revision)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: validation
+          persist-credentials: false
+
+      - name: Inspect immutable producer on disposable 1ES
+        timeout-minutes: 85
+        env:
+          EXCLUSIVE_DISPOSABLE_1ES: "true"
+        working-directory: validation
+        run: |
+          timeout --signal=INT --kill-after=60s 80m \
+            python3 scripts/cloud-agent/inspect_vm_e2e_images.py \
+              --scratch "$RUNNER_TEMP" \
+              --output "$RUNNER_TEMP/trident-image-inspection-report/inspection.json"
+
+      - name: Upload only bounded unreviewed facts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unreviewed-image-inspection-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/trident-image-inspection-report/inspection.json
+          if-no-files-found: error
+          retention-days: 7
