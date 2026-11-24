@@ -73,10 +73,9 @@ pub fn work_order_jobs(
         return Err(invalid("cannot generate an empty job matrix"));
     }
     let packed = pack(components, max_jobs);
-    let roots: BTreeMap<&str, &Cell> = plan
+    let cells_by_slug: BTreeMap<&str, &Cell> = plan
         .cells()
         .iter()
-        .filter(|cell| plan.requested().contains(cell.slug.as_ref()))
         .map(|cell| (cell.slug.as_ref(), cell))
         .collect();
     let mut used = BTreeSet::new();
@@ -85,7 +84,7 @@ pub fn work_order_jobs(
         let images: Vec<String> = component.images.iter().cloned().collect();
         let key = job_key(&images)?;
         check_key(&key, &mut used)?;
-        let work_order = encode(&component, &roots, members)?;
+        let work_order = encode(&component, &cells_by_slug, members)?;
         jobs.push(WorkOrderJob {
             key,
             work_order,
@@ -213,12 +212,12 @@ fn check_key(key: &str, used: &mut BTreeSet<String>) -> Result<(), CoreError> {
 
 fn encode(
     component: &Component,
-    roots: &BTreeMap<&str, &Cell>,
+    cells_by_slug: &BTreeMap<&str, &Cell>,
     members: &[Arc<Target>],
 ) -> Result<WorkOrder, CoreError> {
     let mut per_image: BTreeMap<String, Vec<&Cell>> = BTreeMap::new();
     for slug in &component.requested {
-        let cell = roots
+        let cell = cells_by_slug
             .get(slug.as_str())
             .ok_or_else(|| invalid("requested root is missing"))?;
         per_image
@@ -318,16 +317,29 @@ fn encode(
     }
 
     let mut best: Option<(usize, String, WorkOrder)> = None;
+    let identities = |slugs: &BTreeSet<String>| {
+        slugs
+            .iter()
+            .map(|slug| {
+                let cell = cells_by_slug
+                    .get(slug.as_str())
+                    .ok_or_else(|| invalid("job names an unknown scheduled cell"))?;
+                Ok((cell.target.name().to_owned(), slug.clone()))
+            })
+            .collect::<Result<BTreeSet<_>, CoreError>>()
+    };
+    let requested_identities = identities(&component.requested)?;
+    let scheduled_identities = identities(&component.scheduled)?;
     for candidate in candidates {
         let Ok(selected) = schedule::select_work_order(&candidate, members) else {
             continue;
         };
-        if cell_slugs(&selected) != component.requested {
+        if cell_identities(&selected) != requested_identities {
             continue;
         }
         let verified = schedule::schedule(&selected, members)?;
         if verified.requested() != &component.requested
-            || cell_slugs(verified.cells()) != component.scheduled
+            || cell_identities(verified.cells()) != scheduled_identities
         {
             continue;
         }
@@ -386,6 +398,13 @@ fn select_slice(cells: &[Cell], filter: &Filter) -> Vec<Cell> {
 
 fn cell_slugs(cells: &[Cell]) -> BTreeSet<String> {
     cells.iter().map(|cell| cell.slug.to_string()).collect()
+}
+
+fn cell_identities(cells: &[Cell]) -> BTreeSet<(String, String)> {
+    cells
+        .iter()
+        .map(|cell| (cell.target.name().to_owned(), cell.slug.to_string()))
+        .collect()
 }
 
 fn subset_slice(

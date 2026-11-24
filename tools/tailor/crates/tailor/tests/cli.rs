@@ -366,6 +366,86 @@ fn plan_extraction_matches_policy_and_forced_signed_staging() {
 }
 
 #[test]
+fn work_order_plan_uses_the_effective_convert_operation() {
+    let ws = order_only_workspace();
+    let manifest = ws.path().join("tailor.yaml");
+    let original = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        manifest,
+        format!(
+            "{original}previewFeatures: [signing]\nsigning:\n  default: test-ca\n  profiles:\n    test-ca:\n      backend: local-test-ca\n"
+        ),
+    )
+    .unwrap();
+    let image = ws.path().join("consumer/image.yaml");
+    let original = fs::read_to_string(&image).unwrap();
+    for (signed, operation, extraction) in [(false, "convert", false), (true, "customize", true)] {
+        let config = format!(
+            "operation: convert\nsigning: {signed}\nconfig:\n  previewFeatures: [output-artifacts]\n  output:\n    artifacts:\n      path: ./declared\n"
+        );
+        fs::write(&image, original.replace("config: {}", &config)).unwrap();
+        let plan = work_order_plan_in(
+            ws.path(),
+            r#"{"schemaVersion":1,"cells":["consumer_stable_amd64_cosi"]}"#,
+        );
+        let step = plan["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|step| step["slug"] == "consumer_stable_amd64_cosi")
+            .unwrap();
+        assert_eq!(step["actions"][0], operation);
+        assert_eq!(
+            step["actions"]
+                .as_array()
+                .unwrap()
+                .contains(&JsonValue::from("extract")),
+            extraction
+        );
+        let rendered = dry_run_in(ws.path(), &["consumer_stable_amd64_cosi"]);
+        let invocation = rendered
+            .split("\n\n")
+            .find(|block| {
+                block.contains("docker run") && block.contains("# consumer_stable_amd64_cosi")
+            })
+            .unwrap();
+        assert!(
+            invocation
+                .lines()
+                .any(|line| line.trim().trim_end_matches('\\').trim() == operation),
+            "{invocation}"
+        );
+        if !signed {
+            assert!(!invocation.contains("--config-file"), "{invocation}");
+        }
+    }
+}
+
+#[test]
+fn work_order_slug_collisions_fail_before_emitting_jobs_or_builds() {
+    let ws = order_only_workspace();
+    fs::create_dir(ws.path().join("consumer_stable")).unwrap();
+    fs::write(
+        ws.path().join("consumer_stable/image.yaml"),
+        "name: consumer_stable\nbase: {path: ./base.img}\nconfig: {}\n",
+    )
+    .unwrap();
+    for args in [
+        vec!["matrix", "--format", "ado"],
+        vec!["matrix", "--format", "ado", "--max-jobs", "1"],
+        vec!["build", "consumer", "consumer_stable", "--plan"],
+    ] {
+        tailor()
+            .current_dir(ws.path())
+            .args(args)
+            .assert()
+            .code(2)
+            .stdout(predicate::str::diff(""))
+            .stderr(predicate::str::contains("collid"));
+    }
+}
+
+#[test]
 fn invalid_work_orders_report_their_source_and_fail_as_usage_errors() {
     let ws = order_only_workspace();
     for order in [

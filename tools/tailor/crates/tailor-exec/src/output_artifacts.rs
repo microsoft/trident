@@ -63,7 +63,7 @@ pub fn uses_output_artifacts(ic_config: &Value) -> bool {
         })
 }
 
-/// Whether an unsigned cell requests extraction after applying its staging policy.
+/// Whether an unsigned customization requests extraction after applying its staging policy.
 pub fn extracts_output_artifacts(ic_config: &Value, policy: OutputArtifactsPolicy) -> bool {
     policy != OutputArtifactsPolicy::Strip
         && uses_output_artifacts(ic_config)

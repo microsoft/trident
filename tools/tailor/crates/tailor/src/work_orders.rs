@@ -115,12 +115,21 @@ pub(super) fn print_plan(
                     tool.signing.as_ref(),
                 )?
                 .is_some();
-                let mut actions = vec![match target.definition.operation.unwrap_or_default() {
+                let operation = if signed {
+                    Operation::Customize
+                } else {
+                    target.definition.operation.unwrap_or_default()
+                };
+                let mut actions = vec![match operation {
                     Operation::Customize => "customize",
                     Operation::Convert => "convert",
                 }];
                 if signed
-                    || exec::extracts_output_artifacts(&cell.ic_config, target.output_artifacts)
+                    || (operation == Operation::Customize
+                        && exec::extracts_output_artifacts(
+                            &cell.ic_config,
+                            target.output_artifacts,
+                        ))
                 {
                     actions.push("extract");
                 }

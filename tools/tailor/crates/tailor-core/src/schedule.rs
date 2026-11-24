@@ -5,11 +5,14 @@ use std::{
     sync::Arc,
 };
 
-use tailor_config::{WorkOrder, WorkOrderSelection};
+use tailor_config::{Arch, WorkOrder, WorkOrderSelection};
 
 use crate::{Cell, CoreError, Selector, Target, imagedep, orchestrator};
 
 pub use crate::imagedep::DependencyEdge;
+
+const ARCH_AXIS: &str = "arch";
+const SLUG_SEPARATOR: char = '_';
 
 /// Dependency-complete serial execution, with requested roots distinct from required producers.
 #[derive(Debug, Clone)]
@@ -78,18 +81,16 @@ pub fn select_work_order(
             return Err(invalid(at, "clause selects no cells after skip rules"));
         }
         for cell in clause_cells {
-            selected.insert(cell.slug.to_string(), cell);
+            insert_selected(&mut selected, cell, &at)?;
         }
     }
     if !order.exact_slugs().is_empty() {
         let requested: BTreeSet<&str> = order.exact_slugs().iter().map(String::as_str).collect();
         let mut exact = BTreeMap::new();
-        for target in members.iter().filter(|target| {
-            requested.iter().any(|slug| {
-                slug.strip_prefix(target.name())
-                    .is_some_and(|suffix| suffix.starts_with('_'))
-            })
-        }) {
+        for target in members
+            .iter()
+            .filter(|target| requested.iter().any(|slug| could_own_slug(target, slug)))
+        {
             for cell in orchestrator::cells(target)? {
                 if requested.contains(cell.slug.as_ref()) {
                     let slug = cell.slug.to_string();
@@ -113,13 +114,112 @@ pub fn select_work_order(
                     format!("unknown cell slug `{slug}`"),
                 )
             })?;
-            selected.insert(slug.clone(), cell.clone());
+            insert_selected(&mut selected, cell.clone(), "slugs")?;
         }
     }
     if selected.is_empty() {
         return Err(invalid("$", "order selects no cells"));
     }
     Ok(selected.into_values().collect())
+}
+
+fn could_own_slug(target: &Target, slug: &str) -> bool {
+    let Some(suffix) = slug
+        .strip_prefix(target.name())
+        .and_then(|suffix| suffix.strip_prefix(SLUG_SEPARATOR))
+    else {
+        return false;
+    };
+    let Some((coordinate, format)) = suffix.rsplit_once(SLUG_SEPARATOR) else {
+        return false;
+    };
+    if format.is_empty() {
+        return false;
+    }
+    let matrix = target.definition.matrix.as_ref();
+    let coordinate = if matrix.is_some_and(|axes| axes.contains_key(ARCH_AXIS)) {
+        coordinate
+    } else {
+        let is_arch = |value| {
+            [Arch::Amd64, Arch::Arm64]
+                .iter()
+                .any(|arch| arch.as_str() == value)
+        };
+        match coordinate.rsplit_once(SLUG_SEPARATOR) {
+            Some((values, arch)) if is_arch(arch) => values,
+            None if is_arch(coordinate) => "",
+            _ => return false,
+        }
+    };
+    let Some(axes) = matrix else {
+        return coordinate.is_empty();
+    };
+    let mut suffixes = BTreeSet::from([coordinate]);
+    for (index, values) in axes.values().enumerate() {
+        let last = index + 1 == axes.len();
+        suffixes = suffixes
+            .iter()
+            .flat_map(|suffix| {
+                values.iter().filter_map(move |value| {
+                    let rest = suffix.strip_prefix(value.as_str())?;
+                    if last {
+                        rest.is_empty().then_some(rest)
+                    } else {
+                        rest.strip_prefix(SLUG_SEPARATOR)
+                    }
+                })
+            })
+            .collect();
+        if suffixes.is_empty() {
+            return false;
+        }
+    }
+    suffixes.contains("")
+}
+
+fn check_cell_identity(previous: &Cell, cell: &Cell, field: &str) -> Result<(), CoreError> {
+    if previous.target.name() == cell.target.name()
+        && previous.target.dir == cell.target.dir
+        && previous.axes == cell.axes
+        && previous.arch == cell.arch
+        && previous.output.format == cell.output.format
+        && previous.output.compression == cell.output.compression
+        && previous.output.cosi_compression_level == cell.output.cosi_compression_level
+    {
+        return Ok(());
+    }
+    Err(invalid(
+        field,
+        format!(
+            "cell slug `{}` collides between distinct cells in images `{}` and `{}`",
+            cell.slug,
+            previous.target.name(),
+            cell.target.name()
+        ),
+    ))
+}
+
+fn insert_selected(
+    selected: &mut BTreeMap<String, Cell>,
+    cell: Cell,
+    field: &str,
+) -> Result<(), CoreError> {
+    if let Some(previous) = selected.get(cell.slug.as_ref()) {
+        check_cell_identity(previous, &cell, field)?;
+    } else {
+        selected.insert(cell.slug.to_string(), cell);
+    }
+    Ok(())
+}
+
+fn ensure_unique_cells(cells: &[Cell], field: &str) -> Result<(), CoreError> {
+    let mut seen: BTreeMap<&str, &Cell> = BTreeMap::new();
+    for cell in cells {
+        if let Some(previous) = seen.insert(cell.slug.as_ref(), cell) {
+            check_cell_identity(previous, cell, field)?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_filter(
@@ -166,6 +266,7 @@ pub fn schedule(roots: &[Cell], members: &[Arc<Target>]) -> Result<BuildSchedule
     if roots.is_empty() {
         return Err(invalid("$", "cannot schedule empty requested roots"));
     }
+    ensure_unique_cells(roots, "roots")?;
     let by_name: BTreeMap<&str, &Arc<Target>> = members.iter().map(|t| (t.name(), t)).collect();
     let mut selected_targets = BTreeMap::new();
     let mut requested = BTreeSet::new();
@@ -198,6 +299,7 @@ pub fn schedule(roots: &[Cell], members: &[Arc<Target>]) -> Result<BuildSchedule
             .into_iter()
             .filter(|cell| slugs.contains(cell.slug.as_ref()))
             .collect();
+        ensure_unique_cells(&chosen, "cells")?;
         if chosen.len() != slugs.len() {
             return Err(invalid(
                 "roots",
@@ -229,10 +331,11 @@ pub fn schedule(roots: &[Cell], members: &[Arc<Target>]) -> Result<BuildSchedule
         } => per_image.contains_key(from_image) && per_image.contains_key(to_image),
         DependencyEdge::Base { .. } | DependencyEdge::Input { .. } => true,
     });
-    let cells = targets
+    let cells: Vec<Cell> = targets
         .iter()
         .flat_map(|target| per_image.remove(target.name()).unwrap_or_default())
         .collect();
+    ensure_unique_cells(&cells, "cells")?;
     Ok(BuildSchedule {
         targets,
         cells,
@@ -340,6 +443,60 @@ mod tests {
         )
         .unwrap();
         schedule(&roots, &[dependent, experimental]).unwrap_err();
+    }
+
+    #[test]
+    fn work_order_exact_lookup_uses_declared_coordinates_before_rendering() {
+        let workspace = WorkOrderWorkspace::new();
+        let unrelated = workspace.target("app", "skip: true");
+        let owner = workspace.target("app_extra", PATH_BASE);
+        let members = [unrelated, owner];
+        for input in [
+            "cells: [app_extra_amd64_cosi]",
+            "slugs: [app_extra_amd64_cosi]",
+        ] {
+            let roots = select(input, &members).unwrap();
+            assert_eq!(roots[0].target.name(), "app_extra");
+        }
+    }
+
+    #[test]
+    fn work_order_rejects_distinct_cells_with_colliding_slugs() {
+        let workspace = WorkOrderWorkspace::new();
+        let app = workspace.target("app", &format!("{PATH_BASE}\nmatrix: {{variant: [x]}}"));
+        let alias = workspace.target("app_x", PATH_BASE);
+        let leaf = workspace.target("leaf", &format!("{PATH_BASE}\ndependsOn: [app, app_x]"));
+        let members = [Arc::clone(&app), Arc::clone(&alias), Arc::clone(&leaf)];
+        for input in [
+            "images: [app, app_x]",
+            "images: [app_x, app]",
+            "selections: [{images: [app]}, {images: [app_x]}]",
+            "cells: [app_x_amd64_cosi]",
+        ] {
+            select(input, &members).unwrap_err();
+        }
+        let mut roots = orchestrator::cells(&app).unwrap();
+        roots.extend(orchestrator::cells(&alias).unwrap());
+        schedule(&roots, &members).unwrap_err();
+        let roots = select("images: [leaf]", &members).unwrap();
+        schedule(&roots, &members).unwrap_err();
+        assert_eq!(
+            select("selections: [{images: [app]}, {images: [app]}]", &members)
+                .unwrap()
+                .len(),
+            1
+        );
+        let root = select("images: [app]", &members).unwrap();
+        let plan = schedule(&root, &members).unwrap();
+        for job in crate::ado::work_order_jobs(&plan, &members, None).unwrap() {
+            let selected = select_work_order(job.work_order(), &members).unwrap();
+            assert_eq!(selected[0].target.name(), "app");
+        }
+        let tuple_alias = workspace.target(
+            "tuples",
+            &format!("{PATH_BASE}\nmatrix: {{left: [x_y, x], right: [z, y_z]}}"),
+        );
+        select("images: [tuples]", &[tuple_alias]).unwrap_err();
     }
 
     #[test]

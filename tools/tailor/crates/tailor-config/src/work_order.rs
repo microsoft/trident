@@ -10,7 +10,7 @@ use serde_yaml_ng::{Mapping, Value};
 
 use crate::ConfigError;
 
-const SCHEMA_VERSION: u64 = 1;
+const SCHEMA_VERSION: u8 = 1;
 const ROOT_FIELDS: &[&str] = &[
     "schemaVersion",
     "description",
@@ -73,7 +73,7 @@ impl WorkOrder {
         })?;
         let root = mapping(&value, "$")?;
         fields(root, ROOT_FIELDS, "$")?;
-        if field(root, "schemaVersion").and_then(Value::as_u64) != Some(SCHEMA_VERSION) {
+        if field(root, "schemaVersion").and_then(Value::as_f64) != Some(f64::from(SCHEMA_VERSION)) {
             return Err(invalid("schemaVersion", "must be integer 1"));
         }
         let description = field(root, "description")
@@ -288,6 +288,24 @@ mod tests {
     }
 
     #[test]
+    fn work_order_accepts_integral_numeric_versions_in_every_form() {
+        for selection in [
+            r#""images":["app"]"#,
+            r#""selections":[{"images":["app"]}]"#,
+            r#""slugs":["app_amd64_cosi"]"#,
+            r#""cells":["app_amd64_cosi"]"#,
+        ] {
+            for version in ["1", "1.0", "1e0"] {
+                WorkOrder::parse(&format!(r#"{{"schemaVersion":{version},{selection}}}"#)).unwrap();
+            }
+            for version in ["0", "2", "1.5", r#""1""#, "true", "null"] {
+                WorkOrder::parse(&format!(r#"{{"schemaVersion":{version},{selection}}}"#))
+                    .unwrap_err();
+            }
+        }
+    }
+
+    #[test]
     fn rejects_invalid_structure_without_raw_parser_payload() {
         for extra in [
             "",
@@ -319,7 +337,7 @@ mod tests {
         ] {
             WorkOrder::parse(&format!("schemaVersion: 1\n{extra}")).unwrap_err();
         }
-        for version in ["0", "2", "1.0", "'1'", "null"] {
+        for version in ["0", "2", "1.5", "'1'", "true", "null"] {
             WorkOrder::parse(&format!("schemaVersion: {version}\nslugs: [a]")).unwrap_err();
         }
         WorkOrder::parse("slugs: [a]").unwrap_err();
