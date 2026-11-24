@@ -1052,16 +1052,14 @@ all-iso: $(ISO_TARGETS)
 # prerequisites so that we can use find to get all the files in the directory.
 # https://www.gnu.org/software/make/manual/make.html#Secondary-Expansion
 .SECONDEXPANSION:
-artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx artifacts/%.vhd artifacts/%.qcow2: $$(shell ./tests/images/testimages.py dependencies $$*)
+artifacts/%.cosi artifacts/%.iso artifacts/%.vhdx: $$(shell ./tests/images/testimages.py dependencies $$*)
 	@echo "Building '$*' [$@] from $<"
-	@echo "Extension is: $(subst .,,$(suffix $@))"
 	@echo "Prerequisites:"
 	@echo "$^" | tr ' ' '\n' | sed 's/^/    /'
 	@echo "Building image..."
 	sudo ./tests/images/testimages.py build \
 		$* \
 		--output-dir ./artifacts \
-		--output-type $(subst .,,$(suffix $@)) \
 		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE)) \
 		$(if $(strip $(MIC_ARCHITECTURE)),--image-architecture $(MIC_ARCHITECTURE))
 
@@ -1115,6 +1113,22 @@ $(AZL4_QEMU_GUEST_IMAGE):
 	@mkdir -p artifacts
 	@tests/images/testimages.py download-image azl4_qemu_guest
 
+define build-azl4-image
+sudo ./tests/images/testimages.py build \
+		$(basename $(notdir $@)) \
+		--output-dir ./artifacts \
+		--output-type $(subst .,,$(suffix $@)) \
+		$(if $(strip $(MIC_CONTAINER_IMAGE)),--container $(MIC_CONTAINER_IMAGE)) \
+		$(if $(strip $(MIC_ARCHITECTURE)),--image-architecture $(MIC_ARCHITECTURE))
+endef
+
+# Keep formats independent: each recipe builds only $@'s format.
+artifacts/%-azl4-testimage.cosi: $$(shell ./tests/images/testimages.py dependencies $$*-azl4-testimage)
+	$(build-azl4-image)
+
+artifacts/%-azl4-testimage.qcow2: $$(shell ./tests/images/testimages.py dependencies $$*-azl4-testimage)
+	$(build-azl4-image)
+
 BAREMETAL_IMAGE = artifacts/baremetal.vhdx
 $(BAREMETAL_IMAGE):
 	@mkdir -p artifacts
@@ -1135,6 +1149,132 @@ MINIMAL_IMAGE_AARCH64 = artifacts/minimal_aarch64.vhdx
 $(MINIMAL_IMAGE_AARCH64):
 	@mkdir -p artifacts
 	@tests/images/testimages.py download-image minimal_aarch64
+
+artifacts/trident-vm-grub-testimage.qcow2: \
+	$(QEMU_GUEST_IMAGE) \
+	$(TRIDENT_VM_DEPENDENCIES) \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
+	artifacts/rpm-overrides
+	@echo "Building $@ from $<"
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level debug \
+			--rpm-source /repo/bin/RPMS \
+			--rpm-source /repo/artifacts/rpm-overrides \
+			--build-dir /build \
+			--image-file /repo/$< \
+			--output-image-file /repo/$@ \
+			--output-image-format qcow2 \
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml
+
+artifacts/trident-vm-grub-testimage-arm64.qcow2: \
+	base/core_arm64.vhdx \
+	$(TRIDENT_VM_DEPENDENCIES) \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub
+	@echo "Building $@ from $<"
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level debug \
+			--rpm-source /repo/bin/RPMS \
+			--build-dir /build \
+			--image-file /repo/$< \
+			--output-image-file /repo/$@ \
+			--output-image-format qcow2 \
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity.yaml
+
+artifacts/trident-vm-grub-verity-testimage.qcow2: \
+	$(QEMU_GUEST_IMAGE) \
+	$(TRIDENT_VM_DEPENDENCIES) \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.service \
+	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.sh \
+	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
+	artifacts/rpm-overrides
+	@echo "Building $@ from $<"
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level debug \
+			--rpm-source /repo/bin/RPMS \
+			--rpm-source /repo/artifacts/rpm-overrides \
+			--build-dir /build \
+			--image-file /repo/$< \
+			--output-image-file /repo/$@ \
+			--output-image-format qcow2 \
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity.yaml
+
+artifacts/trident-vm-root-verity-testimage.qcow2: \
+	$(QEMU_GUEST_IMAGE) \
+	$(TRIDENT_VM_DEPENDENCIES) \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-root-verity.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
+	artifacts/rpm-overrides
+	@echo "Building $@ from $<"
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level debug \
+			--rpm-source /repo/bin/RPMS \
+			--rpm-source /repo/artifacts/rpm-overrides \
+			--build-dir /build \
+			--image-file /repo/$< \
+			--output-image-file /repo/$@ \
+			--output-image-format qcow2 \
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-root-verity.yaml
+
+artifacts/trident-vm-verity-testimage-arm64.qcow2: \
+	base/core_arm64.vhdx \
+	$(TRIDENT_VM_DEPENDENCIES) \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-verity.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.service \
+	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.sh \
+	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub
+	@echo "Building $@ from $<"
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level debug \
+			--rpm-source /repo/bin/RPMS \
+			--build-dir /build \
+			--image-file /repo/$< \
+			--output-image-file /repo/$@ \
+			--output-image-format qcow2 \
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-verity.yaml
+
+artifacts/trident-vm-usr-verity-testimage.qcow2: \
+	$(QEMU_GUEST_IMAGE) \
+	$(TRIDENT_VM_DEPENDENCIES) \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-usr-verity.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
+	artifacts/rpm-overrides
+	@echo "Building $@ from $<"
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level debug \
+			--rpm-source /repo/bin/RPMS \
+			--rpm-source /repo/artifacts/rpm-overrides \
+			--build-dir /build \
+			--image-file /repo/$< \
+			--output-image-file /repo/$@ \
+			--output-image-format qcow2 \
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-usr-verity.yaml
 
 artifacts/trident-vm-acl-agent-testimage.qcow2: \
 	$(QEMU_GUEST_IMAGE) \
@@ -1157,6 +1297,29 @@ artifacts/trident-vm-acl-agent-testimage.qcow2: \
 			--output-image-file /repo/$@ \
 			--output-image-format qcow2 \
 			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-acl-agent.yaml
+
+artifacts/trident-vm-grub-verity-azure-testimage.vhd: \
+	$(CORE_SELINUX_IMAGE) \
+	$(TRIDENT_VM_DEPENDENCIES) \
+	$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml \
+	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.service \
+	$(VM_IMAGE_PATH_PREFIX)/files/etc-mount.sh \
+	$(VM_IMAGE_PATH_PREFIX)/files/id_rsa.pub \
+	artifacts/rpm-overrides
+	@echo "Building $@ from $<"
+	docker run --rm \
+		--privileged \
+		-v ".:/repo:z" \
+		-v "/dev:/dev" \
+		${MIC_CONTAINER_IMAGE} \
+			--log-level debug \
+			--rpm-source /repo/bin/RPMS \
+			--rpm-source /repo/artifacts/rpm-overrides \
+			--build-dir /build \
+			--image-file /repo/$< \
+			--output-image-file /repo/$@ \
+			--output-image-format vhd-fixed \
+			--config-file /repo/$(VM_IMAGE_PATH_PREFIX)/baseimg-grub-verity-azure.yaml
 
 .PHONY: imagecustomizer-dev-amd64
 imagecustomizer-dev-amd64:
