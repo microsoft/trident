@@ -722,7 +722,7 @@ fn copy_boot_files(
 /// UEFI convention: each OS vendor installs its bootloader under
 /// `EFI/<vendor>/` (e.g., `EFI/fedora/`, `EFI/azurelinux/`).
 /// This function searches all subdirectories of the EFI directory
-/// for the specified binary, skipping the BOOT fallback directory.
+/// for the specified binary, skipping BOOT and Trident's AZLA/AZLB slots.
 ///
 /// Vendor dirs are iterated in sorted (lexicographic) order so the
 /// selection is reproducible across builds when more than one vendor
@@ -760,9 +760,12 @@ fn find_efi_binary_in_vendor_dirs(efi_dir: &Path, binary_name: &str) -> Option<P
             continue;
         }
 
-        // Skip the BOOT directory (already checked by the caller)
+        // BOOT is checked by the caller; AZLA/AZLB are managed slots.
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.eq_ignore_ascii_case("BOOT") {
+            if name.eq_ignore_ascii_case("BOOT")
+                || name.eq_ignore_ascii_case("AZLA")
+                || name.eq_ignore_ascii_case("AZLB")
+            {
                 continue;
             }
         }
@@ -2397,7 +2400,7 @@ mod tests {
         // lexicographically-first one so the choice is reproducible
         // across builds. read_dir alone is filesystem-order dependent.
         let efi_dir = TempDir::new().unwrap();
-        for vendor in ["fedora", "azurelinux", "AZLA"] {
+        for vendor in ["fedora", "azurelinux", "AZLA", "AZLB"] {
             let dir = efi_dir.path().join(vendor);
             fs::create_dir(&dir).unwrap();
             File::create(dir.join(GRUB_EFI)).unwrap();
@@ -2405,23 +2408,21 @@ mod tests {
 
         let found = find_efi_binary_in_vendor_dirs(efi_dir.path(), GRUB_EFI)
             .expect("vendor binary not found");
-        // Lexicographic order with case-sensitive ASCII: 'A' < 'a'
-        assert_eq!(found, efi_dir.path().join("AZLA").join(GRUB_EFI));
+        assert_eq!(found, efi_dir.path().join("azurelinux").join(GRUB_EFI));
     }
 
     #[test]
-    fn test_find_efi_binary_in_vendor_dirs_skips_boot() {
-        // Even if EFI/BOOT/grubx64.efi exists (the standard fallback,
-        // checked by the caller), vendor-dir discovery should skip
-        // BOOT and look for a real vendor dir.
+    fn test_find_efi_binary_in_vendor_dirs_skips_reserved_dirs() {
         let efi_dir = TempDir::new().unwrap();
-        let boot = efi_dir.path().join("BOOT");
-        fs::create_dir(&boot).unwrap();
-        File::create(boot.join(GRUB_EFI)).unwrap();
+        for name in ["BOOT", "boot", "AZLA", "azla", "AZLB", "AzLb"] {
+            let dir = efi_dir.path().join(name);
+            fs::create_dir(&dir).unwrap();
+            File::create(dir.join(GRUB_EFI)).unwrap();
+        }
 
         assert!(
             find_efi_binary_in_vendor_dirs(efi_dir.path(), GRUB_EFI).is_none(),
-            "BOOT should be skipped by vendor-dir discovery"
+            "reserved directories should be skipped by vendor-dir discovery"
         );
     }
 }
