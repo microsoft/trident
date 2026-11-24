@@ -20,6 +20,7 @@ pub mod grub;
 pub mod grub_mkconfig;
 pub mod hostname;
 pub mod installation_media;
+pub mod ipmi;
 pub mod logging;
 pub mod lsblk;
 pub mod lsof;

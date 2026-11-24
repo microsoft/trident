@@ -29,7 +29,7 @@ use osutils::systemd;
 use trident_client::{LogLevel, ServicingEvent};
 
 use crate::{
-    client::{self, Event},
+    client::{self, AttemptOutcome, Event},
     config::Config,
     source::{self, Request},
     terminal as installer_terminal, INSTALLER_LOG_TX,
@@ -38,10 +38,12 @@ use crate::{
 mod model;
 mod output;
 mod render;
+mod status;
 mod theme;
 
 use model::{Action, LogSource, Model, Screen};
 pub(super) use output::Output;
+use status::{LiveAttemptReporter, LocalStatusReporter};
 use theme::VERBOSITY_LEVELS;
 
 /// Refresh often enough to show progress without busy-polling the terminal.
@@ -135,11 +137,19 @@ fn spawn_operation(
     request: Request,
     uncertain: bool,
     tx: mpsc::Sender<Event>,
-) -> JoinHandle<Result<(), Error>> {
+) -> JoinHandle<Result<AttemptOutcome, Error>> {
     task::spawn(async move {
+        let mut attempt = LiveAttemptReporter::new(LocalStatusReporter);
+        attempt.start();
         match Config::read(config_path) {
-            Ok(settings) => client::execute(settings, request, uncertain, tx).await,
+            Ok(settings) => {
+                client::execute(settings, request, uncertain, tx, |outcome| {
+                    attempt.finish(outcome);
+                })
+                .await
+            }
             Err(error) => {
+                attempt.finish(AttemptOutcome::Aborted);
                 client::send(
                     &tx,
                     Event::Error {
@@ -147,7 +157,8 @@ fn spawn_operation(
                         uncertain,
                     },
                 )
-                .await
+                .await?;
+                Ok(AttemptOutcome::Aborted)
             }
         }
     })
@@ -249,7 +260,7 @@ pub(super) async fn run(
         if worker.as_ref().is_some_and(JoinHandle::is_finished) && rx.is_empty() {
             if let Some(finished) = worker.take() {
                 let failure = match finished.await {
-                    Ok(Ok(())) => None,
+                    Ok(Ok(_)) => None,
                     Ok(Err(error)) => {
                         Some(model.fail(format!("Installer worker failed: {error:#}"), true))
                     }
