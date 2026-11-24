@@ -10,7 +10,6 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
 
 use crate::APPLICATION_NAME;
 
@@ -182,21 +181,10 @@ fn log_window<'a>(lines: &[Line<'a>], width: u16, height: u16, scroll: usize) ->
     if width == 0 || height == 0 {
         return Vec::new();
     }
-    // Greedy wrapping without inserted hyphens keeps each rendered row a slice of the source.
     let columns = usize::from(width);
-    let options = Options::new(columns)
-        .wrap_algorithm(WrapAlgorithm::FirstFit)
-        .word_separator(WordSeparator::AsciiSpace)
-        .word_splitter(WordSplitter::NoHyphenation);
     let row_counts = lines
         .iter()
-        .map(|line| {
-            if line.width() <= columns {
-                1
-            } else {
-                textwrap::wrap(&line.to_string(), &options).len()
-            }
-        })
+        .map(|line| wrapped_ranges(line, columns).len())
         .collect::<Vec<_>>();
     let visible_rows = usize::from(height);
     // Clamp overscroll at the top; all offsets stay wide until only the viewport remains.
@@ -212,26 +200,19 @@ fn log_window<'a>(lines: &[Line<'a>], width: u16, height: u16, scroll: usize) ->
             continue;
         }
         // Most historical lines fit already; copy only the handful inside the visible window.
-        if line.width() <= columns {
+        if count == 1 {
             rows.push(line.clone());
             if rows.len() == visible_rows {
                 return rows;
             }
             continue;
         }
-        let text = line.to_string();
-        let mut position = 0;
-        for row in textwrap::wrap(&text, &options) {
-            let start = position
-                + text[position..]
-                    .find(row.as_ref())
-                    .expect("invariant: unhyphenated rows are source substrings");
-            position = start + row.len();
+        for range in wrapped_ranges(line, columns) {
             if skip > 0 {
                 skip -= 1;
                 continue;
             }
-            rows.push(styled_slice(line, start..position));
+            rows.push(styled_slice(line, range));
             if rows.len() == visible_rows {
                 return rows;
             }
@@ -240,7 +221,41 @@ fn log_window<'a>(lines: &[Line<'a>], width: u16, height: u16, scroll: usize) ->
     rows
 }
 
-/// Reapplies the original span colors to a wrapped row, whose byte boundaries come from textwrap.
+/// Wraps at word boundaries where possible, without deleting spaces or splitting graphemes.
+/// The ranges are consecutive source bytes, measured exactly as Ratatui paints each grapheme.
+fn wrapped_ranges(line: &Line<'_>, columns: usize) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut row_start = 0;
+    let mut position = 0;
+    let mut used_columns = 0;
+    let mut word_break = None;
+    let mut has_text = false;
+    for grapheme in line.styled_graphemes(Style::default()) {
+        // Measuring the entire string can disagree with the painter for emoji variation sequences.
+        let grapheme_columns = Span::raw(grapheme.symbol).width();
+        while used_columns > 0 && used_columns + grapheme_columns > columns {
+            let (end, consumed_columns) = word_break.take().unwrap_or((position, used_columns));
+            ranges.push(row_start..end);
+            row_start = end;
+            used_columns -= consumed_columns;
+            has_text = used_columns > 0;
+        }
+        position += grapheme.symbol.len();
+        used_columns += grapheme_columns;
+        if grapheme.symbol == " " {
+            // Leading indentation alone is not a word break: keep it attached to the following text.
+            if has_text {
+                word_break = Some((position, used_columns));
+            }
+        } else {
+            has_text = true;
+        }
+    }
+    ranges.push(row_start..position);
+    ranges
+}
+
+/// Reapplies the original span colors to a row whose byte boundaries follow complete graphemes.
 fn styled_slice<'a>(line: &Line<'a>, range: Range<usize>) -> Line<'a> {
     let mut position = 0;
     let spans = line
@@ -911,6 +926,58 @@ mod tests {
         let oldest = log_window(slice::from_ref(&line), 2, 1, usize::MAX);
         assert!(oldest[0].to_string().starts_with('é'));
         assert_eq!(oldest[0].spans[0].style.fg, Some(COLOR_ERROR));
+    }
+
+    /// A leading indent must not become an empty row or disappear when the following word wraps.
+    #[test]
+    fn narrow_wrapping_preserves_indentation_and_spaces() {
+        const COLUMNS: u16 = 38;
+
+        for text in [
+            format!("    {}", "x".repeat(36)),
+            format!("    {} next  word  ", "x".repeat(36)),
+        ] {
+            let line = Line::from(Span::styled(text.clone(), Style::default().fg(COLOR_ERROR)));
+            let rows = log_window(slice::from_ref(&line), COLUMNS, 4, usize::MAX);
+            assert!(rows[0].to_string().starts_with("    x"));
+            assert_eq!(rows.iter().map(Line::to_string).collect::<String>(), text);
+            assert!(rows
+                .iter()
+                .flat_map(|row| &row.spans)
+                .all(|span| { span.style.fg == Some(COLOR_ERROR) }));
+        }
+    }
+
+    /// Wrapping and painting must count complete emoji clusters with the same column widths.
+    #[test]
+    fn narrow_wrapping_keeps_emoji_and_following_text_visible() {
+        const COLUMNS: u16 = 38;
+        const EMOJI_COLUMNS: u16 = 2;
+
+        for emoji in ["⁉️", "👍🏽", "👩‍💻"] {
+            let prefix = "x".repeat(usize::from(COLUMNS - EMOJI_COLUMNS));
+            let text = format!("{prefix}{emoji}Z");
+            let line = Line::styled(text.clone(), Style::default().fg(COLOR_SUCCESS));
+            let rows = log_window(slice::from_ref(&line), COLUMNS, 3, usize::MAX);
+            assert_eq!(rows[0].to_string(), format!("{prefix}{emoji}"));
+            assert_eq!(rows[1].to_string(), "Z");
+            assert_eq!(rows.iter().map(Line::to_string).collect::<String>(), text);
+
+            let mut terminal = Terminal::new(TestBackend::new(COLUMNS, 3)).unwrap();
+            terminal
+                .draw(|frame| frame.render_widget(Paragraph::new(rows), frame.area()))
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            assert_eq!(buffer[(COLUMNS - EMOJI_COLUMNS, 0)].symbol(), emoji);
+            assert_eq!(buffer[(0, 1)].symbol(), "Z");
+            assert_eq!(buffer[(0, 1)].fg, COLOR_SUCCESS);
+
+            let split_text = format!("{}{emoji}Z", "x".repeat(usize::from(COLUMNS) - 1));
+            let split_line = Line::from(split_text);
+            let rows = log_window(slice::from_ref(&split_line), COLUMNS, 3, usize::MAX);
+            assert_eq!(rows[0].to_string(), "x".repeat(usize::from(COLUMNS) - 1));
+            assert_eq!(rows[1].to_string(), format!("{emoji}Z"));
+        }
     }
 
     /// Compact layouts retain the application heading and available actions.

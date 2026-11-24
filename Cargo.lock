@@ -1739,7 +1739,6 @@ dependencies = [
  "sha2",
  "tar",
  "tempfile",
- "textwrap",
  "tokio",
  "toml",
  "trident-client",
