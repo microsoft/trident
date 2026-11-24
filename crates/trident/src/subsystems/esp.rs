@@ -2406,11 +2406,7 @@ mod tests {
         let found = find_efi_binary_in_vendor_dirs(efi_dir.path(), GRUB_EFI)
             .expect("vendor binary not found");
         // Lexicographic order with case-sensitive ASCII: 'A' < 'a'
-        assert!(
-            found.ends_with("AZLA/grubx64.efi") || found.ends_with("AZLA\\grubx64.efi"),
-            "expected AZLA to win lexicographic sort, got '{}'",
-            found.display()
-        );
+        assert_eq!(found, efi_dir.path().join("AZLA").join(GRUB_EFI));
     }
 
     #[test]

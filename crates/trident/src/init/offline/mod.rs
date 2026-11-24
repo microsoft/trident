@@ -311,11 +311,17 @@ fn generate_host_status(
     // fresh one and persist it via sfdisk. Some chroot environments
     // don't surface PARTUUID via lsblk --output-all and may also leave
     // the value unset on the underlying GPT.
-    for (i, part) in lsblk_device.children.iter_mut().enumerate() {
+    for part in &mut lsblk_device.children {
         if part.part_uuid.as_ref().and_then(|u| u.as_uuid()).is_some() {
             continue;
         }
-        let partn = part.partn.unwrap_or((i + 1) as u32) as usize;
+        let partn = part
+            .partn
+            .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
+            .message(format!(
+                "PARTN not reported by lsblk for {}; cannot recover PARTUUID without a partition number",
+                part.name
+            ))? as usize;
         warn!(
             "PARTUUID not reported by lsblk for partition {} on {}; falling back to sfdisk",
             partn,
@@ -788,6 +794,42 @@ mod tests {
         assert!(host_status.partition_paths.contains_key("usr-hash-a"));
         assert!(host_status.partition_paths.contains_key("usr-hash-b"));
         assert_eq!(host_status.partition_paths.len(), 12);
+    }
+
+    #[test]
+    fn test_generate_host_status_rejects_uuid_recovery_without_partn() {
+        let history: Vec<PrismHistoryEntry> = serde_json::from_str(PRISM_HISTORY).unwrap();
+        for part_uuid in [None, Some("not-a-uuid".into())] {
+            let mut lsblk_output: LsBlkOutput = serde_json::from_str(LSBLK).unwrap();
+            let device = lsblk_output
+                .blockdevices
+                .iter_mut()
+                .find(|device| {
+                    device
+                        .children
+                        .iter()
+                        .any(|part| part.mountpoint.as_deref() == Some(Path::new("/")))
+                })
+                .unwrap();
+            // A regression must not direct sfdisk at a real host device.
+            device.name = format!("trident-unit-test-{}", Uuid::new_v4());
+            let root = device
+                .children
+                .iter_mut()
+                .find(|part| part.mountpoint.as_deref() == Some(Path::new("/")))
+                .unwrap();
+            root.partn = None;
+            root.part_uuid = part_uuid;
+
+            let error = generate_host_status(
+                &history,
+                lsblk_output.blockdevices,
+                &[],
+                &"/dev/sda".to_string(),
+            )
+            .unwrap_err();
+            assert!(format!("{error:?}").contains("PARTN not reported by lsblk"));
+        }
     }
 
     #[test]

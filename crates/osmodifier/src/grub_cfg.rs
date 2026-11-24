@@ -108,9 +108,8 @@ fn find_grub_cfg(ctx: &OsModifierContext) -> Result<std::path::PathBuf, Error> {
 /// Read boot arguments from BLS (Boot Loader Spec) entries.
 ///
 /// Scans `{root}/boot/loader/entries/*.conf`, skips entries whose title
-/// contains "rescue" or "recovery" (case-insensitive), and returns the
-/// `options` line from the first valid entry (sorted lexically, matching
-/// grub's ordering).
+/// contains "rescue" or "recovery" (case-insensitive), and collects their
+/// `options` lines. The caller requires exactly one non-recovery entry.
 fn extract_options_from_bls_entries(ctx: &OsModifierContext) -> Result<Vec<String>, Error> {
     let entries_dir = ctx.path(BLS_ENTRIES_DIR);
     let mut conf_files: Vec<std::path::PathBuf> = fs::read_dir(&entries_dir)
@@ -121,6 +120,7 @@ fn extract_options_from_bls_entries(ctx: &OsModifierContext) -> Result<Vec<Strin
         .collect();
 
     conf_files.sort();
+    let mut linux_lines = Vec::new();
 
     for conf_path in &conf_files {
         let content = fs::read_to_string(conf_path)
@@ -161,19 +161,22 @@ fn extract_options_from_bls_entries(ctx: &OsModifierContext) -> Result<Vec<Strin
 
         if let Some(opts) = options {
             debug!(
-                "Using BLS entry '{}': options = {opts}",
+                "Found BLS entry '{}': options = {opts}",
                 conf_path.display()
             );
-            // Return as a synthetic "linux" line: prepend a dummy kernel path
+            // Collect a synthetic "linux" line: prepend a dummy kernel path
             // so the downstream parser (which skips the first token) works.
-            return Ok(vec![format!("/boot/vmlinuz {opts}")]);
+            linux_lines.push(format!("/boot/vmlinuz {opts}"));
         }
     }
 
-    bail!(
-        "no non-recovery BLS entry found in '{}'",
-        entries_dir.display()
-    )
+    if linux_lines.is_empty() {
+        bail!(
+            "no non-recovery BLS entry found in '{}'",
+            entries_dir.display()
+        );
+    }
+    Ok(linux_lines)
 }
 
 /// Return the first whitespace-delimited word from a line, or None if the
@@ -929,6 +932,33 @@ mod tests {
         assert!(args.contains(&"selinux=1".to_string()));
         // "single" from rescue entry should NOT appear
         assert!(!args.iter().any(|a| a.contains("single")));
+    }
+
+    #[test]
+    fn test_extract_bls_rejects_multiple_entries() {
+        let tmp = tempdir().unwrap();
+        let grub_dir = tmp.path().join("boot/grub2");
+        std::fs::create_dir_all(&grub_dir).unwrap();
+        std::fs::write(grub_dir.join("grub.cfg"), "set default=saved\nblscfg\n").unwrap();
+
+        let bls_dir = tmp.path().join("boot/loader/entries");
+        std::fs::create_dir_all(&bls_dir).unwrap();
+        for (name, root) in [("older.conf", "/dev/sda2"), ("newer.conf", "/dev/sda3")] {
+            std::fs::write(
+                bls_dir.join(name),
+                format!("title Azure Linux 4.0\noptions root={root} ro selinux=1\n"),
+            )
+            .unwrap();
+        }
+        let ctx = OsModifierContext {
+            root: tmp.path().to_path_buf(),
+        };
+
+        let error = extract_boot_args_from_grub_cfg(&ctx).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "expected 1 non-recovery linux line, found 2"
+        );
     }
 
     #[test]
