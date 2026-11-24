@@ -384,10 +384,16 @@ impl Trident {
 
     /// Rebuilds RAID devices on replaced disks on the host
     pub fn rebuild_raid(&mut self, datastore: &mut DataStore) -> Result<(), TridentError> {
+        if let ServicingState::Unknown(_) = &datastore.host_status().servicing_state {
+            return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                state: datastore.host_status().servicing_state.clone(),
+            }));
+        }
+
         info!("Rebuilding RAID devices");
         let mut host_config = Default::default();
         let mut disks_to_rebuild = Vec::new();
-        let _ = datastore.with_host_status(|host_status| -> Result<(), TridentError> {
+        datastore.try_with_host_status(|host_status| -> Result<(), TridentError> {
             host_config = self
                 .host_config
                 .clone()
@@ -1009,6 +1015,44 @@ mod tests {
     };
 
     #[test]
+    fn rebuild_raid_propagates_disk_resolution_error() {
+        let temp = TempDir::new().unwrap();
+        let path = temp.path().join("datastore.sqlite");
+        let mut datastore = DataStore::open_or_create(&path).unwrap();
+        datastore
+            .with_host_status(|status| {
+                status.servicing_state = ServicingState::Provisioned;
+            })
+            .unwrap();
+        drop(datastore);
+        let mut datastore = DataStore::open(&path).unwrap();
+        let original = datastore.host_status().clone();
+        let mut trident = Trident {
+            host_config: Some(HostConfiguration {
+                storage: Storage {
+                    disks: vec![Disk {
+                        id: "missing".into(),
+                        device: temp.path().join("missing-device"),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            orchestrator: None,
+            is_stream_image: false,
+        };
+
+        let error = trident.rebuild_raid(&mut datastore).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            &ErrorKind::Servicing(ServicingError::GetResolvedDisks)
+        );
+        assert_eq!(datastore.host_status(), &original);
+        assert_eq!(DataStore::open(&path).unwrap().host_status(), &original);
+    }
+
+    #[test]
     fn recovery_keeps_original_error_persisted_during_operation() {
         for state in [
             ServicingState::AbUpdateHealthCheckFailed,
@@ -1271,6 +1315,10 @@ mod tests {
         let expected = ErrorKind::Internal(InternalError::UnexpectedServicingState {
             state: datastore.host_status().servicing_state.clone(),
         });
+        assert_eq!(
+            trident.rebuild_raid(&mut datastore).unwrap_err().kind(),
+            &expected
+        );
         assert_eq!(
             trident.commit(&mut datastore).unwrap_err().kind(),
             &expected
