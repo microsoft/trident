@@ -23,6 +23,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 import download_functional_artifact as ado
+import observe_base_download as base_observer
 import prepare_vm_e2e_artifacts as prepare
 
 BUILD = 1266405
@@ -154,7 +155,7 @@ def base_cli_versions():
     return versions
 
 
-def base_download_diagnostic(returncode, stderr):
+def base_download_diagnostic(returncode, stderr, observation=None):
     sample = b""
     stderr_status = "available"
     try:
@@ -209,6 +210,11 @@ def base_download_diagnostic(returncode, stderr):
         ),
         # A secondary metadata failure must not replace the original download failure.
         "versions": base_cli_versions(),
+        "observation": (
+            base_observer.validate(observation)
+            if observation is not None
+            else base_observer.unavailable()
+        ),
     }
 
 
@@ -222,9 +228,15 @@ def command(
     failure_fact="inspection-command-failed",
 ):
     # Never inherit tool output. Even failures can contain auth URLs or payloads.
-    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+    with (
+        tempfile.TemporaryFile() as stdout,
+        tempfile.TemporaryFile() as stderr,
+        base_observer.invocation(
+            argv if failure_fact == "exact-base-universal-download-failed" else []
+        ) as (wrapped, inherited, observation_fd),
+    ):
         process = subprocess.Popen(
-            argv,
+            wrapped if inherited else argv,
             stdin=(
                 subprocess.PIPE
                 if data is not None
@@ -233,6 +245,7 @@ def command(
             stdout=output if output is not None else stdout,
             stderr=stderr,
             start_new_session=True,
+            **({"pass_fds": inherited} if inherited else {}),
         )
         try:
             process.communicate(data.encode() if data is not None else None, timeout)
@@ -248,7 +261,11 @@ def command(
         ):
             raise Failure(
                 failure_fact,
-                diagnostic=base_download_diagnostic(process.returncode, stderr),
+                diagnostic=base_download_diagnostic(
+                    process.returncode,
+                    stderr,
+                    base_observer.read_channel(observation_fd),
+                ),
             )
         require(process.returncode == 0, failure_fact)
         stdout.seek(0)

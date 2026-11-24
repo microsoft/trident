@@ -156,6 +156,68 @@ The download command, identity, immutable selectors and proof gates are unchange
 There is no retry, CLI/extension upgrade, alternate principal/endpoint, package
 or version fallback. A subsequently established access denial remains a blocker.
 
+### Bounded child-local phase observation
+
+Run `45286505815` still reported unclassified, available, untruncated stderr
+with CLI `2.91.0` and extension `1.0.2`. This does not establish a cause.
+`observe_base_download.py` adds only a local observer for the exact-base call.
+It recognizes the exact [2.91.0 Debian launcher](https://github.com/Azure/azure-cli/blob/azure-cli-2.91.0/scripts/release/debian/prepare.sh)
+and uses that launcher's installed interpreter with the same isolated `-I`
+flag and unchanged `azure.cli` module entrypoint and download arguments.
+The launcher's `AZ_INSTALLER=DEB` behavior is retained inside that child only.
+No site configuration, installed code, SDK, authentication or selector is patched.
+
+Before observing, complete CLI entrypoint and selected extension module sources
+must match fixed SHA256s from CLI `2.91.0` and extension source commit
+`1b7f6c0ffdbed8363dd4502cc9acfb25154333be`. CPython 3.10 through 3.14 is supported.
+Executing entrypoint/function code objects and fixed function bindings are also
+checked against freshly compiled source. An unsupported launcher is invoked
+normally without observation. A preflight source/runtime mismatch publishes
+only unavailable diagnostics before executing the original launcher once.
+A mismatch encountered during execution disables observation without replacing
+the CLI result. There is never a second download or alternate strategy.
+
+Only fixed credential-resolution, release-lookup, tool-bootstrap,
+download/extraction, invocation, spawn/wait and SDK-error function boundaries
+are observed. Credential-resolution frames contribute boundary events only;
+their locals and returned credential objects are not inspected. The diagnostic
+records entered/returned boundaries and allowlisted observed exception kinds.
+An observed exception may be caught internally, not the final cause.
+`returned: true` records an observable normal return. After any exception in
+that call, a trace return of `None` cannot reliably distinguish recovery from
+exception unwinding, including context-manager or finally cleanup. That return
+state remains unavailable (JSON null), even if cleanup executes more lines.
+A non-None return or a return without an observed exception is unambiguous.
+Repeated calls retain the last return state and last observed exception for
+that phase, but exception tracking for return state resets only on a new call.
+HTTP status is emitted only as a validated integer from a response's stored
+instance fields, associated with its phase. Properties and message parsing
+are not used. No fixed typed service-code catalog is established, so service
+code remains unavailable.
+
+`releasePresent`, `contentLengthValid` (positive integer), `zipOpened`,
+`executablePresent` (the pinned extraction existence branch), `spawnSucceeded`
+and `innerExitCode` are recorded only when observable. A cached tool or an
+unreached boundary may leave fields unavailable. The inner ArtifactTool exit
+is separate from the outer CLI `exitCode`; neither establishes feed access.
+JSON null means unavailable, never false or successful qualification.
+
+One validated snapshot, at most 4096 bytes, is written to a private nonblocking
+inherited pipe. The child makes its writer non-inheritable before CLI invocation,
+and fork descendants cannot publish the observer snapshot. Parent reads never
+wait for EOF or late children. Missing, malformed, oversized or failed channels
+yield fixed unavailable/invalid labels, never raw data. Timeout/cancellation
+remain authoritative; missing final observation is expected when the child is
+killed. The existing whole-owned-process-group teardown, private scratch,
+pinned writable report FD and publication identity checks are unchanged.
+No messages, tracebacks, arguments, headers, URLs, tokens or arbitrary server
+strings enter this channel or the report.
+
+Tests exercise isolated native child entrypoint-shaped fixtures, not an
+installed Linux CLI or production access. Installed packaging/source matching,
+actual runtime cause, base bytes and installed image payload qualification
+remain unknown until a separately approved real run.
+
 ## Review handoff and remaining gates
 
 `status: complete` means measurements completed, **not** independent approval,
