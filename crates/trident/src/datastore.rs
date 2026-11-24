@@ -8,7 +8,7 @@ use trident_api::{
     error::{
         DatastoreError, InternalError, ReportError, ServicingError, TridentError, TridentResultExt,
     },
-    status::{decode_host_status, HostStatus, TridentVersion},
+    status::{decode_host_status, HostStatus, ServicingState, TridentVersion},
 };
 
 use crate::TRIDENT_SEMVER_VERSION;
@@ -89,7 +89,7 @@ impl DataStore {
             .message("Failed to parse Host Status as YAML")?;
 
         let host_status = host_status_yaml
-            .map(decode_host_status)
+            .map(|yaml| decode_host_status(yaml, &TRIDENT_SEMVER_VERSION))
             .transpose()
             .structured(ServicingError::Datastore {
                 inner: DatastoreError::InitializeDatastore,
@@ -225,8 +225,14 @@ impl DataStore {
             let persistent_db = Self::make_datastore(path)?;
             let mut persistent_status = self.host_status.clone();
             persistent_status.is_management_os = false;
-            persistent_status.trident_version =
-                TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
+            // Promotion must retain an unknown state's original writer version.
+            if !matches!(
+                &persistent_status.servicing_state,
+                ServicingState::Unknown(_)
+            ) {
+                persistent_status.trident_version =
+                    TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
+            }
 
             Self::write_persistent_data(&persistent_db, &persistent_status, &key_values)?;
 
@@ -378,10 +384,12 @@ impl DataStore {
         db: &sqlite::Connection,
         host_status: &HostStatus,
     ) -> Result<(), TridentError> {
-        // Create a mutable copy of the Host Status to add Trident version before writing.
         let mut host_status_with_trident_version = host_status.clone();
-        host_status_with_trident_version.trident_version =
-            TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
+        // Rewriting errors must not make an unfamiliar state appear locally authored.
+        if !matches!(&host_status.servicing_state, ServicingState::Unknown(_)) {
+            host_status_with_trident_version.trident_version =
+                TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone());
+        }
         let mut statement = db
             .prepare("INSERT INTO hoststatus (contents) VALUES (?)")
             .structured(ServicingError::from(DatastoreError::WriteToDatastore))?;
@@ -623,7 +631,7 @@ impl DataStore {
             }
         };
 
-        match decode_host_status(host_status_value) {
+        match decode_host_status(host_status_value, &TRIDENT_SEMVER_VERSION) {
             Ok(host_status) => Some(host_status),
             Err(e) => {
                 warn!("Failed to parse Host Status: {:?}", e);
@@ -636,6 +644,29 @@ impl DataStore {
 #[cfg(test)]
 mod tests {
     use trident_api::error::{DatastoreError, ErrorKind, ServicingError};
+
+    #[test]
+    fn unknown_servicing_state_rejects_unproven_writers_on_open_and_in_history() {
+        use super::*;
+
+        for writer in [
+            TridentVersion::None,
+            TridentVersion::Other("development".into()),
+            TridentVersion::SemVer(TRIDENT_SEMVER_VERSION.clone()),
+        ] {
+            let temp = tempfile::TempDir::new().unwrap();
+            let path = temp.path().join("datastore.sqlite");
+            let mut datastore = DataStore::open_or_create(&path).unwrap();
+            datastore
+                .with_host_status(|status| {
+                    status.servicing_state = ServicingState::Unknown("future-recovery-step".into());
+                    status.trident_version = writer.clone();
+                })
+                .unwrap();
+            assert!(datastore.get_host_statuses().unwrap()[0].is_none());
+            assert!(DataStore::open(&path).is_err());
+        }
+    }
 
     #[test]
     fn test_failed_persist_leaves_source_host_status_unchanged() {

@@ -32,7 +32,7 @@ pub(crate) fn update(
 
     // Need to re-set the Host Status in case another update has been previously staged.
     if matches!(
-        state.host_status().servicing_state,
+        &state.host_status().servicing_state,
         ServicingState::AbUpdateStaged | ServicingState::RuntimeUpdateStaged
     ) {
         debug!(
@@ -127,7 +127,7 @@ pub(crate) fn update(
                 engine::persist_background_log_and_metrics(
                     &state.host_status().spec.trident.datastore_path,
                     None,
-                    state.host_status().servicing_state,
+                    &state.host_status().servicing_state,
                 );
                 Ok((ExitKind::Done, ServicingType::AbUpdate))
             } else {
@@ -149,7 +149,7 @@ pub(crate) fn update(
                 engine::persist_background_log_and_metrics(
                     &state.host_status().spec.trident.datastore_path,
                     None,
-                    state.host_status().servicing_state,
+                    &state.host_status().servicing_state,
                 );
                 Ok((ExitKind::Done, ServicingType::RuntimeUpdate))
             } else {

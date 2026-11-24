@@ -9,7 +9,7 @@ use log::{debug, info};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
-use strum_macros::EnumIter;
+use strum_macros::{AsRefStr, EnumIter, EnumString};
 use trident_proto::v1::ServicingKind;
 use uuid::Uuid;
 
@@ -63,7 +63,7 @@ pub struct HostStatus {
     #[serde(default, skip_serializing_if = "is_default")]
     pub is_management_os: bool,
 
-    /// Version of Trident that last updated this HostStatus.
+    /// Version of Trident that last updated this HostStatus with a recognized servicing state.
     #[serde(default, skip_serializing_if = "TridentVersion::is_none")]
     pub trident_version: TridentVersion,
 }
@@ -103,8 +103,8 @@ impl From<ServicingType> for trident_proto::v1::ServicingKind {
 /// Servicing state describes the progress of the servicing that the Trident agent is executing on
 /// the host. The host will transition through a different sequence of servicing states while
 /// servicing the host.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, EnumIter)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Clone, Debug, Default, Eq, PartialEq, EnumIter, EnumString, AsRefStr)]
+#[strum(serialize_all = "kebab-case")]
 pub enum ServicingState {
     /// The host is running from the provisioning OS and has not yet been provisioned by Trident.
     #[default]
@@ -135,6 +135,59 @@ pub enum ServicingState {
     AbUpdateHealthCheckFailed,
     /// Commit failed and rollback to the retained OS is required.
     CommitFailed,
+    /// An unfamiliar state name preserved for inspection, not servicing or recovery.
+    #[strum(default)]
+    Unknown(String),
+}
+
+impl Serialize for ServicingState {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let name = match self {
+            Self::Unknown(name) => name.as_str(),
+            known => known.as_ref(),
+        };
+        serializer.serialize_str(name)
+    }
+}
+
+/// Reads known names or preserves well-formed unfamiliar names without normalizing them.
+/// Writer-version validation requires the enclosing HostStatus and runs in decode_host_status.
+/// Non-string YAML values are rejected rather than coerced into state names.
+impl<'de> Deserialize<'de> for ServicingState {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct StateVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for StateVisitor {
+            type Value = ServicingState;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a servicing state string")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, name: &str) -> Result<Self::Value, E> {
+                // Future names must follow the persisted naming contract too.
+                if !matches!(name.as_bytes().first(), Some(b'a'..=b'z'))
+                    || name.split('-').any(|part| {
+                        part.is_empty()
+                            || !part
+                                .bytes()
+                                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+                    })
+                {
+                    return Err(E::custom(format!(
+                        "invalid servicing state {name:?}: expected a non-empty \
+                         lowercase kebab-case name beginning with a letter"
+                    )));
+                }
+
+                // EnumString recognizes known names; its default variant captures unfamiliar names.
+                name.parse().map_err(E::custom)
+            }
+        }
+
+        // Only visit_str is supported: deserializing String directly could coerce YAML numbers.
+        deserializer.deserialize_any(StateVisitor)
+    }
 }
 
 /// A/B volume selection. Determines which set of volumes are currently
@@ -295,7 +348,33 @@ fn fix_old_host_status(yaml: &mut Value) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
-pub fn decode_host_status(mut yaml: Value) -> Result<HostStatus, serde_yaml::Error> {
+/// Decodes current or legacy Host Status, requiring a strictly newer writer for unknown states.
+pub fn decode_host_status(
+    yaml: Value,
+    reader_version: &Version,
+) -> Result<HostStatus, serde_yaml::Error> {
+    let host_status = decode_host_status_unchecked(yaml)?;
+
+    if let ServicingState::Unknown(name) = &host_status.servicing_state {
+        // A newer writer does not prove integrity: well-formed corruption can still pass.
+        let newer_writer = matches!(
+            &host_status.trident_version,
+            TridentVersion::SemVer(writer_version)
+                if writer_version.cmp_precedence(reader_version).is_gt()
+        );
+        if !newer_writer {
+            return Err(<serde_yaml::Error as serde::de::Error>::custom(format!(
+                "unknown servicing state {name:?} requires a writer version newer \
+                 than {reader_version}; stored version: {:?}",
+                host_status.trident_version
+            )));
+        }
+    }
+
+    Ok(host_status)
+}
+
+fn decode_host_status_unchecked(mut yaml: Value) -> Result<HostStatus, serde_yaml::Error> {
     let decoded = serde_yaml::from_value(yaml.clone());
     if let Ok(host_status) = decoded {
         return Ok(host_status);
@@ -320,22 +399,143 @@ mod tests {
     use super::*;
 
     #[test]
-    fn commit_failure_roundtrips_without_previous_hypervisor_alias() {
-        let state: ServicingState = serde_yaml::from_str("commit-failed").unwrap();
-        assert_eq!(state, ServicingState::CommitFailed);
-        assert_eq!(
-            serde_yaml::to_string(&state).unwrap().trim(),
-            "commit-failed"
-        );
-        assert!(
-            serde_yaml::from_str::<ServicingState>("ab-update-hypervisor-check-failed").is_err()
-        );
+    fn servicing_state_preserves_known_and_unknown_names() {
+        let cases = [
+            ("not-provisioned", ServicingState::NotProvisioned),
+            ("clean-install-staged", ServicingState::CleanInstallStaged),
+            ("ab-update-staged", ServicingState::AbUpdateStaged),
+            (
+                "manual-rollback-ab-staged",
+                ServicingState::ManualRollbackAbStaged,
+            ),
+            (
+                "manual-rollback-runtime-staged",
+                ServicingState::ManualRollbackRuntimeStaged,
+            ),
+            ("runtime-update-staged", ServicingState::RuntimeUpdateStaged),
+            (
+                "clean-install-finalized",
+                ServicingState::CleanInstallFinalized,
+            ),
+            ("ab-update-finalized", ServicingState::AbUpdateFinalized),
+            (
+                "manual-rollback-ab-finalized",
+                ServicingState::ManualRollbackAbFinalized,
+            ),
+            ("provisioned", ServicingState::Provisioned),
+            (
+                "ab-update-health-check-failed",
+                ServicingState::AbUpdateHealthCheckFailed,
+            ),
+            ("commit-failed", ServicingState::CommitFailed),
+            (
+                "future-recovery-step",
+                ServicingState::Unknown("future-recovery-step".into()),
+            ),
+            (
+                "ab-update-hypervisor-check-failed",
+                ServicingState::Unknown("ab-update-hypervisor-check-failed".into()),
+            ),
+        ];
+        for (name, expected) in cases {
+            let yaml = serde_yaml::to_string(name).unwrap();
+            let decoded: ServicingState = serde_yaml::from_str(&yaml).unwrap();
+            assert_eq!(decoded, expected);
+            assert_eq!(
+                serde_yaml::to_value(&decoded).unwrap(),
+                Value::String(name.into())
+            );
+        }
+    }
 
-        let health: ServicingState = serde_yaml::from_str("ab-update-health-check-failed").unwrap();
-        assert_eq!(health, ServicingState::AbUpdateHealthCheckFailed);
+    #[test]
+    fn servicing_state_rejects_non_string_values() {
+        for yaml in ["42", "true", "null", "[]", "{}"] {
+            serde_yaml::from_str::<ServicingState>(yaml).unwrap_err();
+        }
+    }
+
+    #[test]
+    fn servicing_state_rejects_malformed_names() {
+        for name in [
+            "",
+            "Provisioned",
+            "future_state",
+            "-future",
+            "future-",
+            "future--state",
+            "future state",
+            " future",
+            "future\nstate",
+            "1future",
+            "futur\u{e9}",
+        ] {
+            let yaml = serde_yaml::to_string(name).unwrap();
+            assert!(
+                serde_yaml::from_str::<ServicingState>(&yaml).is_err(),
+                "{name:?}"
+            );
+        }
+        let yaml = serde_yaml::to_string("future-v2-state").unwrap();
+        assert!(serde_yaml::from_str::<ServicingState>(&yaml).is_ok());
+    }
+
+    #[test]
+    fn unknown_servicing_state_requires_a_newer_writer() {
+        let reader = Version::parse("1.2.3").unwrap();
+        for (writer, accepted) in [
+            (TridentVersion::None, false),
+            (TridentVersion::Other("development".into()), false),
+            (
+                TridentVersion::SemVer(Version::parse("1.2.2").unwrap()),
+                false,
+            ),
+            (TridentVersion::SemVer(reader.clone()), false),
+            (
+                TridentVersion::SemVer(Version::parse("1.2.3+other").unwrap()),
+                false,
+            ),
+            (
+                TridentVersion::SemVer(Version::parse("1.2.3-rc.1").unwrap()),
+                false,
+            ),
+            (
+                TridentVersion::SemVer(Version::parse("1.2.4").unwrap()),
+                true,
+            ),
+        ] {
+            let mut status = HostStatus {
+                servicing_state: ServicingState::Unknown("future-recovery-step".into()),
+                trident_version: writer.clone(),
+                ..Default::default()
+            };
+            let result = decode_host_status(serde_yaml::to_value(&status).unwrap(), &reader);
+            assert_eq!(result.is_ok(), accepted, "{writer:?}");
+            if let Ok(decoded) = result {
+                assert_eq!(decoded, status);
+            }
+            status.servicing_state = ServicingState::Provisioned;
+            assert_eq!(
+                decode_host_status(serde_yaml::to_value(&status).unwrap(), &reader).unwrap(),
+                status,
+            );
+        }
+    }
+
+    #[test]
+    fn newer_writer_does_not_establish_unknown_state_integrity() {
+        let status = HostStatus {
+            servicing_state: ServicingState::Unknown("provisione".into()),
+            trident_version: TridentVersion::SemVer(Version::new(2, 0, 0)),
+            ..Default::default()
+        };
         assert_eq!(
-            serde_yaml::to_string(&health).unwrap().trim(),
-            "ab-update-health-check-failed"
+            decode_host_status(
+                serde_yaml::to_value(&status).unwrap(),
+                &Version::new(1, 0, 0),
+            )
+            .unwrap(),
+            status,
         );
     }
 
@@ -344,7 +544,7 @@ mod tests {
         let old_yaml = include_str!("test/preview12_host_status.yaml");
         let yaml: Value = serde_yaml::from_str(old_yaml).unwrap();
 
-        let hs = decode_host_status(yaml).unwrap();
+        let hs = decode_host_status(yaml, &Version::new(1, 0, 0)).unwrap();
         hs.spec.validate().unwrap();
     }
 

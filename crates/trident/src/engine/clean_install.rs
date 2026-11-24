@@ -87,7 +87,7 @@ pub(crate) fn clean_install(
         engine::persist_background_log_and_metrics(
             &state.host_status().spec.trident.datastore_path,
             Some(root_mount.path()),
-            state.host_status().servicing_state,
+            &state.host_status().servicing_state,
         );
 
         debug!("Unmounting '{}'", root_mount.path().display());
@@ -358,7 +358,7 @@ pub(crate) fn finalize_clean_install(
         engine::persist_background_log_and_metrics(
             &state.host_status().spec.trident.datastore_path,
             Some(new_root.path()),
-            state.host_status().servicing_state,
+            &state.host_status().servicing_state,
         );
     }
 
