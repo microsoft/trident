@@ -51,6 +51,10 @@ struct Args {
     /// Claim the ISO console and mirror log records to active serial consoles.
     #[arg(long)]
     system_console: bool,
+    /// Replay success or error events without root, a daemon, or machine actions.
+    #[cfg(feature = "ui-preview")]
+    #[arg(long, value_enum, conflicts_with_all = ["config", "plain", "system_console"])]
+    ui_preview: Option<ui::PreviewScenario>,
 }
 
 /// Starts logging and the installer runtime, returning a failing exit code on startup errors.
@@ -117,6 +121,11 @@ fn format_log_record(
 
 /// Sets up private diagnostics and optional console ownership before starting the UI.
 async fn run(args: Args) -> Result<(), Error> {
+    #[cfg(feature = "ui-preview")]
+    if let Some(scenario) = args.ui_preview {
+        return ui::run_preview(scenario).await;
+    }
+
     let mut linux_vt = false;
     let mut output = Output {
         log: None,
@@ -156,6 +165,24 @@ mod tests {
 
     use log::Level;
     use tokio::sync::mpsc;
+
+    /// Preview startup must reject flags that could claim consoles or load live settings.
+    #[cfg(feature = "ui-preview")]
+    #[test]
+    fn preview_cannot_be_combined_with_live_setup_flags() {
+        for scenario in ["success", "error"] {
+            Args::try_parse_from(["trident-installer", "--ui-preview", scenario]).unwrap();
+            for extra in [
+                vec!["--system-console"],
+                vec!["--plain"],
+                vec!["--config", "/etc/trident/installer.toml"],
+            ] {
+                let mut args = vec!["trident-installer", "--ui-preview", scenario];
+                args.extend(extra);
+                Args::try_parse_from(args).unwrap_err();
+            }
+        }
+    }
 
     /// UI routing must not suppress startup failures or duplicate terminal-bound records.
     #[test]
