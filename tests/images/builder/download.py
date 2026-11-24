@@ -1,5 +1,6 @@
 import json
 import logging
+import lzma
 import os
 import re
 from pathlib import Path
@@ -27,9 +28,11 @@ def download_base_image(image: BaseImageSource) -> None:
 
     if image.distro not in (Distro.AZL3, Distro.AZL4):
         raise ValueError(f"Unsupported distro {image.distro} for base image download")
-    with tempfile.TemporaryDirectory() as tempdir:
+    target = image.image.path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=target.parent) as tempdir:
         url = (
-            f"mcr.microsoft.com/azurelinux-beta/base/{image.image.mcr_name}:4.0"
+            f"mcr.microsoft.com/azurelinux/catalog/{image.package_name}:{image.version}"
             if image.distro == Distro.AZL4
             else f"mcr.microsoft.com/azurelinux/3.0/image/{image.image.name}:latest"
         )
@@ -46,9 +49,10 @@ def download_base_image(image: BaseImageSource) -> None:
             check=True,
         )
 
-        # Find and copy the .vhdx file to the target location
         tempdir_path = Path(tempdir)
-        vhdx_files = list(tempdir_path.glob("*.vhdx"))
+        vhdx_files = list(tempdir_path.glob("*.vhdx")) + list(
+            tempdir_path.glob("*.vhdx.xz")
+        )
         if not vhdx_files:
             raise RuntimeError(
                 f"No .vhdx file found in downloaded image for {image.image.name}"
@@ -58,11 +62,13 @@ def download_base_image(image: BaseImageSource) -> None:
                 f"Multiple .vhdx files found in downloaded image for {image.image.name}"
             )
 
-        # Ensure the parent directory exists
-        image.image.path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Copy the .vhdx file to the target location
-        shutil.copy2(vhdx_files[0], image.image.path)
+        source = vhdx_files[0]
+        if source.suffix == ".xz":
+            expanded = source.with_suffix("")
+            with lzma.open(source, "rb") as compressed, expanded.open("wb") as output:
+                shutil.copyfileobj(compressed, output)
+            source = expanded
+        source.replace(target)
 
 
 def _az_json(image: PipelineArtifactBaseImageManifest, args: list):

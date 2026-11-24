@@ -85,6 +85,12 @@ The builder uses `ExitStack()` context managers to ensure proper cleanup of temp
 
 Builder can be run locally as a stand-alone tool:
 
+AZL4 base downloads use `mcr.microsoft.com/azurelinux/catalog/minimal-os:4`.
+The existing `azl4_qemu_guest` name and artifact path are retained for pipeline
+compatibility. `download-image azl4_qemu_guest` pulls the x86-64 OCI artifact
+with ORAS and decompresses its VHDX before customization. No Azure Storage
+credentials are needed for the base image.
+
 ```bash
     python3 ./testimages.py <command>
 ```
