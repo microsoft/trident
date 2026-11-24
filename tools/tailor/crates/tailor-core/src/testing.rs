@@ -9,6 +9,9 @@ use std::{
 use tailor_config::{Arch, BaseSource, ToolchainEntry, ToolsDirSourceInline};
 use tokio_util::sync::CancellationToken;
 
+#[cfg(test)]
+use tempfile::TempDir;
+
 use crate::{
     domain::Cell,
     error::{ExecError, ResolveError},
@@ -16,6 +19,43 @@ use crate::{
         BaseResolver, ExecutionContext, ExecutionResult, Executor, ResolvedBase, RuntimeConfig,
     },
 };
+
+#[cfg(test)]
+pub(crate) struct WorkOrderWorkspace(TempDir);
+
+#[cfg(test)]
+impl WorkOrderWorkspace {
+    pub(crate) fn new() -> Self {
+        Self(TempDir::new_in(".").unwrap())
+    }
+
+    pub(crate) fn target(&self, name: &str, fields: &str) -> Arc<crate::Target> {
+        use std::fs;
+
+        use tailor_config::{
+            BaseImageCatalogue, ImageDefinition, OutputArtifactsPolicy, OutputFormat, OutputSpec,
+        };
+
+        let dir = self.0.path().join(name);
+        fs::create_dir_all(&dir).unwrap();
+        let yaml = format!("name: {name}\n{fields}\nconfig: {{}}\n");
+        fs::write(dir.join("image.yaml"), &yaml).unwrap();
+        let definition: ImageDefinition = serde_yaml_ng::from_str(&yaml).unwrap();
+        Arc::new(crate::Target {
+            definition,
+            dir,
+            root: self.0.path().to_path_buf(),
+            default_outputs: vec![OutputSpec {
+                format: OutputFormat::Cosi,
+                cosi_compression_level: None,
+                compression: None,
+            }],
+            output_artifacts: OutputArtifactsPolicy::default(),
+            base_images: BaseImageCatalogue::default(),
+            tools_dir_sources: Vec::new(),
+        })
+    }
+}
 
 /// A deterministic `BaseResolver`: local paths hash to zeros, registry bases get a fixed digest.
 #[derive(Debug, Default, Clone)]

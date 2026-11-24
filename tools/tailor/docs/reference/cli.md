@@ -53,6 +53,10 @@ With `--cell`, name the owning image: an unqualified flag can fail on other work
 | --- | --- |
 | `-s`, `--select AXIS=VALUE` | Constrain matrix axes. Repeatable. Comma-separated axis pairs are accepted, for example `-s variant=full,arch=amd64`. |
 | `--cell SLUG` | Select exact cells by slug. Repeatable. |
+| `-w`, `--work-order PATH` | Read YAML/JSON selection from a file relative to invocation CWD. |
+| `--work-order-env NAME` | Read selection from the named environment variable; missing/blank values fail. |
+| `--plan` | Print the dependency-complete offline schedule without writes; conflicts with `--dry-run`. |
+| `--format text\|json` | Plan format (default text); explicit use requires `--plan`. |
 | `--force` | Ignore incremental up-to-date checks. |
 | `--arch ARCH` | Restrict build to architecture(s). Repeatable. |
 | `--output-dir PATH` | Output directory. Default: `<workspace>/artifacts`. |
@@ -62,6 +66,10 @@ With `--cell`, name the owning image: an unqualified flag can fail on other work
 
 Builds run sequentially. A hidden `--jobs` argument is accepted but has no scheduling effect; do
 not use it to request parallel builds.
+
+Order sources conflict with each other, positionals, `--cell`, `--select` and `--arch`.
+Operational flags still apply. Work-order exact slugs are additive; ordinary CLI filters still
+intersect. See [Work-order reference](work-order.md).
 
 ## `tailor convert <input> --to <format>`
 
@@ -94,8 +102,12 @@ JSON entries contain `image`, `slug`, `axes`, and `format`, plus `baseImage` whe
 | --- | --- |
 | `--format json` | JSON array of cell objects (default). |
 | `--format slugs` | One cell slug per line — feeds `tailor build <slug>` directly. |
-| `--format ado` | The bare Azure DevOps matrix object (`{ leg: { var: string, … } }`) for a pipeline `strategy.matrix`. |
+| `--format ado` | Dependency-safe jobs carrying scalar JSON `TAILOR_WORK_ORDER` values; grouped automatically. |
 | `--ado VAR_NAME` | Emit the ADO matrix wrapped in a `##vso[task.setvariable]` logging command that sets `VAR_NAME` (e.g. `BUILD_MATRIX`). Implies `--format ado` and conflicts with `--format`. An empty selection exits non-zero. |
+| `--max-jobs N` | Positive ADO job-count cap: packs whole components largest-first by scheduled-cell count. Requires `--ado` or `--format ado`. |
+
+JSON/slugs remain cell inventories. Migrate old per-cell ADO consumers to
+[work orders](../how-to/build-work-orders.md).
 
 ## `tailor slugs [images...]`
 

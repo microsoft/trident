@@ -4,6 +4,7 @@ mod cli;
 mod error;
 mod run;
 mod scaffold;
+mod work_orders;
 
 use std::process::ExitCode;
 

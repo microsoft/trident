@@ -18,11 +18,14 @@ tailor matrix appliance --format ado
 tailor matrix appliance --ado BUILD_MATRIX
 ```
 
-The first emits a bare JSON object. The second emits an ADO `##vso[task.setvariable]` line
-for `BUILD_MATRIX` and fails on an empty selection. Each leg contains string variables
-`image`, `slug`, `format`, optionally `baseImage`, and `axis_<axis>` for each coordinate.
-ADO leg keys are sanitized (and disambiguated if needed); **use the leg's `slug` value** when
-invoking `tailor build`, not its sanitized key. `--ado` and `--format` cannot be combined.
+The first emits a JSON job matrix. The second wraps it in one ADO output-variable line and
+fails on an empty selection. Legs carry scalar JSON `TAILOR_WORK_ORDER`; consume it with
+`tailor build --work-order-env TAILOR_WORK_ORDER`, not the sanitized leg key.
+Dependencies stay together automatically. `--ado` and `--format` cannot be combined.
+
+Add `--max-jobs N` to pack whole components into at most N jobs. This differs from ADO's
+`maxParallel`; cells remain serial within a job. JSON/slugs inventories are unchanged.
+Existing per-cell ADO templates must migrate. See [Build work orders](build-work-orders.md).
 
 Use `tailor export --check` separately if the pipeline consumes committed, rendered IC YAML;
 the matrix command only enumerates cells. See [Export configs](export-configs-for-a-pipeline.md)

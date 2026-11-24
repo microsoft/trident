@@ -21,6 +21,23 @@ pub(crate) enum AppError {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 
+    #[error("{context}: {source}")]
+    WorkOrderConfig {
+        context: String,
+        #[source]
+        source: tailor_config::ConfigError,
+    },
+
+    #[error("{context}: {source}")]
+    WorkOrderSelection {
+        context: String,
+        #[source]
+        source: Box<tailor_core::CoreError>,
+    },
+
+    #[error("{0}")]
+    Request(String),
+
     #[error("{0}")]
     Message(String),
 }
@@ -75,7 +92,8 @@ impl AppError {
     /// operational build failure.
     fn is_usage(&self) -> bool {
         match self {
-            AppError::Config(_) => true,
+            AppError::Config(_) | AppError::WorkOrderConfig { .. } | AppError::Request(_) => true,
+            AppError::WorkOrderSelection { source, .. } => core_is_usage(source),
             AppError::Core(core) => core_is_usage(core),
             AppError::Exec(exec) => exec_is_usage(exec),
             AppError::Resolve(_) | AppError::Sign(_) | AppError::Json(_) | AppError::Message(_) => {

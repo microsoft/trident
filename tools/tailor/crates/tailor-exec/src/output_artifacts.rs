@@ -63,6 +63,16 @@ pub fn uses_output_artifacts(ic_config: &Value) -> bool {
         })
 }
 
+/// Whether an unsigned customization requests extraction after applying its staging policy.
+pub fn extracts_output_artifacts(ic_config: &Value, policy: OutputArtifactsPolicy) -> bool {
+    policy != OutputArtifactsPolicy::Strip
+        && uses_output_artifacts(ic_config)
+        && ic_config
+            .get(OUTPUT_KEY)
+            .and_then(|output| output.get(ARTIFACTS_KEY))
+            .is_some_and(Value::is_mapping)
+}
+
 /// Apply the cell's policy to its working-copy IC config (§3). When the gate is off, does nothing.
 /// Otherwise rewrites `output.artifacts.path` (managed/scratch) or removes the block (strip), and
 /// returns the staging plan for the caller to chown/reclaim. `image_dir` is the working copy's

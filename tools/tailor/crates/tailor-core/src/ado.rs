@@ -9,6 +9,10 @@ use sha2::{Digest, Sha256};
 
 use crate::Cell;
 
+mod work_orders;
+
+pub use work_orders::{WorkOrderJob, work_order_jobs};
+
 /// Axis variables are prefixed so they can never collide with a reserved field; flat because ADO
 /// rejects nested matrix values (`meta/docs/2026-06-29-ado-matrix.md` §4).
 const AXIS_VAR_PREFIX: &str = "axis_";
@@ -117,9 +121,23 @@ pub fn is_valid_var_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// Escape ADO logging-command values without allowing literal line breaks or percent escapes.
+pub fn escape_logging_value(value: &str) -> String {
+    value
+        .replace('%', "%AZP25")
+        .replace('\n', "%0A")
+        .replace('\r', "%0D")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn logging_escape_orders_percent_before_line_breaks() {
+        assert_eq!(escape_logging_value("a%0A\nb\r%"), "a%AZP250A%0Ab%0D%AZP25");
+        assert_eq!(escape_logging_value("plain"), "plain");
+    }
 
     #[test]
     fn sanitize_replaces_dash_and_dot_with_underscore() {

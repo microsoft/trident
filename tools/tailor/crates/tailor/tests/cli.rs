@@ -11,12 +11,14 @@
 //!   rpm sources, opaque IC passthrough).
 
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use serde_json::Value as JsonValue;
 use tempfile::TempDir;
 
 fn fixtures() -> PathBuf {
@@ -153,6 +155,400 @@ fn dry_run_in(dir: &Path, args: &[&str]) -> String {
         .stdout
         .clone();
     String::from_utf8(output).unwrap()
+}
+
+fn work_order_plan_in(dir: &Path, order: &str) -> JsonValue {
+    let output = tailor()
+        .current_dir(dir)
+        .env("TAILOR_WORK_ORDER", order)
+        .args([
+            "build",
+            "--work-order-env",
+            "TAILOR_WORK_ORDER",
+            "--plan",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    serde_json::from_slice(&output).unwrap()
+}
+
+#[test]
+fn work_order_additions_union_with_slices_and_preserve_prerequisites() {
+    let ws = order_only_workspace();
+    let order = "schemaVersion: 1\nimages: [consumer]\nselect: {channel: [stable]}\nslugs: [consumer_edge_amd64_cosi]\n";
+    let plan = work_order_plan_in(ws.path(), order);
+    assert_eq!(plan["requested"].as_array().unwrap().len(), 2);
+    assert_eq!(plan["cells"].as_array().unwrap().len(), 5);
+    assert_eq!(plan["steps"].as_array().unwrap().len(), 5);
+    assert!(
+        plan["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|cell| { cell["slug"] == "foundation_arm64_cosi" && cell["requested"] == false })
+    );
+
+    fs::write(ws.path().join("order.yaml"), order).unwrap();
+    let output = dry_run_in(ws.path(), &["-w", "order.yaml"]);
+    assert!(output.contains("5 cell(s) (dry-run)"), "{output}");
+    assert_eq!(output.matches("docker run").count(), 5);
+}
+
+#[test]
+fn work_order_relative_path_uses_invocation_directory_with_an_external_manifest() {
+    let ws = order_only_workspace();
+    let invocation = TempDir::new().unwrap();
+    fs::write(
+        invocation.path().join("order.yaml"),
+        "schemaVersion: 1\ncells: [consumer_stable_amd64_cosi]\n",
+    )
+    .unwrap();
+    tailor()
+        .current_dir(invocation.path())
+        .arg("--manifest")
+        .arg(ws.path().join("tailor.yaml"))
+        .args(["build", "-w", "order.yaml", "--plan", "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("foundation_arm64_cosi"));
+}
+
+#[test]
+fn plan_is_offline_and_does_not_create_runtime_state_or_preflight_signers() {
+    let ws = order_only_workspace();
+    let manifest = ws.path().join("tailor.yaml");
+    let original = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        manifest,
+        format!(
+            "{original}previewFeatures: [signing]\nsigning:\n  default: test-ca\n  profiles:\n    test-ca:\n      backend: local-test-ca\n"
+        ),
+    )
+    .unwrap();
+    let image = ws.path().join("prepare/image.yaml");
+    let original = fs::read_to_string(&image).unwrap();
+    fs::write(image, format!("{original}signing: true\n")).unwrap();
+    tailor()
+        .current_dir(ws.path())
+        .env("PATH", "")
+        .args([
+            "build",
+            "consumer_stable_amd64_cosi",
+            "--plan",
+            "--format",
+            "json",
+        ])
+        .arg("--host")
+        .arg("unix:///nonexistent-work-order-engine.sock")
+        .arg("--log-dir")
+        .arg(ws.path().join("logs"))
+        .arg("--output-dir")
+        .arg(ws.path().join("outputs"))
+        .arg("--build-dir-base")
+        .arg(ws.path().join("scratch"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"sign\""));
+    for path in ["logs", "outputs", "scratch", ".tailor", "tailor.lock"] {
+        assert!(!ws.path().join(path).exists(), "plan created {path}");
+    }
+}
+
+#[test]
+fn text_plan_explains_required_cells_and_typed_dependencies() {
+    let ws = order_only_workspace();
+    tailor()
+        .current_dir(ws.path())
+        .args(["build", "consumer_stable_amd64_cosi", "--plan"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("required:")
+                .and(predicate::str::contains("foundation_arm64_cosi"))
+                .and(predicate::str::contains(
+                    "foundation --dependsOn--> prepare",
+                ))
+                .and(predicate::str::contains("execution order (serial):")),
+        );
+}
+
+#[test]
+fn plan_expands_clone_steps_without_duplicate_outputs() {
+    let ws = order_only_workspace();
+    let output = tailor()
+        .current_dir(ws.path())
+        .args([
+            "build",
+            "consumer_stable_amd64_cosi",
+            "--clones",
+            "2",
+            "--plan",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let plan: JsonValue = serde_json::from_slice(&output).unwrap();
+    assert_eq!(plan["cells"].as_array().unwrap().len(), 4);
+    let steps = plan["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 8);
+    let outputs: BTreeSet<_> = steps
+        .iter()
+        .map(|step| step["output"].as_str().unwrap())
+        .collect();
+    assert_eq!(outputs.len(), 8);
+    assert_eq!(steps[0]["cloneIndex"], 0);
+    assert_eq!(steps[2]["cloneIndex"], 1);
+}
+
+#[test]
+fn plan_extraction_matches_policy_and_forced_signed_staging() {
+    let ws = order_only_workspace();
+    let manifest = ws.path().join("tailor.yaml");
+    let original = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        manifest,
+        format!(
+            "{original}previewFeatures: [signing]\nsigning:\n  default: test-ca\n  profiles:\n    test-ca:\n      backend: local-test-ca\n"
+        ),
+    )
+    .unwrap();
+    let image = ws.path().join("consumer/image.yaml");
+    let original = fs::read_to_string(&image).unwrap();
+    for (policy, signed, feature, block, expected) in [
+        ("strip", false, true, true, false),
+        ("scratch", false, true, true, true),
+        ("managed", false, false, true, false),
+        ("managed", false, true, false, false),
+        ("strip", true, true, true, true),
+    ] {
+        let flag = if feature {
+            "  previewFeatures: [output-artifacts]\n"
+        } else {
+            ""
+        };
+        let artifacts = if block {
+            "  output:\n    artifacts:\n      path: ./declared\n"
+        } else {
+            ""
+        };
+        let config = format!(
+            "outputArtifacts: {policy}\nsigning: {signed}\nconfig:\n{flag}{artifacts}  os: {{hostname: test}}\n"
+        );
+        fs::write(&image, original.replace("config: {}", &config)).unwrap();
+        let plan = work_order_plan_in(
+            ws.path(),
+            r#"{"schemaVersion":1,"cells":["consumer_stable_amd64_cosi"]}"#,
+        );
+        let step = plan["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|step| step["slug"] == "consumer_stable_amd64_cosi")
+            .unwrap();
+        assert_eq!(
+            step["actions"]
+                .as_array()
+                .unwrap()
+                .contains(&JsonValue::from("extract")),
+            expected,
+            "{policy}, signed={signed}, feature={feature}, block={block}"
+        );
+    }
+}
+
+#[test]
+fn work_order_plan_uses_the_effective_convert_operation() {
+    let ws = order_only_workspace();
+    let manifest = ws.path().join("tailor.yaml");
+    let original = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        manifest,
+        format!(
+            "{original}previewFeatures: [signing]\nsigning:\n  default: test-ca\n  profiles:\n    test-ca:\n      backend: local-test-ca\n"
+        ),
+    )
+    .unwrap();
+    let image = ws.path().join("consumer/image.yaml");
+    let original = fs::read_to_string(&image).unwrap();
+    for (signed, operation, extraction) in [(false, "convert", false), (true, "customize", true)] {
+        let config = format!(
+            "operation: convert\nsigning: {signed}\nconfig:\n  previewFeatures: [output-artifacts]\n  output:\n    artifacts:\n      path: ./declared\n"
+        );
+        fs::write(&image, original.replace("config: {}", &config)).unwrap();
+        let plan = work_order_plan_in(
+            ws.path(),
+            r#"{"schemaVersion":1,"cells":["consumer_stable_amd64_cosi"]}"#,
+        );
+        let step = plan["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|step| step["slug"] == "consumer_stable_amd64_cosi")
+            .unwrap();
+        assert_eq!(step["actions"][0], operation);
+        assert_eq!(
+            step["actions"]
+                .as_array()
+                .unwrap()
+                .contains(&JsonValue::from("extract")),
+            extraction
+        );
+        let rendered = dry_run_in(ws.path(), &["consumer_stable_amd64_cosi"]);
+        let invocation = rendered
+            .split("\n\n")
+            .find(|block| {
+                block.contains("docker run") && block.contains("# consumer_stable_amd64_cosi")
+            })
+            .unwrap();
+        assert!(
+            invocation
+                .lines()
+                .any(|line| line.trim().trim_end_matches('\\').trim() == operation),
+            "{invocation}"
+        );
+        if !signed {
+            assert!(!invocation.contains("--config-file"), "{invocation}");
+        }
+    }
+}
+
+#[test]
+fn work_order_slug_collisions_fail_before_emitting_jobs_or_builds() {
+    let ws = order_only_workspace();
+    fs::create_dir(ws.path().join("consumer_stable")).unwrap();
+    fs::write(
+        ws.path().join("consumer_stable/image.yaml"),
+        "name: consumer_stable\nbase: {path: ./base.img}\nconfig: {}\n",
+    )
+    .unwrap();
+    for args in [
+        vec!["matrix", "--format", "ado"],
+        vec!["matrix", "--format", "ado", "--max-jobs", "1"],
+        vec!["build", "consumer", "consumer_stable", "--plan"],
+    ] {
+        tailor()
+            .current_dir(ws.path())
+            .args(args)
+            .assert()
+            .code(2)
+            .stdout(predicate::str::diff(""))
+            .stderr(predicate::str::contains("collid"));
+    }
+}
+
+#[test]
+fn work_order_empty_bulk_selection_preserves_legacy_dry_run_behavior() {
+    let ws = order_only_workspace();
+    for name in ["prepare", "consumer"] {
+        let image = ws.path().join(name).join("image.yaml");
+        let original = fs::read_to_string(&image).unwrap();
+        fs::write(image, format!("{original}skip: true\n")).unwrap();
+    }
+    tailor()
+        .current_dir(ws.path())
+        .args(["build", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0 cell(s)"));
+    tailor()
+        .current_dir(ws.path())
+        .args(["matrix", "--format", "ado"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no cells"));
+}
+
+#[test]
+fn invalid_work_orders_report_their_source_and_fail_as_usage_errors() {
+    let ws = order_only_workspace();
+    for order in [
+        "schemaVersion: 1\nimages: [consumer, typo]\n",
+        "schemaVersion: 1\nimages: [consumer]\nselect: {channel: [stable, typo]}\n",
+        "schemaVersion: 1\ncells: []\n",
+        "schemaVersion: 1\nimages: null\n",
+    ] {
+        fs::write(ws.path().join("invalid.yaml"), order).unwrap();
+        tailor()
+            .current_dir(ws.path())
+            .args(["build", "-w", "invalid.yaml", "--plan"])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains("invalid.yaml"));
+    }
+    for value in [None, Some(" ")] {
+        let mut command = tailor();
+        command
+            .current_dir(ws.path())
+            .env_remove("MISSING_WORK_ORDER");
+        if let Some(value) = value {
+            command.env("MISSING_WORK_ORDER", value);
+        }
+        command
+            .args(["build", "--work-order-env", "MISSING_WORK_ORDER", "--plan"])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains("MISSING_WORK_ORDER"));
+    }
+}
+
+#[test]
+fn ado_job_cap_packs_whole_components_and_round_trips_without_duplicate_cells() {
+    let ws = order_only_workspace();
+    fs::create_dir(ws.path().join("independent")).unwrap();
+    fs::write(
+        ws.path().join("independent/image.yaml"),
+        "name: independent\nbase: {path: ./base.img}\nconfig: {}\n",
+    )
+    .unwrap();
+    let mut uncapped_cells = BTreeSet::new();
+    for (extra, expected_jobs) in [
+        (vec![], 2),
+        (vec!["--max-jobs", "1"], 1),
+        (vec!["--max-jobs", "99"], 2),
+    ] {
+        let output = tailor()
+            .current_dir(ws.path())
+            .args(["matrix", "--format", "ado"])
+            .args(&extra)
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let matrix: JsonValue = serde_json::from_slice(&output).unwrap();
+        assert_eq!(matrix.as_object().unwrap().len(), expected_jobs);
+        let mut scheduled = BTreeSet::new();
+        for variables in matrix.as_object().unwrap().values() {
+            assert_eq!(variables.as_object().unwrap().len(), 1);
+            let order = variables["TAILOR_WORK_ORDER"].as_str().unwrap();
+            let plan = work_order_plan_in(ws.path(), order);
+            for cell in plan["cells"].as_array().unwrap() {
+                let slug = cell["slug"].as_str().unwrap().to_owned();
+                assert!(scheduled.insert(slug.clone()), "duplicated {slug}");
+            }
+        }
+        if extra.is_empty() {
+            uncapped_cells = scheduled;
+        } else {
+            assert_eq!(scheduled, uncapped_cells);
+        }
+    }
+    assert!(uncapped_cells.contains("foundation_arm64_cosi"));
+    tailor()
+        .current_dir(ws.path())
+        .args(["matrix", "--max-jobs", "1"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--max-jobs requires"));
 }
 
 #[test]
@@ -344,15 +740,16 @@ fn matrix_ado_emits_one_setvariable_line_with_flat_scalar_legs() {
     let out = String::from_utf8_lossy(&assert.get_output().stdout);
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines.len(), 1, "exactly one stdout line for the agent");
-    // Wrapper, leg key (sanitised slug), reserved fields, axes as `axis_*`, raw slug verbatim.
     assert!(out.starts_with("##vso[task.setvariable variable=BUILD_MATRIX;isOutput=true]{"));
-    assert!(out.contains("\"gizmo_lite_amd64_stable_cosi\":{"));
-    assert!(out.contains("\"slug\":\"gizmo_lite_amd64_stable_cosi\""));
-    assert!(out.contains("\"axis_edition\":\"lite\""));
-    assert!(
-        !out.contains("\"axes\""),
-        "values are flat — no nested axes object"
+    let matrix: JsonValue = serde_json::from_str(out.split_once(']').unwrap().1.trim()).unwrap();
+    assert_eq!(matrix.as_object().unwrap().len(), 1);
+    let variables = matrix.as_object().unwrap().values().next().unwrap();
+    assert_eq!(variables.as_object().unwrap().len(), 1);
+    let plan = work_order_plan_in(
+        &fixtures().join("matrix"),
+        variables["TAILOR_WORK_ORDER"].as_str().unwrap(),
     );
+    assert_eq!(plan["requested"][0], "gizmo_lite_amd64_stable_cosi");
 }
 
 #[test]
@@ -368,18 +765,19 @@ fn matrix_format_ado_prints_the_bare_object_without_wrapper() {
         .assert()
         .success()
         .stdout(
-            predicate::str::starts_with("{\"gizmo_lite_amd64_stable_cosi\"")
+            predicate::str::starts_with("{")
+                .and(predicate::str::contains("TAILOR_WORK_ORDER"))
                 .and(predicate::str::contains("##vso").not()),
         );
 }
 
 #[test]
-fn matrix_format_ado_of_empty_selection_prints_empty_object() {
+fn matrix_format_ado_of_empty_selection_fails() {
     in_dir("matrix")
         .args(["matrix", "--format", "ado", "-s", "edition=enterprise"])
         .assert()
-        .success()
-        .stdout(predicate::str::diff("{}\n"));
+        .code(2)
+        .stderr(predicate::str::contains("no cells"));
 }
 
 #[test]
@@ -418,12 +816,12 @@ fn matrix_json_exposes_base_image_for_a_catalogue_slot() {
 }
 
 #[test]
-fn matrix_ado_carries_base_image_as_a_reserved_scalar() {
+fn matrix_ado_orders_catalogue_cells_instead_of_carrying_per_cell_metadata() {
     in_dir("catalogue")
         .args(["matrix", "--format", "ado"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("\"baseImage\":\"baremetal\""));
+        .stdout(predicate::str::contains("TAILOR_WORK_ORDER"));
 }
 
 #[test]

@@ -176,8 +176,7 @@ jobs:
 
   e2e:
     name: e2e (sample image builds)
-    # IC's loop-device metadata probe fails on the Ubuntu 26.04 hosted image.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     env:
       # Absolute path to the binary built below; the e2e steps run from the e2e
@@ -208,6 +207,22 @@ jobs:
         with:
           toolchain: "1.98.1"
           cache-workspaces: tools/tailor
+      # https://github.com/microsoft/azure-linux-image-tools/issues/953
+      - name: Allow lsblk to inspect loop devices
+        shell: python3 {0}
+        run: |
+          import subprocess
+
+          subprocess.run(
+              ["sudo", "tee", "-a", "/etc/apparmor.d/local/lsblk"],
+              input="/dev/loop@{int} rk,\n/dev/loop@{int}p@{int} rk,\n",
+              text=True,
+              check=True,
+          )
+          subprocess.run(
+              ["sudo", "apparmor_parser", "-r", "/etc/apparmor.d/lsblk"],
+              check=True,
+          )
       - name: Confirm Docker is available
         run: docker version
       - name: Build the tailor binary
@@ -244,7 +259,24 @@ jobs:
 
       - name: Build the images (real Image Customizer run)
         working-directory: tools/tailor/e2e
-        run: '"$TAILOR_BIN" build'
+        shell: python3 {0}
+        run: |
+          import json
+          import os
+          import subprocess
+
+          binary = os.environ["TAILOR_BIN"]
+          matrix = json.loads(subprocess.check_output(
+              [binary, "matrix", "--format", "ado", "--max-jobs", "1"],
+              text=True,
+          ))
+          if len(matrix) != 1:
+              raise RuntimeError("expected one packed work-order job")
+          order = next(iter(matrix.values()))["TAILOR_WORK_ORDER"]
+          environment = os.environ | {"TAILOR_WORK_ORDER": order}
+          command = [binary, "build", "--work-order-env", "TAILOR_WORK_ORDER"]
+          subprocess.run(command + ["--plan"], env=environment, check=True)
+          subprocess.run(command, env=environment, check=True)
 
       - name: Assert the artifacts were produced and owned by the runner (janitor worked)
         working-directory: tools/tailor/e2e
