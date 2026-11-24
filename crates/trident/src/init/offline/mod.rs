@@ -117,6 +117,8 @@ struct LazyPartitionInfo {
     a_partition: PrismPartition,
 }
 
+/// Identifies the image disk by its root mount during customization.
+/// The eventual runtime disk path may not exist in this environment.
 fn has_root_partition(device: &BlockDevice) -> bool {
     device
         .children
@@ -124,9 +126,11 @@ fn has_root_partition(device: &BlockDevice) -> bool {
         .any(|partition| partition.mountpoint.as_deref() == Some(Path::new(ROOT_MOUNT_POINT_PATH)))
 }
 
+/// Checks the image disk identifiers needed to order partitions and build Host Status.
+///
+/// Unrelated host disks and missing filesystem UUIDs on unformatted inactive
+/// partitions do not require a retry.
 fn has_offline_disk_metadata(devices: &[BlockDevice]) -> bool {
-    // Only the image disk matters here. Other host disks may lack UUIDs, and
-    // an unformatted inactive partition still needs PARTUUID/PARTN, not a filesystem UUID.
     devices
         .iter()
         .find(|device| has_root_partition(device))
@@ -146,13 +150,13 @@ fn has_offline_disk_metadata(devices: &[BlockDevice]) -> bool {
         })
 }
 
+/// Reuses default discovery, retrying failed or incomplete probes once on AZL4.
+/// OS detection and direct probing stay lazy so working discovery is unchanged.
 fn retry_offline_disk_discovery(
     initial: Result<Vec<BlockDevice>, Error>,
     is_azl4: impl FnOnce() -> Result<bool, Error>,
     retry: impl FnOnce() -> Result<Vec<BlockDevice>, Error>,
 ) -> Result<Vec<BlockDevice>, Error> {
-    // Preserve working default probing, including on booted AZL4 systems.
-    // Delay OS detection too, so it cannot break an already successful discovery.
     if initial
         .as_ref()
         .is_ok_and(|devices| has_offline_disk_metadata(devices))
