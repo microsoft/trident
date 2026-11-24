@@ -176,7 +176,8 @@ jobs:
 
   e2e:
     name: e2e (sample image builds)
-    runs-on: ubuntu-latest
+    # IC's loop-device metadata probe fails on the Ubuntu 26.04 hosted image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       # Absolute path to the binary built below; the e2e steps run from the e2e
