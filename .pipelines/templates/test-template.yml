@@ -14,16 +14,6 @@ parameters:
     default: latestFromBranch
     displayName: Pipeline run ID
 
-  - name: runDeploymentVMHost
-    type: boolean
-    default: true
-    displayName: E2E tests Virtual Machines Host
-
-  - name: runDeploymentVMContainer
-    type: boolean
-    default: false
-    displayName: E2E tests Virtual Machines Container
-
   - name: runDeploymentBMHost
     type: boolean
     default: false
@@ -46,7 +36,7 @@ parameters:
 
   - name: runStormE2E
     type: boolean
-    default: false
+    default: true
     displayName: Storm E2E tests (VM host and container)
 
   - name: stormTestRing
@@ -68,20 +58,20 @@ stages:
   #
   # Every stage below consumes the go-tools artifact this publishes, including
   # FunctionalTesting, which already declared a dependency on BuildingTools.
-  - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runFunctionalTests, parameters.runStormE2E) }}:
+  - ${{ if or(parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runFunctionalTests, parameters.runStormE2E) }}:
       - template: stages/building_tools/building-tools.yml
         parameters:
           architecture: amd64
 
   # The image downloads are only needed by the stages that consume test images;
   # a functional-only run would otherwise produce a stage with no jobs.
-  - ${{ if or(parameters.runDeploymentVMHost, parameters.runDeploymentVMContainer, parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runStormE2E) }}:
+  - ${{ if or(parameters.runDeploymentBMHost, parameters.runDeploymentBMContainer, parameters.runServicingTests, parameters.runStormE2E) }}:
       - template: stages/download_artifacts/get-artifacts.yml
         parameters:
           definition: ${{ parameters.definition }}
           servicingImages: ${{ parameters.runServicingTests }}
-          hostImages: ${{ or(parameters.runDeploymentVMHost, parameters.runDeploymentBMHost, parameters.runStormE2E) }}
-          containerImages: ${{ or(parameters.runDeploymentVMContainer, parameters.runDeploymentBMContainer, parameters.runStormE2E) }}
+          hostImages: ${{ or(parameters.runDeploymentBMHost, parameters.runStormE2E) }}
+          containerImages: ${{ or(parameters.runDeploymentBMContainer, parameters.runStormE2E) }}
           ${{ if eq(parameters.tridentPipelineRunId, 'latestFromBranch') }}:
             runVersion: latestFromBranch
             branch: ${{ parameters.branch }}
@@ -104,20 +94,6 @@ stages:
         parameters:
           downloadPrebuiltImage: true
           rerunTests: true
-
-  - ${{ if parameters.runDeploymentVMHost }}:
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "validation"
-          runtimeEnv: "host"
-          testingRun: true
-
-  - ${{ if parameters.runDeploymentVMContainer }}:
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "validation"
-          runtimeEnv: "container"
-          testingRun: true
 
   - ${{ if parameters.runDeploymentBMHost }}:
       - template: stages/testing_baremetal/baremetal-testing.yml

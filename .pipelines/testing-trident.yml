@@ -30,16 +30,6 @@ parameters:
     default: latestFromBranch
     displayName: Pipeline Build ID (check the URL of the specific pipeline run), branch and pipeline definition will be ignored if ID is provided.
 
-  - name: runDeploymentVMHost
-    type: boolean
-    default: true
-    displayName: E2E tests Virtual Machines Host
-
-  - name: runDeploymentVMContainer
-    type: boolean
-    default: false
-    displayName: E2E tests Virtual Machines Container
-
   - name: runDeploymentBMHost
     type: boolean
     default: false
@@ -62,7 +52,7 @@ parameters:
 
   - name: runStormE2E
     type: boolean
-    default: false
+    default: true
     displayName: Storm E2E tests (VM host and container)
 
   - name: stormTestRing
@@ -118,8 +108,6 @@ extends:
           definition: ${{ parameters.definition }}
           branch: ${{ parameters.branch }}
           tridentPipelineRunId: ${{ parameters.tridentPipelineRunId }}
-          runDeploymentVMHost: ${{ parameters.runDeploymentVMHost }}
-          runDeploymentVMContainer: ${{ parameters.runDeploymentVMContainer }}
           runDeploymentBMHost: ${{ parameters.runDeploymentBMHost }}
           runDeploymentBMContainer: ${{ parameters.runDeploymentBMContainer }}
           runFunctionalTests: ${{ parameters.runFunctionalTests }}

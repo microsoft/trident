@@ -202,6 +202,10 @@ stages:
               runtimeEnvironment: $(tridentRuntimeEnv)
               tridentConfigurationName: $(tridentConfigurationName)
               stormBinary: ./bin/storm-trident
+              ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/main') }}:
+                kustoTableName: main
+              ${{ else }}:
+                kustoTableName: dev
 
           # Publish the JUnit XML produced by the storm run (-j above) to the
           # build's Tests tab and as a build artifact. Uses succeededOrFailed()
