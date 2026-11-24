@@ -177,6 +177,27 @@ only unavailable diagnostics before executing the original launcher once.
 A mismatch encountered during execution disables observation without replacing
 the CLI result. There is never a second download or alternate strategy.
 
+Run `45475168947` produced a 19453-byte report with SHA256
+`b75880cd1b8cc56800e818a40cfd36961fefb84645e31243c9ce5f37a07463d3`.
+It reported `source-contract-unavailable`, all phase facts unavailable, and
+outer CLI exit 1 with unclassified stderr. That schema did not identify the
+rejected gate. Both preflight rejection and runtime rejection discard phase
+facts, so the report cannot distinguish them or establish the download cause.
+Matching CLI/extension version labels do not establish matching source bytes.
+
+Gate rejection now carries only a fixed `gate.id`, catalogued `gate.reason`,
+and `gate.observedSha256`. IDs distinguish the runtime guards, entrypoint
+discovery/source/code, extension root/module sources, and each fixed function
+contract. A complete observed source SHA256 is emitted only for a hash mismatch
+within the unchanged 64 KiB source-read bound. Unreadable, oversized or
+unavailable sources have no observed hash; no partial-file hash is reported.
+Function/code/binding rejection never exports bytecode, names outside the fixed
+catalog, paths, raw source, import errors or exception messages. The unchanged
+gate still rejects mismatches, and unavailable phase facts remain unavailable.
+This is evidence of an unsupported observer, not evidence of why the original
+CLI download returned 1. The original command's separate exit is authoritative.
+Historical reports cannot retroactively identify the rejected gate.
+
 Only fixed credential-resolution, release-lookup, tool-bootstrap,
 download/extraction, invocation, spawn/wait and SDK-error function boundaries
 are observed. Credential-resolution frames contribute boundary events only;

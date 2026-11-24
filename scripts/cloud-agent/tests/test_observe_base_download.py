@@ -250,6 +250,7 @@ class ChildObserverTests(unittest.TestCase):
         self.assertNotIn("fixture-sensitive", json.dumps(result))
         self.assertNotIn("fixture-private", json.dumps(result))
         self.assertNotIn("fixture.invalid", json.dumps(result))
+        self.assertNotIn(str(self.root), json.dumps(result))
         return process.returncode, result
 
     def test_real_boundaries_and_unchanged_entrypoint_arguments_exit_and_isolation(
@@ -349,12 +350,22 @@ class ChildObserverTests(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 body = path.read_bytes()
-                path.write_bytes(body + b"\n# altered fixture\n")
+                changed = body + b"\n# altered fixture\n"
+                path.write_bytes(changed)
                 try:
                     code, result = self.child("normal")
                     self.assertEqual(code, 29)
                     self.assertEqual(
-                        result, observer.unavailable("source-contract-unavailable")
+                        result,
+                        observer.rejected(
+                            (
+                                "cli-main-source"
+                                if path.name == "__main__.py"
+                                else "extension-external-tool-source"
+                            ),
+                            "hash-mismatch",
+                            hashlib.sha256(changed).hexdigest(),
+                        ),
                     )
                     self.assertFalse(self.audit.exists())
                 finally:
@@ -372,7 +383,184 @@ class ChildObserverTests(unittest.TestCase):
         )
         code, result = self.child("normal")
         self.assertEqual(code, 17)
-        self.assertEqual(result, observer.unavailable("source-contract-unavailable"))
+        self.assertEqual(
+            result, observer.rejected("release-lookup-function", "binding-mismatch")
+        )
+
+    def test_missing_source_and_entrypoint_discovery_have_fixed_distinct_gates(self):
+        for relative, gate, reason in (
+            (
+                "azext_devops/dev/common/external_tool.py",
+                "extension-external-tool-source",
+                "unreadable",
+            ),
+            ("azure/cli/__main__.py", "cli-main-discovery", "unavailable"),
+        ):
+            with self.subTest(gate=gate):
+                path = self.extension / relative
+                body = path.read_bytes()
+                path.unlink()
+                try:
+                    code, result = self.child("normal")
+                    self.assertEqual(code, 29)
+                    self.assertEqual(result, observer.rejected(gate, reason))
+                    self.assertFalse(self.audit.exists())
+                finally:
+                    path.write_bytes(body)
+
+    def test_each_runtime_preflight_guard_exports_only_its_fixed_identifier(self):
+        body = self.bootstrap.read_text()
+        for setup, gate in (
+            ("sys.implementation.name = 'fixture-sensitive'", "runtime-implementation"),
+            ("sys.version_info = (3, 15, 0)", "runtime-python-version"),
+            ("sys.settrace(lambda *args: None)", "runtime-trace"),
+        ):
+            with self.subTest(gate=gate):
+                self.bootstrap.write_text(
+                    body.replace("observer.main()", setup + "\n    observer.main()")
+                )
+                code, result = self.child("normal")
+                self.assertEqual(code, 29)
+                self.assertEqual(result, observer.rejected(gate, "unavailable"))
+                self.assertFalse(self.audit.exists())
+        self.bootstrap.write_text(body)
+
+    def test_runtime_entrypoint_code_mismatch_keeps_cli_result_without_source_hash(
+        self,
+    ):
+        body = self.bootstrap.read_text()
+        setup = (
+            "import runpy\n"
+            "    original = runpy._get_module_details\n"
+            "    def changed(*args, **kwargs):\n"
+            "        name, spec, code = original(*args, **kwargs)\n"
+            "        return name, spec, code.replace(co_firstlineno=code.co_firstlineno + 1)\n"
+            "    runpy._get_module_details = changed\n"
+            "    observer.main()"
+        )
+        self.bootstrap.write_text(body.replace("observer.main()", setup))
+        code, result = self.child("normal")
+        self.assertEqual(code, 0)
+        self.assertEqual(result, observer.rejected("cli-main-code", "code-mismatch"))
+        self.assertTrue(self.audit.exists())
+
+    def test_runtime_function_code_mismatch_identifies_only_the_fixed_boundary(self):
+        body = self.bootstrap.read_text()
+        self.bootstrap.write_text(
+            body.replace(
+                "observer.main()",
+                "from azext_devops.dev.common.services import _get_credentials\n"
+                "    _get_credentials.__code__ = _get_credentials.__code__.replace(co_firstlineno=_get_credentials.__code__.co_firstlineno + 1)\n"
+                "    observer.main()",
+            )
+        )
+        code, result = self.child("normal")
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            result, observer.rejected("credential-resolution-function", "code-mismatch")
+        )
+        self.assertTrue(self.audit.exists())
+
+    def test_oversized_source_keeps_the_existing_bound_and_exports_no_partial_hash(
+        self,
+    ):
+        path = self.extension / "azext_devops/dev/common/external_tool.py"
+        path.write_bytes(b"x" * (64 * 1024 + 1))
+        code, result = self.child("normal")
+        self.assertEqual(code, 29)
+        self.assertEqual(
+            result, observer.rejected("extension-external-tool-source", "too-large")
+        )
+        self.assertFalse(self.audit.exists())
+
+    def test_source_compile_and_import_errors_export_no_exception_text(self):
+        path = self.extension / "azext_devops/dev/common/external_tool.py"
+        original_source = path.read_bytes()
+        invalid_source = b"fixture-sensitive-source invalid syntax\n"
+        original_bootstrap = self.bootstrap.read_text()
+        path.write_bytes(invalid_source)
+        self.bootstrap.write_text(
+            original_bootstrap.replace(
+                "observer.main()",
+                "digest, functions = observer.CONTRACTS['dev.common.external_tool']\n"
+                "    observer.CONTRACTS['dev.common.external_tool'] = ("
+                + repr(hashlib.sha256(invalid_source).hexdigest())
+                + ", functions)\n"
+                "    observer.main()",
+            )
+        )
+        code, result = self.child("normal")
+        self.assertEqual(code, 29)
+        self.assertEqual(
+            result,
+            observer.rejected("extension-external-tool-source", "compile-unavailable"),
+        )
+        path.write_bytes(original_source)
+        self.bootstrap.write_text(
+            original_bootstrap.replace(
+                "observer.main()",
+                "def missing(*args):\n"
+                "        raise ImportError('fixture-sensitive-import https://fixture.invalid/?secret')\n"
+                "    observer.importlib.util.find_spec = missing\n"
+                "    observer.main()",
+            )
+        )
+        code, result = self.child("normal")
+        self.assertEqual(code, 29)
+        self.assertEqual(result, observer.rejected("cli-main-discovery", "unavailable"))
+        self.assertFalse(self.audit.exists())
+
+    def test_missing_fixed_function_contract_is_not_an_observed_download_failure(self):
+        body = self.bootstrap.read_text()
+        self.bootstrap.write_text(
+            body.replace(
+                "observer.main()",
+                "observer.CONTRACTS['dev.common.external_tool'][1]['absent_fixture_function'] = 'tool-spawn'\n"
+                "    observer.main()",
+            )
+        )
+        code, result = self.child("normal")
+        self.assertEqual(code, 29)
+        self.assertEqual(
+            result, observer.rejected("tool-spawn-function", "function-unavailable")
+        )
+        self.assertFalse(self.audit.exists())
+
+    def test_parent_gate_rejection_and_original_cli_exit_one_remain_separate(self):
+        self.az.write_text("#!/bin/sh\nexit 1\n")
+        path = self.extension / "azext_devops/dev/common/external_tool.py"
+        changed = path.read_bytes() + b"\n# fixture-sensitive-private-source\n"
+        path.write_bytes(changed)
+        with (
+            patch.object(
+                inspector.base_observer.shutil, "which", return_value=str(self.az)
+            ),
+            patch.object(inspector.base_observer, "launch", side_effect=self.wrapped),
+            patch.object(
+                inspector, "base_cli_versions", return_value={"status": "unavailable"}
+            ),
+            patch.dict(os.environ, {"AZURE_EXTENSION_DIR": str(self.extension.parent)}),
+            self.assertRaisesRegex(
+                inspector.Failure, "^exact-base-universal-download-failed$"
+            ) as caught,
+        ):
+            inspector.command(
+                ["az", "artifacts", "universal", "download", "normal"],
+                failure_fact="exact-base-universal-download-failed",
+            )
+        diagnostic = caught.exception.diagnostic
+        self.assertEqual(diagnostic["exitCode"], 1)
+        self.assertEqual(
+            diagnostic["observation"],
+            observer.rejected(
+                "extension-external-tool-source",
+                "hash-mismatch",
+                hashlib.sha256(changed).hexdigest(),
+            ),
+        )
+        self.assertFalse(self.audit.exists())
+        self.assertNotIn(str(self.root), json.dumps(diagnostic))
+        self.assertNotIn("fixture-sensitive", json.dumps(diagnostic))
 
     def test_late_fork_child_cannot_publish_and_exec_child_cannot_inherit_channel(self):
         code, result = self.child("late-child")
@@ -635,6 +823,33 @@ class ChannelTests(unittest.TestCase):
             if reader is not None:
                 os.close(reader)
             os.close(writer)
+
+    def test_gate_catalog_hash_validation_redaction_and_channel_bound(self):
+        digest = hashlib.sha256(b"fixture source").hexdigest()
+        valid = observer.rejected("extension-updater-source", "hash-mismatch", digest)
+        self.assertEqual(self.channel(json.dumps(valid).encode()), valid)
+        self.assertLessEqual(len(json.dumps(valid).encode()), observer.LIMIT)
+        for key, item in (
+            ("id", "fixture-sensitive-path"),
+            ("reason", "fixture-sensitive-server-string"),
+            ("reason", "binding-mismatch"),
+            ("observedSha256", "https://fixture.invalid/?secret"),
+            ("observedSha256", "F" * 64),
+            ("observedSha256", None),
+        ):
+            with self.subTest(key=key, item=item):
+                value = observer.rejected(
+                    "extension-updater-source", "hash-mismatch", digest
+                )
+                value["gate"][key] = item
+                result = self.channel(json.dumps(value).encode())
+                self.assertEqual(result, observer.unavailable("invalid-channel"))
+                self.assertNotIn("fixture-sensitive", json.dumps(result))
+        value = observer.unavailable("available")
+        value["gate"] = valid["gate"]
+        self.assertEqual(
+            observer.validate(value), observer.unavailable("invalid-channel")
+        )
 
 
 if __name__ == "__main__":
