@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{anyhow, ensure, Context, Error};
 use const_format::formatcp;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use procfs::sys::kernel::Version;
 
 use osutils::path::join_relative;
@@ -22,7 +22,7 @@ use trident_api::{
     status::{AbVolumeSelection, ServicingType},
 };
 
-use crate::engine::EngineContext;
+use crate::engine::{boot, EngineContext};
 
 /// UKI filename prefix used by both Trident-managed and preexisting UKIs.
 const UKI_FILENAME_PREFIX: &str = "vmlinuz-";
@@ -34,6 +34,63 @@ const UKI_STAGED_MARKER: &str = "staged";
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
 const TMP_UKI_ADDON_DIR_NAME: &str = formatcp!("{TMP_UKI_NAME}{UKI_ADDON_DIR_SUFFIX}");
+
+/// Checks whether the EFI loader originated from the expected managed A/B slot.
+///
+/// Missing slot expectations and unavailable/unsupported loader metadata skip
+/// validation. Only a recognized opposite-slot origin is rejected; this does
+/// not attest loader or hypervisor payloads.
+pub(in crate::engine) fn validate_efi_loader_origin(
+    install_index: usize,
+    expected_volume: Option<AbVolumeSelection>,
+) -> Result<(), TridentError> {
+    let Some(expected_volume) = expected_volume else {
+        return Ok(());
+    };
+    let image = match efivar::read_loader_image_identifier() {
+        Ok(image) => image,
+        Err(error) => {
+            // Missing evidence must not be reported as a rejected A/B trial.
+            warn!("Cannot determine EFI loader origin; skipping validation: {error:?}");
+            return Ok(());
+        }
+    };
+    validate_loader_origin(install_index, expected_volume, &image)
+}
+
+/// Checks a loader-image identifier against the expected slot for `install_index`.
+///
+/// Normalizes EFI separators and ASCII case, recognizing only this installation's
+/// complete slot-local `second.efi` paths. Unsupported origins, including fallback
+/// paths, warn and succeed. Only a recognized opposite A/B slot returns a mismatch
+/// error; success does not attest the running payload.
+fn validate_loader_origin(
+    install_index: usize,
+    expected_volume: AbVolumeSelection,
+    image: &str,
+) -> Result<(), TridentError> {
+    let image = image.replace('/', "\\");
+
+    let observed_directory = [AbVolumeSelection::VolumeA, AbVolumeSelection::VolumeB]
+        .into_iter()
+        .map(|volume| boot::make_esp_dir_name(install_index, volume))
+        .find(|directory| image.eq_ignore_ascii_case(&format!(r"\EFI\{directory}\second.efi")));
+    let Some(observed_directory) = observed_directory else {
+        warn!("Unsupported EFI loader origin {image:?}; skipping validation");
+        return Ok(());
+    };
+
+    let expected_directory = boot::make_esp_dir_name(install_index, expected_volume);
+    if observed_directory != expected_directory {
+        return Err(TridentError::new(
+            ServicingError::ValidateAbActiveEfiLoader {
+                expected_slot: expected_directory,
+                observed_slot: Some(observed_directory),
+            },
+        ));
+    }
+    Ok(())
+}
 
 /// Returns the lowercased UKI slot name for a given A/B volume
 /// (e.g. `"azla"` for VolumeA). Derived from the install-id prefix + volume name.
@@ -761,9 +818,82 @@ pub fn use_previous_uki_as_default(esp_dir_path: &Path) -> Result<(), TridentErr
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use std::fs::File;
+
     use tempfile::tempdir;
-    use trident_api::constants::DEFAULT_ESP_MOUNT_POINT_PATH;
+
+    use trident_api::{
+        constants::DEFAULT_ESP_MOUNT_POINT_PATH, error::ErrorKind as TridentErrorKind,
+    };
+
+    #[test]
+    fn matching_loader_origins_accept_efi_case_and_separators() {
+        for (index, volume, image) in [
+            (0, AbVolumeSelection::VolumeA, r"\EFI\AZLA\second.efi"),
+            (0, AbVolumeSelection::VolumeB, "/efi/azlb/SECOND.EFI"),
+            (1, AbVolumeSelection::VolumeA, r"\EFI\AZL2A\second.efi"),
+            (2, AbVolumeSelection::VolumeB, r"\EFI\AZL3B\second.efi"),
+        ] {
+            validate_loader_origin(index, volume, image).unwrap();
+        }
+    }
+
+    #[test]
+    fn opposite_loader_slot_returns_structured_mismatch() {
+        for (index, volume, image, expected, observed) in [
+            (
+                0,
+                AbVolumeSelection::VolumeA,
+                r"\EFI\AZLB\second.efi",
+                "AZLA",
+                "AZLB",
+            ),
+            (
+                0,
+                AbVolumeSelection::VolumeB,
+                "/efi/azla/SECOND.EFI",
+                "AZLB",
+                "AZLA",
+            ),
+            (
+                1,
+                AbVolumeSelection::VolumeB,
+                r"\EFI\AZL2A\second.efi",
+                "AZL2B",
+                "AZL2A",
+            ),
+        ] {
+            let error = validate_loader_origin(index, volume, image).unwrap_err();
+            assert!(
+                matches!(
+                    error.kind(),
+                    TridentErrorKind::Servicing(ServicingError::ValidateAbActiveEfiLoader {
+                        expected_slot,
+                        observed_slot,
+                    }) if expected_slot == expected && observed_slot.as_deref() == Some(observed)
+                ),
+                "got {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_loader_origins_do_not_reject_trial() {
+        for image in [
+            r"\EFI\BOOT\second.efi",
+            r"\EFI\AZL2B\second.efi",
+            r"\EFI\AZLB\bootx64.efi",
+            r"\EFI\AZLB\second.efi.extra",
+            r"\EFI\AZLB\second.efi\extra",
+            r"\EFI\other\second.efi",
+            r"EFI\AZLB\second.efi",
+            "",
+        ] {
+            validate_loader_origin(0, AbVolumeSelection::VolumeA, image).unwrap();
+        }
+        validate_efi_loader_origin(0, None).unwrap();
+    }
 
     /// Validates that `uki_suffix` produces the correct A/B suffix based on
     /// the active volume and install index.

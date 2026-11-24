@@ -19,6 +19,10 @@ type SshClientConfig struct {
 	Timeout    time.Duration
 }
 
+type CommandRunner interface {
+	Run(context.Context, string) (stormssh.Result, error)
+}
+
 func (c *SshClientConfig) PortOrDefault() uint16 {
 	if c.Port == 0 {
 		return 22
@@ -67,7 +71,17 @@ func RunCommand(client *stormssh.Client, command string) (*SshCmdOutput, error) 
 	if client == nil {
 		return nil, fmt.Errorf("SSH client is nil")
 	}
-	result, err := client.Run(context.Background(), command)
+	return RunCommandContext(context.Background(), client, command)
+}
+
+func RunCommandContext(ctx context.Context, client CommandRunner, command string) (*SshCmdOutput, error) {
+	if client == nil {
+		return nil, fmt.Errorf("SSH client is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result, err := client.Run(ctx, command)
 	return &SshCmdOutput{
 		Stdout: string(result.Stdout),
 		Stderr: string(result.Stderr),

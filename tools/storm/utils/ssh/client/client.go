@@ -12,15 +12,23 @@ import (
 )
 
 func OpenSshClient(settings config.SshCliSettings) (*stormssh.Client, error) {
+	return OpenSshClientContext(context.Background(), settings)
+}
+
+func OpenSshClientContext(ctx context.Context, settings config.SshCliSettings) (*stormssh.Client, error) {
 	cfg, err := settings.IntoClientConfig()
 	if err != nil {
 		return nil, err
 	}
-	return sshutils.CreateSshClient(context.Background(), *cfg)
+	return sshutils.CreateSshClient(ctx, *cfg)
 }
 
-func RunCommand(client *stormssh.Client, command string) (*config.SshCmdOutput, error) {
-	return sshutils.RunCommand(client, command)
+func RunCommand(client sshutils.CommandRunner, command string) (*config.SshCmdOutput, error) {
+	return RunCommandContext(context.Background(), client, command)
+}
+
+func RunCommandContext(ctx context.Context, client sshutils.CommandRunner, command string) (*config.SshCmdOutput, error) {
+	return sshutils.RunCommandContext(ctx, client, command)
 }
 
 func CommandOutput(client *stormssh.Client, command string) (string, error) {

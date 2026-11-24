@@ -1,0 +1,87 @@
+# ACL-T plus the MSHV kernel and loader chain, rebuilt and sealed by IC.
+previewFeatures:
+  - preview-distro-version
+  - package-manifest
+  - uki
+  - reinitialize-verity
+  - acl-oem-id
+  - acl-regenerate-usr-fs-uuid
+
+acl:
+  oemId: metal
+  regenerateUsrFsUuid: true
+
+storage:
+  reinitializeVerity: all
+
+os:
+  uki:
+    mode: create
+  kernelCommandLine:
+    extraCommandLine:
+      - console=ttyS0,115200n8
+      - no5lvl
+      # The persistent /etc upper layer must tolerate switching the /usr lower layer.
+      - overlay.index=off
+  packages:
+    manifest:
+      mode: create
+    remove:
+      - trident-acl
+      - trident-selinux
+      - trident-static-pcrlock-files
+      - trident
+      - kernel
+      - shim
+    install:
+      - trident
+      - trident-acl
+      - trident-selinux
+      - trident-static-pcrlock-files
+      - kernel-mshv
+      - edk2-hvloader
+      - mshv
+      - mshv-bootloader-lx
+      - efitreeloader
+      # IC needs rpm to identify the installed MSHV boot chain in COSI metadata.
+      - rpm
+      # lxhvloader is incompatible with shim 16.1.
+      - shim-15.8-6.azl3
+      - sudo
+  users:
+    - name: testuser
+      sshPublicKeyPaths:
+        - files/id_rsa.pub
+      secondaryGroups:
+        - wheel
+  services:
+    enable:
+      - sshd
+      - systemd-networkd
+    disable:
+      - trident-acl-agent
+  additionalFiles:
+    - source: files/10-dhcp.network
+      destination: /etc/systemd/network/10-dhcp.network
+    - source: files/sshd.conf
+      destination: /etc/ssh/sshd_config.d/90-acl-test.conf
+    - source: files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+      permissions: "440"
+
+scripts:
+  postCustomization:
+    - content: |
+        set -eu
+        # RPMs use the conventional /boot/efi mount; ACL mounts the ESP at /boot.
+        bundle=/boot/EFI/BOOT
+        install -m 0644 /boot/efi/EFI/BOOT/bootx64.efi "$bundle/bootx64.efi"
+        mv "$bundle/grubx64.efi" "$bundle/second.efi"
+        install -m 0644 /boot/efi/efitreeloader.efi "$bundle/grubx64.efi"
+        install -d "$bundle/Windows/System32"
+        for name in HvLoader.efi lxhvloader.dll; do
+          install -m 0644 "/boot/efi/$name" "$bundle/$name"
+        done
+        for name in hvix64.exe hvax64.exe kdstub.dll; do
+          install -m 0644 "/boot/efi/Windows/System32/$name" "$bundle/Windows/System32/$name"
+        done

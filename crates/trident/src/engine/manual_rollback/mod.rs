@@ -1,12 +1,12 @@
 use std::{path::PathBuf, time::Instant};
 
 use enumflags2::BitFlags;
-use log::{debug, info, trace, warn};
+use log::{debug, info, trace};
 
 use osutils::{efivar, path, pcrlock};
 use trident_api::{
     config::Operations,
-    constants::{internal_params::NO_TRANSITION, ROOT_MOUNT_POINT_PATH},
+    constants::ROOT_MOUNT_POINT_PATH,
     error::{InvalidInputError, ReportError, ServicingError, TridentError, TridentResultExt},
     status::{ServicingState, ServicingType},
 };
@@ -323,18 +323,6 @@ fn finalize_rollback(
         host_status.servicing_state = ServicingState::ManualRollbackAbFinalized;
     })?;
 
-    if !datastore
-        .host_status()
-        .spec
-        .internal_params
-        .get_flag(NO_TRANSITION)
-    {
-        Ok(ExitKind::NeedsReboot)
-    } else {
-        warn!(
-            "Skipping reboot as requested by internal parameter '{}'",
-            NO_TRANSITION
-        );
-        Ok(ExitKind::Done)
-    }
+    // A previous operation's noTransition override must not suppress this rollback's reboot.
+    Ok(ExitKind::NeedsReboot)
 }

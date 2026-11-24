@@ -1,0 +1,69 @@
+{
+    "version": "1.3",
+    "osArch": "x86_64",
+    "osRelease": "ID=azurelinux\nVERSION_ID=3.0\n",
+    "images": [{
+        "image": {
+            "path": "images/root.raw.zst",
+            "compressedSize": 1024,
+            "uncompressedSize": 4194304,
+            "sha384": "98ea4adbbb8ce0220d109d53d65825bd5a565248e4af3a9346d088918e7856ac2c42e13461cac67dbf3711ff69695ec3"
+        },
+        "mountPoint": "/",
+        "fsType": "ext4",
+        "fsUuid": "88d2fa9b-7a32-450a-a9f8-aa9c3de79298",
+        "partType": "4f68bce3-e8cd-4db1-96e7-fbcaf984b709"
+    }],
+    "disk": {
+        "size": 8388608,
+        "type": "gpt",
+        "lbaSize": 512,
+        "gptRegions": [
+            {
+                "type": "primary-gpt",
+                "image": {
+                    "path": "images/primary-gpt.raw.zst",
+                    "compressedSize": 1024,
+                    "uncompressedSize": 17408,
+                    "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
+                }
+            },
+            {
+                "type": "partition",
+                "number": 1,
+                "image": {
+                    "path": "images/root.raw.zst",
+                    "compressedSize": 1024,
+                    "uncompressedSize": 4194304,
+                    "sha384": "98ea4adbbb8ce0220d109d53d65825bd5a565248e4af3a9346d088918e7856ac2c42e13461cac67dbf3711ff69695ec3"
+                }
+            }
+        ]
+    },
+    "osPackages": [],
+    "bootloader": { "type": "grub" },
+    "compression": { "maxWindowLog": 22 },
+    "extensions": {
+        "sysexts": [{
+            "id": "node-tools",
+            "image": {
+                "path": "images/extensions/node-tools.raw.zst",
+                "compressedSize": 41943040,
+                "uncompressedSize": 134217728,
+                "sha384": "2decc64a828dbbb76779731cd4afd3b86cc4ad0af06f4afe594e72e62e33e520a6649719fe43f09f11d518e485eae0db"
+            },
+            "uncompressedSha384": "84a7c0032b78e8567104cdec33051891fac15b642ca72c2159d9bbad1d943a16568e8e381c56651d75a427aab933f330"
+        }],
+        "confexts": [{
+            "id": "node-defaults",
+            "image": {
+                "path": "images/extensions/node-defaults.raw.zst",
+                "compressedSize": 262144,
+                "uncompressedSize": 1048576,
+                "sha384": "98ea4adbbb8ce0220d109d53d65825bd5a565248e4af3a9346d088918e7856ac2c42e13461cac67dbf3711ff69695ec3"
+            },
+            "uncompressedSha384": "173e55ea6d116742b4f9ed6e214f132c428fbcce0ebfb2ea4228d3f919069338932ec80ff705d2f8a3c97c78b319bfea",
+            "path": "var/lib/confexts/node-defaults.raw"
+        }]
+    }
+}

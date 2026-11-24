@@ -4231,6 +4231,7 @@ dependencies = [
  "tracing",
  "tracing-journald",
  "tracing-subscriber",
+ "trident-client",
  "trident-proto",
  "trident_api",
  "url",

@@ -1,7 +1,6 @@
 package helpers
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -9,7 +8,6 @@ import (
 	"github.com/microsoft/storm"
 	stormssh "github.com/microsoft/storm/utils/ssh"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
 
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
@@ -98,12 +96,8 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 
 	// Execute rollback
 	out, err := stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, h.args.EnvVars, "rollback -v trace --allowed-operations stage")
-	if err != nil {
-		logrus.Errorf("Failed to invoke Trident: %v", err)
-		return err
-	}
-	if err := out.Check(); err != nil {
-		logrus.Errorf("Trident 'rollback --allowed-operations stage' stderr:\n%s", out.Stderr)
+	if err := stormtrident.CheckCommandResult(out, err, false); err != nil {
+		logrus.Errorf("Rollback staging failed: %s", out.Report())
 		return err
 	}
 	// Get trident-full.log contents after rollback staging
@@ -113,17 +107,8 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	}
 
 	out, err = stormtrident.InvokeTrident(h.args.TridentRuntimeType, client, h.args.EnvVars, "rollback -v trace --allowed-operations finalize")
-	if err != nil {
-		var missing *ssh.ExitMissingError
-		if errors.As(err, &missing) && strings.Contains(out.Stderr, trident.REBOOTING_LOG_MESSAGE) {
-			// The connection closed without an exit code, and the output contains REBOOTING_LOG_MESSAGE.
-			// This indicates that the host has rebooted.
-			logrus.Infof("Host rebooted successfully")
-		} else {
-			// Some unknown error occurred.
-			logrus.Errorf("Failed to invoke Trident: %s; %s", err, out.Report())
-			return fmt.Errorf("failed to invoke Trident: %w", err)
-		}
+	if err := stormtrident.CheckCommandResult(out, err, !h.args.ExpectRuntimeRollback); err != nil {
+		return fmt.Errorf("failed to invoke Trident: %w; %s", err, out.Report())
 	}
 	logrus.Infof("Trident 'rollback' succeeded:\n%s", out.Stdout)
 

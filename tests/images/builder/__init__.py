@@ -3,7 +3,7 @@ import yaml
 from dataclasses import dataclass, field, fields
 from enum import Enum
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
 
 @dataclass
@@ -13,6 +13,7 @@ class BaseImageData:
 
 
 class BaseImage(Enum):
+    ACL_T = BaseImageData("acl-t", Path("artifacts/acl_template_image.vhdx"))
     BAREMETAL = BaseImageData("baremetal", Path("artifacts/baremetal.vhdx"))
     CORE_SELINUX = BaseImageData("core_selinux", Path("artifacts/core_selinux.vhdx"))
     QEMU_GUEST = BaseImageData("qemu_guest", Path("artifacts/qemu_guest.vhdx"))
@@ -58,6 +59,22 @@ class BaseImageManifest:
     project: str = "36d030d6-1d99-4ebd-878b-09af1f4f722f"
     feed: str = "AzureLinuxArtifacts"
     glob: str = "*.vhdx"
+
+
+@dataclass
+class PipelineArtifactBaseImageManifest:
+    image: BaseImage
+    pipeline_id: int
+    artifact_name: str
+    filename: str
+    repository_name: str
+    # Resource alias -> full ref; self identifies the pipeline's own checkout.
+    repository_refs: Dict[str, str]
+    org: str = "https://dev.azure.com/mariner-org/"
+    project: str = "ACL"
+
+
+BaseImageSource = Union[BaseImageManifest, PipelineArtifactBaseImageManifest]
 
 
 class OutputFormat(Enum):
@@ -249,7 +266,7 @@ class ArtifactManifest:
     customizer_version: str
     customizer_container: str
     customizer_container_full: str = None
-    base_images: List[BaseImageManifest] = field(default_factory=list)
+    base_images: List[BaseImageSource] = field(default_factory=list)
 
     def __post_init__(self):
         if self.customizer_container_full is None:
@@ -264,7 +281,7 @@ class ArtifactManifest:
         """Return a list of fields in kebab-case."""
         return [f.name.replace("_", "-") for f in fields(cls)]
 
-    def find_base_image(self, img: BaseImage) -> Optional[BaseImageManifest]:
+    def find_base_image(self, img: BaseImage) -> Optional[BaseImageSource]:
         """Find a base image by its name."""
         for base_image in self.base_images:
             if base_image.image == img:
