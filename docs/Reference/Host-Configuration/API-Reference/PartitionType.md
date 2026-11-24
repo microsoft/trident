@@ -52,6 +52,15 @@ x64: `2c7357ed-ebd2-46d9-aec1-23d437ec2bf5`
 | Type           | `string`      |
 | Value          | `root-verity` |
 
+### Root verity hash signature partition
+
+x64: `41092b05-9fc8-4523-994f-2def0408b176`
+
+| Characteristic | Value             |
+| -------------- | ----------------- |
+| Type           | `string`          |
+| Value          | `root-verity-sig` |
+
 ### Home partition
 
 `933ac7e1-2eb4-4f13-b844-0e14e2aef915`

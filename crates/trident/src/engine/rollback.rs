@@ -1057,6 +1057,7 @@ mod tests {
             name: "root".into(),
             data_device_id: "root-data".into(),
             hash_device_id: "root-hash".into(),
+            hash_signature_device_id: None,
             ..Default::default()
         }];
 
@@ -1515,6 +1516,7 @@ mod functional_test {
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
             hash_device_id: "root-hash".to_string(),
+            hash_signature_device_id: None,
             ..Default::default()
         }];
 
@@ -1571,6 +1573,7 @@ mod functional_test {
             name: "root".to_string(),
             data_device_id: "root-data".to_string(),
             hash_device_id: "root-hash".to_string(),
+            hash_signature_device_id: None,
             ..Default::default()
         }];
 
