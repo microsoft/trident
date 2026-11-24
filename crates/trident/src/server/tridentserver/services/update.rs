@@ -9,6 +9,7 @@ use trident_proto::v1::{
 };
 
 use crate::{
+    command_kind::CommandKind,
     server::{
         tridentserver::{RebootDecision, ServicingResponseStream},
         TridentServer,
@@ -43,7 +44,7 @@ impl UpdateService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "update",
+            CommandKind::update(),
             super::reboot_allowed(&finalize.reboot),
             move || {
                 let mut trident = Trident::new(
@@ -81,22 +82,26 @@ impl UpdateService for TridentServer {
         let logstream = self.logstream.clone();
         let tracestream = self.tracestream.clone();
 
-        self.servicing_request("update_stage", RebootDecision::Error, move || {
-            let mut trident = Trident::new(
-                Some(HostConfigurationSource::RawString(host_config.config)),
-                &data_store_path,
-                logstream,
-                tracestream,
-            )
-            .message("Failed to initialize Trident")?;
+        self.servicing_request(
+            CommandKind::update_stage(),
+            RebootDecision::Error,
+            move || {
+                let mut trident = Trident::new(
+                    Some(HostConfigurationSource::RawString(host_config.config)),
+                    &data_store_path,
+                    logstream,
+                    tracestream,
+                )
+                .message("Failed to initialize Trident")?;
 
-            let mut datastore =
-                DataStore::open_or_create(&data_store_path).message("Failed to open datastore")?;
+                let mut datastore = DataStore::open_or_create(&data_store_path)
+                    .message("Failed to open datastore")?;
 
-            trident
-                .update(&mut datastore, Operation::Stage.into())
-                .map(|(k, h, st)| (k, h, Some(st.into())))
-        })
+                trident
+                    .update(&mut datastore, Operation::Stage.into())
+                    .map(|(k, h, st)| (k, h, Some(st.into())))
+            },
+        )
     }
 
     type UpdateFinalizeStream = ServicingResponseStream;
@@ -111,7 +116,7 @@ impl UpdateService for TridentServer {
         let tracestream = self.tracestream.clone();
 
         self.servicing_request(
-            "update_finalize",
+            CommandKind::update_finalize(),
             super::reboot_allowed(&finalize.reboot),
             move || {
                 let mut trident = Trident::new(None, &data_store_path, logstream, tracestream)
