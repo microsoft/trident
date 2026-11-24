@@ -321,15 +321,14 @@ impl Trident {
         ) {
             datastore.host_status().last_error.clone()
         } else {
+            datastore.with_host_status(|host_status| {
+                if let Some(e) = host_status.last_error.take() {
+                    warn!("Previously encountered error: {e:?}");
+                    info!("Clearing last error");
+                }
+            })?;
             None
         };
-
-        datastore.with_host_status(|host_status| {
-            if let Some(e) = host_status.last_error.take() {
-                warn!("Previously encountered error: {e:?}");
-                info!("Clearing last error");
-            }
-        })?;
 
         match f(datastore) {
             Ok(t) => Ok(t),
@@ -1005,9 +1004,69 @@ mod tests {
 
     use trident_api::{
         config::{Disk, DiskSelector, HostConfigurationStaticValidationError, Operation, Storage},
-        error::ErrorKind,
+        error::{ErrorKind, HealthChecksError},
         status::{HostStatus, TridentVersion},
     };
+
+    #[test]
+    fn recovery_keeps_original_error_persisted_during_operation() {
+        for state in [
+            ServicingState::AbUpdateHealthCheckFailed,
+            ServicingState::CommitFailed,
+        ] {
+            for recovery_returns_error in [false, true] {
+                let directory = TempDir::new().unwrap();
+                let path = directory.path().join("datastore.sqlite");
+                let mut datastore = DataStore::open_or_create(&path).unwrap();
+                let original_error = serde_yaml::to_value(TridentError::new(
+                    HealthChecksError::HealthChecksFailed {
+                        details: "Candidate health check failed".into(),
+                        servicing_type: "ab-update".into(),
+                    },
+                ))
+                .unwrap();
+                datastore
+                    .with_host_status(|status| {
+                        status.servicing_state = state.clone();
+                        status.last_error = Some(original_error.clone());
+                    })
+                    .unwrap();
+                let mut trident = Trident {
+                    host_config: None,
+                    orchestrator: None,
+                    is_stream_image: false,
+                };
+
+                let result = trident.execute_and_record_error(&mut datastore, |_| {
+                    let persisted = DataStore::open(&path).unwrap();
+                    assert_eq!(
+                        persisted.host_status().last_error.as_ref(),
+                        Some(&original_error)
+                    );
+                    if recovery_returns_error {
+                        Err(TridentError::new(InternalError::SerializeError))
+                    } else {
+                        Ok(())
+                    }
+                });
+                if recovery_returns_error {
+                    assert_eq!(
+                        result.unwrap_err().kind(),
+                        &ErrorKind::Internal(InternalError::SerializeError)
+                    );
+                } else {
+                    result.unwrap();
+                }
+                drop(datastore);
+                let persisted = DataStore::open(&path).unwrap();
+                assert_eq!(persisted.host_status().servicing_state, state);
+                assert_eq!(
+                    persisted.host_status().last_error.as_ref(),
+                    Some(&original_error)
+                );
+            }
+        }
+    }
 
     #[test]
     fn failed_recovery_preserves_original_validation_error() {
