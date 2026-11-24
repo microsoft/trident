@@ -1110,6 +1110,11 @@ $(QEMU_GUEST_IMAGE):
 		rm -rf $$tempdir && \
 		echo $$result | jq > $(QEMU_GUEST_IMAGE).metadata.json
 
+AZL4_QEMU_GUEST_IMAGE = artifacts/azl4_qemu_guest.vhdx
+$(AZL4_QEMU_GUEST_IMAGE):
+	@mkdir -p artifacts
+	@tests/images/testimages.py download-image azl4_qemu_guest
+
 BAREMETAL_IMAGE = artifacts/baremetal.vhdx
 $(BAREMETAL_IMAGE):
 	@mkdir -p artifacts
