@@ -50,6 +50,9 @@ allow-wildcard-paths = true
 yanked = "deny"
 ignore = [
     { id = "RUSTSEC-2024-0449", reason = "serde_yaml_ng depends on unsafe-libyaml; migrate the YAML parser" },
+    # TODO: Upgrade oci-client once crates.io has a release replacing chrono and jwt; remove both ignores.
+    { id = "RUSTSEC-2026-0543", reason = "oci-client depends on unmaintained chrono; awaiting a published replacement" },
+    { id = "RUSTSEC-2016-0007", reason = "oci-client depends on unmaintained jwt; awaiting the same upgrade" },
 ]
 
 [sources]
