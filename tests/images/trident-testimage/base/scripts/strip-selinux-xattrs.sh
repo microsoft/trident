@@ -83,7 +83,7 @@ if [ -d /boot ]; then
     sentinel_dirs+=( "/boot" )
 fi
 for d in "${sentinel_dirs[@]}"; do
-    if getfattr -R -m security.selinux "$d" 2>/dev/null | grep -q security.selinux; then
+    if getfattr -R -m security.selinux "$d" 2>/dev/null | grep security.selinux >/dev/null; then
         echo "ERROR: security.selinux xattr still present under '$d'" >&2
         getfattr -R -m security.selinux "$d" 2>/dev/null | head -10 >&2
         exit 1
