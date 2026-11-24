@@ -19,6 +19,8 @@ on them as a library API.
 - Existing subcommands and their flags keep their names and meaning. Flags are
   not removed or repurposed within a major version; new subcommands and new
   optional flags may be added (a minor, backward-compatible change).
+- The [experimental ADO job-output integration](#experimental-ado-job-output)
+  is excluded while its undeployed output contract is being finalized.
 - Hidden/experimental flags (not shown in `--help`) are **not** covered — they
   may change or disappear at any time.
 
@@ -32,6 +34,15 @@ on them as a library API.
   new optional fields may be added. A field that is renamed or given
   incompatible semantics comes with a `schemaVersion` bump and a documented
   migration path.
+- [Work orders](docs/reference/work-order.md) have their own `schemaVersion`;
+  it remains `1` independently of the Tailor release version.
+
+### Machine-readable output
+
+- Cell JSON/slug inventories retain their documented meaning.
+- `build --plan --format json` has a versioned
+  [plan representation](docs/how-to/build-work-orders.md#json-plan-output).
+  Its field meanings remain compatible within that output schema version.
 
 ### Artifact naming
 
@@ -57,9 +68,9 @@ class of failure:
 The following are intentionally left outside the 1.0 contract so tailor can keep
 improving them:
 
-- **Human-readable stdout/stderr.** Log lines, progress output, and diagnostic
-  wording are for people, not parsing. A stable machine-readable output mode is
-  future work; until it ships, do not screen-scrape tailor's output.
+- **Human-readable stdout/stderr.** Log lines, progress output, text plans and
+  diagnostic wording are for people, not parsing. Use the documented
+  machine-readable formats instead.
 - **Minimum Supported Rust Version (MSRV).** The Rust toolchain used to build
   tailor may move at any time.
 - **Deprecation policy.** There is not yet a formal warn-before-remove cadence.
@@ -69,6 +80,19 @@ improving them:
   `tailor.yaml` (currently `signing`) is explicitly outside these guarantees:
   its schema, flags, and behavior may change or be removed in any release until
   the feature is promoted out of preview and documented as stable.
+
+### Experimental ADO job output
+
+The ADO matrix integration is not yet deployed and remains experimental during
+`1.x`. Its per-cell leg format is replaced by dependency-safe work-order jobs:
+`image`, `slug`, `format`, optional `baseImage`, and `axis_*` variables are replaced
+by `TAILOR_WORK_ORDER`. This is an intentional pre-deployment migration, not a
+change to JSON/slug inventory output.
+
+Pin the same Tailor version in generation and execution, and migrate both pipeline
+steps together using [Build work orders](docs/how-to/build-work-orders.md).
+Validate actual ADO fan-out before deployment; GitHub image CI does not prove
+the ADO service-level contract.
 
 ## Internal (never stable)
 

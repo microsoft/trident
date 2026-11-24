@@ -262,9 +262,15 @@ fn validate_filter(
     Ok(())
 }
 
+/// Empty ordinary selections are valid; work-order validation rejects empty clauses separately.
 pub fn schedule(roots: &[Cell], members: &[Arc<Target>]) -> Result<BuildSchedule, CoreError> {
     if roots.is_empty() {
-        return Err(invalid("$", "cannot schedule empty requested roots"));
+        return Ok(BuildSchedule {
+            targets: Vec::new(),
+            cells: Vec::new(),
+            requested: BTreeSet::new(),
+            edges: Vec::new(),
+        });
     }
     ensure_unique_cells(roots, "roots")?;
     let by_name: BTreeMap<&str, &Arc<Target>> = members.iter().map(|t| (t.name(), t)).collect();
@@ -681,7 +687,7 @@ mod tests {
                 "leaf_skipped_arm64_cosi".to_owned()
             ])
         );
-        schedule(&[], &members).unwrap_err();
+        assert!(schedule(&[], &members).unwrap().cells().is_empty());
         let cyclic = workspace.target("cyclic", &format!("{PATH_BASE}\ndependsOn: [leaf]"));
         fragment(
             &leaf,

@@ -48,7 +48,9 @@ into at most N jobs, largest-first by scheduled-cell count. Components are never
 producers stay together, and cells run serially within each job. JSON/slugs remain cell
 inventories; the cap requires ADO output. No generated-file mode or grouping opt-in is needed.
 
-Legs carry scalar JSON `TAILOR_WORK_ORDER`, replacing old per-cell `image`/`slug`/axis variables.
+Legs carry scalar JSON `TAILOR_WORK_ORDER`, replacing old per-cell `image`, `slug`, `format`,
+optional `baseImage`, and `axis_*` variables. This ADO integration remains
+[experimental](../../COMPATIBILITY.md#experimental-ado-job-output) while deployment is finalized.
 Migrate generation and consumption together. Both jobs need the same checkout revision and Tailor
 version; install Tailor and configure suitable pools separately:
 

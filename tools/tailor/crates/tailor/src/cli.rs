@@ -303,7 +303,7 @@ pub(crate) enum MatrixFormat {
     Json,
     /// One cell slug per line — feeds `tailor build --cell <slug>` directly.
     Slugs,
-    /// Dependency-safe jobs carrying work orders; see `--ado` to wrap the matrix.
+    /// Experimental ADO jobs carrying work orders; see `--ado` to wrap the matrix.
     Ado,
 }
 
@@ -320,7 +320,7 @@ pub(crate) struct MatrixArgs {
     #[arg(long, value_enum, default_value_t = MatrixFormat::Json)]
     pub(crate) format: MatrixFormat,
 
-    /// Emit the ADO matrix as a `task.setvariable` line setting <VAR_NAME> (e.g. `BUILD_MATRIX`):
+    /// Emit experimental ADO jobs as a `task.setvariable` line setting <VAR_NAME>:
     /// `--format ado` plus the logging-command wrapper. Empty selection fails non-zero.
     #[arg(long, value_name = "VAR_NAME", conflicts_with = "format")]
     pub(crate) ado: Option<String>,

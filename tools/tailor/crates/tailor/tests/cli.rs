@@ -446,6 +446,28 @@ fn work_order_slug_collisions_fail_before_emitting_jobs_or_builds() {
 }
 
 #[test]
+fn work_order_empty_bulk_selection_preserves_legacy_dry_run_behavior() {
+    let ws = order_only_workspace();
+    for name in ["prepare", "consumer"] {
+        let image = ws.path().join(name).join("image.yaml");
+        let original = fs::read_to_string(&image).unwrap();
+        fs::write(image, format!("{original}skip: true\n")).unwrap();
+    }
+    tailor()
+        .current_dir(ws.path())
+        .args(["build", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("0 cell(s)"));
+    tailor()
+        .current_dir(ws.path())
+        .args(["matrix", "--format", "ado"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no cells"));
+}
+
+#[test]
 fn invalid_work_orders_report_their_source_and_fail_as_usage_errors() {
     let ws = order_only_workspace();
     for order in [

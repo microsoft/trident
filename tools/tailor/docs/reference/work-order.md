@@ -31,6 +31,9 @@ Every form requires `schemaVersion`; `description` is always optional.
 Supplied lists and filters must be nonempty. Name/value lists contain unique nonblank strings.
 Names match exactly; unknown fields and explicit `null` values fail. Different clauses may
 overlap; the same cell is built once.
+Numeric spellings `1`, `1.0` and `1e0` are equivalent for `schemaVersion`; serialization
+normalizes them to `1`. Strings, booleans and other numeric versions are rejected.
+Distinct cells sharing a slug are rejected rather than silently overwriting an image or artifact.
 
 ## Examples
 
