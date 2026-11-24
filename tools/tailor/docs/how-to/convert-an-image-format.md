@@ -32,7 +32,7 @@ OS-build-only formats `iso`/`pxe-*` are not available):
 | `-o, --output <PATH>` | Output path (default: the input's name with the target extension, beside the input). |
 | `--container <REF>` | The Image Customizer image to run (default: `mcr.microsoft.com/azurelinux/imagecustomizer:latest`). |
 | `--arch <ARCH>` | `amd64` (default) or `arm64` — drives `--platform linux/<arch>`. |
-| `--build-dir-base <PATH>` | Host base for IC's scratch (default: a unique dir under the system temp dir). Must not be `/`. |
+| `--build-dir-base <PATH>` | Explicit host base for IC scratch; by default IC uses container-internal `/tmp`. The host path must pass the build-directory safety guard. |
 | `--dry-run` | Print the container invocation without running it (no engine needed). |
 
 The global engine flags apply too: `--engine docker|podman|auto` and `--host <endpoint>`.
@@ -48,9 +48,7 @@ tailor convert ./disk.qcow2 --to raw --dry-run
 ## Notes
 
 - The input must be a **local file** — IC `convert` takes an `--image-file`, not a registry
-  download.
+  download. It must exist even for `--dry-run`.
 - `convert` only reformats the disk container; it does not customize the OS. To change the image's
   contents, use `tailor build` (or `imagecustomizer customize`).
-- The output directory cannot be the exact directory you're running from *when you point `-o` at it*
-  — a subdirectory (the default "beside the input" when the input is in a subdirectory, or any
-  `-o subdir/…`) is always fine.
+- Tailor stages conversion in a child of the output directory, then publishes the result there.

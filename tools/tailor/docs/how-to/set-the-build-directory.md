@@ -25,7 +25,8 @@ specific filesystem without changing the committed `tailor.yaml`.
 ## Safety guard
 
 tailor refuses a build directory that is the filesystem root, a protected system directory such as
-`/etc`, `/usr`, or `/var`, or `$HOME`. Use a dedicated scratch directory instead.
+`/etc`, `/usr`, or `/var`, `$HOME`, or an ancestor of the current working directory. The check
+resolves symlinks and does **not** require a separate filesystem. Use a dedicated scratch directory.
 
 Related: [Use a tools dir for sealed images](use-a-tools-dir.md); see the
 [`tailor.yaml` reference](../reference/tailor-yaml.md).

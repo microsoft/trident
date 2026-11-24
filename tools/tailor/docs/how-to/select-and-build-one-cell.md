@@ -30,7 +30,7 @@ tailor matrix gizmo --format slugs
 Build one slug:
 
 ```bash
-tailor build --cell gizmo_full_amd64_edge_cosi
+tailor build gizmo --cell gizmo_full_amd64_edge_cosi
 ```
 
 Or pass the slug directly as a positional — `tailor build <slug>` is shorthand for
