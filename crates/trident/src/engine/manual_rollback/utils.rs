@@ -9,7 +9,7 @@ use strum_macros::EnumIs;
 
 use trident_api::{
     config::HostConfiguration,
-    error::{InvalidInputError, TridentError},
+    error::{InternalError, InvalidInputError, TridentError},
     status::{AbVolumeSelection, HostStatus, ServicingState, TridentVersion},
 };
 
@@ -266,8 +266,8 @@ impl ManualRollbackContext {
             operation_host_status: None,
         };
 
-        // Check that the first host status is parsed correctly (error state) and
-        // that the state is Provisioned (otherwise, no rollbacks are possible)
+        // Reject unreadable or unknown current state. Known non-Provisioned states
+        // have no available rollback chain.
         match host_statuses.first() {
             Some(None) => {
                 return Err(TridentError::new(
@@ -275,6 +275,11 @@ impl ManualRollbackContext {
                         reason: "first host status was not parsed correctly".to_string(),
                     },
                 ));
+            }
+            Some(Some(hs)) if matches!(&hs.servicing_state, ServicingState::Unknown(_)) => {
+                return Err(TridentError::new(InternalError::UnexpectedServicingState {
+                    state: hs.servicing_state.clone(),
+                }));
             }
             Some(Some(hs)) if hs.servicing_state != ServicingState::Provisioned => {
                 trace!(
@@ -725,6 +730,36 @@ mod tests {
             .collect::<Vec<_>>();
         ManualRollbackContext::new(&host_statuses).unwrap()
     }
+    #[test]
+    fn current_unknown_servicing_state_rejects_rollback_queries() {
+        let state = ServicingState::Unknown("future-recovery-step".into());
+        let history = [
+            Some(host_status(
+                Some(AbVolumeSelection::VolumeA),
+                state.clone(),
+                "1.0.0",
+                None,
+                false,
+            )),
+            Some(host_status(
+                Some(AbVolumeSelection::VolumeA),
+                ServicingState::Provisioned,
+                "1.0.0",
+                None,
+                false,
+            )),
+        ];
+        let Err(error) = ManualRollbackContext::new(&history) else {
+            panic!("current Unknown must not be reported as an empty rollback chain");
+        };
+        assert_eq!(
+            error.kind(),
+            &trident_api::error::ErrorKind::Internal(
+                trident_api::error::InternalError::UnexpectedServicingState { state },
+            ),
+        );
+    }
+
     #[test]
     fn unknown_servicing_state_stops_rollback_history() {
         let history = [
