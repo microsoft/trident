@@ -23,6 +23,9 @@ cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-i
 
 # trident-direct-streaming-installer-arm64
 cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-installer -s arch=arm64 -s variant=direct-streaming --output-dir ./artifacts
+
+# trident-container-usrverity-testimage (signed)
+cargo run --manifest-path tools/tailor/Cargo.toml --   --manifest tests/tailor-images/tailor.yaml   build trident-verity-testimage -s deployment=container -s mode=usr --output-dir ./artifacts
 ```
 
 ## Base images
@@ -56,3 +59,4 @@ The current families are:
 - `trident-functest`
 - `trident-installer`
 - `trident-testimage`
+- `trident-verity-testimage`

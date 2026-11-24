@@ -1,0 +1,56 @@
+disks:
+  - partitionTableType: gpt
+    maxSize: 5G
+    partitions:
+      - id: esp
+        type: esp
+        size: 8M
+      - id: boot
+        size: 1G
+      - label: root
+        id: root
+        size: 2G
+      - label: root-hash
+        id: verityhash
+        size: 128M
+      - id: sysexts
+        size: 1G
+      - id: confexts
+        size: 200M
+      - id: var
+        size: grow
+bootType: efi
+verity:
+  - id: rootverity
+    name: root
+    dataDeviceId: root
+    hashDeviceId: verityhash
+    dataDeviceMountIdType: part-label
+    hashDeviceMountIdType: part-label
+filesystems:
+  - deviceId: esp
+    type: fat32
+    mountPoint:
+      path: /boot/efi
+      options: umask=0077
+  - deviceId: boot
+    type: ext4
+    mountPoint:
+      path: /boot
+  - deviceId: rootverity
+    type: ext4
+    mountPoint:
+      path: /
+      options: defaults,ro
+  - deviceId: sysexts
+    type: ext4
+    mountPoint:
+      path: /var/lib/extensions
+  - deviceId: confexts
+    type: ext4
+    mountPoint:
+      path: /var/lib/confexts
+  - deviceId: var
+    type: ext4
+    mountPoint:
+      path: /var
