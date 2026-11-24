@@ -1,0 +1,7 @@
+base:
+  $set:
+    ref: ubuntu_2404_amd64
+
+outputs:
+  $replace:
+    - format: baremetal-image
