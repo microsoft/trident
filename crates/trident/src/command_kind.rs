@@ -164,6 +164,18 @@ impl CommandKind {
         generates_servicing_id_for_family(&self.family)
     }
 
+    /// Constructs an arbitrary, non-servicing `CommandKind` for tests
+    /// elsewhere in the crate that need *some* `CommandKind` value and
+    /// don't care about its classification (e.g. exercising
+    /// `logging::operation_context`'s plumbing rather than
+    /// `CommandKind`'s own predicates). Not part of the public API: real
+    /// callers always go through a typed entry point or a named daemon
+    /// constructor, never an arbitrary string.
+    #[cfg(test)]
+    pub(crate) fn for_test(name: &str) -> Self {
+        Self::new(name.to_string(), Family::Other)
+    }
+
     fn daemon(family: Family) -> Self {
         let name: &'static str = family.into();
         Self::new(name.to_string(), family)

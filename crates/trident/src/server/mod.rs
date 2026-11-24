@@ -35,7 +35,7 @@ use trident_proto::v1preview::{
 use crate::{
     agentconfig::AgentConfig,
     cli::TridentExitCodes,
-    logging::logfwd::LogForwarder,
+    logging::{logfwd::LogForwarder, operation_context},
     reboot::{self, REBOOT_WAIT_DURATION_SECS},
     ExitKind, Logstream, TraceStream,
 };
@@ -150,7 +150,20 @@ pub fn server_main(
 }
 
 fn reboot(signals: ShutdownSignals) -> ExitCode {
-    if let Err(e) = reboot::request_reboot() {
+    // Reuse the just-finished servicing operation's own operation_id/
+    // command (captured via `save_reboot_operation` from inside
+    // `servicing_request`'s closure, before that operation's own
+    // `run_with_operation` scope ended) so `trident_system_reboot` --
+    // fired unconditionally by `request_reboot` -- is tagged with the
+    // originating operation instead of left completely untagged: by the
+    // time this function runs, the whole daemon event loop
+    // (`server_main_inner`/`main_task`) has already returned, so there is
+    // no thread-local operation context active here at all.
+    let request_result = operation_context::run_with_captured_operation(
+        operation_context::take_reboot_operation(),
+        reboot::request_reboot,
+    );
+    if let Err(e) = request_result {
         error!("Failed to request reboot: {e:?}");
         return TridentExitCodes::RebootUnsuccessful.into();
     }

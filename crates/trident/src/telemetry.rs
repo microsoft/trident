@@ -2,6 +2,7 @@ pub(crate) mod events {
     pub const AVERAGE_MEMORY_USAGE: &str = "average_memory_usage";
     pub const CLEAN_INSTALL_PROVISIONING_SECS: &str = "clean_install_provisioning_secs";
     pub const CLEAN_INSTALL_START: &str = "clean_install_start";
+    pub const COMMAND_START: &str = "command_start";
     pub const PEAK_MEMORY_USAGE: &str = "peak_memory_usage";
     pub const STREAM_IMAGE_START: &str = "stream_image_start";
     pub const TOTAL_CPU_TIME: &str = "total_cpu_time";
@@ -14,10 +15,13 @@ pub(crate) mod events {
 
 pub(crate) mod fields {
     pub const ASSET_ID: &str = "asset_id";
+    pub const COMMAND: &str = "command";
     pub const EXECUTION_TIME: &str = "execution_time";
     pub const KERNEL_VERSION: &str = "kernel_version";
     pub const METRIC_NAME: &str = "metric_name";
+    pub const OPERATION_ID: &str = "operation_id";
     pub const OS_RELEASE: &str = "os_release";
+    pub const SOURCE: &str = "source";
     pub const TOTAL_CPU: &str = "total_cpu";
     pub const TOTAL_MEMORY_GIB: &str = "total_memory_gib";
     pub const TRIDENT_VERSION: &str = "trident_version";
