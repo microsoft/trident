@@ -1,0 +1,7 @@
+; Fix for containerd 2.2+ MountManager plugin SELinux denial.
+; containerd 2.2 introduces a MountManager that opens a bbolt DB under
+; /run/containerd/ using mmap(). The base refpolicy (RELEASE_2_20240226)
+; grants manage_file_perms on container_runtime_t:file but that set does
+; not include 'map'. Upstream fixed this in commit 7876e51510 (May 2024).
+; This module backports the missing permission.
+(allow container_engine_system_domain container_runtime_t (file (map)))
