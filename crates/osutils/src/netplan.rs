@@ -1,9 +1,4 @@
-use std::{
-    fs::{self, OpenOptions},
-    io::Write,
-    os::unix::fs::OpenOptionsExt,
-    path::Path,
-};
+use std::{fs, path::Path};
 
 use anyhow::{Context, Error};
 use const_format::formatcp;
@@ -11,7 +6,7 @@ use log::debug;
 
 use netplan_types::NetworkConfig;
 
-use crate::dependencies::Dependency;
+use crate::{dependencies::Dependency, files};
 
 /// Path to Trident's netplan config file.
 pub const TRIDENT_NETPLAN_FILE: &str = "/etc/netplan/99-trident.yaml";
@@ -24,17 +19,12 @@ pub const NETPLAN_BACKUP_FILE: &str = formatcp!("{NETPLAN_BACKUP_DIR}{TRIDENT_NE
 /// Writes the given network configuration to Trident's netplan config file.
 pub fn write(value: &NetworkConfig) -> Result<(), Error> {
     debug!("Writing netplan config to {}", TRIDENT_NETPLAN_FILE);
-    OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(TRIDENT_NETPLAN_FILE)
-        .with_context(|| {
-            format!("Failed to open netplan configuration file {TRIDENT_NETPLAN_FILE}")
-        })?
-        .write_all(render_netplan_yaml(value)?.as_bytes())
-        .with_context(|| format!("Failed to write netplan config to {TRIDENT_NETPLAN_FILE}"))
+    files::write_file(
+        TRIDENT_NETPLAN_FILE,
+        0o600,
+        render_netplan_yaml(value)?.as_bytes(),
+    )
+    .with_context(|| format!("Failed to write netplan config to {TRIDENT_NETPLAN_FILE}"))
 }
 
 /// Executes `netplan generate`.
