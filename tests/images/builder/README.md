@@ -88,8 +88,11 @@ Builder can be run locally as a stand-alone tool:
 AZL4 base downloads use `mcr.microsoft.com/azurelinux/catalog/minimal-os:4`.
 The existing `azl4_qemu_guest` name and artifact path are retained for pipeline
 compatibility. `download-image azl4_qemu_guest` pulls the x86-64 OCI artifact
-with ORAS and decompresses its VHDX before customization. No Azure Storage
-credentials are needed for the base image.
+with ORAS and decompresses its VHDX. No Azure Storage credentials are needed.
+
+The AZL4 VM image defaults to its update COSI recipe. Select its base QCOW2
+recipe with `build trident-vm-grub-azl4-testimage --output-type qcow2`.
+Other images keep their existing configured format and recipe.
 
 ```bash
     python3 ./testimages.py <command>
@@ -106,7 +109,7 @@ The following commands are supported:
     python3 ./testimages.py dependencies <image_name>
     # Build an image locally
     python3 ./testimages.py build <image_name>
-    # Show key info about the image, such as name, source, base image, etc.
+    # Show key info about the image, such as name, source, config path, etc.
     python3 ./testimages.py show-image <image_name> <field>
     # Show info on key artifacts, such as the Image Customizer version or container image
     python3 ./testimages.py show-artifact
@@ -117,22 +120,16 @@ The following commands are supported:
 To build an image with Builder or test your changes to Builder, follow these steps:
 
 1. If necessary, make changes to the Builder source code.
-1. Download the base image. To find which base image an image builds on (as the build pipeline does), run:
-
-```bash
-    python3 ./testimages.py show-image <image_name> base-image
-```
-
-   Then download it:
+1. Download the base image:
 
 ```bash
     ./testimages.py download-image <base_image_name>
 ```
 
-1. If necessary, update the Image Customizer config for the image you want to build, by modifying the corresponding YAML in `test-images/platform-integration-images`. To see the config YAML used for each output type, run:
+1. If necessary, update the Image Customizer config for the image you want to build, by modifying the corresponding YAML in `test-images/platform-integration-images`. You can also find the relevant YAML by running:
 
 ```bash
-    python3 ./testimages.py show-image <image_name> output-and-config
+    python3 ./testimages.py show-image <image_name> config-file
 ```
 
 1. Build the image:

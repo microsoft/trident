@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from builder import BaseImageManifest, Distro
+from builder import BaseImageManifest
 from builder.download import download_base_image
 
 
@@ -18,7 +18,7 @@ class DownloadBaseImageTests(unittest.TestCase):
             image=SimpleNamespace(name="azl4_qemu_guest", path=self.target),
             package_name="minimal-os",
             version="4",
-            distro=Distro.AZL4,
+            catalog_reference="mcr.microsoft.com/azurelinux/catalog/minimal-os:4",
         )
 
     def pull(self, files):
@@ -40,7 +40,7 @@ class DownloadBaseImageTests(unittest.TestCase):
         )
 
     def test_azl3_download_keeps_existing_reference_and_plain_vhdx(self):
-        self.image.distro = Distro.AZL3
+        self.image.catalog_reference = None
         self.image.image.name = "baremetal"
         with self.pull({"image.vhdx": b"plain image"}) as pull:
             download_base_image(self.image)
