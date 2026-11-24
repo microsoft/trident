@@ -47,6 +47,8 @@ os:
 
   packages:
     install:
+      - attr
+      - cryptsetup
       - curl
       # AZL4: dnf5 (no `dnf` package on AZL4)
       - dnf5
@@ -64,13 +66,13 @@ os:
       # ^^^
       - lsof
       - mdadm
-      # AZL4 netplan and AZL4 systemd are incompatible at boot ... use
-      # cached netplan RPMs built from main
       - netplan
       - netplan-default-backend-networkd
       - openssh-server
+      - policycoreutils
+      - selinux-policy
       - tpm2-tools
-      # AZL4: shim added (AZL4 ships a real signed shim chain)
+      # Shim is packaged separately from GRUB on AZL4.
       - shim
       # WHY?  maybe baseimage is missing them?
       - sudo
