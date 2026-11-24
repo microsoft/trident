@@ -41,6 +41,12 @@ pub(crate) struct Fragment {
     pub(crate) params: IndexMap<String, ParamValue>,
     #[serde(default)]
     pub(crate) rpm_sources: Vec<PathBuf>,
+    /// Extra local paths (scripts, injected assets referenced only from `config:` text, etc.) that
+    /// invalidate this cell's incremental fingerprint when their content changes; concatenated across
+    /// matched fragments (base -> most-specific), mirroring `rpmSources`. Resolved the same way as the
+    /// image-level `extraDependencies` (relative to the image directory, not this fragment's own).
+    #[serde(default)]
+    pub(crate) extra_dependencies: Vec<PathBuf>,
     /// Extra IC command-line flags this fragment contributes; concatenated across matched fragments
     /// (base → most-specific), mirroring `rpmSources`.
     #[serde(default)]
