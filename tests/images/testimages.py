@@ -7,7 +7,7 @@ from builder import (
     ArtifactManifest,
     BaseImage,
     BaseImageManifest,
-    BlobImageManifest,
+    Distro,
     ImageConfig,
     OutputFormat,
     PipelineArtifactBaseImageManifest,
@@ -331,22 +331,11 @@ ARTIFACTS = ArtifactManifest(
         #     version="*",
         #     distro=Distro.AZL4,
         # ),
-        BlobImageManifest(
-            # Azure Linux 4.0 base VHDX from the AZL preview gallery's
-            # backing storage. Pinned to a specific daily build — bump
-            # the version segment in path_prefix to pick up a newer one.
-            #
-            # Source gallery:
-            #   azlpubDevGallery2mruiyvi / azure-linux-4-daily-x64
-            #   subscription e4ab81f8-030f-4593-a8f2-3ea2c7630a19
-            #   RG azl-acg-preview-publishing
-            #
-            # Storage account + container are supplied at runtime via
-            # --blob-storage-account / --blob-container CLI flags or
-            # the BLOB_STORAGE_ACCOUNT / BLOB_CONTAINER env vars.
+        BaseImageManifest(
             image=BaseImage.AZL4_QEMU_GUEST,
-            path_prefix="staging/azure-linux-4-daily-x64/4.0.2026051502",
-            file_suffix=".vhdfixed",
+            package_name="minimal-os",
+            version="4",
+            distro=Distro.AZL4,
         ),
     ],
 )

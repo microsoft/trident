@@ -81,6 +81,8 @@ os:
     install:
       # AZL4 equivalents of the AZL3 set. See updateimg-grub-azl4.yaml
       # for the rationale on each substitution.
+      - attr
+      - cryptsetup
       - curl
       - dnf5
       - efibootmgr
@@ -95,6 +97,8 @@ os:
       - netplan
       - netplan-default-backend-networkd
       - openssh-server
+      - policycoreutils
+      - selinux-policy
       - shim
       - sudo
       - systemd-networkd
