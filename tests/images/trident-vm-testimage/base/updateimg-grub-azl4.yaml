@@ -32,7 +32,9 @@ os:
       #   - dnf5 (no `dnf` package on AZL4)
       #   - grub2-efi-x64 + grub2-efi-x64-modules (no `-noprefix` package)
       #   - iptables-nft (no plain `iptables` meta on AZL4 base)
-      #   - shim added (AZL4 ships a real signed shim chain)
+      #   - shim packaged separately from GRUB
+      - attr
+      - cryptsetup
       - curl
       - dnf5
       - efibootmgr
@@ -47,6 +49,8 @@ os:
       - netplan
       - netplan-default-backend-networkd
       - openssh-server
+      - policycoreutils
+      - selinux-policy
       - shim
       - sudo
       - systemd-networkd
@@ -114,6 +118,8 @@ scripts:
     - path: scripts/post-install.sh
     - path: scripts/ssh-move-host-keys-azl4.sh
     - path: scripts/enable-regen-sshd-keys.sh
+    # Keep the COSI initramfs usable on different storage controllers.
+    - path: scripts/rebuild-initrd-azl4.sh
     # Strip SELinux labels from all files. See the script header for the
     # full rationale, but in short: the AZL4 base VHDX bakes in AZL4
     # SELinux contexts that Trident-from-AZL3-MOS can't preserve during
