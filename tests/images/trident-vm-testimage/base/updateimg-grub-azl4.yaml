@@ -48,6 +48,7 @@ os:
       - lsof
       - netplan
       - netplan-default-backend-networkd
+      - openssh-clients
       - openssh-server
       - policycoreutils
       - selinux-policy
