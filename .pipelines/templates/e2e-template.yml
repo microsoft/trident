@@ -299,6 +299,23 @@ stages:
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
 
+  # VM Testing (AZL4 host)
+  - ${{ if in(parameters.stageType, 'pr-e2e', 'ci', 'pre', 'full-validation') }}:
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          ${{ if eq(parameters.stageType, 'pr-e2e') }}:
+            buildPurpose: "pullrequest"
+          ${{ elseif eq(parameters.stageType, 'ci') }}:
+            buildPurpose: "post_merge"
+          ${{ elseif eq(parameters.stageType, 'pre') }}:
+            buildPurpose: "daily"
+          ${{ else }}:
+            buildPurpose: "weekly"
+          runtimeEnv: "host"
+          distro: azl4
+          stageSuffix: "_azl4"
+          testSecureBoot: false
+
   # TESTING stages for PRERELEASE
   - ${{ if eq(parameters.stageType, 'pre') }}:
       # Functional Testing
@@ -435,15 +452,6 @@ stages:
         parameters:
           buildPurpose: "pullrequest"
           runtimeEnv: "container"
-
-      # VM Testing (host, pullrequest) for AZL4
-      - template: stages/testing_vm/netlaunch-testing.yml
-        parameters:
-          buildPurpose: "pullrequest"
-          runtimeEnv: "host"
-          distro: azl4
-          stageSuffix: "_azl4"
-          testSecureBoot: false
 
       # Run direct streaming tests for amd64 with streaming images
       - template: direct-streaming-test.yml
