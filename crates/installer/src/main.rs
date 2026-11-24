@@ -157,6 +157,7 @@ mod tests {
     use log::Level;
     use tokio::sync::mpsc;
 
+    /// UI routing must not suppress startup failures or duplicate terminal-bound records.
     #[test]
     fn terminal_logs_use_ui_events_while_journal_and_startup_logs_remain_visible() {
         let record = Record::builder()
