@@ -7,19 +7,28 @@ use osutils::ipmi::{self, SendOutcome};
 
 use crate::client::AttemptOutcome;
 
+/// Generator ID used by `ipmitool` for system-management software events.
 const ANACONDA_GENERATOR_ID: u8 = 0x41;
+/// Event Message revision required by the Anaconda-compatible payload.
 const IPMI_EVENT_MESSAGE_REVISION: u8 = 0x04;
+/// IPMI sensor type for base OS boot and installation status.
 const IPMI_OS_BOOT_SENSOR_TYPE: u8 = 0x1f;
+/// Sensor number reserved for software-generated installation status.
 const IPMI_SENSOR_NUMBER: u8 = 0x00;
+/// Sensor-specific assertion event type used by the installation statuses.
 const IPMI_SENSOR_SPECIFIC_EVENT_TYPE: u8 = 0x6f;
+/// Anaconda event code for an installation attempt starting.
 const ANACONDA_STARTED_EVENT: u8 = 0x07;
+/// Anaconda event code for an installation attempt completing successfully.
 const ANACONDA_COMPLETED_EVENT: u8 = 0x08;
+/// Anaconda event code for an installation ending through a handled error.
 const ANACONDA_ABORTED_EVENT: u8 = 0x09;
+/// Anaconda event code for an installation ending unexpectedly.
 const ANACONDA_FAILED_EVENT: u8 = 0x0a;
 
 /// Installer lifecycle state reported to the local BMC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum InstallerStatus {
+enum InstallerStatus {
     /// A live installation attempt began.
     Started,
     /// Trident reported a successful terminal result.
@@ -30,12 +39,14 @@ pub(super) enum InstallerStatus {
     Failed,
 }
 
-pub(super) trait StatusReporter {
+/// Abstracts status delivery so lifecycle behavior can be tested without IPMI.
+trait StatusReporter {
+    /// Reports one lifecycle state without changing the installation outcome.
     fn report(&mut self, status: InstallerStatus) -> Result<SendOutcome, Error>;
 }
 
 /// Sends installer status through the local Linux IPMI interface.
-pub(super) struct LocalStatusReporter;
+struct LocalStatusReporter;
 
 impl StatusReporter for LocalStatusReporter {
     fn report(&mut self, status: InstallerStatus) -> Result<SendOutcome, Error> {
@@ -43,21 +54,25 @@ impl StatusReporter for LocalStatusReporter {
     }
 }
 
-/// Ensures each live attempt produces one start and one terminal event.
-pub(super) struct LiveAttemptReporter<R: StatusReporter> {
+/// Tracks one attempt and emits at most one start and one terminal event.
+struct AttemptReporter<R: StatusReporter> {
+    /// Delivers lifecycle events to the selected transport.
     reporter: R,
+    /// Records whether a start lacks a corresponding terminal outcome.
     active: bool,
 }
 
-impl<R: StatusReporter> LiveAttemptReporter<R> {
-    pub(super) fn new(reporter: R) -> Self {
+impl<R: StatusReporter> AttemptReporter<R> {
+    /// Creates an inactive reporter for one installation attempt.
+    fn new(reporter: R) -> Self {
         Self {
             reporter,
             active: false,
         }
     }
 
-    pub(super) fn start(&mut self) {
+    /// Reports the start once and marks the attempt active.
+    fn start(&mut self) {
         if self.active {
             return;
         }
@@ -65,7 +80,8 @@ impl<R: StatusReporter> LiveAttemptReporter<R> {
         self.active = true;
     }
 
-    pub(super) fn finish(&mut self, outcome: AttemptOutcome) {
+    /// Reports a handled terminal outcome once and marks the attempt inactive.
+    fn finish(&mut self, outcome: AttemptOutcome) {
         if !self.active {
             return;
         }
@@ -76,6 +92,7 @@ impl<R: StatusReporter> LiveAttemptReporter<R> {
         });
     }
 
+    /// Reports failure when an active attempt exits without a handled outcome.
     fn fail(&mut self) {
         if !self.active {
             return;
@@ -84,6 +101,7 @@ impl<R: StatusReporter> LiveAttemptReporter<R> {
         self.emit(InstallerStatus::Failed);
     }
 
+    /// Attempts delivery while keeping all reporting failures non-fatal.
     fn emit(&mut self, status: InstallerStatus) {
         match self.reporter.report(status) {
             Ok(SendOutcome::Sent) => {}
@@ -98,12 +116,39 @@ impl<R: StatusReporter> LiveAttemptReporter<R> {
     }
 }
 
-impl<R: StatusReporter> Drop for LiveAttemptReporter<R> {
+impl<R: StatusReporter> Drop for AttemptReporter<R> {
+    /// Converts an unclosed active attempt into a failed lifecycle event.
     fn drop(&mut self) {
         self.fail();
     }
 }
 
+/// Live-attempt reporter backed by the local Linux IPMI interface.
+pub(super) struct LiveAttemptReporter {
+    /// Owns the lifecycle state and local transport implementation.
+    inner: AttemptReporter<LocalStatusReporter>,
+}
+
+impl LiveAttemptReporter {
+    /// Creates an inactive best-effort local IPMI reporter.
+    pub(super) fn new() -> Self {
+        Self {
+            inner: AttemptReporter::new(LocalStatusReporter),
+        }
+    }
+
+    /// Reports the start of a live installation attempt.
+    pub(super) fn start(&mut self) {
+        self.inner.start();
+    }
+
+    /// Reports the handled terminal outcome of a live installation attempt.
+    pub(super) fn finish(&mut self, outcome: AttemptOutcome) {
+        self.inner.finish(outcome);
+    }
+}
+
+/// Encodes an installer lifecycle state as an Anaconda-compatible event payload.
 const fn payload(status: InstallerStatus) -> [u8; 8] {
     let event = match status {
         InstallerStatus::Started => ANACONDA_STARTED_EVENT,
@@ -186,7 +231,7 @@ mod tests {
     fn live_attempt_reports_one_start_and_terminal_outcome() {
         let (reporter, statuses) = mock_reporter(MockReportResult::Sent);
         {
-            let mut attempt = LiveAttemptReporter::new(reporter);
+            let mut attempt = AttemptReporter::new(reporter);
             attempt.start();
             attempt.start();
             attempt.finish(AttemptOutcome::Completed);
@@ -198,7 +243,7 @@ mod tests {
 
         let (reporter, statuses) = mock_reporter(MockReportResult::Sent);
         {
-            let mut attempt = LiveAttemptReporter::new(reporter);
+            let mut attempt = AttemptReporter::new(reporter);
             attempt.start();
             attempt.finish(AttemptOutcome::Aborted);
         }
@@ -212,7 +257,7 @@ mod tests {
     fn active_attempt_drop_reports_failed() {
         let (reporter, statuses) = mock_reporter(MockReportResult::Sent);
         {
-            let mut attempt = LiveAttemptReporter::new(reporter);
+            let mut attempt = AttemptReporter::new(reporter);
             attempt.start();
         }
         assert_eq!(
@@ -226,7 +271,7 @@ mod tests {
         for result in [MockReportResult::Unavailable, MockReportResult::Error] {
             let (reporter, statuses) = mock_reporter(result);
             {
-                let mut attempt = LiveAttemptReporter::new(reporter);
+                let mut attempt = AttemptReporter::new(reporter);
                 attempt.start();
                 attempt.finish(AttemptOutcome::Aborted);
             }

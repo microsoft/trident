@@ -43,7 +43,7 @@ mod theme;
 
 use model::{Action, LogSource, Model, Screen};
 pub(super) use output::Output;
-use status::{LiveAttemptReporter, LocalStatusReporter};
+use status::LiveAttemptReporter;
 use theme::VERBOSITY_LEVELS;
 
 /// Refresh often enough to show progress without busy-polling the terminal.
@@ -130,8 +130,10 @@ impl Drop for Display {
     }
 }
 
-/// Reloads live configuration for each installation attempt.
-/// Configuration read errors are reported as events rather than worker failures.
+/// Runs one live attempt and emits best-effort IPMI start and terminal events.
+///
+/// Configuration and servicing errors produce handled `Aborted` outcomes. If the worker exits
+/// without a handled outcome, dropping its reporter emits `Failed`.
 fn spawn_operation(
     config_path: PathBuf,
     request: Request,
@@ -139,7 +141,7 @@ fn spawn_operation(
     tx: mpsc::Sender<Event>,
 ) -> JoinHandle<Result<AttemptOutcome, Error>> {
     task::spawn(async move {
-        let mut attempt = LiveAttemptReporter::new(LocalStatusReporter);
+        let mut attempt = LiveAttemptReporter::new();
         attempt.start();
         match Config::read(config_path) {
             Ok(settings) => {

@@ -31,7 +31,7 @@ toml = { workspace = true }
 url = { workspace = true }
 
 # Local Crate Dependencies
-osutils = { path = "../osutils", features = ["run-interactive"] }
+osutils = { path = "../osutils", features = ["ipmi", "run-interactive"] }
 trident-client = { path = "../trident-client", features = ["preview"] }
 trident_api = { path = "../trident_api" }
 

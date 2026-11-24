@@ -15,20 +15,34 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Error};
-use nix::libc::{self, c_int, c_long, c_short, c_uchar, c_uint, c_ushort};
-use nix::poll::{self, PollFd, PollFlags, PollTimeout};
+use nix::{
+    libc::{self, c_int, c_long, c_short, c_uchar, c_uint, c_ushort},
+    poll::{self, PollFd, PollFlags, PollTimeout},
+};
 
+/// Primary local Linux IPMI character device.
 const IPMI_DEVICE: &str = "/dev/ipmi0";
+/// Maximum time to wait for the BMC response to one request.
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Linux IPMI address type for the local system interface.
 const IPMI_SYSTEM_INTERFACE_ADDR_TYPE: c_int = 0x0c;
+/// IPMI channel number reserved for the local BMC.
 const IPMI_BMC_CHANNEL: c_short = 0x0f;
+/// Linux IPMI receive type for a response to a submitted request.
 const IPMI_RESPONSE_RECV_TYPE: c_int = 1;
+/// Linux IPMI receive type for an unsolicited asynchronous event.
 const IPMI_ASYNC_EVENT_RECV_TYPE: c_int = 2;
+/// Sensor/Event request network function.
 const IPMI_REQUEST_NETFN: c_uchar = 0x04;
+/// Sensor/Event response network function.
 const IPMI_RESPONSE_NETFN: c_uchar = 0x05;
+/// IPMI command number for a Platform Event Message.
 const IPMI_PLATFORM_EVENT_COMMAND: c_uchar = 0x02;
+/// Correlation identifier for this module's single synchronous request.
 const IPMI_MESSAGE_ID: c_long = 1;
+/// Address buffer size accepted by `IPMICTL_RECEIVE_MSG_TRUNC`.
 const IPMI_MAX_ADDR_SIZE: usize = 32;
+/// Response buffer size for the completion code and any BMC response data.
 const IPMI_RESPONSE_DATA_SIZE: usize = 32;
 
 /// Result of attempting to send an event to the local BMC.
@@ -41,41 +55,69 @@ pub enum SendOutcome {
     Unavailable,
 }
 
-/// Sends an eight-byte Platform Event Message through `/dev/ipmi0`.
+/// Sends one Platform Event Message through the local Linux IPMI interface.
+///
+/// `data` is the eight-byte system-interface payload: the generator ID followed by the seven-byte
+/// Platform Event Message body. The call waits up to five seconds for the matching BMC response,
+/// ignoring unrelated asynchronous messages.
+///
+/// Returns [`SendOutcome::Unavailable`] only when `/dev/ipmi0` does not exist. Device-open errors,
+/// ioctl failures, timeouts, malformed replies, and BMC completion errors are returned to the
+/// caller.
 pub fn send_platform_event(data: [u8; 8]) -> Result<SendOutcome, Error> {
     send_with_opener(data, LinuxTransport::open)
 }
 
+/// Internal representation of one Linux IPMI request.
 #[derive(Clone, Copy, Debug)]
 struct Request {
+    /// Linux IPMI destination address type.
     address_type: c_int,
+    /// Destination IPMI channel.
     channel: c_short,
+    /// Destination logical unit number.
     lun: c_uchar,
+    /// Request network function.
     netfn: c_uchar,
+    /// Request command number.
     cmd: c_uchar,
+    /// Identifier used to correlate the response.
     msgid: c_long,
+    /// Platform Event Message system-interface payload.
     data: [u8; 8],
 }
 
+/// Owned fields extracted from one Linux IPMI receive operation.
 #[derive(Debug)]
 struct Response {
+    /// Linux IPMI receive classification.
     recv_type: c_int,
+    /// Identifier copied from the matching request.
     msgid: c_long,
+    /// Response network function.
     netfn: c_uchar,
+    /// Response command number.
     cmd: c_uchar,
+    /// Completion code followed by optional response data.
     data: Vec<u8>,
 }
 
+/// Minimal synchronous transport contract used by production and tests.
 trait Transport {
+    /// Submits one request to the local BMC.
     fn send(&mut self, request: &Request) -> Result<(), Error>;
+    /// Receives one response or returns `None` when the timeout expires.
     fn receive(&mut self, timeout: Duration) -> Result<Option<Response>, Error>;
 }
 
+/// Linux character-device transport for the local IPMI system interface.
 struct LinuxTransport {
+    /// Open read/write handle used for polling and ioctls.
     device: File,
 }
 
 impl LinuxTransport {
+    /// Opens the primary local IPMI device without leaking the descriptor across exec.
     fn open() -> Result<Self, io::Error> {
         OpenOptions::new()
             .read(true)
@@ -87,6 +129,7 @@ impl LinuxTransport {
 }
 
 impl Transport for LinuxTransport {
+    /// Converts the internal request into the Linux `ipmi_req` UAPI layout.
     fn send(&mut self, request: &Request) -> Result<(), Error> {
         let mut address = IpmiSystemInterfaceAddr {
             addr_type: request.address_type,
@@ -116,6 +159,7 @@ impl Transport for LinuxTransport {
         Ok(())
     }
 
+    /// Polls the IPMI descriptor and copies one kernel response into owned storage.
     fn receive(&mut self, timeout: Duration) -> Result<Option<Response>, Error> {
         let mut descriptors = [PollFd::new(self.device.as_fd(), PollFlags::POLLIN)];
         let timeout = PollTimeout::try_from(timeout).context("IPMI response timeout is invalid")?;
@@ -174,12 +218,14 @@ impl Transport for LinuxTransport {
     }
 }
 
+/// Converts a Rust structure size into the Linux UAPI's unsigned integer type.
 fn size_to_c_uint<T>() -> Result<c_uint, Error> {
     size_of::<T>()
         .try_into()
         .context("IPMI structure size does not fit the Linux UAPI")
 }
 
+/// Opens a transport and distinguishes a missing local device from operational errors.
 fn send_with_opener<T>(
     data: [u8; 8],
     open: impl FnOnce() -> Result<T, io::Error>,
@@ -198,6 +244,7 @@ where
     Ok(SendOutcome::Sent)
 }
 
+/// Sends one event and waits for its correlated successful response.
 fn send_with_transport(data: [u8; 8], transport: &mut impl Transport) -> Result<(), Error> {
     let request = Request {
         address_type: IPMI_SYSTEM_INTERFACE_ADDR_TYPE,
@@ -232,6 +279,7 @@ fn send_with_transport(data: [u8; 8], transport: &mut impl Transport) -> Result<
     }
 }
 
+/// Verifies the response envelope and BMC completion code.
 fn validate_response(response: &Response) -> Result<(), Error> {
     if response.recv_type != IPMI_RESPONSE_RECV_TYPE {
         bail!(
@@ -261,38 +309,59 @@ fn validate_response(response: &Response) -> Result<(), Error> {
     Ok(())
 }
 
+/// Linux `ipmi_system_interface_addr` layout from `linux/ipmi.h`.
 #[repr(C)]
 struct IpmiSystemInterfaceAddr {
+    /// Address discriminator.
     addr_type: c_int,
+    /// Local BMC channel.
     channel: c_short,
+    /// Logical unit number.
     lun: c_uchar,
 }
 
+/// Linux `ipmi_msg` layout from `linux/ipmi.h`.
 #[repr(C)]
 struct IpmiMsg {
+    /// Request or response network function.
     netfn: c_uchar,
+    /// Request or response command.
     cmd: c_uchar,
+    /// Number of bytes referenced by `data`.
     data_len: c_ushort,
+    /// Pointer to the request or response buffer.
     data: *mut c_uchar,
 }
 
+/// Linux `ipmi_req` layout from `linux/ipmi.h`.
 #[repr(C)]
 struct IpmiReq {
+    /// Pointer to an address structure.
     addr: *mut c_uchar,
+    /// Size of the address structure.
     addr_len: c_uint,
+    /// Caller-selected response correlation identifier.
     msgid: c_long,
+    /// Message envelope and payload.
     msg: IpmiMsg,
 }
 
+/// Linux `ipmi_recv` layout from `linux/ipmi.h`.
 #[repr(C)]
 struct IpmiRecv {
+    /// Kernel receive classification.
     recv_type: c_int,
+    /// Address output buffer.
     addr: *mut c_uchar,
+    /// Input capacity and output length of `addr`.
     addr_len: c_uint,
+    /// Response correlation identifier.
     msgid: c_long,
+    /// Response envelope and output buffer.
     msg: IpmiMsg,
 }
 
+/// Linux ioctl bindings from `linux/ipmi.h`.
 mod ioctl {
     use super::{IpmiRecv, IpmiReq};
 

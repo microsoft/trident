@@ -190,6 +190,10 @@ fn request_description(settings: &Config, request: &Request) -> String {
 ///
 /// After an uncertain previous operation, `require_idle` prevents a new write until the daemon
 /// answers a status request. Ambiguous RPC failures are reported as uncertain instead of retrying.
+///
+/// `terminal` is called exactly once for every handled terminal result before its UI event is
+/// queued. Unexpected internal failures return `Err` without calling it so the caller can report
+/// that the attempt failed without a handled result.
 pub(super) async fn execute(
     settings: Config,
     request: Request,

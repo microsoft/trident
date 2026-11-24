@@ -21,7 +21,7 @@ inventory = {workspace = true}
 linux-kernel-cmdline = {workspace = true}
 log = {workspace = true, features = ["std"]}
 netplan-types = {workspace = true}
-nix = {workspace = true, features = ["fs", "ioctl", "poll", "process", "term"]}
+nix = {workspace = true, features = ["fs", "process", "term"]}
 once_cell = {workspace = true}
 openssl = {workspace = true}
 serde = {workspace = true}
@@ -53,6 +53,8 @@ rand = {workspace = true}
 
 [features]
 functional-test = ["pytest", "test-utilities"]
+# Local Linux IPMI system-interface support.
+ipmi = ["nix/ioctl", "nix/poll"]
 pytest-generator = ["pytest"]
 run-interactive = []
 test-utilities = ["rand"]
