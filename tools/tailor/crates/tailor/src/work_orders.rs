@@ -119,7 +119,9 @@ pub(super) fn print_plan(
                     Operation::Customize => "customize",
                     Operation::Convert => "convert",
                 }];
-                if signed || exec::uses_output_artifacts(&cell.ic_config) {
+                if signed
+                    || exec::extracts_output_artifacts(&cell.ic_config, target.output_artifacts)
+                {
                     actions.push("extract");
                 }
                 if signed {

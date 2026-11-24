@@ -19,4 +19,4 @@ pub use container::connection::{ConnectionPlan, Endpoint, Resolution, ResolveInp
 pub use container::runtime::{BollardRuntime, NoopRuntime};
 pub use executor::IcExecutor;
 pub use lock::WorktreeLock;
-pub use output_artifacts::{ca_cert_name, uses_output_artifacts};
+pub use output_artifacts::{ca_cert_name, extracts_output_artifacts, uses_output_artifacts};

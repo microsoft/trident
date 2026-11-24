@@ -310,6 +310,62 @@ fn plan_expands_clone_steps_without_duplicate_outputs() {
 }
 
 #[test]
+fn plan_extraction_matches_policy_and_forced_signed_staging() {
+    let ws = order_only_workspace();
+    let manifest = ws.path().join("tailor.yaml");
+    let original = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        manifest,
+        format!(
+            "{original}previewFeatures: [signing]\nsigning:\n  default: test-ca\n  profiles:\n    test-ca:\n      backend: local-test-ca\n"
+        ),
+    )
+    .unwrap();
+    let image = ws.path().join("consumer/image.yaml");
+    let original = fs::read_to_string(&image).unwrap();
+    for (policy, signed, feature, block, expected) in [
+        ("strip", false, true, true, false),
+        ("scratch", false, true, true, true),
+        ("managed", false, false, true, false),
+        ("managed", false, true, false, false),
+        ("strip", true, true, true, true),
+    ] {
+        let flag = if feature {
+            "  previewFeatures: [output-artifacts]\n"
+        } else {
+            ""
+        };
+        let artifacts = if block {
+            "  output:\n    artifacts:\n      path: ./declared\n"
+        } else {
+            ""
+        };
+        let config = format!(
+            "outputArtifacts: {policy}\nsigning: {signed}\nconfig:\n{flag}{artifacts}  os: {{hostname: test}}\n"
+        );
+        fs::write(&image, original.replace("config: {}", &config)).unwrap();
+        let plan = work_order_plan_in(
+            ws.path(),
+            r#"{"schemaVersion":1,"cells":["consumer_stable_amd64_cosi"]}"#,
+        );
+        let step = plan["steps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|step| step["slug"] == "consumer_stable_amd64_cosi")
+            .unwrap();
+        assert_eq!(
+            step["actions"]
+                .as_array()
+                .unwrap()
+                .contains(&JsonValue::from("extract")),
+            expected,
+            "{policy}, signed={signed}, feature={feature}, block={block}"
+        );
+    }
+}
+
+#[test]
 fn invalid_work_orders_report_their_source_and_fail_as_usage_errors() {
     let ws = order_only_workspace();
     for order in [

@@ -82,10 +82,28 @@ pub fn select_work_order(
         }
     }
     if !order.exact_slugs().is_empty() {
+        let requested: BTreeSet<&str> = order.exact_slugs().iter().map(String::as_str).collect();
         let mut exact = BTreeMap::new();
-        for target in members {
+        for target in members.iter().filter(|target| {
+            requested.iter().any(|slug| {
+                slug.strip_prefix(target.name())
+                    .is_some_and(|suffix| suffix.starts_with('_'))
+            })
+        }) {
             for cell in orchestrator::cells(target)? {
-                exact.insert(cell.slug.to_string(), cell);
+                if requested.contains(cell.slug.as_ref()) {
+                    let slug = cell.slug.to_string();
+                    if let Some(previous) = exact.insert(slug.clone(), cell) {
+                        return Err(invalid(
+                            "slugs",
+                            format!(
+                                "ambiguous cell slug `{slug}` matches images `{}` and `{}`",
+                                previous.target.name(),
+                                target.name()
+                            ),
+                        ));
+                    }
+                }
             }
         }
         for (index, slug) in order.exact_slugs().iter().enumerate() {
@@ -297,6 +315,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(overlapping.len(), 2);
+    }
+
+    #[test]
+    fn exact_orders_do_not_render_unrelated_skipped_images() {
+        let workspace = WorkOrderWorkspace::new();
+        let app = workspace.target("app", PATH_BASE);
+        let experimental = workspace.target("experimental", "skip: true");
+        let members = [Arc::clone(&app), Arc::clone(&experimental)];
+        for input in ["cells: [app_amd64_cosi]", "slugs: [app_amd64_cosi]"] {
+            let roots = select(input, &members).unwrap();
+            assert_eq!(roots.len(), 1);
+            assert_eq!(schedule(&roots, &members).unwrap().cells().len(), 1);
+        }
+        select("cells: [app_typo]", &members).unwrap_err();
+        select("cells: [experimental_amd64_cosi]", &members).unwrap_err();
+        let dependent = workspace.target(
+            "dependent",
+            &format!("{PATH_BASE}\ndependsOn: [experimental]"),
+        );
+        let roots = select(
+            "cells: [dependent_amd64_cosi]",
+            &[Arc::clone(&dependent), Arc::clone(&experimental)],
+        )
+        .unwrap();
+        schedule(&roots, &[dependent, experimental]).unwrap_err();
     }
 
     #[test]
