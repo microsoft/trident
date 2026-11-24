@@ -580,13 +580,8 @@ bin/mkcosi: tools/cmd/mkcosi/* tools/go.sum tools/pkg/* tools/cmd/mkcosi/**/*
 	@mkdir -p bin
 	cd tools && go build -o ../bin/mkcosi ./cmd/mkcosi
 
-# Prerequisites must cover everything that ends up inside the binary, not just
-# the suite's own tree. It links tools/pkg, is pinned by the module files, and
-# EMBEDS the scenario configurations, which `go generate` derives from the
-# checked-in tests/e2e_tests tree via invert.py. Omitting any of these lets an
-# incremental build treat a stale binary as current, so a run silently uses
-# scenarios or code that predate the change under test.
-bin/storm-trident: tools/cmd/storm-trident/main.go tools/go.mod tools/go.sum tools/storm/e2e/invert.py tests/e2e_tests/target-configurations.yaml $(shell find tools/storm tools/pkg -name '*.go' 2>/dev/null) $(shell find tests/e2e_tests/trident_configurations -type f 2>/dev/null)
+# Include embedded configurations so edits invalidate the binary.
+bin/storm-trident: tools/cmd/storm-trident/main.go tools/go.mod tools/go.sum $(shell find tools/storm tools/pkg -name '*.go' 2>/dev/null) $(shell find tools/storm/e2e/configurations -type f 2>/dev/null)
 	@mkdir -p bin
 	# storm-trident transitively depends on the gRPC stubs and the RCP TLS
 	# certs, both of which are gitignored, so a fresh checkout has neither.
@@ -595,7 +590,6 @@ bin/storm-trident: tools/cmd/storm-trident/main.go tools/go.mod tools/go.sum too
 	# generation is skipped when the files already exist.
 	cd tools && go generate pkg/rcp/tlscerts/certs.go
 	cd tools && go generate pkg/tridentgrpc/grpc.go
-	cd tools && go generate storm/e2e/discover.go
 	cd tools && go build -o ../bin/storm-trident ./cmd/storm-trident/main.go
 
 bin/virtdeploy: tools/cmd/virtdeploy/* tools/go.sum tools/pkg/* tools/pkg/virtdeploy/*

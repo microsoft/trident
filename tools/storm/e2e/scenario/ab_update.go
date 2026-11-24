@@ -42,7 +42,7 @@ func (s *TridentE2EScenario) addAbUpdateTests(r storm.TestRegistrar, prefix stri
 // skipped on the current ring. The lowest ring for which we run split testing
 // is 'ci', matching the legacy suite: e2e-test-run.yml included the
 // stage-finalize test for daily, validation, weekly and post_merge, and
-// post_merge maps to 'ci' (invert.py). Gating it at 'pre' silently dropped it
+// post_merge corresponds to 'ci'. Gating it at 'pre' silently dropped it
 // from post-merge runs.
 //
 // TestRing is a string type, so this must compare pipeline order via Compare
