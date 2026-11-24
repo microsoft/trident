@@ -7,11 +7,14 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{bail, Error};
+use anyhow::{bail, Context, Error};
 use log::{debug, info, trace, warn};
 use maplit::hashmap;
 
-use osutils::{lsblk, sfdisk};
+use osutils::{
+    lsblk::{self, BlockDevice},
+    osrelease, sfdisk,
+};
 use sysdefs::partition_types::DiscoverablePartitionType;
 use trident_api::{
     config::{
@@ -114,9 +117,66 @@ struct LazyPartitionInfo {
     a_partition: PrismPartition,
 }
 
+fn has_root_partition(device: &BlockDevice) -> bool {
+    device
+        .children
+        .iter()
+        .any(|partition| partition.mountpoint.as_deref() == Some(Path::new(ROOT_MOUNT_POINT_PATH)))
+}
+
+fn has_offline_disk_metadata(devices: &[BlockDevice]) -> bool {
+    // Only the image disk matters here. Other host disks may lack UUIDs, and
+    // an unformatted inactive partition still needs PARTUUID/PARTN, not a filesystem UUID.
+    devices
+        .iter()
+        .find(|device| has_root_partition(device))
+        .is_some_and(|disk| {
+            disk.ptuuid
+                .as_ref()
+                .and_then(|uuid| uuid.as_uuid())
+                .is_some()
+                && disk.children.iter().all(|partition| {
+                    partition
+                        .part_uuid
+                        .as_ref()
+                        .and_then(|uuid| uuid.as_uuid())
+                        .is_some()
+                        && partition.partn.is_some_and(|number| number > 0)
+                })
+        })
+}
+
+fn retry_offline_disk_discovery(
+    initial: Result<Vec<BlockDevice>, Error>,
+    is_azl4: impl FnOnce() -> Result<bool, Error>,
+    retry: impl FnOnce() -> Result<Vec<BlockDevice>, Error>,
+) -> Result<Vec<BlockDevice>, Error> {
+    // Preserve working default probing, including on booted AZL4 systems.
+    // Delay OS detection too, so it cannot break an already successful discovery.
+    if initial
+        .as_ref()
+        .is_ok_and(|devices| has_offline_disk_metadata(devices))
+        || !is_azl4()?
+    {
+        return initial;
+    }
+
+    // Image Customizer gives the chroot an empty /run, hiding /run/udev.
+    // AZL4's udev-linked lsblk accepts an empty udev result without trying
+    // libblkid. AZL3 already probes directly and rejects --properties-by.
+    // Retry once on AZL4, based on the data we need rather than guessing the
+    // execution environment. This probe reads existing metadata; it does not write UUIDs.
+    let reason = match &initial {
+        Ok(_) => "image disk UUID or partition metadata is missing or invalid".to_string(),
+        Err(error) => format!("{error:#}"),
+    };
+    warn!("Retrying lsblk with direct blkid property probing: {reason}");
+    retry().context("Failed to retry lsblk with direct blkid property probing")
+}
+
 fn generate_host_status(
     history: &[PrismHistoryEntry],
-    mut lsblk_output: Vec<lsblk::BlockDevice>,
+    mut lsblk_output: Vec<BlockDevice>,
     lazy_partitions: &[String],
     disk: &String,
 ) -> Result<HostStatus, TridentError> {
@@ -245,12 +305,7 @@ fn generate_host_status(
     // running inside Prism, this will be a loop device such as /dev/loop29.
     let lsblk_device = lsblk_output
         .iter_mut()
-        .find(|d| {
-            d.children
-                .iter()
-                .filter_map(|p| p.mountpoint.as_ref())
-                .any(|m| m == Path::new("/"))
-        })
+        .find(|device| has_root_partition(device))
         .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
         .message("Failed to find root device in lsblk output")?;
 
@@ -261,14 +316,8 @@ fn generate_host_status(
     {
         Some(uuid) => uuid,
         None => {
-            // lsblk didn't surface a PTUUID. This can happen in chroot
-            // environments (e.g. image-customizer / MIC) where the
-            // exposed loop device has partition children but the GPT
-            // disk-id either isn't set on the partition table or isn't
-            // populated by lsblk's PTUUID column. Fall back to sfdisk
-            // (which reads the GPT directly), and if that also reports
-            // no disk-id, mint one and persist it so the resulting
-            // image carries it forward to runtime.
+            // Read GPT directly if discovery still lacks a usable disk UUID.
+            // Preserve the existing initialization behavior if GPT truly has none.
             let disk_dev_path = PathBuf::from("/dev").join(&lsblk_device.name);
             warn!(
                 "PTUUID not reported by lsblk for {}; falling back to sfdisk",
@@ -306,11 +355,8 @@ fn generate_host_status(
     // Compute disk_dev_path once for partition-UUID fallback below.
     let disk_dev_path = PathBuf::from("/dev").join(&lsblk_device.name);
 
-    // For each partition, ensure we have a usable PARTUUID. Mirror the
-    // disk-id fallback above: prefer lsblk, then sfdisk, then mint a
-    // fresh one and persist it via sfdisk. Some chroot environments
-    // don't surface PARTUUID via lsblk --output-all and may also leave
-    // the value unset on the underlying GPT.
+    // Retain GPT UUID recovery after discovery; the AZL4 retry above only reads metadata.
+    // UUID initialization remains a separate fallback when GPT has no usable value.
     for part in &mut lsblk_device.children {
         if part.part_uuid.as_ref().and_then(|u| u.as_uuid()).is_some() {
             continue;
@@ -625,9 +671,13 @@ pub fn execute(
         let history: Vec<PrismHistoryEntry> =
             serde_json::from_str(&history_file).structured(InvalidInputError::ParsePrismHistory)?;
 
-        let lsblk_output = lsblk::list()
-            .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
-            .message("Failed to run lsblk")?;
+        let lsblk_output = retry_offline_disk_discovery(
+            lsblk::list(),
+            osrelease::is_azl4,
+            lsblk::list_with_blkid_properties,
+        )
+        .structured(ExecutionEnvironmentMisconfigurationError::PrismChrootEnvironment)
+        .message("Failed to run lsblk")?;
 
         generate_host_status(&history, lsblk_output, lazy_partitions, disk)?
     };
@@ -711,8 +761,11 @@ fn find_history_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use osutils::lsblk::LsBlkOutput;
+
+    use anyhow::anyhow;
     use tempfile::NamedTempFile;
+
+    use osutils::lsblk::LsBlkOutput;
 
     // lsblk.json was adding a postCustomization step to the
     // usr-verity configuration in test-images
@@ -794,6 +847,104 @@ mod tests {
         assert!(host_status.partition_paths.contains_key("usr-hash-a"));
         assert!(host_status.partition_paths.contains_key("usr-hash-b"));
         assert_eq!(host_status.partition_paths.len(), 12);
+    }
+
+    #[test]
+    fn test_offline_disk_discovery_keeps_complete_default_output() {
+        let mut devices: LsBlkOutput = serde_json::from_str(LSBLK).unwrap();
+        devices.blockdevices.push(BlockDevice::default());
+        let result = retry_offline_disk_discovery(
+            Ok(devices.blockdevices.clone()),
+            || panic!("Complete discovery must not require OS detection"),
+            || panic!("Complete discovery must not retry"),
+        )
+        .unwrap();
+        assert_eq!(result, devices.blockdevices);
+    }
+
+    #[test]
+    fn test_offline_disk_discovery_retries_incomplete_azl4_output() {
+        let recovered: LsBlkOutput = serde_json::from_str(LSBLK).unwrap();
+        for field in [
+            "ptuuid",
+            "invalid-ptuuid",
+            "partuuid",
+            "invalid-partuuid",
+            "partn",
+            "root",
+        ] {
+            let mut incomplete = recovered.blockdevices.clone();
+            let disk = incomplete
+                .iter_mut()
+                .find(|device| has_root_partition(device))
+                .unwrap();
+            match field {
+                "ptuuid" => disk.ptuuid = None,
+                "invalid-ptuuid" => disk.ptuuid = Some("not-a-uuid".into()),
+                "partuuid" => disk.children[0].part_uuid = None,
+                "invalid-partuuid" => disk.children[0].part_uuid = Some("not-a-uuid".into()),
+                "partn" => disk.children[0].partn = None,
+                "root" => {
+                    for partition in &mut disk.children {
+                        partition.mountpoint = None;
+                    }
+                }
+                _ => unreachable!(),
+            }
+            let result = retry_offline_disk_discovery(
+                Ok(incomplete),
+                || Ok(true),
+                || Ok(recovered.blockdevices.clone()),
+            )
+            .unwrap();
+            assert_eq!(result, recovered.blockdevices, "{field}");
+        }
+    }
+
+    #[test]
+    fn test_offline_disk_discovery_preserves_azl3_results() {
+        let mut incomplete: LsBlkOutput = serde_json::from_str(LSBLK).unwrap();
+        incomplete
+            .blockdevices
+            .iter_mut()
+            .find(|device| has_root_partition(device))
+            .unwrap()
+            .ptuuid = None;
+        let result = retry_offline_disk_discovery(
+            Ok(incomplete.blockdevices.clone()),
+            || Ok(false),
+            || panic!("AZL3 must not use the unsupported properties option"),
+        )
+        .unwrap();
+        assert_eq!(result, incomplete.blockdevices);
+
+        let error = retry_offline_disk_discovery(
+            Err(anyhow!("initial lsblk failure")),
+            || Ok(false),
+            || panic!("AZL3 failures must not retry"),
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "initial lsblk failure");
+    }
+
+    #[test]
+    fn test_offline_disk_discovery_retries_failed_azl4_probe_once() {
+        let recovered: LsBlkOutput = serde_json::from_str(LSBLK).unwrap();
+        let result = retry_offline_disk_discovery(
+            Err(anyhow!("initial lsblk failure")),
+            || Ok(true),
+            || Ok(recovered.blockdevices.clone()),
+        )
+        .unwrap();
+        assert_eq!(result, recovered.blockdevices);
+
+        let error = retry_offline_disk_discovery(
+            Err(anyhow!("initial lsblk failure")),
+            || Ok(true),
+            || Err(anyhow!("blkid probe failure")),
+        )
+        .unwrap_err();
+        assert!(format!("{error:#}").contains("blkid probe failure"));
     }
 
     #[test]

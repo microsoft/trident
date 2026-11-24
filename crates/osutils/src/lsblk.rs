@@ -240,16 +240,23 @@ pub enum PartitionTableType {
 /// structs.
 ///
 pub fn list() -> Result<Vec<BlockDevice>, Error> {
-    parse_lsblk_output(&lsblk_output()?)
+    parse_lsblk_output(&lsblk_output(false)?)
+}
+
+/// Probes device properties directly through libblkid instead of udev.
+/// Requires an lsblk version supporting `--properties-by`.
+pub fn list_with_blkid_properties() -> Result<Vec<BlockDevice>, Error> {
+    parse_lsblk_output(&lsblk_output(true)?)
 }
 
 /// Reads the full device tree once for either block-device or label inspection.
-fn lsblk_output() -> Result<String, Error> {
-    Dependency::Lsblk
-        .cmd()
-        .arg("--json")
-        .arg("--output-all")
-        .arg("--bytes")
+fn lsblk_output(use_blkid: bool) -> Result<String, Error> {
+    let mut command = Dependency::Lsblk.cmd();
+    command.arg("--json").arg("--output-all").arg("--bytes");
+    if use_blkid {
+        command.arg("--properties-by").arg("blkid");
+    }
+    command
         .output_and_check()
         .context("Failed to execute lsblk")
 }
@@ -283,7 +290,7 @@ pub fn devices_by_labels(labels: &[&str]) -> Result<Vec<PathBuf>, Error> {
     );
     let mut devices = Vec::new();
     collect_devices_by_labels(
-        &parse_labelled_devices(&lsblk_output()?)?,
+        &parse_labelled_devices(&lsblk_output(false)?)?,
         labels,
         &mut devices,
     );
