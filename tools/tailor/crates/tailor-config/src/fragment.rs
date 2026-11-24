@@ -18,7 +18,7 @@ use serde_yaml_ng::Value;
 
 use crate::{
     error::ConfigError,
-    schema::{AxisValues, ExtraParam},
+    schema::{AxisValues, ExtraParam, SigningRef},
     types::ParamValue,
 };
 
@@ -45,6 +45,9 @@ pub(crate) struct Fragment {
     /// (base → most-specific), mirroring `rpmSources`.
     #[serde(default)]
     pub(crate) extra_params: Vec<ExtraParam>,
+    /// Opt a matched cell into a workspace signing profile.
+    #[serde(default)]
+    pub(crate) signing: Option<SigningRef>,
     /// Drop cells this fragment applies to from bulk selection unless the run pins the fragment's
     /// value or names the cell (`meta/docs/2026-07-22-fragment-skip.md`). Mergeable last-wins; a
     /// more-specific fragment may set `false` to un-skip.
