@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use tailor_config::{Arch, WorkOrder, WorkOrderSelection};
+use tailor_config::{self as config, Arch, AxisValues, ConfigError, WorkOrder, WorkOrderSelection};
 
 use crate::{Cell, CoreError, Selector, Target, imagedep, orchestrator};
 
@@ -151,9 +151,8 @@ fn could_own_slug(target: &Target, slug: &str) -> bool {
             _ => return false,
         }
     };
-    let Some(axes) = matrix else {
-        return coordinate.is_empty();
-    };
+    let empty_axes = AxisValues::new();
+    let axes = matrix.unwrap_or(&empty_axes);
     let mut suffixes = BTreeSet::from([coordinate]);
     for (index, values) in axes.values().enumerate() {
         let last = index + 1 == axes.len();
@@ -174,7 +173,18 @@ fn could_own_slug(target: &Target, slug: &str) -> bool {
             return false;
         }
     }
-    suffixes.contains("")
+    if !suffixes.contains("") {
+        return false;
+    }
+    let Some(selectors) = target.definition.selectors.as_ref() else {
+        return true;
+    };
+    match config::expand(axes, Some(selectors)) {
+        Ok(tuples) => tuples.iter().any(|tuple| tuple.coordinate() == coordinate),
+        Err(ConfigError::EmptySelection) => false,
+        // Invalid possible owners must still surface their normal render errors.
+        Err(_) => true,
+    }
 }
 
 fn check_cell_identity(previous: &Cell, cell: &Cell, field: &str) -> Result<(), CoreError> {
@@ -464,6 +474,33 @@ mod tests {
             let roots = select(input, &members).unwrap();
             assert_eq!(roots[0].target.name(), "app_extra");
         }
+    }
+
+    #[test]
+    fn work_order_exact_lookup_applies_manifest_selectors() {
+        let workspace = WorkOrderWorkspace::new();
+        let unrelated = workspace.target(
+            "app",
+            "skip: true\nmatrix: {variant: [extra, other]}\nselectors: {exclude: [{variant: extra}]}",
+        );
+        let owner = workspace.target("app_extra", PATH_BASE);
+        let members = [unrelated, owner];
+        for input in [
+            "cells: [app_extra_amd64_cosi]",
+            "slugs: [app_extra_amd64_cosi]",
+        ] {
+            let roots = select(input, &members).unwrap();
+            assert_eq!(roots[0].target.name(), "app_extra");
+        }
+        let interpretations = workspace.target(
+            "tuples",
+            &format!(
+                "{PATH_BASE}\nmatrix: {{left: [x, x_y], right: [y_z, z]}}\nselectors: {{exclude: [{{left: x_y, right: z}}]}}"
+            ),
+        );
+        let roots = select("cells: [tuples_x_y_z_amd64_cosi]", &[interpretations]).unwrap();
+        assert_eq!(roots[0].axes["left"], "x");
+        assert_eq!(roots[0].axes["right"], "y_z");
     }
 
     #[test]
