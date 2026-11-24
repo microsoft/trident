@@ -56,8 +56,7 @@ pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
         }
     }
     if ctx.servicing_type == ServicingType::AbUpdate {
-        let sysfs_root = container::get_host_relative_path("/sys".into())?;
-        validate_overlay_index(ctx, &sysfs_root)
+        validate_overlay_index(ctx, sysfs::overlay_index_enabled)
             .structured(InvalidInputError::InvalidBootConfiguration)?;
 
         let esp_path = container::get_host_relative_path(ctx.esp_mount_path.clone())?;
@@ -67,7 +66,10 @@ pub(super) fn validate_configuration(ctx: &EngineContext) -> Result<(), TridentE
     Ok(())
 }
 
-fn validate_overlay_index(ctx: &EngineContext, sysfs_root: &Path) -> Result<(), Error> {
+fn validate_overlay_index(
+    ctx: &EngineContext,
+    read_index: impl FnOnce() -> Result<bool, Error>,
+) -> Result<(), Error> {
     if ctx.servicing_type != ServicingType::AbUpdate
         || !ctx.host_os_release.get_distro().is_acl()
         || !ctx.bootloader().is_some_and(Bootloader::uses_mshv)
@@ -78,7 +80,7 @@ fn validate_overlay_index(ctx: &EngineContext, sysfs_root: &Path) -> Result<(), 
     // ACL retains /etc's upper across /usr replacements. Indexing can bind that
     // upper to the old lower filesystem and prevent the updated OS from booting.
     ensure!(
-        !sysfs::overlay_index_enabled(sysfs_root)?,
+        !read_index()?,
         "OverlayFS index is enabled; ACL MSHV A/B updates require it to be disabled \
          to avoid persistent /etc overlay origin verification failures. \
          Boot with overlay.index=off before staging an update"
@@ -130,11 +132,6 @@ mod tests {
 
     #[test]
     fn rejects_enabled_overlay_index_only_for_acl_mshv_ab_updates() {
-        let sysfs = TempDir::new().unwrap();
-        let path = sysfs.path().join("module/overlay/parameters/index");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, "Y\n").unwrap();
-
         for servicing_type in [
             ServicingType::CleanInstall,
             ServicingType::RuntimeUpdate,
@@ -160,7 +157,12 @@ mod tests {
                         ..Default::default()
                     };
                     assert_eq!(
-                        validate_overlay_index(&ctx, sysfs.path()).is_err(),
+                        validate_overlay_index(&ctx, || {
+                            assert_eq!(servicing_type, ServicingType::AbUpdate);
+                            assert!(is_acl && is_mshv);
+                            Ok(true)
+                        })
+                        .is_err(),
                         servicing_type == ServicingType::AbUpdate && is_acl && is_mshv,
                     );
                 }
@@ -170,7 +172,6 @@ mod tests {
 
     #[test]
     fn requires_disabled_overlay_index_and_preserves_probe_errors() {
-        let sysfs = TempDir::new().unwrap();
         let ctx = EngineContext {
             servicing_type: ServicingType::AbUpdate,
             host_os_release: OsRelease {
@@ -184,17 +185,19 @@ mod tests {
             )),
             ..Default::default()
         };
-        assert!(validate_overlay_index(&ctx, sysfs.path())
-            .unwrap_err()
-            .is::<std::io::Error>());
-        let path = sysfs.path().join("module/overlay/parameters/index");
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, "invalid").unwrap();
-        assert!(validate_overlay_index(&ctx, sysfs.path()).is_err());
-        fs::write(&path, "N\n").unwrap();
-        validate_overlay_index(&ctx, sysfs.path()).unwrap();
-        fs::write(&path, "Y\n").unwrap();
-        assert!(validate_overlay_index(&ctx, sysfs.path())
+        assert!(validate_overlay_index(&ctx, || {
+            Err(std::io::Error::from(std::io::ErrorKind::NotFound).into())
+        })
+        .unwrap_err()
+        .is::<std::io::Error>());
+        assert!(
+            validate_overlay_index(&ctx, || Err(anyhow!("invalid parameter")))
+                .unwrap_err()
+                .to_string()
+                .contains("invalid parameter")
+        );
+        validate_overlay_index(&ctx, || Ok(false)).unwrap();
+        assert!(validate_overlay_index(&ctx, || Ok(true))
             .unwrap_err()
             .to_string()
             .contains("overlay.index=off"));

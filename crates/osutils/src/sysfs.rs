@@ -5,10 +5,14 @@ use std::{
 
 use anyhow::{Context, Error};
 
-/// Reads the OverlayFS index default from the supplied host sysfs root.
+/// Reads the OverlayFS index default from `/sys`, also mounted there in containers.
 ///
 /// Mount options can override this default. Missing or malformed values are errors.
-pub fn overlay_index_enabled(sysfs_root: &Path) -> Result<bool, Error> {
+pub fn overlay_index_enabled() -> Result<bool, Error> {
+    overlay_index_enabled_from(Path::new("/sys"))
+}
+
+fn overlay_index_enabled_from(sysfs_root: &Path) -> Result<bool, Error> {
     let path = sysfs_root.join("module/overlay/parameters/index");
     let value = fs::read_to_string(&path).with_context(|| {
         format!(
@@ -105,18 +109,21 @@ mod tests {
     #[test]
     fn reads_overlay_index_and_rejects_missing_or_malformed_values() {
         let directory = tempfile::tempdir().unwrap();
-        assert!(overlay_index_enabled(directory.path())
+        assert!(overlay_index_enabled_from(directory.path())
             .unwrap_err()
             .is::<std::io::Error>());
         let path = directory.path().join("module/overlay/parameters/index");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         for (value, expected) in [("N\n", false), ("Y\n", true)] {
             fs::write(&path, value).unwrap();
-            assert_eq!(overlay_index_enabled(directory.path()).unwrap(), expected);
+            assert_eq!(
+                overlay_index_enabled_from(directory.path()).unwrap(),
+                expected
+            );
         }
         for value in ["", "off", "0", "y", "N\nY"] {
             fs::write(&path, value).unwrap();
-            assert!(overlay_index_enabled(directory.path())
+            assert!(overlay_index_enabled_from(directory.path())
                 .unwrap_err()
                 .to_string()
                 .contains("Unexpected OverlayFS index parameter value"));
