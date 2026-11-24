@@ -1,0 +1,33 @@
+# Base (vhd-fixed) counterpart to grub-verity-azure.yaml. The VHD is the
+# initial-deploy image and needs the dual-slot A/B partition layout (like
+# grub-verity-base.yaml), unlike the cosi update target which only ever
+# lands on a single slot. Shared os/scripts content comes from
+# grub-verity-base+grub-verity-azure-base.yaml; this file only layers the
+# azure-specific overrides on top. Storage uses the Azure-specific legacy
+# layout (15G disk cap, 16M ESP, growable /srv), not the generic QEMU
+# grub-verity-base sizing -- see storage-grub-verity-azure-base.yaml.
+outputs:
+  $replace:
+    - format: vhd-fixed
+base:
+  $set:
+    ref: core_selinux
+config:
+  storage:
+    $include: ./include/storage-grub-verity-azure-base.yaml
+  os:
+    selinux:
+      mode:
+        $set: permissive
+    packages:
+      install:
+        $remove:
+          - netplan
+        $append:
+          - selinux-policy
+          - WALinuxAgent
+    users:
+      $replace:
+        - name: testuser
+          secondaryGroups:
+            - wheel
