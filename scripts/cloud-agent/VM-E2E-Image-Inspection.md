@@ -168,8 +168,9 @@ The launcher's `AZ_INSTALLER=DEB` behavior is retained inside that child only.
 No site configuration, installed code, SDK, authentication or selector is patched.
 
 Before observing, complete CLI entrypoint and selected extension module sources
-must match fixed SHA256s from CLI `2.91.0` and extension source commit
-`1b7f6c0ffdbed8363dd4502cc9acfb25154333be`. CPython 3.10 through 3.14 is supported.
+must match fixed SHA256s from CLI `2.91.0` and the official extension `1.0.2`
+release wheel (release `20250624.2`, source commit
+`1b7f6c0ffdbed8363dd4502cc9acfb25154333be`). CPython 3.10 through 3.14 is supported.
 Executing entrypoint/function code objects and fixed function bindings are also
 checked against freshly compiled source. An unsupported launcher is invoked
 normally without observation. A preflight source/runtime mismatch publishes
@@ -197,6 +198,45 @@ gate still rejects mismatches, and unavailable phase facts remain unavailable.
 This is evidence of an unsupported observer, not evidence of why the original
 CLI download returned 1. The original command's separate exit is authoritative.
 Historical reports cannot retroactively identify the rejected gate.
+
+Run `45479532509` did identify `extension-sdk-client-source`, `hash-mismatch`,
+with observed SHA256
+`99aa577e32e9a9f0084ef7884e40b92e7897a58a87e41a9a15cdf9c1c431956b`.
+Its 19661-byte report SHA256 is
+`3d7423ad3301adfcac024cbda10b7cd9acf953552ba3ab033495d6f5833b1020`.
+This is observer incompatibility evidence only; phase facts remain unavailable
+and the separate original CLI exit 1 still has no established cause.
+
+The measured SDK source exactly matches the 14232-byte
+`azext_devops/devops_sdk/client.py` in the official
+[1.0.2 release](https://github.com/Azure/azure-devops-cli-extension/releases/tag/20250624.2)
+[wheel](https://github.com/Azure/azure-devops-cli-extension/releases/download/20250624.2/azure_devops-1.0.2-py2.py3-none-any.whl).
+The 1198093-byte wheel SHA256 is
+`e2b0de02a3a745128c3f6e8c2711b8bbdbc1ba8b3afd2408a1581f35b069ba59`,
+independently published in the
+[official extension index at commit 753f189436229fa116c5d232dde4f33cc69bd6b9](https://github.com/Azure/azure-cli-extensions/blob/753f189436229fa116c5d232dde4f33cc69bd6b9/src/index.json).
+That index's SHA256 is
+`c97a8f8c7a2b99569b90fc4c82c153bcc733eabf5796116eda9a3a7bb93307ed`.
+Wheel METADATA and `azext_devops/version.py` both identify version `1.0.2`.
+Its RECORD binds the SDK member to
+`sha256=mapXfjLpqfAITveITkC5LniXpYqH5BqaFc35wcQxlWs`, length 14232.
+
+The [release build template](https://github.com/Azure/azure-devops-cli-extension/blob/1b7f6c0ffdbed8363dd4502cc9acfb25154333be/.azure-pipelines/templates/build-publish-azure-devops-cli-extension.yml)
+runs [removeComments.py](https://github.com/Azure/azure-devops-cli-extension/blob/1b7f6c0ffdbed8363dd4502cc9acfb25154333be/scripts/removeComments.py)
+before building the wheel. Applying that exact transformation to the 15027-byte
+Git SDK client reproduces all 14232 released bytes. Only its header comments,
+`Client` docstring and `_send_request` docstring are removed. The whole executable
+AST is unchanged after removing those docstrings and location metadata.
+`Client._handle_error` has identical arguments and body AST; its first line
+moves from 240 to 226. The observer still compiles and checks the exact trusted
+file's code objects, so no runtime code-identity check is relaxed.
+
+Only the SDK client hash is replaced with this independently verified release
+hash. The other five pinned extension modules are byte-identical in the wheel.
+The old Git SDK hash and any other source variation remain rejected; the
+observer performs no comment stripping, normalization or version-based trust.
+This does not prove the entire installed package's provenance, authenticate
+to the feed, measure base bytes, or establish a download root cause.
 
 Only fixed credential-resolution, release-lookup, tool-bootstrap,
 download/extraction, invocation, spawn/wait and SDK-error function boundaries

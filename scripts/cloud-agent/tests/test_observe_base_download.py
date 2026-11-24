@@ -344,11 +344,16 @@ class ChildObserverTests(unittest.TestCase):
         self.assertIs(phase["returned"], True)
 
     def test_changed_source_falls_back_once_to_original_entrypoint(self):
-        for path in (
-            self.extension / "azext_devops/dev/common/external_tool.py",
-            self.extension / "azure/cli/__main__.py",
+        for relative, gate in (
+            (
+                "azext_devops/dev/common/external_tool.py",
+                "extension-external-tool-source",
+            ),
+            ("azext_devops/devops_sdk/client.py", "extension-sdk-client-source"),
+            ("azure/cli/__main__.py", "cli-main-source"),
         ):
-            with self.subTest(path=path):
+            with self.subTest(gate=gate):
+                path = self.extension / relative
                 body = path.read_bytes()
                 changed = body + b"\n# altered fixture\n"
                 path.write_bytes(changed)
@@ -358,11 +363,7 @@ class ChildObserverTests(unittest.TestCase):
                     self.assertEqual(
                         result,
                         observer.rejected(
-                            (
-                                "cli-main-source"
-                                if path.name == "__main__.py"
-                                else "extension-external-tool-source"
-                            ),
+                            gate,
                             "hash-mismatch",
                             hashlib.sha256(changed).hexdigest(),
                         ),

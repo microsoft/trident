@@ -19,7 +19,8 @@ from contextlib import contextmanager
 
 LIMIT = 4096
 CLI_SHA256 = "6202f37a66f6092d07ea7a9f05368dc3ffe7d93263482e1023d759a62560fda7"
-# Extension 1.0.2, source commit 1b7f6c0ffdbed8363dd4502cc9acfb25154333be.
+# Extension 1.0.2 release 20250624.2. The official build strips SDK docstrings
+# and header comments; pin released wheel bytes, not normalized Git source.
 CONTRACTS = {
     "dev.artifacts.universal": (
         "b479d4e943c49321d2fc046aefc98cc9195d263052632eebe30f0043cc7a369f",
@@ -49,7 +50,7 @@ CONTRACTS = {
         },
     ),
     "devops_sdk.client": (
-        "f711520454aa84be7195a20e63803592328ee7e88e0c6a98e1d5e8a2c1c1a707",
+        "99aa577e32e9a9f0084ef7884e40b92e7897a58a87e41a9a15cdf9c1c431956b",
         {"Client._handle_error": "sdk-http-error"},
     ),
 }
