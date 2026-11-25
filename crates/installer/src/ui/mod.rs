@@ -31,6 +31,7 @@ use trident_client::{LogLevel, ServicingEvent};
 use crate::{
     client::{self, AttemptOutcome, Event},
     config::Config,
+    ipmi::LiveAttemptReporter,
     source::{self, Request},
     terminal as installer_terminal, INSTALLER_LOG_TX,
 };
@@ -38,12 +39,10 @@ use crate::{
 mod model;
 mod output;
 mod render;
-mod status;
 mod theme;
 
 use model::{Action, LogSource, Model, Screen};
 pub(super) use output::Output;
-use status::LiveAttemptReporter;
 use theme::VERBOSITY_LEVELS;
 
 /// Refresh often enough to show progress without busy-polling the terminal.

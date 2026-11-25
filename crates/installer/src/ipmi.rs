@@ -124,26 +124,26 @@ impl<R: StatusReporter> Drop for AttemptReporter<R> {
 }
 
 /// Live-attempt reporter backed by the local Linux IPMI interface.
-pub(super) struct LiveAttemptReporter {
+pub(crate) struct LiveAttemptReporter {
     /// Owns the lifecycle state and local transport implementation.
     inner: AttemptReporter<LocalStatusReporter>,
 }
 
 impl LiveAttemptReporter {
     /// Creates an inactive best-effort local IPMI reporter.
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: AttemptReporter::new(LocalStatusReporter),
         }
     }
 
     /// Reports the start of a live installation attempt.
-    pub(super) fn start(&mut self) {
+    pub(crate) fn start(&mut self) {
         self.inner.start();
     }
 
     /// Reports the handled terminal outcome of a live installation attempt.
-    pub(super) fn finish(&mut self, outcome: AttemptOutcome) {
+    pub(crate) fn finish(&mut self, outcome: AttemptOutcome) {
         self.inner.finish(outcome);
     }
 }
