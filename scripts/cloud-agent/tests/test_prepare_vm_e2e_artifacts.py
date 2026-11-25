@@ -12,9 +12,10 @@ import tempfile
 import unittest
 import zipfile
 
-from contextlib import nullcontext
+from contextlib import nullcontext, contextmanager, redirect_stdout, redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
 SCRIPT = Path(__file__).resolve().parents[1] / "prepare_vm_e2e_artifacts.py"
 SPEC = importlib.util.spec_from_file_location("prepare_vm", SCRIPT)
@@ -218,7 +219,7 @@ class PrepareArtifactsTests(unittest.TestCase):
                 shutil.copyfile(Path(source) / f"{name}_{i % 2}.cosi", path)
         return subprocess.CompletedProcess(argv, 0)
 
-    def prepare(self, native=False):
+    def prepare(self, native=False, **kwargs):
         with (
             patch.object(resolver.ado, "request_json", side_effect=self.request),
             patch.object(resolver.ado, "download_file", side_effect=self.download),
@@ -230,7 +231,168 @@ class PrepareArtifactsTests(unittest.TestCase):
                 )
             ),
         ):
-            return resolver.prepare(self.args, "fixture-token")
+            return resolver.prepare(self.args, "fixture-token", **kwargs)
+
+    def main_args(self, handoff):
+        return [
+            str(SCRIPT),
+            "--build-id",
+            str(self.args.build_id),
+            "--expected-definition-id",
+            "5073",
+            "--expected-revision",
+            REVISION,
+            "--expected-ref",
+            self.args.expected_ref,
+            "--evidence",
+            str(self.args.evidence),
+            "--evidence-sha256",
+            self.args.evidence_sha256,
+            "--output",
+            str(self.args.output),
+            "--timeout-seconds",
+            "30",
+            "--failure-facts",
+            str(handoff),
+        ]
+
+    def test_complete_acquisition_checkpoints_are_fixed_and_preserve_prepared_bytes(
+        self,
+    ):
+        seen = []
+        path, pin = self.prepare(observe=seen.append)
+        runner.verify_bundle(path.parent, path, pin, REVISION)
+        self.assertTrue(set(seen) <= resolver.facts.OPERATIONS)
+        for operation in (
+            "acquire-build",
+            "acquire-timeline",
+            "acquire-stages",
+            "acquire-log-metadata",
+            "qualify-packet",
+            "qualify-logs",
+            "qualify-rpms",
+            "qualify-artifacts",
+            "acquire-artifact-list",
+            "acquire-output-create",
+            "prepare-tools",
+            "prepare-installers",
+            "prepare-images",
+            "prepare-image-verify",
+            "acquire-staging-cleanup",
+            "manifest-write",
+            "manifest-verify",
+            "manifest-promote",
+        ):
+            self.assertIn(operation, seen)
+        for name in self.packet["artifacts"]:
+            for action in (
+                "artifact-validate",
+                "artifact-download",
+                "artifact-extract",
+            ):
+                self.assertIn(action + "-" + name, seen)
+
+    def test_main_handoff_distinguishes_token_http_transport_and_qualification_failures(
+        self,
+    ):
+        for kind, operation, exception, http, code in (
+            ("token", "acquire-token", "CalledProcessError", None, 37),
+            ("http", "acquire-timeline", "HTTPError", 503, None),
+            ("transport", "acquire-timeline", "URLError", None, None),
+            ("qualification", "qualify-rpms", "ArtifactError", None, None),
+        ):
+            with self.subTest(kind=kind):
+                handoff = self.root / (kind + ".json")
+                if kind == "qualification":
+                    self.packet["rpms"]["checkoutRevision"] = "e" * 40
+                    self.pin()
+
+                def request(url, token):
+                    if "/timeline?" in url and kind in ("http", "transport"):
+                        error = resolver.ado.ArtifactError("fixture-private HTTP 401")
+                        if kind == "http":
+                            error.__cause__ = HTTPError(
+                                "fixture-private", 503, "private", None, None
+                            )
+                            self.addCleanup(error.__cause__.close)
+                        else:
+                            error.__cause__ = URLError("fixture-private")
+                        raise error
+                    return self.request(url, token)
+
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with (
+                    patch.object(sys, "argv", self.main_args(handoff)),
+                    patch.object(
+                        resolver.ado,
+                        "get_ado_token",
+                        **(
+                            {
+                                "side_effect": subprocess.CalledProcessError(
+                                    37, ["fixture-private HTTP 503"]
+                                )
+                            }
+                            if kind == "token"
+                            else {"return_value": "fixture-token"}
+                        ),
+                    ),
+                    patch.object(resolver.ado, "request_json", side_effect=request),
+                    redirect_stdout(stdout),
+                    redirect_stderr(stderr),
+                ):
+                    self.assertEqual(resolver.main(), 1)
+                value = resolver.facts.load_handoff(handoff)
+                self.assertEqual(value["state"], "failed")
+                self.assertEqual(
+                    value["fact"],
+                    {
+                        "operation": operation,
+                        "exceptionClass": exception,
+                        "httpStatus": http,
+                        "exitCode": code,
+                    },
+                )
+                self.assertNotIn("fixture-private", handoff.read_text())
+                self.assertNotIn(
+                    "fixture-private", stdout.getvalue() + stderr.getvalue()
+                )
+                self.assertEqual(self.downloads, [])
+
+    def test_staging_cleanup_cannot_replace_original_acquisition_failure(self):
+        handoff = self.root / "facts.json"
+
+        @contextmanager
+        def broken_cleanup(**kwargs):
+            staging = self.args.output / ".fixture-staging"
+            staging.mkdir()
+            try:
+                yield str(staging)
+            finally:
+                raise PermissionError("fixture-private-cleanup")
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with (
+            patch.object(sys, "argv", self.main_args(handoff)),
+            patch.object(resolver.ado, "get_ado_token", return_value="fixture-token"),
+            patch.object(resolver.ado, "request_json", side_effect=self.request),
+            patch.object(
+                resolver.ado,
+                "download_file",
+                side_effect=URLError("fixture-private-download"),
+            ),
+            patch.object(
+                resolver.tempfile, "TemporaryDirectory", side_effect=broken_cleanup
+            ),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            self.assertEqual(resolver.main(), 1)
+        row = resolver.facts.load_handoff(handoff)
+        self.assertEqual(row["fact"]["operation"], "artifact-download-go-tools")
+        self.assertEqual(row["fact"]["exceptionClass"], "URLError")
+        self.assertEqual(row["cleanupFailure"]["operation"], "acquire-staging-cleanup")
+        self.assertEqual(row["cleanupFailure"]["exceptionClass"], "PermissionError")
+        self.assertNotIn("fixture-private", handoff.read_text())
 
     def assert_rejected(self, message):
         with self.assertRaisesRegex((resolver.ado.ArtifactError, KeyError), message):

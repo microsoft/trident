@@ -12,6 +12,7 @@ import signal
 import stat
 import subprocess
 import sys
+import time
 import xml.etree.ElementTree as ET
 
 from contextlib import contextmanager
@@ -178,7 +179,26 @@ def signal_group(process, sig):
         return  # The entire group has already exited.
 
 
-def command(argv, cwd, log, timeout, grace, group_cleanup=False):
+class CommandStatus(int):
+    """Keep opt-in observer errors private without replacing the process status."""
+
+    def __new__(cls, status, primary_error):
+        value = super().__new__(cls, status)
+        value.primary_error = primary_error
+        value.observer_error = None
+        return value
+
+
+def command(
+    argv,
+    cwd,
+    log,
+    timeout,
+    grace,
+    group_cleanup=False,
+    progress=None,
+    failure_observer=None,
+):
     with log.open("wb") as stream:
         process = subprocess.Popen(
             argv,
@@ -188,14 +208,47 @@ def command(argv, cwd, log, timeout, grace, group_cleanup=False):
             start_new_session=True,
         )
         try:
-            status = process.wait(timeout=timeout)
+            if progress is None:
+                status = process.wait(timeout=timeout)
+            else:
+                deadline = time.monotonic() + timeout
+                while True:
+                    progress()
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired(argv, timeout)
+                    try:
+                        status = process.wait(timeout=min(1, remaining))
+                        break
+                    except subprocess.TimeoutExpired:
+                        if time.monotonic() >= deadline:
+                            raise
             signal_group(process, signal.SIGKILL)
             return status
         except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
             # Storm handles SIGTERM by cancelling the suite and running Cleanup.
             # Repeated cancellation must not release the host lock before reaping.
             reap(process, grace, group=group_cleanup)
-            return 130 if isinstance(error, KeyboardInterrupt) else 124
+            code = 130 if isinstance(error, KeyboardInterrupt) else 124
+            if progress is None and failure_observer is None:
+                return code
+            status = CommandStatus(code, error)
+            if failure_observer is not None:
+                try:
+                    failure_observer(error, exit_code=code)
+                except BaseException as observer_error:
+                    status.observer_error = observer_error
+            if progress is not None:
+                try:
+                    progress()
+                except BaseException as observer_error:
+                    if status.observer_error is None:
+                        status.observer_error = observer_error
+            return status
+        except BaseException:
+            if progress is not None:
+                reap(process, grace, group=group_cleanup)
+            raise
 
 
 @contextmanager
@@ -219,19 +272,28 @@ def host_lock():
         os.close(fd)
 
 
-def check_host():
+def check_host(observe=None):
+    def mark(operation):
+        if observe is not None:
+            observe(operation)
+
+    mark("host-platform")
     require(
         platform.system() == "Linux" and platform.machine() == "x86_64",
         "Requires disposable amd64 Ubuntu 22.04 host",
     )
+    mark("host-os-release")
     release = Path("/etc/os-release").read_text()
     require(
         "ID=ubuntu\n" in release and 'VERSION_ID="22.04"' in release,
         "Requires disposable Ubuntu 22.04 host",
     )
+    mark("host-kvm")
     require(os.access("/dev/kvm", os.R_OK | os.W_OK), "KVM is missing or inaccessible")
     for tool in ("sudo", "virsh", "qemu-system-x86_64"):
+        mark("host-tool-" + tool)
         require(shutil.which(tool), f"Missing prerequisite tool: {tool}")
+    mark("host-libvirt")
     subprocess.run(
         ["virsh", "-c", "qemu:///system", "list", "--all"],
         check=True,

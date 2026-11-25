@@ -228,7 +228,15 @@ def command(
     output=None,
     timeout=600,
     failure_fact="inspection-command-failed",
+    failure_observer=None,
 ):
+    def observe_failure(primary, exit_code=None):
+        if failure_observer is not None:
+            try:
+                failure_observer(primary, exit_code=exit_code)
+            except BaseException as observer_error:
+                primary.observer_error = observer_error
+
     # Never inherit tool output. Even failures can contain auth URLs or payloads.
     with (
         tempfile.TemporaryFile() as stdout,
@@ -237,26 +245,33 @@ def command(
             argv if failure_fact == "exact-base-universal-download-failed" else []
         ) as (wrapped, inherited, observation_fd),
     ):
-        process = subprocess.Popen(
-            wrapped if inherited else argv,
-            stdin=(
-                subprocess.PIPE
-                if data is not None
-                else input_file if input_file is not None else subprocess.DEVNULL
-            ),
-            stdout=output if output is not None else stdout,
-            stderr=stderr,
-            start_new_session=True,
-            **({"pass_fds": inherited} if inherited else {}),
-        )
+        try:
+            process = subprocess.Popen(
+                wrapped if inherited else argv,
+                stdin=(
+                    subprocess.PIPE
+                    if data is not None
+                    else input_file if input_file is not None else subprocess.DEVNULL
+                ),
+                stdout=output if output is not None else stdout,
+                stderr=stderr,
+                start_new_session=True,
+                **({"pass_fds": inherited} if inherited else {}),
+            )
+        except BaseException as error:
+            observe_failure(error)
+            raise
         try:
             process.communicate(data.encode() if data is not None else None, timeout)
         except BaseException as primary:
             try:
                 VM_RUNNER.reap(process, 10, group=True)
             finally:
+                observe_failure(primary, exit_code=process.returncode)
                 raise primary
         VM_RUNNER.signal_group(process, signal.SIGKILL)
+        if process.returncode and failure_observer is not None:
+            failure_observer(exit_code=process.returncode)
         if (
             process.returncode
             and failure_fact == "exact-base-universal-download-failed"
@@ -1054,7 +1069,12 @@ def execute(output, scratch, bootstrap_guestfish=False):
 
 
 def privileged_inspection(
-    args, *, execute_fn=None, failure_fn=None, publication_name="inspection.json"
+    args,
+    *,
+    execute_fn=None,
+    failure_fn=None,
+    publication_name="inspection.json",
+    retain_secondary_failure=False,
 ):
     execute_fn = execute_fn or execute
     failure_fn = failure_fn or failed_publication
@@ -1091,6 +1111,14 @@ def privileged_inspection(
                 stat.S_ISREG(original.st_mode) and original.st_nlink == 1,
                 "invalid-publication-file",
             )
+
+            def publish_failure(fact, error):
+                failure_fn(
+                    report_file,
+                    fact,
+                    **({"error": error} if retain_secondary_failure else {}),
+                )
+
             code = 1
             inspected = False
             try:
@@ -1113,13 +1141,15 @@ def privileged_inspection(
                         report_file, args.scratch, bootstrap_guestfish=True
                     )
                     inspected = True
-            except Cancelled:
+            except Cancelled as error:
                 if not inspected or code == 0:
-                    failure_fn(report_file, "privileged-inspection-cancelled")
+                    publish_failure("privileged-inspection-cancelled", error)
                     code = 130
-            except Exception:
-                if not inspected or code == 0:
-                    failure_fn(report_file, "privileged-inspection-setup-failed")
+                elif retain_secondary_failure:
+                    publish_failure("privileged-inspection-cancelled", error)
+            except Exception as error:
+                if not inspected or code == 0 or retain_secondary_failure:
+                    publish_failure("privileged-inspection-setup-failed", error)
                 code = code or 1
             finally:
                 try:
@@ -1140,11 +1170,13 @@ def privileged_inspection(
                     for fd, mode in ((report_file, 0o600), (directory, 0o700)):
                         os.fchmod(fd, mode)
                         os.fchown(fd, args.publication_uid, args.publication_gid)
-                except (OSError, Failure):
+                except (OSError, Failure) as error:
                     print("Exact report publication failed", file=sys.stderr)
                     if code == 0:
                         code = 1
-                        failure_fn(report_file, "exact-report-publication-failed")
+                        publish_failure("exact-report-publication-failed", error)
+                    elif retain_secondary_failure:
+                        publish_failure("exact-report-publication-failed", error)
             return code
         finally:
             os.close(report_file)

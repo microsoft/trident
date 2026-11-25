@@ -10,9 +10,16 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from contextlib import ExitStack, nullcontext, redirect_stderr, redirect_stdout
+from contextlib import (
+    ExitStack,
+    contextmanager,
+    nullcontext,
+    redirect_stderr,
+    redirect_stdout,
+)
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 SCRIPT = Path(__file__).resolve().parents[1] / "execute_vm_e2e_install.py"
 SPEC = importlib.util.spec_from_file_location("install_execution", SCRIPT)
@@ -131,7 +138,9 @@ class ExecutionTests(unittest.TestCase):
         patcher(execution.common, "host_lock", return_value=nullcontext())
         patcher(execution.common, "check_host")
         self.inspect_inventory = patcher(
-            execution, "inventory", side_effect=lambda: copy.deepcopy(self.inventory)
+            execution,
+            "inventory",
+            side_effect=lambda **kwargs: copy.deepcopy(self.inventory),
         )
         self.run = patcher(execution, "run", side_effect=self.run_command)
         stack.enter_context(
@@ -291,6 +300,770 @@ class ExecutionTests(unittest.TestCase):
                 self.run.assert_not_called()
                 self.args.expected_harness_revision = "b" * 40
 
+    def test_identity_operations_checkpoint_before_command_and_keep_native_exit(self):
+        for operation, prefix in (
+            ("identity-extension", ["az", "extension"]),
+            ("identity-umi-login", ["az", "login"]),
+        ):
+            with self.subTest(operation=operation), ExitStack() as stack:
+                self.patches(stack)
+
+                def command(argv, **kwargs):
+                    if argv[:2] == ["git", "rev-parse"]:
+                        return self.args.expected_harness_revision
+                    if argv[:2] == prefix:
+                        checkpoint = json.loads(self.output.read_text())
+                        self.assertEqual(checkpoint["lastStartedOperation"], operation)
+                        self.assertIsNone(checkpoint["failure"])
+                        kwargs["failure_observer"](exit_code=37)
+                        raise execution.inspection.Failure("fixture-private HTTP 503")
+                    return ""
+
+                stack.enter_context(
+                    patch.object(execution.inspection, "command", side_effect=command)
+                )
+                self.assertEqual(execution.execute(self.args, self.output), 1)
+                result = json.loads(self.output.read_text())
+                self.assertEqual(
+                    result["failure"], execution.facts.fact(operation, exit_code=37)
+                )
+                self.assertIsNone(result["cleanupFailure"])
+                self.assertNotIn("fixture-private", self.output.read_text())
+                self.run.assert_not_called()
+
+    def test_preflight_packet_binding_and_completion_failures_have_precise_operations(
+        self,
+    ):
+        for kind, operation in (
+            ("dependency", "prerequisite-git"),
+            ("credential", "ambient-credentials"),
+            ("packet", "packet-pin"),
+            ("digest", "manifest-digest"),
+            ("lineage", "lineage-bind"),
+            ("results", "scenario-results"),
+            ("recheck", "bundle-recheck"),
+        ):
+            with self.subTest(kind=kind), ExitStack() as stack:
+                self.work = self.root / ("runtime-" + kind)
+                self.work.mkdir(mode=0o700)
+                self.patches(stack)
+                if kind == "dependency":
+                    stack.enter_context(
+                        patch.object(
+                            execution.shutil,
+                            "which",
+                            side_effect=lambda name: (
+                                None if name == "git" else "/fixture/tool"
+                            ),
+                        )
+                    )
+                elif kind == "credential":
+                    stack.enter_context(
+                        patch.dict(os.environ, {"AZURE_DEVOPS_EXT_PAT": "fixture"})
+                    )
+                elif kind == "packet":
+                    stack.enter_context(
+                        patch.object(execution, "REVIEWED_PACKET_SHA256", "d" * 64)
+                    )
+                elif kind == "digest":
+                    stack.enter_context(
+                        patch.object(
+                            execution.common,
+                            "digest",
+                            side_effect=PermissionError("fixture-private"),
+                        )
+                    )
+                elif kind == "lineage":
+                    bad = copy.deepcopy(self.manifest)
+                    bad["lineage"]["basis"] = "fixture-private"
+                    self.verify.return_value = bad
+                elif kind == "results":
+                    stack.enter_context(
+                        patch.object(
+                            execution,
+                            "summarize",
+                            side_effect=ValueError("fixture-private"),
+                        )
+                    )
+                else:
+                    self.verify.side_effect = [
+                        self.manifest,
+                        PermissionError("fixture-private"),
+                    ]
+                self.assertNotEqual(execution.execute(self.args, self.output), 0)
+                result = json.loads(self.output.read_text())
+                self.assertEqual(result["failure"]["operation"], operation)
+                self.assertIn(
+                    result["failure"]["exceptionClass"],
+                    ("ValueError", "PermissionError"),
+                )
+                self.assertIsNone(result["failure"]["httpStatus"])
+                self.assertNotIn("fixture-private", self.output.read_text())
+
+    def test_primary_process_failure_survives_cleanup_failure_and_publication_callback(
+        self,
+    ):
+        with ExitStack() as stack:
+            self.patches(stack)
+            self.inspect_inventory.side_effect = [
+                self.inventory,
+                PermissionError("fixture-private-cleanup"),
+            ]
+
+            def failing(argv, work, name, timeout, **kwargs):
+                self.run_command(argv, work, name, timeout, **kwargs)
+                return 23 if name == "execution.log" else 0
+
+            self.run.side_effect = failing
+            self.assertEqual(execution.execute(self.args, self.output), 23)
+        result = json.loads(self.output.read_text())
+        self.assertEqual(result["failure"]["operation"], "scenario-process")
+        self.assertEqual(result["failure"]["exitCode"], 23)
+        self.assertEqual(
+            result["cleanupFailure"]["operation"], "final-inventory-domains"
+        )
+        self.assertEqual(result["cleanupFailure"]["exceptionClass"], "PermissionError")
+        primary, secondary = copy.deepcopy(result["failure"]), copy.deepcopy(
+            result["cleanupFailure"]
+        )
+        execution.failed_publication(
+            self.output, "privileged-inspection-setup-failed", result
+        )
+        self.assertEqual(result["failure"], primary)
+        self.assertEqual(result["cleanupFailure"], secondary)
+        self.assertEqual(result["outcome"], "failed")
+        self.assertNotIn("fixture-private", self.output.read_text())
+
+    def test_checkpoints_never_claim_success_before_all_completion_gates(self):
+        snapshots = []
+        write = execution.inspection.write_report
+
+        def capture(output, value):
+            snapshots.append(copy.deepcopy(value))
+            write(output, value)
+
+        with ExitStack() as stack:
+            self.patches(stack)
+            stack.enter_context(
+                patch.object(execution.inspection, "write_report", side_effect=capture)
+            )
+            self.assertEqual(execution.execute(self.args, self.output), 0)
+        self.assertGreater(len(snapshots), 30)
+        self.assertTrue(
+            all(row["outcome"] != "selected-scenario-passed" for row in snapshots[:-1])
+        )
+        self.assertEqual(snapshots[-1]["outcome"], "selected-scenario-passed")
+        self.assertTrue(snapshots[-1]["resourceInventoryRestored"])
+
+    def test_progress_publication_failure_precedes_child_shutdown_failure(self):
+        started = {
+            "state": "started",
+            "fact": execution.facts.fact("acquire-timeline"),
+            "cleanupFailure": None,
+        }
+        failed = copy.deepcopy(started)
+        failed["state"] = "failed"
+        failed["fact"]["exceptionClass"] = "KeyboardInterrupt"
+        publish = execution.publish
+        interrupted = False
+
+        def checkpoint(output, value):
+            nonlocal interrupted
+            if value["preparationHandoff"] == started and not interrupted:
+                interrupted = True
+                raise PermissionError("fixture-private HTTP 503")
+            publish(output, value)
+
+        def process(argv, work, name, timeout, **kwargs):
+            self.assertEqual(name, "prepare.log")
+            kwargs["progress"]()
+            self.fail("publication failure ignored")
+
+        with ExitStack() as stack:
+            self.patches(stack)
+            stack.enter_context(
+                patch.object(execution, "publish", side_effect=checkpoint)
+            )
+            stack.enter_context(
+                patch.object(
+                    execution.facts, "load_handoff", side_effect=[started, failed]
+                )
+            )
+            self.run.side_effect = process
+            self.assertEqual(execution.execute(self.args, self.output), 1)
+        value = json.loads(self.output.read_text())
+        self.assertEqual(
+            value["failure"],
+            execution.facts.fact(
+                "checkpoint-publication", PermissionError("fixture-private")
+            ),
+        )
+        self.assertEqual(value["preparationHandoff"], failed)
+        self.assertNotIn("fixture-private", self.output.read_text())
+
+    def test_report_limit_measures_pretty_bytes_before_writing(self):
+        self.output.write_bytes(b"fixture-safe-sentinel")
+        value = execution.report()
+        value["scope"] = ""
+        length = len((json.dumps(value, indent=2) + "\n").encode())
+        value["scope"] = "x" * (execution.REPORT_LIMIT - length)
+        with self.assertRaises(ValueError):
+            execution.publish(self.output, value)
+        self.assertEqual(self.output.read_bytes(), b"fixture-safe-sentinel")
+
+    def test_child_failure_with_zero_exit_stops_before_host_setup(self):
+        value = {
+            "state": "failed",
+            "fact": execution.facts.fact("acquire-token", exit_code=37),
+            "cleanupFailure": None,
+        }
+        with ExitStack() as stack:
+            self.patches(stack)
+            stack.enter_context(
+                patch.object(execution.facts, "load_handoff", return_value=value)
+            )
+            self.assertEqual(execution.execute(self.args, self.output), 1)
+            self.assertEqual(self.run.call_count, 1)
+        result = json.loads(self.output.read_text())
+        self.assertEqual(result["failure"], value["fact"])
+        self.assertEqual(result["phase"], "prepare")
+        self.assertEqual(result["outcome"], "failed")
+
+    def test_privileged_secondary_handoff_failure_is_opt_in_and_preserves_primary_fd(
+        self,
+    ):
+        for enabled in (False, True):
+            result = execution.report()
+            result["failure"] = execution.facts.fact("scenario-process", exit_code=7)
+            primary = copy.deepcopy(result["failure"])
+            output = self.root / str(enabled) / "execution.json"
+            execution.inspection.prepare_publication(
+                output,
+                publication_name="execution.json",
+                failure_fn=execution.failed_publication,
+            )
+            args = argparse.Namespace(
+                output=output,
+                scratch=self.root,
+                publication_uid=os.getuid(),
+                publication_gid=os.getgid(),
+            )
+
+            def execute(fd, *args, **kwargs):
+                execution.publish(fd, result)
+                return 7
+
+            stderr = io.StringIO()
+            with (
+                patch.dict(os.environ),
+                patch.object(execution.os, "geteuid", return_value=0),
+                patch.object(
+                    execution.os,
+                    "fchown",
+                    side_effect=PermissionError("fixture-private"),
+                ),
+                redirect_stderr(stderr),
+            ):
+                code = execution.inspection.privileged_inspection(
+                    args,
+                    execute_fn=execute,
+                    publication_name="execution.json",
+                    failure_fn=lambda fd, fact, **kwargs: execution.failed_publication(
+                        fd, fact, result, **kwargs
+                    ),
+                    retain_secondary_failure=enabled,
+                )
+            self.assertEqual(code, 7)
+            value = json.loads(output.read_text())
+            self.assertEqual(value["failure"], primary)
+            if enabled:
+                self.assertEqual(
+                    value["cleanupFailure"]["operation"], "publication-finalize"
+                )
+                self.assertEqual(
+                    value["cleanupFailure"]["exceptionClass"], "PermissionError"
+                )
+            else:
+                self.assertIsNone(value["cleanupFailure"])
+            self.assertNotIn("fixture-private", output.read_text() + stderr.getvalue())
+
+    def test_optional_host_preflight_observer_distinguishes_kvm_tool_and_connection(
+        self,
+    ):
+        for kind, operation in (
+            ("kvm", "host-kvm"),
+            ("tool", "host-tool-virsh"),
+            ("connection", "host-libvirt"),
+        ):
+            trace = execution.facts.Trace(lambda *args: None)
+            with (
+                patch.object(execution.common.platform, "system", return_value="Linux"),
+                patch.object(
+                    execution.common.platform, "machine", return_value="x86_64"
+                ),
+                patch.object(
+                    Path, "read_text", return_value='ID=ubuntu\nVERSION_ID="22.04"\n'
+                ),
+                patch.object(execution.os, "access", return_value=kind != "kvm"),
+                patch.object(
+                    execution.shutil,
+                    "which",
+                    side_effect=lambda name: (
+                        None if kind == "tool" and name == "virsh" else "/fixture/tool"
+                    ),
+                ),
+                patch.object(
+                    execution.common.subprocess,
+                    "run",
+                    side_effect=execution.prepare.subprocess.CalledProcessError(
+                        37, ["fixture-private"]
+                    ),
+                ),
+            ):
+                with self.assertRaises(
+                    (ValueError, execution.prepare.subprocess.CalledProcessError)
+                ) as caught:
+                    execution.common.check_host(observe=trace.start)
+                trace.fail(caught.exception)
+            self.assertEqual(trace.failure["operation"], operation)
+            self.assertNotIn("fixture-private", json.dumps(trace.failure))
+
+    def test_privileged_context_cleanup_keeps_primary_and_typed_secondary(self):
+        for error in (
+            PermissionError("fixture-private HTTP 503"),
+            execution.inspection.Cancelled(),
+        ):
+            for primary in (7, 130, 0):
+                result = execution.report()
+                if primary:
+                    result["failure"] = execution.facts.fact(
+                        "scenario-process", exit_code=primary
+                    )
+                output = (
+                    self.root / (type(error).__name__ + str(primary)) / "execution.json"
+                )
+                execution.inspection.prepare_publication(
+                    output,
+                    publication_name="execution.json",
+                    failure_fn=execution.failed_publication,
+                )
+                args = argparse.Namespace(
+                    output=output,
+                    scratch=self.root,
+                    publication_uid=os.getuid(),
+                    publication_gid=os.getgid(),
+                )
+
+                @contextmanager
+                def context(**kwargs):
+                    yield str(self.work)
+                    raise error
+
+                def execute(fd, *args, **kwargs):
+                    execution.publish(fd, result)
+                    return primary
+
+                with (
+                    patch.dict(os.environ),
+                    patch.object(execution.os, "geteuid", return_value=0),
+                    patch.object(execution.os, "fchown"),
+                    patch.object(
+                        execution.tempfile, "TemporaryDirectory", side_effect=context
+                    ),
+                ):
+                    code = execution.inspection.privileged_inspection(
+                        args,
+                        execute_fn=execute,
+                        publication_name="execution.json",
+                        failure_fn=lambda fd, fact, **kwargs: execution.failed_publication(
+                            fd, fact, result, **kwargs
+                        ),
+                        retain_secondary_failure=True,
+                    )
+                cancelled = isinstance(error, execution.inspection.Cancelled)
+                self.assertEqual(code, primary or (130 if cancelled else 1))
+                value = json.loads(output.read_text())
+                key = "cleanupFailure" if primary else "failure"
+                operation = "cancelled-context" if cancelled else "privileged-context"
+                self.assertEqual(value[key], execution.facts.fact(operation, error))
+                if primary:
+                    self.assertEqual(value["failure"]["exitCode"], primary)
+                self.assertNotIn("fixture-private", output.read_text())
+
+    def test_typed_preparer_failure_and_cleanup_are_retained_before_process_returns(
+        self,
+    ):
+        error = HTTPError("fixture-private", 503, "private", None, None)
+        self.addCleanup(error.close)
+        value = {
+            "state": "failed",
+            "fact": execution.facts.fact("acquire-timeline", error),
+            "cleanupFailure": execution.facts.fact(
+                "acquire-staging-cleanup", PermissionError("fixture-private")
+            ),
+        }
+        with ExitStack() as stack:
+            self.patches(stack)
+            stack.enter_context(
+                patch.object(execution.facts, "load_handoff", return_value=value)
+            )
+
+            def failed(argv, work, name, timeout, **kwargs):
+                self.assertEqual(name, "prepare.log")
+                kwargs["progress"]()
+                checkpoint = json.loads(self.output.read_text())
+                self.assertEqual(checkpoint["failure"], value["fact"])
+                self.assertEqual(checkpoint["lastStartedOperation"], "acquire-timeline")
+                return 1
+
+            self.run.side_effect = failed
+            self.assertEqual(execution.execute(self.args, self.output), 1)
+        result = json.loads(self.output.read_text())
+        self.assertEqual(result["failure"], value["fact"])
+        self.assertEqual(result["cleanupFailure"], value["cleanupFailure"])
+        self.assertEqual(result["preparationHandoff"], value)
+        self.assertIsNone(result["caseCounts"])
+        self.assertNotIn("fixture-private", self.output.read_text())
+
+    def test_opt_in_shared_command_retains_exit_spawn_and_timeout_without_output(self):
+        events = []
+        trace = execution.facts.Trace(lambda state, value: events.append(value))
+        trace.start("identity-umi-login")
+        with self.assertRaises(execution.inspection.Failure):
+            execution.inspection.command(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('fixture-private HTTP 503', file=sys.stderr); sys.exit(37)",
+                ],
+                failure_observer=trace.fail,
+            )
+        self.assertEqual(
+            trace.failure, execution.facts.fact("identity-umi-login", exit_code=37)
+        )
+        self.assertNotIn("fixture-private", json.dumps(events))
+        trace = execution.facts.Trace(lambda *args: None)
+        trace.start("identity-extension")
+        with self.assertRaises(FileNotFoundError):
+            execution.inspection.command(
+                [str(self.root / "fixture-nonexistent-command")],
+                failure_observer=trace.fail,
+            )
+        self.assertEqual(trace.failure["exceptionClass"], "FileNotFoundError")
+        trace = execution.facts.Trace(lambda *args: None)
+        trace.start("identity-umi-login")
+        with self.assertRaises(execution.prepare.subprocess.TimeoutExpired):
+            execution.inspection.command(
+                [sys.executable, "-c", "import time; time.sleep(60)"],
+                timeout=0.1,
+                failure_observer=trace.fail,
+            )
+        self.assertEqual(trace.failure["exceptionClass"], "TimeoutExpired")
+        self.assertIn(trace.failure["exitCode"], (-15, -9))
+
+    def test_native_progress_timeout_cancel_and_observer_failure_reap(self):
+        path = self.work / "facts.json"
+        value = {
+            "state": "started",
+            "fact": execution.facts.fact("acquire-timeline"),
+            "cleanupFailure": None,
+        }
+        seen = []
+
+        def progress():
+            try:
+                seen.append(execution.facts.load_handoff(path)["fact"]["operation"])
+            except FileNotFoundError:
+                seen.append("unavailable")
+
+        code = execution.run(
+            [
+                sys.executable,
+                "-c",
+                "import pathlib,sys,time; p=pathlib.Path(sys.argv[1]); p.write_text(sys.argv[2]); p.chmod(0o600); time.sleep(60)",
+                str(path),
+                json.dumps(value),
+            ],
+            self.work,
+            "progress.log",
+            0.3,
+            group=True,
+            grace=0.1,
+            progress=progress,
+        )
+        self.assertEqual(code, 124)
+        self.assertIn("acquire-timeline", seen)
+        wait = execution.common.subprocess.Popen.wait
+        interrupted = False
+
+        def cancel_once(process, timeout=None):
+            nonlocal interrupted
+            if not interrupted:
+                interrupted = True
+                raise KeyboardInterrupt()
+            return wait(process, timeout=timeout)
+
+        with patch.object(execution.common.subprocess.Popen, "wait", cancel_once):
+            code = execution.run(
+                [sys.executable, "-c", "import time; time.sleep(60)"],
+                self.work,
+                "cancel-progress.log",
+                30,
+                group=True,
+                grace=0.1,
+                progress=progress,
+            )
+        self.assertEqual(code, 130)
+        self.assertEqual(seen[-1], "acquire-timeline")
+        with (
+            patch.object(execution.common, "reap", wraps=execution.common.reap) as reap,
+            self.assertRaises(ValueError),
+        ):
+            execution.run(
+                [sys.executable, "-c", "import time; time.sleep(60)"],
+                self.work,
+                "observer.log",
+                30,
+                group=True,
+                grace=0.1,
+                progress=lambda: (_ for _ in ()).throw(ValueError("fixture-private")),
+            )
+        reap.assert_called_once()
+        self.assertIsNotNone(reap.call_args.args[0].poll())
+
+    def test_native_post_reap_observer_errors_preserve_primary_status_or_exception(
+        self,
+    ):
+        popen = execution.common.subprocess.Popen
+        wait = popen.wait
+        for helper, location in (
+            ("runner", "progress"),
+            ("runner", "failure"),
+            ("inspector", "failure"),
+        ):
+            for cancelled in (False, True):
+                with (
+                    self.subTest(helper=helper, location=location, cancelled=cancelled),
+                    ExitStack() as stack,
+                ):
+                    processes = []
+                    events = []
+                    interrupted = False
+
+                    def spawn(*args, **kwargs):
+                        process = popen(*args, **kwargs)
+                        processes.append(process)
+                        return process
+
+                    def cancel_once(process, *args, **kwargs):
+                        nonlocal interrupted
+                        if not interrupted:
+                            interrupted = True
+                            raise KeyboardInterrupt()
+                        return wait(process, *args, **kwargs)
+
+                    def emit(state, value):
+                        self.assertIsNotNone(processes[0].poll())
+                        events.append(value)
+                        if location == "failure":
+                            raise PermissionError("fixture-private HTTP 503")
+
+                    trace = execution.facts.Trace(emit)
+                    trace.operation = (
+                        "prepare-process"
+                        if helper == "runner"
+                        else "identity-extension"
+                    )
+
+                    def progress():
+                        if trace.failure is not None:
+                            self.assertIsNotNone(processes[0].poll())
+                            if location == "progress":
+                                raise PermissionError("fixture-private HTTP 503")
+                            raise OSError("fixture-private later observer")
+
+                    stack.enter_context(
+                        patch.object(
+                            execution.common.subprocess, "Popen", side_effect=spawn
+                        )
+                    )
+                    if cancelled:
+                        method = "wait" if helper == "runner" else "communicate"
+                        stack.enter_context(patch.object(popen, method, cancel_once))
+                    argv = [sys.executable, "-c", "import time; time.sleep(60)"]
+                    if helper == "runner":
+                        value = execution.run(
+                            argv,
+                            self.work,
+                            "observer-precedence.log",
+                            0.05,
+                            group=True,
+                            grace=0.1,
+                            progress=progress,
+                            failure_observer=trace.fail,
+                        )
+                        self.assertEqual(value, 130 if cancelled else 124)
+                        self.assertIs(value.primary_error, trace.error)
+                        self.assertEqual(json.dumps(value), str(int(value)))
+                    else:
+                        expected = (
+                            KeyboardInterrupt
+                            if cancelled
+                            else execution.prepare.subprocess.TimeoutExpired
+                        )
+                        with self.assertRaises(expected) as caught:
+                            execution.inspection.command(
+                                argv, timeout=0.05, failure_observer=trace.fail
+                            )
+                        value = caught.exception
+                        self.assertIs(value, trace.error)
+                    self.assertIsInstance(value.observer_error, PermissionError)
+                    self.assertEqual(
+                        trace.failure["exceptionClass"],
+                        "KeyboardInterrupt" if cancelled else "TimeoutExpired",
+                    )
+                    self.assertIsNotNone(processes[0].poll())
+                    self.assertNotIn("fixture-private", json.dumps(events))
+
+    def test_wrapper_post_reap_observer_errors_keep_timeout_or_cancel_and_cleanup(self):
+        popen = execution.common.subprocess.Popen
+        wait = popen.wait
+        command = execution.inspection.command
+        run = execution.run
+        publish = execution.publish
+        for helper in ("prepare", "identity"):
+            for cancelled in (False, True):
+                with (
+                    self.subTest(helper=helper, cancelled=cancelled),
+                    ExitStack() as stack,
+                ):
+                    self.patches(stack)
+                    processes = []
+                    interrupted = False
+                    publication_failed = False
+                    reads = 0
+
+                    def spawn(*args, **kwargs):
+                        process = popen(*args, **kwargs)
+                        processes.append(process)
+                        return process
+
+                    def cancel_once(process, *args, **kwargs):
+                        nonlocal interrupted
+                        if not interrupted:
+                            interrupted = True
+                            raise KeyboardInterrupt()
+                        return wait(process, *args, **kwargs)
+
+                    def handoff(path):
+                        nonlocal reads
+                        reads += 1
+                        operation = (
+                            "acquire-timeline" if reads == 1 else "acquire-stages"
+                        )
+                        return {
+                            "state": "started",
+                            "fact": execution.facts.fact(operation),
+                            "cleanupFailure": None,
+                        }
+
+                    def checkpoint(output, value):
+                        nonlocal publication_failed
+                        child = value["preparationHandoff"]
+                        post_reap = helper == "identity" or (
+                            child is not None
+                            and child["fact"]["operation"] == "acquire-stages"
+                        )
+                        if (
+                            value["failure"] is not None
+                            and post_reap
+                            and not publication_failed
+                        ):
+                            self.assertIsNotNone(processes[0].poll())
+                            publication_failed = True
+                            raise PermissionError("fixture-private HTTP 503")
+                        publish(output, value)
+
+                    argv = [sys.executable, "-c", "import time; time.sleep(60)"]
+
+                    def prepare_process(args, work, name, timeout, **kwargs):
+                        self.assertEqual(name, "prepare.log")
+                        return run(
+                            argv,
+                            work,
+                            name,
+                            0.05,
+                            group=True,
+                            grace=0.1,
+                            progress=kwargs["progress"],
+                            failure_observer=kwargs["failure_observer"],
+                        )
+
+                    def identity(args, **kwargs):
+                        if args[:2] == ["git", "rev-parse"]:
+                            return self.args.expected_harness_revision
+                        if args[:3] == ["az", "extension", "show"]:
+                            return command(
+                                argv,
+                                timeout=0.05,
+                                failure_observer=kwargs["failure_observer"],
+                            )
+                        return ""
+
+                    stack.enter_context(
+                        patch.object(
+                            execution.common.subprocess, "Popen", side_effect=spawn
+                        )
+                    )
+                    stack.enter_context(
+                        patch.object(execution, "publish", side_effect=checkpoint)
+                    )
+                    if helper == "prepare":
+                        self.run.side_effect = prepare_process
+                        stack.enter_context(
+                            patch.object(
+                                execution.facts, "load_handoff", side_effect=handoff
+                            )
+                        )
+                    else:
+                        stack.enter_context(
+                            patch.object(
+                                execution.inspection, "command", side_effect=identity
+                            )
+                        )
+                    if cancelled:
+                        method = "wait" if helper == "prepare" else "communicate"
+                        stack.enter_context(patch.object(popen, method, cancel_once))
+                    self.assertEqual(
+                        execution.execute(self.args, self.output),
+                        130 if cancelled else 124,
+                    )
+                    self.assertTrue(publication_failed)
+                    value = json.loads(self.output.read_text())
+                    self.assertEqual(
+                        value["outcome"], "cancelled" if cancelled else "timeout"
+                    )
+                    self.assertEqual(
+                        value["failure"]["operation"],
+                        (
+                            "prepare-process"
+                            if helper == "prepare"
+                            else "identity-extension"
+                        ),
+                    )
+                    self.assertEqual(
+                        value["failure"]["exceptionClass"],
+                        "KeyboardInterrupt" if cancelled else "TimeoutExpired",
+                    )
+                    self.assertEqual(
+                        value["cleanupFailure"],
+                        execution.facts.fact(
+                            "checkpoint-publication", PermissionError()
+                        ),
+                    )
+                    self.assertIsNotNone(processes[0].poll())
+                    self.assertNotIn("fixture-private", self.output.read_text())
+
     def test_process_failure_timeout_and_cancellation_stop_and_preserve_status(self):
         for phase in ("prepare.log", "host-setup.log", "execution.log"):
             for failure in (23, 124, 130, KeyboardInterrupt()):
@@ -320,6 +1093,27 @@ class ExecutionTests(unittest.TestCase):
                     self.assertEqual(
                         data["hostDisposition"], "dispose-required-no-further-lanes"
                     )
+                    operation = {
+                        "prepare.log": "prepare-process",
+                        "host-setup.log": "host-setup",
+                        "execution.log": "scenario-process",
+                    }[phase]
+                    expected = execution.facts.fact(
+                        operation,
+                        (
+                            failure
+                            if isinstance(failure, BaseException)
+                            else execution.ProcessFailure()
+                        ),
+                        exit_code=(
+                            None if isinstance(failure, BaseException) else failure
+                        ),
+                    )
+                    self.assertEqual(data["failure"], expected)
+                    if phase == "prepare.log":
+                        self.assertEqual(
+                            data["preparationHandoff"]["state"], "unavailable"
+                        )
 
     def test_cleanup_uncertainty_fails_even_after_selected_scenario_pass(self):
         for changed in ({"domains": ["leftover"]}, OSError("private cleanup detail")):
@@ -333,9 +1127,12 @@ class ExecutionTests(unittest.TestCase):
                 self.assertEqual(data["outcome"], "failed")
 
     def test_prepare_failure_retains_actual_preparer_safe_footer_only(self):
+        http_error = execution.prepare.ado.ArtifactError("fixture-private HTTP 503")
+        http_error.__cause__ = HTTPError("fixture-private", 503, "fixture", None, None)
+        self.addCleanup(http_error.__cause__.close)
         for error, name, http in (
             (
-                execution.prepare.ado.ArtifactError("fixture-private HTTP 503"),
+                http_error,
                 "ArtifactError",
                 503,
             ),
@@ -353,9 +1150,15 @@ class ExecutionTests(unittest.TestCase):
 
                 def failing(argv, work, name, timeout, **kwargs):
                     self.assertEqual(name, "prepare.log")
+                    handoff = Path(argv[argv.index("--failure-facts") + 1])
+                    if handoff.exists():
+                        handoff.unlink()
                     private = io.StringIO()
                     with (
                         patch.object(sys, "argv", argv[1:]),
+                        patch.object(
+                            execution.os, "geteuid", return_value=work.stat().st_uid
+                        ),
                         patch.object(
                             execution.prepare.ado,
                             "get_ado_token",
@@ -1012,6 +1815,28 @@ class ExecutionTests(unittest.TestCase):
             result["executionDiagnostic"]["installOsFailure"]["missingKnownPaths"],
             list(execution.INSTALL_MISSING_PATHS),
         )
+        maximum = execution.facts.fact(
+            max(execution.facts.OPERATIONS, key=len),
+            exit_code=-128,
+        )
+        maximum.update(exceptionClass="ConnectionAbortedError", httpStatus=511)
+        result.update(
+            failure=maximum,
+            cleanupFailure=maximum,
+            preparationHandoff={
+                "state": "failed",
+                "fact": maximum,
+                "cleanupFailure": maximum,
+            },
+            preparationDiagnostic={
+                "state": "captured",
+                "exceptionClass": "ConnectionAbortedError",
+                "httpStatus": 511,
+            },
+            lastStartedOperation=maximum["operation"],
+        )
+        execution.publish(self.output, result)
+        self.assertLessEqual(self.output.stat().st_size, execution.REPORT_LIMIT)
 
     @unittest.skipUnless(sys.platform == "linux", "requires Linux process groups")
     def test_native_process_failure_and_timeout_use_reviewed_group_reaping(self):

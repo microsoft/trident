@@ -201,6 +201,68 @@ These fields are observations from the preparer, not an automatic transient
 classification or retry authorization. The earlier discarded footer cannot be
 recovered from its retained report, and no surviving-host access is assumed.
 
+### Complete bounded failure retention
+
+Run 45715469794 at `a282b11537cec863cd6890c54d31c009c89d3839` failed during
+identity, before preparation. Its report and public job log do not distinguish
+the extension lookup from UMI login. They establish no identity endpoint,
+authentication or permission cause. Local packet checks precede both commands;
+ADO token acquisition and server qualification follow them.
+
+The wrapper now checkpoints fixed source operation IDs through the existing
+pinned publication FD. `failure` latches the first observed failure;
+`cleanupFailure` separately retains the first later diagnostics, inventory,
+signal-restoration or privileged-publication failure. Neither overwrites the
+initiating fact. Each fact has exactly four fields:
+
+- `operation`: a closed source-defined enum, never a command or arbitrary path.
+- `exitCode`: an observed bounded process/helper status, otherwise null.
+- `exceptionClass`: a closed class-name allowlist, otherwise null.
+- `httpStatus`: a standard status from a typed `HTTPError` in a bounded explicit
+  cause chain, otherwise null. CLI stderr and exception messages are not parsed.
+
+Coverage includes these boundaries, without adding commands:
+
+| Boundary | Fixed operation coverage |
+| --- | --- |
+| Admission | Signals, exclusive host, each prerequisite, ambient credentials, harness argument/read/binding, storage mount, private runtime |
+| Packet and identity | Read, byte pin, schema, producer, review, private copy, extension lookup, UMI login |
+| Acquisition | Arguments, token, build, timeline, stages, log metadata, packet/log/RPM/artifact qualification, artifact list and each known artifact validation/download/extraction |
+| Bundle preparation | Output creation, tools, installers, image helper and verification, optional certificate, staging cleanup, manifest write/verification/promotion |
+| Host and guest | Host setup/lock, platform/release/KVM/tools/libvirt gates, each inventory and validation, empty-host guard, each fixed QEMU ancestor, selected runner process/results, bundle recheck |
+| Completion | Private diagnostics, final lock/inventories/comparison, signal restoration, final report and privileged ownership handoff |
+
+`lastStartedOperation` has the explicit
+`operationBasis=last-started-not-proof-of-cause-or-completion` qualification.
+Later cleanup checkpoints can advance it. It is not a failing operation
+assertion. Intermediate checkpoints never claim selected-scenario success.
+Observed failure facts, including child cleanup failures, prevent final success.
+
+The opt-in preparer handoff is a create-once, owner-matching 0600 regular file
+inside the 0700 private runtime directory. Writes use its pinned FD; reads reject
+symlinks, hardlinks, oversized files and unknown schemas/operations. Its maximum
+size is 2 KiB. Only validated `state`, four-field `fact` and `cleanupFailure`
+are forwarded in `preparationHandoff`. The parent polls during the existing
+bounded process wait and after reaping; a `started` handoff preserves the last
+child boundary on interruption without inventing a cause. Missing or invalid
+handoffs are explicitly unavailable. The original acquisition error is recorded
+before staging cleanup can replace it.
+
+Shared command observers, host checkpoints and secondary privileged-publication
+callbacks are opt-in. Default inspector, preparer and install-runner callers keep
+their existing behavior. Native output remains private, and observer failures
+still reap the child process group. No identity, permission, packet, product,
+guest case selection or retry-policy change follows from this instrumentation.
+Timeout/cancellation is latched before post-reap observers. An opt-in integer
+status or the original raised exception privately retains an observer exception;
+the wrapper exports it only as a separate closed cleanup fact. A failed observer
+cannot replace status 124/130 or the initiating exception.
+
+There is no unsafe publication fallback. Failure before the protected FD exists,
+an unwritable report, SIGKILL or host loss can prevent a complete final record.
+The safe sentinel or latest successful checkpoint can survive, not a fabricated
+cause or proof of cleanup. Such hosts still require disposal.
+
 Preparation is bounded to 1200 seconds (its image helper to 600), host setup to
 900, matrix and selected scenario to 1800 each, and their outer install-runner
 process to 3780. Existing leader-first Storm cleanup gets 120 seconds internally
@@ -209,9 +271,10 @@ The whole root context is bounded by 125 minutes plus 300 seconds before force
 kill, inside larger workflow limits. Cancellation signaling and reaping reuse
 the reviewed process helpers. A forced kill is never treated as proven cleanup.
 
-Only `trident-install-report/execution.json`, at most 8 KiB, is uploaded. Its
+Only `trident-install-report/execution.json`, strictly below 8 KiB, is uploaded. Its
 allowlist contains fixed scope/outcome/phase/diagnostic values, exact
-source/harness/pin identities and bounded counts/booleans/exit code. It never
+source/harness/pin identities, fixed operation facts and bounded
+counts/booleans/exit code. It never
 includes raw console, errors,
 environment, command arguments, keys, certificates, images, packet/log excerpts
 or authentication/download URLs. Preparation logs, full runner results, JUnit,

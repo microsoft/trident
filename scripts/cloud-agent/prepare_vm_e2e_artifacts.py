@@ -13,8 +13,10 @@ import tempfile
 import zipfile
 
 from pathlib import Path, PurePosixPath
+from contextlib import ExitStack
 
 import download_functional_artifact as ado
+import vm_e2e_failure_facts as facts
 
 PROJECT_ID = "2311650c-e79e-4301-b4d2-96543fdd84ff"
 TOOLS = ("netlaunch", "netlisten", "mkcosi", "storm-trident", "virtdeploy")
@@ -92,7 +94,8 @@ def producer(args):
     }
 
 
-def verify_server(config, expected, token):
+def verify_server(config, expected, token, observe=None):
+    facts.mark(observe, "acquire-build")
     build = ado.resolve_build(config, token, expected["buildId"])
     require(
         build["sourceVersion"] == expected["sourceVersion"], "Producer source mismatch"
@@ -100,12 +103,14 @@ def verify_server(config, expected, token):
     require(
         build.get("project", {}).get("id") == PROJECT_ID, "Producer project mismatch"
     )
+    facts.mark(observe, "acquire-timeline")
     timeline = ado.request_json(
         ado.build_api_url(
             config, f"build/builds/{expected['buildId']}/timeline?api-version=7.1"
         ),
         token,
     )
+    facts.mark(observe, "acquire-stages")
     records = timeline["records"]
     stages = {}
     for name in STAGES.values():
@@ -121,6 +126,7 @@ def verify_server(config, expected, token):
             f"Producer stage did not succeed: {name}",
         )
         stages[name] = stage["id"]
+    facts.mark(observe, "acquire-log-metadata")
     log_metadata = ado.request_json(
         ado.build_api_url(
             config, f"build/builds/{expected['buildId']}/logs?api-version=7.1"
@@ -130,7 +136,8 @@ def verify_server(config, expected, token):
     return build, records, stages, log_metadata
 
 
-def verify_evidence(args, expected, records, stages, log_metadata):
+def verify_evidence(args, expected, records, stages, log_metadata, observe=None):
+    facts.mark(observe, "qualify-packet")
     evidence = args.evidence.read_bytes()
     require(
         sha256(args.evidence_sha256)
@@ -146,6 +153,7 @@ def verify_evidence(args, expected, records, stages, log_metadata):
     keys(packet["review"], ("reviewer", "reference"))
     for field in ("reviewer", "reference"):
         identity(packet["review"][field])
+    facts.mark(observe, "qualify-logs")
     by_id = {row["id"]: row for row in records}
     logs = packet["logs"]
     require(logs, "Missing reviewed producer log identities")
@@ -186,6 +194,7 @@ def verify_evidence(args, expected, records, stages, log_metadata):
             )
             row = by_id[row["parentId"]]
 
+    facts.mark(observe, "qualify-rpms")
     keys(packet["rpms"], ("checkoutRevision", "packages", "evidence"))
     packages = packet["rpms"]["packages"]
     require(packages, "Missing candidate RPM identities")
@@ -207,6 +216,7 @@ def verify_evidence(args, expected, records, stages, log_metadata):
         "RPM checkout mismatch",
     )
     citation(packet["rpms"]["evidence"], "trident-binaries")
+    facts.mark(observe, "qualify-artifacts")
     artifacts = packet["artifacts"]
     require(
         set(artifacts) == set(STAGES) - {"trident-binaries"},
@@ -307,7 +317,8 @@ def extract(archive_path, destination, files):
         )
 
 
-def prepare(args, token):
+def prepare(args, token, observe=None, on_failure=None):
+    facts.mark(observe, "acquire-arguments")
     expected = producer(args)
     config = {
         "organization": expected["organization"],
@@ -317,8 +328,11 @@ def prepare(args, token):
         "buildStatus": "completed",
         "buildResult": "succeeded",
     }
-    build, records, stages, log_metadata = verify_server(config, expected, token)
-    packet = verify_evidence(args, expected, records, stages, log_metadata)
+    build, records, stages, log_metadata = verify_server(
+        config, expected, token, observe
+    )
+    packet = verify_evidence(args, expected, records, stages, log_metadata, observe)
+    facts.mark(observe, "acquire-artifact-list")
     listing = ado.request_json(
         ado.build_api_url(
             config, f"build/builds/{args.build_id}/artifacts?api-version=7.1"
@@ -327,6 +341,7 @@ def prepare(args, token):
     )["value"]
     selected = {}
     for name in packet["artifacts"]:
+        facts.mark(observe, "artifact-validate-" + name)
         matches = [artifact for artifact in listing if artifact.get("name") == name]
         require(len(matches) == 1, f"Missing or ambiguous artifact: {name}")
         artifact = matches[0]
@@ -338,6 +353,7 @@ def prepare(args, token):
             {"artifactName": name, "artifactType": "PipelineArtifact"}, artifact
         )
         selected[name] = (artifact, url)
+    facts.mark(observe, "acquire-output-create")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     bundle = output / "bundle"
@@ -361,9 +377,13 @@ def prepare(args, token):
             "sha256": ado.hash_file(path),
         }
 
-    with tempfile.TemporaryDirectory(dir=output, prefix=".download-") as temp:
+    with (
+        tempfile.TemporaryDirectory(dir=output, prefix=".download-") as temp,
+        facts.retaining(on_failure, observe, "acquire-staging-cleanup"),
+    ):
         staging = Path(temp)
         for name, (artifact, url) in selected.items():
+            facts.mark(observe, "artifact-download-" + name)
             archive = staging / f"{name}.zip"
             ado.download_file(url, token, archive)
             downloads[name] = {
@@ -372,12 +392,15 @@ def prepare(args, token):
                 "zipSize": archive.stat().st_size,
                 "zipSha256": ado.hash_file(archive),
             }
+            facts.mark(observe, "artifact-extract-" + name)
             extract(archive, staging / name, packet["artifacts"][name]["files"])
+        facts.mark(observe, "prepare-tools")
         shutil.move(str(staging / "go-tools"), bundle / "bin")
         for tool in TOOLS:
             path = bundle / "bin" / tool
             path.chmod(0o755)
             inventory(path, "go-tools", tool)
+        facts.mark(observe, "prepare-installers")
         iso = bundle / "artifacts/iso"
         iso.mkdir(parents=True)
         for name in INSTALLERS:
@@ -397,6 +420,7 @@ def prepare(args, token):
             "-v",
             "4",
         ]
+        facts.mark(observe, "prepare-images")
         with (output / "prepare-images.log").open("wb") as log:
             subprocess.run(
                 command,
@@ -406,6 +430,7 @@ def prepare(args, token):
                 check=True,
                 timeout=args.timeout_seconds,
             )
+        facts.mark(observe, "prepare-image-verify")
         for name, stem in IMAGES.items():
             for index in range(4):
                 filename = stem + (f"_v{index + 1}" if index else "") + ".cosi"
@@ -417,11 +442,13 @@ def prepare(args, token):
             )
         certificate = None
         if args.include_uki_certificate:
+            facts.mark(observe, "prepare-certificate")
             certificate = "artifacts/usrverity/ca_cert.pem"
             path = bundle / certificate
             path.parent.mkdir()
             shutil.move(str(staging / "trident-usrverity-testimage/ca_cert.pem"), path)
             inventory(path, "trident-usrverity-testimage", "ca_cert.pem")
+    facts.mark(observe, "manifest-write")
     manifest = {
         "schemaVersion": 1,
         "candidateRevision": args.expected_revision,
@@ -447,7 +474,9 @@ def prepare(args, token):
     path = output / "provenance.pending.json"
     path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     pin = ado.hash_file(path)
+    facts.mark(observe, "manifest-verify")
     reader().verify_bundle(bundle, path, pin, args.expected_revision)
+    facts.mark(observe, "manifest-promote")
     path = path.rename(bundle / "provenance.json")
     return path, pin
 
@@ -466,32 +495,61 @@ def main():
     parser.add_argument("--evidence-sha256", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--include-uki-certificate", action="store_true")
+    parser.add_argument("--failure-facts", type=Path)
     parser.add_argument(
         "--timeout-seconds", type=reader().positive_seconds, required=True
     )
     args = parser.parse_args()
-    try:
-        producer(args)
-        path, pin = prepare(args, ado.get_ado_token())
-        print(json.dumps({"manifest": str(path), "sha256": pin}))
-        return 0
-    except (
-        ado.ArtifactError,
-        OSError,
-        ValueError,
-        KeyError,
-        TypeError,
-        subprocess.SubprocessError,
-        zipfile.BadZipFile,
-    ) as error:
-        # Shared helper exceptions can contain signed URLs or untrusted values.
-        status = re.search(r"\bHTTP ([0-9]{3})\b", str(error))
-        detail = f", HTTP {status[1]}" if status else ""
-        print(
-            f"Artifact preparation failed ({type(error).__name__}{detail})",
-            file=sys.stderr,
-        )
-        return 1
+    with ExitStack() as stack:
+        trace = None
+        try:
+            if args.failure_facts:
+                emit = stack.enter_context(facts.private_handoff(args.failure_facts))
+                trace = facts.Trace(emit)
+                trace.start("acquire-arguments")
+            producer(args)
+            if trace:
+                trace.start("acquire-token")
+            token = ado.get_ado_token()
+            if trace:
+                path, pin = prepare(
+                    args, token, observe=trace.start, on_failure=trace.fail
+                )
+                trace.complete()
+            else:
+                path, pin = prepare(args, token)
+            print(json.dumps({"manifest": str(path), "sha256": pin}))
+            return 0
+        except (
+            ado.ArtifactError,
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            subprocess.SubprocessError,
+            zipfile.BadZipFile,
+        ) as error:
+            if trace:
+                trace.fail(
+                    error,
+                    secondary=trace.failure is not None and error is not trace.error,
+                )
+            # Preserve the existing safe footer for default callers.
+            if trace:
+                http = facts.fact(trace.operation, error)["httpStatus"]
+                detail = f", HTTP {http}" if http is not None else ""
+            else:
+                status = re.search(r"\bHTTP ([0-9]{3})\b", str(error))
+                detail = f", HTTP {status[1]}" if status else ""
+            print(
+                f"Artifact preparation failed ({type(error).__name__}{detail})",
+                file=sys.stderr,
+            )
+            return 1
+        except BaseException as error:
+            if trace:
+                trace.fail(error)
+            raise
 
 
 if __name__ == "__main__":

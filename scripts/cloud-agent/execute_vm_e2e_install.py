@@ -10,16 +10,17 @@ import re
 import shutil
 import signal
 import stat
+import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
-from http import HTTPStatus
 from pathlib import Path
 from types import SimpleNamespace
 
 import inspect_vm_e2e_images as inspection
 import prepare_vm_e2e_artifacts as prepare
+import vm_e2e_failure_facts as facts
 
 common = inspection.VM_RUNNER
 SOURCE = inspection.REVISION
@@ -50,7 +51,7 @@ PREPARATION_EXCEPTION_CLASSES = {
     "TimeoutExpired",
     "BadZipFile",
 }
-PREPARATION_HTTP_STATUSES = frozenset(status.value for status in HTTPStatus)
+PREPARATION_HTTP_STATUSES = facts.HTTP_STATUSES
 REQUIRED_CASES = {
     "setup-test-host",
     "install-os",
@@ -190,6 +191,11 @@ def report():
         "caseCounts": None,
         "preparationDiagnostic": None,
         "executionDiagnostic": None,
+        "failure": None,
+        "cleanupFailure": None,
+        "lastStartedOperation": None,
+        "operationBasis": "last-started-not-proof-of-cause-or-completion",
+        "preparationHandoff": None,
         "resourceInventoryRestored": False,
         "cleanupBasis": "libvirt-uuid-inventory-only-not-proof-of-host-cleanliness",
         "hostDisposition": "dispose-required-no-further-lanes",
@@ -209,13 +215,28 @@ def report():
 
 
 def publish(output, result):
-    text = json.dumps(result, sort_keys=True) + "\n"
-    common.require(len(text.encode()) <= REPORT_LIMIT, "report limit")
+    text = json.dumps(result, indent=2) + "\n"
+    common.require(len(text.encode()) < REPORT_LIMIT, "report limit")
     inspection.write_report(output, result)
 
 
-def failed_publication(output, _fact):
-    publish(output, report())
+def failed_publication(output, missing_fact, result=None, *, error=None):
+    result = report() if result is None else result
+    operation = {
+        "privileged-inspection-not-started": "publication-not-started",
+        "privileged-inspection-cancelled": "cancelled-context",
+        "privileged-inspection-setup-failed": "privileged-context",
+        "exact-report-publication-failed": "publication-finalize",
+    }.get(missing_fact, "publication-not-started")
+    result["lastStartedOperation"] = operation
+    key = "cleanupFailure" if result["failure"] is not None else "failure"
+    if result[key] is None:
+        result[key] = facts.fact(operation, error)
+    if key == "failure" or result["outcome"] == "selected-scenario-passed":
+        result["outcome"] = (
+            "cancelled" if operation == "cancelled-context" else "failed"
+        )
+    publish(output, result)
 
 
 def read_bounded(path, limit):
@@ -256,25 +277,31 @@ def preparation_failure(path):
     return fact
 
 
-def packet(args, target):
+def packet(args, target, observe=None):
+    facts.mark(observe, "packet-read")
     raw, value = read_json(args.evidence, PACKET_LIMIT)
+    facts.mark(observe, "packet-pin")
     common.require(
         args.evidence_sha256 == REVIEWED_PACKET_SHA256
         and hashlib.sha256(raw).hexdigest() == args.evidence_sha256,
         "exact independent packet pin required",
     )
+    facts.mark(observe, "packet-schema")
     prepare.keys(
         value, ("schemaVersion", "producer", "review", "logs", "rpms", "artifacts")
     )
+    facts.mark(observe, "packet-producer")
     common.require(
         value["schemaVersion"] == 1
         and value["producer"] == prepare.producer(producer_args(target)),
         "packet source/producer mismatch",
     )
+    facts.mark(observe, "packet-review")
     prepare.keys(value["review"], ("reviewer", "reference"))
     for field in ("reviewer", "reference"):
         prepare.identity(value["review"][field])
     # This copy, not the caller's mutable pathname, is given to the existing resolver.
+    facts.mark(observe, "packet-copy")
     target.write_bytes(raw)
 
 
@@ -289,17 +316,21 @@ def producer_args(evidence):
     )
 
 
-def inventory():
+def inventory(observe=None, failure_observer=None, final=False):
     result = {}
     for resource, command in (
         ("domains", "list"),
         ("networks", "net-list"),
         ("pools", "pool-list"),
     ):
+        prefix = "final-inventory-" if final else "inventory-"
+        facts.mark(observe, prefix + resource)
         text = inspection.command(
             ["virsh", "-c", "qemu:///system", command, "--all", "--uuid"],
             timeout=30,
+            failure_observer=failure_observer,
         )
+        facts.mark(observe, prefix + "validate-" + resource)
         rows = text.split()
         common.require(
             len(rows) <= 64
@@ -556,55 +587,132 @@ class ProcessFailure(Exception):
     pass
 
 
-def run(argv, work, name, timeout, *, group=False, grace=120, cwd=None):
+def run(
+    argv,
+    work,
+    name,
+    timeout,
+    *,
+    group=False,
+    grace=120,
+    cwd=None,
+    progress=None,
+    failure_observer=None,
+):
     return common.command(
-        argv, cwd or work, work / name, timeout, grace, group_cleanup=group
+        argv,
+        cwd or work,
+        work / name,
+        timeout,
+        grace,
+        group_cleanup=group,
+        **({"progress": progress} if progress is not None else {}),
+        **(
+            {"failure_observer": failure_observer}
+            if failure_observer is not None
+            else {}
+        ),
     )
 
 
-def execute(args, output):
-    result = report()
+def execute(args, output, result=None):
+    result = report() if result is None else result
     status = 1
     before = None
     work = None
     execution_directory = None
     execution_status = None
-    handlers = {
-        sig: signal.signal(sig, common.interrupt)
-        for sig in (signal.SIGINT, signal.SIGTERM)
-    }
+    preparation_status = None
+    selected_passed = False
+
+    def emit(state, value, *, cleanup=False):
+        if state == "started":
+            result["lastStartedOperation"] = value["operation"]
+        elif state == "failed":
+            key = "cleanupFailure" if cleanup else "failure"
+            if result[key] is None:
+                result[key] = value
+        try:
+            publish(output, result)
+        except BaseException as error:
+            key = "cleanupFailure" if cleanup or result["failure"] else "failure"
+            if result[key] is None:
+                result[key] = facts.fact("checkpoint-publication", error)
+            raise
+
+    trace = facts.Trace(emit)
+    cleanup = facts.Trace(lambda state, value: emit(state, value, cleanup=True))
+
+    def retain_observer_failure(observation):
+        error = getattr(observation, "observer_error", None)
+        if error is not None and result["cleanupFailure"] is None:
+            result["cleanupFailure"] = facts.fact("checkpoint-publication", error)
+
+    def command(operation, argv, **kwargs):
+        trace.start(operation)
+        return inspection.command(argv, failure_observer=trace.fail, **kwargs)
+
+    def preparation_handoff(*, checkpoint=False):
+        previous = result["preparationHandoff"]
+        try:
+            handoff = facts.load_handoff(work / "prepare-facts.json")
+        except (OSError, ValueError, TypeError):
+            handoff = {"state": "unavailable", "fact": None, "cleanupFailure": None}
+        result["preparationHandoff"] = handoff
+        if handoff["cleanupFailure"] is not None and result["cleanupFailure"] is None:
+            result["cleanupFailure"] = handoff["cleanupFailure"]
+        if checkpoint and handoff["state"] != "unavailable" and handoff != previous:
+            result["lastStartedOperation"] = handoff["fact"]["operation"]
+            if handoff["state"] == "failed":
+                trace.adopt(handoff["fact"])
+            else:
+                emit("started", handoff["fact"])
+        return handoff
+
+    handlers = {}
     try:
         result["phase"] = "preflight"
+        trace.start("signal-install")
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            handlers[sig] = signal.signal(sig, common.interrupt)
+        trace.start("host-admission")
         common.require(
             sys.platform == "linux"
             and os.geteuid() == 0
             and os.environ.get("EXCLUSIVE_DISPOSABLE_1ES") == "true",
             "exclusive disposable Linux root context required",
         )
-        common.require(
-            all(shutil.which(name) for name in COMMANDS), "missing dependency"
-        )
+        for name in COMMANDS:
+            trace.start("prerequisite-" + name)
+            common.require(shutil.which(name), "missing dependency")
+        trace.start("ambient-credentials")
         common.require(
             not any(os.environ.get(name) for name in ALTERNATE_CREDENTIALS),
             "alternate credentials forbidden",
         )
+        trace.start("harness-argument")
         common.require(
             re.fullmatch(r"[0-9a-f]{40}", args.expected_harness_revision)
             and args.expected_harness_revision != SOURCE,
             "distinct exact harness revision required",
         )
-        revision = inspection.command(["git", "rev-parse", "HEAD"], timeout=30).strip()
+        revision = command(
+            "harness-read", ["git", "rev-parse", "HEAD"], timeout=30
+        ).strip()
+        trace.start("harness-bind")
         common.require(revision == args.expected_harness_revision, "harness mismatch")
         result["harnessRevision"] = revision
         # Refuse before any installs. setup-functional also checks this mount.
-        inspection.command(["mountpoint", "--quiet", "/mnt/storage"], timeout=30)
+        command("storage-mount", ["mountpoint", "--quiet", "/mnt/storage"], timeout=30)
+        trace.start("private-runtime-create")
         work = Path(tempfile.mkdtemp(prefix="trident-install-", dir="/mnt/storage"))
         private_packet = work / "reviewed-packet.json"
         result["phase"] = "packet"
-        packet(args, private_packet)
+        packet(args, private_packet, observe=trace.start)
         result["packetSha256"] = args.evidence_sha256
         result["phase"] = "identity"
-        inspection.command(
+        command(
+            "identity-extension",
             [
                 "az",
                 "extension",
@@ -618,7 +726,8 @@ def execute(args, output):
             ],
             timeout=30,
         )
-        inspection.command(
+        command(
+            "identity-umi-login",
             [
                 "az",
                 "login",
@@ -636,7 +745,8 @@ def execute(args, output):
         prepared = work / "prepared"
         # Keep credential acquisition and full server/packet qualification inside
         # the existing preparer's bounded process group, before any installs.
-        status = run(
+        trace.start("prepare-process")
+        status = preparation_status = run(
             [
                 sys.executable,
                 str(scripts / "prepare_vm_e2e_artifacts.py"),
@@ -656,18 +766,34 @@ def execute(args, output):
                 "600",
                 "--output",
                 str(prepared),
+                "--failure-facts",
+                str(work / "prepare-facts.json"),
             ],
             work,
             "prepare.log",
             1200,
             group=True,
+            progress=lambda: preparation_handoff(checkpoint=True),
+            failure_observer=trace.fail,
         )
+        retain_observer_failure(status)
+        status = preparation_status = int(status)
         if status:
             raise ProcessFailure()
+        handoff = preparation_handoff()
+        if handoff["state"] == "failed":
+            trace.adopt(handoff["fact"])
+        common.require(
+            result["failure"] is None and result["cleanupFailure"] is None,
+            "preparation reported failure",
+        )
         bundle = prepared / "bundle"
         manifest_path = bundle / "provenance.json"
+        trace.start("manifest-digest")
         pin = common.digest(manifest_path)
+        trace.start("bundle-verify")
         manifest = common.verify_bundle(bundle, manifest_path, pin, SOURCE)
+        trace.start("lineage-bind")
         common.require(
             manifest["producer"] == prepare.producer(producer_args(private_packet))
             and manifest["lineage"]["packetSha256"] == args.evidence_sha256
@@ -678,6 +804,7 @@ def execute(args, output):
         result["manifestSha256"] = pin
         result["phase"] = "host-setup"
         # Approved existing local host setup, private logs, no source startup scope.
+        trace.start("host-setup")
         status = run(
             ["bash", str(scripts / "setup-functional.sh")],
             work,
@@ -688,20 +815,30 @@ def execute(args, output):
         )
         if status:
             raise ProcessFailure()
+        trace.start("host-lock")
         with common.host_lock():
-            common.check_host()
-            before = inventory()
+            trace.start("host-check")
+            common.check_host(observe=trace.start)
+            trace.start("inventory-domains")
+            before = inventory(observe=trace.start, failure_observer=trace.fail)
+            trace.start("empty-guest-guard")
             common.require(not before["domains"], "host must have no existing guests")
             # Guest disks/NVRAM live in virtdeploy's /var/lib/libvirt pools, not
             # in root-private evidence. Check QEMU ancestor search without chmod.
-            for directory in ("/var", "/var/lib", "/var/lib/libvirt"):
-                inspection.command(
+            for operation, directory in (
+                ("qemu-search-var", "/var"),
+                ("qemu-search-var-lib", "/var/lib"),
+                ("qemu-search-libvirt", "/var/lib/libvirt"),
+            ):
+                command(
+                    operation,
                     ["runuser", "-u", "libvirt-qemu", "--", "test", "-x", directory],
                     timeout=30,
                 )
         result["phase"] = "execution"
         execution = work / "execution"
         execution_directory = execution
+        trace.start("scenario-process")
         status = execution_status = run(
             [
                 sys.executable,
@@ -732,40 +869,86 @@ def execute(args, output):
         )
         if status:
             raise ProcessFailure()
+        trace.start("scenario-results")
         summarize(execution / "results.json", result)
+        trace.start("bundle-recheck")
         common.verify_bundle(bundle, manifest_path, pin, SOURCE)
-        result["outcome"] = "selected-scenario-passed"
-    except KeyboardInterrupt:
+        selected_passed = True
+    except KeyboardInterrupt as error:
         status = 130
-    except Exception:
+        retain_observer_failure(error)
+        if trace.operation == "prepare-process":
+            preparation_handoff()
+        trace.fail(error)
+    except Exception as error:
+        if isinstance(error, subprocess.TimeoutExpired):
+            status = 124
+        retain_observer_failure(error)
         # Exceptions from tools, XML, credentials or producer APIs are private.
+        if trace.operation == "prepare-process":
+            handoff = preparation_handoff()
+            if handoff["state"] == "failed":
+                trace.adopt(handoff["fact"])
+            else:
+                trace.fail(error, exit_code=preparation_status)
+        else:
+            code = status if isinstance(error, ProcessFailure) else None
+            trace.fail(error, exit_code=code)
         status = status or 1
     finally:
         with common.cleanup_signals():
-            if result["phase"] == "prepare" and work is not None:
-                result["preparationDiagnostic"] = preparation_failure(
-                    work / "prepare.log"
-                )
-            if execution_directory is not None:
-                diagnose_execution(execution_directory, execution_status, result)
+            try:
+                if result["phase"] == "prepare" and work is not None:
+                    cleanup.start("preparation-diagnostics")
+                    result["preparationDiagnostic"] = preparation_failure(
+                        work / "prepare.log"
+                    )
+                if execution_directory is not None:
+                    cleanup.start("execution-diagnostics")
+                    diagnose_execution(execution_directory, execution_status, result)
+            except Exception as error:
+                cleanup.fail(error)
+                status = status or 1
             if before is not None:
                 try:
+                    cleanup.start("final-host-lock")
                     with common.host_lock():
-                        result["resourceInventoryRestored"] = inventory() == before
-                except Exception:
+                        cleanup.start("final-inventory-domains")
+                        after = inventory(
+                            observe=cleanup.start,
+                            failure_observer=cleanup.fail,
+                            final=True,
+                        )
+                        cleanup.start("inventory-compare")
+                        result["resourceInventoryRestored"] = after == before
+                        if after != before:
+                            cleanup.fail()
+                except Exception as error:
+                    cleanup.fail(error)
                     result["resourceInventoryRestored"] = False
             if not result["resourceInventoryRestored"]:
                 status = status or 1
                 result["outcome"] = "failed"
+            if result["failure"] is not None or result["cleanupFailure"] is not None:
+                status = status or 1
             if status:
                 result["outcome"] = (
                     "cancelled"
                     if status == 130
                     else "timeout" if status == 124 else "failed"
                 )
-            publish(output, result)
-        for sig, handler in handlers.items():
-            signal.signal(sig, handler)
+        try:
+            cleanup.start("signal-restore")
+            for sig, handler in handlers.items():
+                signal.signal(sig, handler)
+        except Exception as error:
+            cleanup.fail(error)
+            status = status or 1
+            result["outcome"] = "failed"
+        cleanup.start("report-publication")
+        if status == 0 and selected_passed and result["resourceInventoryRestored"]:
+            result["outcome"] = "selected-scenario-passed"
+        publish(output, result)
     return status
 
 
@@ -794,14 +977,18 @@ def main():
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, cancel)
+    retained = report()
     try:
         code = inspection.privileged_inspection(
             args,
             publication_name="execution.json",
-            failure_fn=failed_publication,
-            execute_fn=lambda output, scratch, bootstrap_guestfish: execute(
-                args, output
+            failure_fn=lambda output, fact, **kwargs: failed_publication(
+                output, fact, retained, **kwargs
             ),
+            execute_fn=lambda output, scratch, bootstrap_guestfish: execute(
+                args, output, retained
+            ),
+            retain_secondary_failure=True,
         )
         # The FD-pinned report is intentionally not reopened here.
         return code
