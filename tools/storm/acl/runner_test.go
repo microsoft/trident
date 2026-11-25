@@ -6,12 +6,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 )
 
 type testSSHConn struct {
-	ssh.Conn
+	sshClient
 	closes atomic.Int32
 	closed chan struct{}
 }
@@ -32,10 +30,10 @@ func TestWithClientInvalidatesFailureWithoutReplay(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			conn := &testSSHConn{}
-			client := &ssh.Client{Conn: conn}
+			client := conn
 			r := runner{client: client, args: scenarioArgs{OperationTimeout: time.Second}}
 			calls := 0
-			err := r.withClient(func(context.Context, *ssh.Client) error {
+			err := r.withClient(func(context.Context, sshClient) error {
 				calls++
 				return operationErr
 			})
@@ -55,8 +53,8 @@ func TestWithClientInvalidatesFailureWithoutReplay(t *testing.T) {
 
 func TestWithClientInvalidatesCanceledOperation(t *testing.T) {
 	conn := &testSSHConn{}
-	r := runner{client: &ssh.Client{Conn: conn}, args: scenarioArgs{OperationTimeout: 20 * time.Millisecond}}
-	err := r.withClient(func(ctx context.Context, _ *ssh.Client) error {
+	r := runner{client: conn, args: scenarioArgs{OperationTimeout: 20 * time.Millisecond}}
+	err := r.withClient(func(ctx context.Context, _ sshClient) error {
 		<-ctx.Done()
 		return nil
 	})

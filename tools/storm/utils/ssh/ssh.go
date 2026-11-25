@@ -1,20 +1,22 @@
 package ssh
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
+	stormssh "github.com/microsoft/storm/utils/ssh"
+	"github.com/sirupsen/logrus"
+
 	stormretry "tridenttools/storm/utils/retry"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
 	stormvmconfig "tridenttools/storm/utils/vm/config"
-
-	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
 )
 
 func SshCommandWithRetries(cfg stormvmconfig.VMConfig, vmIP, command string, connectionRetryCount int, commandRetryCount int) (string, error) {
@@ -118,7 +120,7 @@ func innerSshCommand(cfg stormvmconfig.VMConfig, vmIP, command string, combineOu
 	client, err := stormretry.Retry(
 		time.Second*time.Duration(connectionRetryCount),
 		time.Second*time.Duration(1),
-		func(attempt int) (*ssh.Client, error) {
+		func(attempt int) (*stormssh.Client, error) {
 			logrus.Tracef("SSH dial to '%s' (attempt %d)", sshCliSettings.FullHost(), attempt)
 			return stormsshclient.OpenSshClient(sshCliSettings)
 		},
@@ -132,22 +134,20 @@ func innerSshCommand(cfg stormvmconfig.VMConfig, vmIP, command string, combineOu
 		time.Second*time.Duration(commandRetryCount),
 		time.Second*time.Duration(1),
 		func(attempt int) (*string, error) {
-			session, err := client.NewSession()
-			if err != nil {
-				return nil, fmt.Errorf("failed to create SSH session: %w", err)
-			}
-			defer session.Close()
-
-			var output []byte
+			var buffer bytes.Buffer
+			var stderr io.Writer = io.Discard
 			if combineOutput {
-				output, err = session.CombinedOutput(command)
-			} else {
-				output, err = session.Output(command)
+				stderr = &buffer
 			}
-			sanitizedOutput := strings.TrimSpace(string(output))
+			result, err := client.RunIO(context.Background(), command, nil, &buffer, stderr)
+			output := buffer.String()
+			sanitizedOutput := strings.TrimSpace(output)
 
 			if err != nil {
 				return &sanitizedOutput, fmt.Errorf("failed to run command '%s': %w\nOutput: %s", command, err, output)
+			}
+			if result.ExitCode != 0 {
+				return &sanitizedOutput, fmt.Errorf("command %q exited %d: %s", command, result.ExitCode, output)
 			}
 			return &sanitizedOutput, nil
 		},

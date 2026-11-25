@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/utils/sshutils"
@@ -182,10 +182,10 @@ func TestValidateUefiFallbackDisabledRequiresMountedVfatEsp(t *testing.T) {
 				&sa,
 				nil,
 				"/boot/efi",
-				func(*ssh.Client, string) ([]sysinspect.FindmntRow, error) {
+				func(*stormssh.Client, string) ([]sysinspect.FindmntRow, error) {
 					return tc.rows, tc.findmntErr
 				},
-				func(*ssh.Client, string) (*sshutils.SshCmdOutput, error) {
+				func(*stormssh.Client, string) (*sshutils.SshCmdOutput, error) {
 					ranFallbackProbe = true
 					return &sshutils.SshCmdOutput{Stdout: "NO_FALLBACK_DIR\n"}, nil
 				})
@@ -211,10 +211,10 @@ func TestValidateUefiFallbackDisabledPassesWithoutFallbackDirOnMountedEsp(t *tes
 		&sa,
 		nil,
 		"/boot/efi",
-		func(*ssh.Client, string) ([]sysinspect.FindmntRow, error) {
+		func(*stormssh.Client, string) ([]sysinspect.FindmntRow, error) {
 			return []sysinspect.FindmntRow{{Target: "/boot/efi", FsType: espFindmntFsType}}, nil
 		},
-		func(*ssh.Client, string) (*sshutils.SshCmdOutput, error) {
+		func(*stormssh.Client, string) (*sshutils.SshCmdOutput, error) {
 			ranFallbackProbe = true
 			return &sshutils.SshCmdOutput{Stdout: "NO_FALLBACK_DIR\n"}, nil
 		})
@@ -239,10 +239,10 @@ func TestValidateUefiFallbackDisabledChecksProbeStatus(t *testing.T) {
 		&sa,
 		nil,
 		"/boot/efi",
-		func(*ssh.Client, string) ([]sysinspect.FindmntRow, error) {
+		func(*stormssh.Client, string) ([]sysinspect.FindmntRow, error) {
 			return []sysinspect.FindmntRow{{Target: "/boot/efi", FsType: espFindmntFsType}}, nil
 		},
-		func(*ssh.Client, string) (*sshutils.SshCmdOutput, error) {
+		func(*stormssh.Client, string) (*sshutils.SshCmdOutput, error) {
 			return &sshutils.SshCmdOutput{Stdout: "NO_FALLBACK_DIR\n", Status: 7}, nil
 		})
 

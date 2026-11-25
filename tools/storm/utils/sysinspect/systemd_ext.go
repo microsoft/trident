@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
@@ -54,7 +54,7 @@ func (s *stringOrSlice) UnmarshalJSON(data []byte) error {
 // extType becomes part of a command interpreted by a remote shell, and quoting
 // cannot help here because it forms the binary name rather than an argument.
 // It is therefore checked against the two accepted values instead.
-func SystemdExtStatus(client *ssh.Client, extType string) (map[string]struct{}, error) {
+func SystemdExtStatus(client *stormssh.Client, extType string) (map[string]struct{}, error) {
 	if extType != "sysext" && extType != "confext" {
 		return nil, fmt.Errorf("unsupported extension type %q, expected sysext or confext", extType)
 	}

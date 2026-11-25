@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/utils/sshutils"
@@ -33,7 +33,7 @@ func HasEncryption(config hostconfig.HostConfig) bool {
 // (accounting for A/B update pairs). isUki selects the expected TPM2 policy.
 func ValidateEncryption(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	spec hostconfig.HostConfig,
 	isUki bool,
 	abActive tridentutil.AbVolumeSelection,
@@ -54,7 +54,7 @@ func ValidateEncryption(
 
 func checkCryptDevice(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	spec hostconfig.HostConfig,
 	isUki bool,
 	abActive tridentutil.AbVolumeSelection,
@@ -118,7 +118,7 @@ func checkCryptDevice(
 // and validates its LUKS metadata.
 func checkParentDevices(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	spec hostconfig.HostConfig,
 	isUki bool,
 	blockDevs map[string]map[string]string,
@@ -158,7 +158,7 @@ func checkParentDevices(
 }
 
 // checkLuksDump validates the LUKS2 metadata from cryptsetup luksDump.
-func checkLuksDump(sa *SoftAsserter, client *ssh.Client, cryptDevPath string, isUki bool) {
+func checkLuksDump(sa *SoftAsserter, client *stormssh.Client, cryptDevPath string, isUki bool) {
 	// luksDump needs an SELinux permission the Trident policy intentionally
 	// omits; temporarily drop to permissive (a testing-infra quirk), matching
 	// encryption_test.py.
@@ -234,7 +234,7 @@ func checkLuksDump(sa *SoftAsserter, client *ssh.Client, cryptDevPath string, is
 	}
 }
 
-func checkCryptsetupStatus(sa *SoftAsserter, client *ssh.Client, name string, isInUse bool) {
+func checkCryptsetupStatus(sa *SoftAsserter, client *stormssh.Client, name string, isInUse bool) {
 	status, err := sysinspect.Cryptsetup(client, name)
 	if err != nil {
 		sa.Fail("encryption/cryptsetup-status", err)
@@ -255,7 +255,7 @@ func checkCryptsetupStatus(sa *SoftAsserter, client *ssh.Client, name string, is
 	}
 }
 
-func checkDmsetupInfo(sa *SoftAsserter, client *ssh.Client, name string, swap bool) {
+func checkDmsetupInfo(sa *SoftAsserter, client *stormssh.Client, name string, swap bool) {
 	info, err := sysinspect.DmsetupInfo(client, name)
 	if err != nil {
 		sa.Fail("encryption/dmsetup", err)
@@ -282,7 +282,7 @@ func checkDmsetupInfo(sa *SoftAsserter, client *ssh.Client, name string, swap bo
 }
 
 // checkExists runs `sudo ls <path>` and records a failure if it does not exist.
-func checkExists(sa *SoftAsserter, client *ssh.Client, path string) {
+func checkExists(sa *SoftAsserter, client *stormssh.Client, path string) {
 	out, err := sshutils.RunCommand(client, fmt.Sprintf("sudo ls %s", sshutils.ShellQuote(path)))
 	if err != nil {
 		sa.Fail("encryption/exists", err)
@@ -293,7 +293,7 @@ func checkExists(sa *SoftAsserter, client *ssh.Client, path string) {
 
 // checkFindmnt validates the findmnt row for target: when active, SOURCE must be
 // the crypt device; when inactive, SOURCE must differ. FSTYPE is always ext4.
-func checkFindmnt(sa *SoftAsserter, client *ssh.Client, target, source string, isActive bool) {
+func checkFindmnt(sa *SoftAsserter, client *stormssh.Client, target, source string, isActive bool) {
 	rows, err := sysinspect.Findmnt(client, target)
 	if err != nil {
 		sa.Fail("encryption/findmnt", err)

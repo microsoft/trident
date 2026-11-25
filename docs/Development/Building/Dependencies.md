@@ -11,7 +11,7 @@ Trident's dependencies.
 ### Compilers
 
 - Rust: latest stable
-- Go: 1.25+
+- Go: 1.26.6+
 
 ### Packages
 

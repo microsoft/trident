@@ -186,7 +186,7 @@ jobs:
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --uki"
           fi
 
-          sudo ./bin/storm-trident run rollback -a $STORM_DYNAMIC_FLAGS \
+          sudo ./bin/storm-trident run rollback -a --junit-omit-skipped $STORM_DYNAMIC_FLAGS \
             --artifacts-dir $(Build.ArtifactStagingDirectory) \
             --output-path $(ob_outputDirectory) \
             --platform ${{ parameters.platform }} \

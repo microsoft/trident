@@ -1,17 +1,18 @@
 package validate
 
 import (
+	"context"
 	"io"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
-	"tridenttools/pkg/hostconfig"
-	"tridenttools/storm/utils/sshutils"
-	tridentutil "tridenttools/storm/utils/trident"
-
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"golang.org/x/crypto/ssh"
+
+	"tridenttools/pkg/hostconfig"
+	tridentutil "tridenttools/storm/utils/trident"
 )
 
 func TestValidateBaseUsesIndependentExpectations(t *testing.T) {
@@ -80,12 +81,13 @@ func TestValidateBaseRejectsMalformedReportedConfig(t *testing.T) {
 	}
 }
 
-func expectationTestClient(t *testing.T, outputs map[string]string) *ssh.Client {
+func expectationTestClient(t *testing.T, outputs map[string]string) *stormssh.Client {
 	t.Helper()
-	key, _, err := sshutils.GenerateRsaKeyPair(2048)
+	pair, err := stormssh.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
+	key := pair.PEM
 	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
 		t.Fatal(err)
@@ -141,10 +143,12 @@ func expectationTestClient(t *testing.T, outputs map[string]string) *ssh.Client 
 			}
 		}
 	}()
-	client, err := ssh.Dial("tcp", listener.Addr().String(), &ssh.ClientConfig{
-		User:            "test",
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         3 * time.Second,
+	client, err := stormssh.Dial(context.Background(), stormssh.Config{
+		Addr:        listener.Addr().String(),
+		User:        "test",
+		Auth:        signer,
+		HostKey:     stormssh.InsecureHostKey(),
+		DialTimeout: 3 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)

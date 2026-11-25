@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
@@ -79,7 +79,7 @@ func (o LsblkOutput) FindDevice(name string) (LsblkDevice, bool) {
 
 // Lsblk runs `lsblk -J -b` on the host and returns the parsed tree with sizes
 // in bytes.
-func Lsblk(client *ssh.Client) (LsblkOutput, error) {
+func Lsblk(client *stormssh.Client) (LsblkOutput, error) {
 	out, err := sshutils.CommandOutput(client, "lsblk -J -b")
 	if err != nil {
 		return LsblkOutput{}, fmt.Errorf("failed to run lsblk: %w", err)

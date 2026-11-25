@@ -6,8 +6,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 )
 
 func TestWaitForBootCandidatesSkipsStalledLease(t *testing.T) {
@@ -15,13 +13,13 @@ func TestWaitForBootCandidatesSkipsStalledLease(t *testing.T) {
 	defer cancel()
 	started := make(chan struct{})
 	stale := &testSSHConn{closed: make(chan struct{})}
-	live := &ssh.Client{Conn: &testSSHConn{}}
+	live := &testSSHConn{}
 	defer live.Close()
-	boot, err := waitForBootCandidates(ctx, []string{"stale", "live", "live"}, func(ctx context.Context, ip string) (*ssh.Client, string, error) {
+	boot, err := waitForBootCandidates(ctx, []string{"stale", "live", "live"}, func(ctx context.Context, ip string) (sshClient, string, error) {
 		if ip == "stale" {
 			close(started)
 			<-ctx.Done()
-			return &ssh.Client{Conn: stale}, "", ctx.Err()
+			return stale, "", ctx.Err()
 		}
 		<-started
 		return live, "new-boot", nil
@@ -48,12 +46,12 @@ func TestWaitForBootCandidatesClosesExtraSuccess(t *testing.T) {
 	}
 	var started atomic.Int32
 	ready := make(chan struct{})
-	boot, err := waitForBootCandidates(ctx, []string{"a", "b"}, func(_ context.Context, stringIP string) (*ssh.Client, string, error) {
+	boot, err := waitForBootCandidates(ctx, []string{"a", "b"}, func(_ context.Context, stringIP string) (sshClient, string, error) {
 		if started.Add(1) == 2 {
 			close(ready)
 		}
 		<-ready
-		return &ssh.Client{Conn: connections[stringIP]}, "new-boot", nil
+		return connections[stringIP], "new-boot", nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +74,7 @@ func TestWaitForBootCandidatesClosesExtraSuccess(t *testing.T) {
 
 func TestWaitForBootCandidatesReportsFailureAndDeadline(t *testing.T) {
 	failure := errors.New("guest is not ready")
-	_, err := waitForBootCandidates(context.Background(), []string{"a", "b"}, func(context.Context, string) (*ssh.Client, string, error) {
+	_, err := waitForBootCandidates(context.Background(), []string{"a", "b"}, func(context.Context, string) (sshClient, string, error) {
 		return nil, "", failure
 	})
 	if !errors.Is(err, failure) {
@@ -84,7 +82,7 @@ func TestWaitForBootCandidatesReportsFailureAndDeadline(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	_, err = waitForBootCandidates(ctx, []string{"stalled"}, func(ctx context.Context, _ string) (*ssh.Client, string, error) {
+	_, err = waitForBootCandidates(ctx, []string{"stalled"}, func(ctx context.Context, _ string) (sshClient, string, error) {
 		<-ctx.Done()
 		return nil, "", ctx.Err()
 	})

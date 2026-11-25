@@ -1,17 +1,20 @@
 package trident
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 
 	stormretry "tridenttools/storm/utils/retry"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
+	"tridenttools/storm/utils/sshutils"
 )
 
 const (
@@ -49,7 +52,7 @@ func BuildTridentContainerCommand(envVars []string) string {
 // - The SSH session cannot be created
 // - There was an error starting the command.
 // - Some IO error occurred while reading stdout or stderr.
-func InvokeTrident(runtime RuntimeType, client *ssh.Client, envVars []string, arguments string) (*stormsshconfig.SshCmdOutput, error) {
+func InvokeTrident(runtime RuntimeType, client sshutils.CommandRunner, envVars []string, arguments string) (*stormsshconfig.SshCmdOutput, error) {
 	var cmd string
 	switch runtime {
 	case RuntimeTypeHost:
@@ -98,7 +101,7 @@ func CheckCommandResult(out *stormsshconfig.SshCmdOutput, err error, expectReboo
 // the command fails or if the SSH client is nil. The function checks if the
 // image is already loaded by running `docker images` to avoid reloading it
 // unnecessarily.
-func LoadTridentContainer(client *ssh.Client) error {
+func LoadTridentContainer(client *stormssh.Client) error {
 	if client == nil {
 		return fmt.Errorf("SSH client is nil")
 	}
@@ -137,7 +140,7 @@ func LoadTridentContainer(client *ssh.Client) error {
 	return nil
 }
 
-func CheckTridentService(client *ssh.Client, runtime RuntimeType, timeout time.Duration, expectSuccessfulCommit bool) error {
+func CheckTridentService(client *stormssh.Client, runtime RuntimeType, timeout time.Duration, expectSuccessfulCommit bool) error {
 	if client == nil {
 		return fmt.Errorf("SSH client is nil")
 	}
@@ -194,32 +197,20 @@ func CheckTridentService(client *ssh.Client, runtime RuntimeType, timeout time.D
 // re-established (typically when `client` fails to create a new SSH session) and an
 // error if the service is not in the expected state or if there was an error
 // executing the command.
-func checkTridentServiceInner(client *ssh.Client, serviceName string, expectSuccessfulCommit bool) (bool, error) {
-	session, err := client.NewSession()
-	if err != nil {
-		// New session was not created, return `true` to indicate that
-		// the SSH client should be recreated and checkTridentServiceInner
-		// should be retried.
-		return true, fmt.Errorf("failed to create SSH session: %w", err)
-	}
-	defer session.Close()
-
+func checkTridentServiceInner(client *stormssh.Client, serviceName string, expectSuccessfulCommit bool) (bool, error) {
 	cmd := fmt.Sprintf("sudo systemctl status %s --no-pager", serviceName)
 	logrus.Debugf("Running command: %s", cmd)
 
-	output, err := session.CombinedOutput(cmd)
+	result, err := client.Run(context.Background(), cmd)
 	if err != nil {
-		// We expect systemctl to return an exit code of 3 when the service is
-		// not running. This is expected after trident is finished. It is NOT an
-		// error!
-		if exitErr, ok := err.(*ssh.ExitError); !(ok && exitErr.ExitStatus() == 3) {
-			// This is an unknown error, return it.
-			logrus.Debugf("Received output:\n %s", output)
-			return false, fmt.Errorf("failed to check Trident service status: %w", err)
-		}
+		return true, fmt.Errorf("failed to check Trident service status: %w", err)
+	}
+	// systemctl returns 3 for the expected inactive/failed commit service.
+	if result.ExitCode != 0 && result.ExitCode != 3 {
+		return false, fmt.Errorf("systemctl status exited %d: %s", result.ExitCode, result.Stderr)
 	}
 
-	outputStr := string(output)
+	outputStr := string(result.Stdout) + string(result.Stderr)
 
 	logrus.Debugf("Trident service status:\n%s", outputStr)
 

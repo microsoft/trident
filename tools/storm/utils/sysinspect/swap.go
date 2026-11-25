@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
 
 // ActiveSwaps returns the set of active swap device paths, canonicalized via
 // `readlink -f`. Mirrors encryption_test.py::get_active_swaps.
-func ActiveSwaps(client *ssh.Client) (map[string]struct{}, error) {
+func ActiveSwaps(client *stormssh.Client) (map[string]struct{}, error) {
 	// Capture swapon's output before canonicalizing it. Piping straight into
 	// xargs takes the pipeline's status from xargs, which succeeds on empty
 	// input, so a swapon failure would surface as "no swaps are active" and
@@ -35,7 +35,7 @@ func ActiveSwaps(client *ssh.Client) (map[string]struct{}, error) {
 }
 
 // ReadlinkF resolves a path to its canonical absolute form via `readlink -f`.
-func ReadlinkF(client *ssh.Client, path string) (string, error) {
+func ReadlinkF(client *stormssh.Client, path string) (string, error) {
 	out, err := sshutils.CommandOutput(client, fmt.Sprintf("sudo readlink -f %s", sshutils.ShellQuote(path)))
 	if err != nil {
 		return "", fmt.Errorf("failed to readlink -f %s: %w", path, err)
@@ -45,7 +45,7 @@ func ReadlinkF(client *ssh.Client, path string) (string, error) {
 
 // Getenforce returns the current SELinux enforcement mode ("Enforcing",
 // "Permissive", or "Disabled").
-func Getenforce(client *ssh.Client) (string, error) {
+func Getenforce(client *stormssh.Client) (string, error) {
 	out, err := sshutils.CommandOutput(client, "sudo getenforce")
 	if err != nil {
 		return "", fmt.Errorf("failed to run getenforce: %w", err)
@@ -54,7 +54,7 @@ func Getenforce(client *ssh.Client) (string, error) {
 }
 
 // Setenforce sets the SELinux enforcement mode (0 = permissive, 1 = enforcing).
-func Setenforce(client *ssh.Client, enforcing bool) error {
+func Setenforce(client *stormssh.Client, enforcing bool) error {
 	mode := "0"
 	if enforcing {
 		mode = "1"

@@ -177,6 +177,7 @@ stages:
               set -eux
               mkdir -p $(ob_outputDirectory)
               ./bin/storm-trident run "$(SCENARIO)" \
+                  --junit-omit-skipped \
                   -o $(ob_outputDirectory) \
                   -j "$(ob_outputDirectory)/storm-e2e.junit.xml" \
                   -- \

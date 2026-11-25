@@ -10,15 +10,23 @@ import (
 	"strings"
 	"time"
 
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"golang.org/x/crypto/ssh"
 	stormretry "tridenttools/storm/utils/retry"
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
 	stormsftp "tridenttools/storm/utils/ssh/sftp"
+	"tridenttools/storm/utils/sshutils"
 	stormtrident "tridenttools/storm/utils/trident"
 	qemu "tridenttools/storm/utils/vm/qemu"
 )
+
+type sshClient interface {
+	sshutils.CommandRunner
+	SudoSFTP(...string) (*stormssh.SFTP, error)
+	Close() error
+}
 
 // runner owns guest transport, VM control and evidence output for one scenario.
 type runner struct {
@@ -26,7 +34,7 @@ type runner struct {
 	vmName, ip string
 	qemu       qemu.QemuConfig
 	log        *os.File
-	client     *ssh.Client
+	client     sshClient
 }
 
 // prepareUpdate creates the host configuration and uploads it with the COSI for later updates.
@@ -58,7 +66,7 @@ func (r *runner) closeClient() {
 }
 
 // withClient reuses successful connections without replaying failed operations.
-func (r *runner) withClient(operation func(context.Context, *ssh.Client) error) error {
+func (r *runner) withClient(operation func(context.Context, sshClient) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), r.args.OperationTimeout)
 	defer cancel()
 	if r.client == nil {
@@ -85,7 +93,7 @@ func (r *runner) withClient(operation func(context.Context, *ssh.Client) error) 
 func (r *runner) command(command string) (string, error) {
 	command = "sudo -n sh -c '" + strings.ReplaceAll(command, "'", "'\"'\"'") + "'"
 	var out *stormsshconfig.SshCmdOutput
-	err := r.withClient(func(ctx context.Context, client *ssh.Client) error {
+	err := r.withClient(func(ctx context.Context, client sshClient) error {
 		var err error
 		out, err = stormsshclient.RunCommandContext(ctx, client, command)
 		if _, logErr := fmt.Fprintf(r.log, "$ %s\n%s\nerror: %v\n", command, out.Report(), err); logErr != nil {
@@ -102,7 +110,7 @@ func (r *runner) command(command string) (string, error) {
 // trident captures command evidence and handles expected reboot disconnects.
 func (r *runner) trident(arguments, logName string, expectReboot bool) (string, error) {
 	var out *stormsshconfig.SshCmdOutput
-	err := r.withClient(func(ctx context.Context, client *ssh.Client) error {
+	err := r.withClient(func(ctx context.Context, client sshClient) error {
 		var invokeErr error
 		var result error
 		if expectReboot && r.args.Variant == variantMSHV {
@@ -127,8 +135,8 @@ func (r *runner) trident(arguments, logName string, expectReboot bool) (string, 
 
 // upload copies a local input into the guest through privileged SFTP.
 func (r *runner) upload(source, dest string) error {
-	return r.withClient(func(_ context.Context, client *ssh.Client) error {
-		return stormsftp.UploadLocalFile(client, source, dest)
+	return r.withClient(func(ctx context.Context, client sshClient) error {
+		return stormsftp.UploadLocalFileContext(ctx, client, source, dest)
 	})
 }
 
@@ -149,7 +157,7 @@ func (r *runner) waitBoot(previousBootID string) (string, error) {
 			attempt, done := context.WithTimeout(ctx, 10*time.Second)
 			defer done()
 			settings := r.settings()
-			return waitForBootCandidates(attempt, ips, func(ctx context.Context, ip string) (*ssh.Client, string, error) {
+			return waitForBootCandidates(attempt, ips, func(ctx context.Context, ip string) (sshClient, string, error) {
 				candidate := settings
 				candidate.Host = ip
 				return stormsshcheck.WaitForBoot(ctx, candidate, previousBootID)
@@ -175,7 +183,7 @@ func (r *runner) reboot() error {
 	if r.args.Variant == variantMSHV {
 		command = "sudo -n systemctl poweroff --no-block"
 	}
-	err := r.withClient(func(ctx context.Context, client *ssh.Client) error {
+	err := r.withClient(func(ctx context.Context, client sshClient) error {
 		out, err := stormsshclient.RunCommandContext(ctx, client, command)
 		_, logErr := fmt.Fprintf(r.log, "$ %s\n%s\nerror: %v\n", command, out.Report(), err)
 		var disconnected *ssh.ExitMissingError

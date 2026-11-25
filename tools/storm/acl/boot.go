@@ -4,17 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
-	"golang.org/x/crypto/ssh"
 )
 
 type bootConnection struct {
 	ip, id string
-	client *ssh.Client
+	client sshClient
 }
 
 // waitForBootCandidates probes leases concurrently so a stale address cannot starve a live one.
-func waitForBootCandidates(ctx context.Context, ips []string, probe func(context.Context, string) (*ssh.Client, string, error)) (*bootConnection, error) {
+func waitForBootCandidates(ctx context.Context, ips []string, probe func(context.Context, string) (sshClient, string, error)) (*bootConnection, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

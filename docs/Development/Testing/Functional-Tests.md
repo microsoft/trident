@@ -30,7 +30,7 @@ Functional tests run inside a libvirt/QEMU virtual machine. You need:
 - **libvirt and QEMU** installed and configured
 - **Docker** (to run Image Customizer for building the test VM image)
 - **[oras](https://oras.land/)** CLI (to download base images from MCR)
-- **Go 1.24+** (to build `virtdeploy`)
+- **Go 1.26.6+** (to build `virtdeploy`)
 - **Python 3.8+** with test packages:
 
   ```bash

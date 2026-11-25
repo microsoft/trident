@@ -86,7 +86,7 @@ stages:
                     chmod +x ./bin/storm-trident
                     chmod 600 '$(Build.ArtifactStagingDirectory)/acl/id_rsa'
                     mkdir -p '$(ob_outputDirectory)'
-                    sudo ./bin/storm-trident run acl -a \
+                    sudo ./bin/storm-trident run acl -a --junit-omit-skipped \
                       -j '$(ob_outputDirectory)/acl-${{ variant }}.junit.xml' -- \
                       --variant '${{ variant }}' \
                       --deploy-slot-validation NoDatastore \

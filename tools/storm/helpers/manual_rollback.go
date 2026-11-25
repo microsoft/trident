@@ -5,17 +5,17 @@ import (
 	"os"
 	"strings"
 
+	"github.com/microsoft/storm"
+	stormssh "github.com/microsoft/storm/utils/ssh"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
+
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
 	stormsftp "tridenttools/storm/utils/ssh/sftp"
 	"tridenttools/storm/utils/trident"
 	stormtrident "tridenttools/storm/utils/trident"
-
-	"github.com/microsoft/storm"
-	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
-	"gopkg.in/yaml.v3"
 )
 
 type ManualRollbackHelper struct {
@@ -155,7 +155,7 @@ func (h *ManualRollbackHelper) rollback(tc storm.TestCase) error {
 	return nil
 }
 
-func copyRemoteFileToArtifacts(client *ssh.Client, remotePath string, artifactName string, tc storm.TestCase) error {
+func copyRemoteFileToArtifacts(client *stormssh.Client, remotePath string, artifactName string, tc storm.TestCase) error {
 	localPath, err := stormsftp.DownloadRemoteFile(client, remotePath, "")
 	if err != nil {
 		return fmt.Errorf("failed to download remote file (%s): %w", remotePath, err)

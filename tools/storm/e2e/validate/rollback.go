@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/utils/sshutils"
@@ -82,7 +82,7 @@ func HasFailingHealthChecks(config hostconfig.HostConfig) bool {
 // the expected script/service failures.
 func ValidateRollback(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	hs tridentutil.HostStatus,
 	expectedState tridentutil.ServicingState,
 	abActive tridentutil.AbVolumeSelection,
@@ -115,7 +115,7 @@ func ValidateRollback(
 
 // validateRollbackLogs checks that exactly one health-check failure log exists
 // and that it records the expected failure messages.
-func validateRollbackLogs(sa *SoftAsserter, client *ssh.Client) {
+func validateRollbackLogs(sa *SoftAsserter, client *stormssh.Client) {
 	listOut, err := sshutils.CommandOutput(client, "sudo ls "+healthCheckFailureLogGlob)
 	if err != nil {
 		sa.Fail("rollback/log-list", err)

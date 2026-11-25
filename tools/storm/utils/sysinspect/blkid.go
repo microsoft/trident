@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
@@ -40,7 +40,7 @@ func (e BlkidEntry) Get(field string) (string, bool) {
 // Example line:
 //
 //	/dev/sda2: UUID="04267584-..." BLOCK_SIZE="4096" TYPE="ext4" PARTLABEL="root-a" PARTUUID="f1be3a27-..."
-func Blkid(client *ssh.Client) (map[string]BlkidEntry, error) {
+func Blkid(client *stormssh.Client) (map[string]BlkidEntry, error) {
 	out, err := sshutils.CommandOutput(client, "sudo blkid")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run blkid: %w", err)
@@ -82,7 +82,7 @@ func ParseBlkid(stdout string) map[string]BlkidEntry {
 // device path (DEVNAME) to its properties. This export format groups each
 // device's fields as `KEY=value` lines separated by blank lines, and is used by
 // the encryption validation (mirrors encryption_test.py::get_blkid_output).
-func BlkidExport(client *ssh.Client) (map[string]map[string]string, error) {
+func BlkidExport(client *stormssh.Client) (map[string]map[string]string, error) {
 	out, err := sshutils.CommandOutput(client, "sudo blkid --output export")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run blkid --output export: %w", err)

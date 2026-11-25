@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
@@ -17,7 +17,7 @@ type MountEntry struct {
 }
 
 // Mount runs `mount` on the host and returns the parsed entries.
-func Mount(client *ssh.Client) ([]MountEntry, error) {
+func Mount(client *stormssh.Client) ([]MountEntry, error) {
 	out, err := sshutils.CommandOutput(client, "mount")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run mount: %w", err)

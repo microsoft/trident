@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/utils/sshutils"
@@ -36,7 +36,7 @@ func HasExtensions(config hostconfig.HostConfig) bool {
 // ValidateExtensions ports extensions_test.py::test_extensions. For each
 // configured sysext/confext it confirms the extension path exists on the host
 // and that the extension is active per `systemd-<type> status`.
-func ValidateExtensions(sa *SoftAsserter, client *ssh.Client, hs tridentutil.HostStatus, expected hostconfig.HostConfig) {
+func ValidateExtensions(sa *SoftAsserter, client *stormssh.Client, hs tridentutil.HostStatus, expected hostconfig.HostConfig) {
 	os := hs.Spec().S("os")
 
 	for listKey, extType := range extensionKinds {

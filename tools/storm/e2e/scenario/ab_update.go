@@ -1,6 +1,7 @@
 package scenario
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -10,8 +11,8 @@ import (
 	"time"
 
 	"github.com/microsoft/storm"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
 
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/pkg/netlaunch"
@@ -19,7 +20,6 @@ import (
 	"tridenttools/storm/e2e/validate"
 	"tridenttools/storm/utils/acr"
 	"tridenttools/storm/utils/retry"
-	"tridenttools/storm/utils/ssh/sftp"
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
 )
@@ -309,38 +309,18 @@ func (s *TridentE2EScenario) uploadNewConfig(tc storm.TestCase) error {
 		return fmt.Errorf("failed to populate SSH client: %w", err)
 	}
 
-	sftpClient, err := sftp.NewSftpSudoClient(s.sshClient)
-	if err != nil {
-		return fmt.Errorf("failed to create SFTP sudo client: %w", err)
-	}
-	defer sftpClient.Close()
-
 	// Write the updated host config to /tmp/host_config.yaml on the test host
 	hostConfigFile, err := s.config.ToYaml()
 	if err != nil {
 		return fmt.Errorf("failed to render host configuration: %w", err)
 	}
 
-	remoteFile, err := sftpClient.Create(hostConfigRemotePath)
+	files, err := s.sshClient.SudoSFTP()
 	if err != nil {
-		return fmt.Errorf("failed to create remote host config file '%s': %w", hostConfigRemotePath, err)
+		return fmt.Errorf("failed to open sudo SFTP: %w", err)
 	}
-	defer remoteFile.Close()
-
-	_, err = remoteFile.Write(hostConfigFile)
-	if err != nil {
-		remoteFile.Close()
-		return fmt.Errorf("failed to write to remote host config file '%s': %w", hostConfigRemotePath, err)
-	}
-
-	err = remoteFile.Chmod(0644)
-	if err != nil {
-		return fmt.Errorf("failed to change permissions of new Host Config file: %w", err)
-	}
-
-	err = remoteFile.Chown(0, 0)
-	if err != nil {
-		return fmt.Errorf("failed to change ownership of new Host Config file: %w", err)
+	if err := files.Upload(tc.Context(), hostConfigRemotePath, bytes.NewReader(hostConfigFile)); err != nil {
+		return fmt.Errorf("failed to upload Host Config: %w", err)
 	}
 
 	return nil
@@ -557,7 +537,7 @@ func (s *TridentE2EScenario) waitForFailedCommitAfterRollback(tc storm.TestCase)
 	return nil
 }
 
-func runTridentUpdate(tc storm.TestCase, runtime trident.RuntimeType, client *ssh.Client, args string, stagingOnly bool) error {
+func runTridentUpdate(tc storm.TestCase, runtime trident.RuntimeType, client *stormssh.Client, args string, stagingOnly bool) error {
 	for i := 1; ; i++ {
 		logrus.Infof("Invoking Trident attempt #%d with args: %s", i, args)
 

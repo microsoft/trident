@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -10,9 +11,8 @@ import (
 	"strings"
 
 	"github.com/microsoft/storm"
-
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v3"
 	"oras.land/oras-go/v2"
 	"oras.land/oras-go/v2/content/file"
@@ -23,7 +23,7 @@ import (
 	stormsshcheck "tridenttools/storm/utils/ssh/check"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
-	stormsftp "tridenttools/storm/utils/ssh/sftp"
+	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
 	stormtrident "tridenttools/storm/utils/trident"
 )
@@ -41,7 +41,7 @@ type AbUpdateHelper struct {
 		ForcedRollback                bool     `help:"Controls whether this test includes a forced auto-rollback during A/B update." default:"false"`
 	}
 
-	client *ssh.Client
+	client *stormssh.Client
 	config map[string]interface{}
 }
 
@@ -191,37 +191,15 @@ func (h *AbUpdateHelper) updateHostConfig(tc storm.TestCase) error {
 		return fmt.Errorf("failed to marshal YAML: %w", err)
 	}
 
-	sftpClient, err := stormsftp.NewSftpSudoClient(h.client)
-	if err != nil {
-		return fmt.Errorf("failed to create SudoSFTP client: %w", err)
-	}
-	defer sftpClient.Close()
-
-	// Ensure the cosi file exists
-	err = sftpClient.MkdirAll(path.Dir(h.args.TridentConfig))
-	if err != nil {
+	if _, err := stormsshclient.CommandOutput(h.client, "sudo mkdir -p -- "+sshutils.ShellQuote(path.Dir(h.args.TridentConfig))); err != nil {
 		return fmt.Errorf("failed to create directory for new Host Config file: %w", err)
 	}
-
-	file, err := sftpClient.Create(h.args.TridentConfig)
+	files, err := h.client.SudoSFTP()
 	if err != nil {
-		return fmt.Errorf("failed to create new Host Config file: %w", err)
+		return fmt.Errorf("failed to open sudo SFTP: %w", err)
 	}
-	defer file.Close()
-
-	_, err = file.Write(hc_yaml)
-	if err != nil {
-		return fmt.Errorf("failed to write new Host Config file: %w", err)
-	}
-
-	err = file.Chmod(0644)
-	if err != nil {
-		return fmt.Errorf("failed to change permissions of new Host Config file: %w", err)
-	}
-
-	err = file.Chown(0, 0)
-	if err != nil {
-		return fmt.Errorf("failed to change ownership of new Host Config file: %w", err)
+	if err := files.Upload(tc.Context(), h.args.TridentConfig, bytes.NewReader(hc_yaml)); err != nil {
+		return fmt.Errorf("failed to upload Host Config: %w", err)
 	}
 
 	return nil

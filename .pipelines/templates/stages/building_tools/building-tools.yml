@@ -77,6 +77,9 @@ stages:
 
         steps:
           - template: ../common_tasks/checkout_trident.yml
+          - task: GoTool@0
+            inputs:
+              version: "1.26.6"
           - template: ../common_tasks/avoid-pypi-usage.yml
           - template: ../common_tasks/update-protoc.yml
             parameters:

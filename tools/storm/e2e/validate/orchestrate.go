@@ -5,9 +5,8 @@ import (
 	"path"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
-
 	"github.com/Jeffail/gabs/v2"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/pkg/hostconfig"
 	"tridenttools/storm/utils/sshutils"
@@ -24,7 +23,7 @@ import (
 // when the host configuration declares an A/B update.
 func ValidateBase(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	hs tridentutil.HostStatus,
 	expected hostconfig.HostConfig,
 	expectedState tridentutil.ServicingState,
@@ -63,7 +62,7 @@ func validateReportedConfig(sa *SoftAsserter, hs tridentutil.HostStatus, expecte
 // that the active volume's device path matches the mounted root device.
 func ValidatePartitions(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	hs tridentutil.HostStatus,
 	spec hostconfig.HostConfig,
 	expectedState tridentutil.ServicingState,
@@ -166,7 +165,7 @@ func validatePartitionSize(
 // for non-verity roots.
 func validateActiveVolumePath(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	hs tridentutil.HostStatus,
 	spec hostconfig.HostConfig,
 	blkid map[string]sysinspect.BlkidEntry,
@@ -307,7 +306,7 @@ func raidExpectedPath(spec hostconfig.HostConfig, activeVolumeID string) (string
 }
 
 // getRootMountDevice returns the device mounted at "/" from `mount` output.
-func getRootMountDevice(client *ssh.Client) (string, bool) {
+func getRootMountDevice(client *stormssh.Client) (string, bool) {
 	entries, err := sysinspect.Mount(client)
 	if err != nil {
 		return "", false
@@ -339,7 +338,7 @@ func SecondaryGroups(user *gabs.Container) []string {
 	return groups
 }
 
-func ValidateUsers(sa *SoftAsserter, client *ssh.Client, spec hostconfig.HostConfig) {
+func ValidateUsers(sa *SoftAsserter, client *stormssh.Client, spec hostconfig.HostConfig) {
 	systemUsers, err := sysinspect.Users(client)
 	if err != nil {
 		sa.Fail("users/passwd", err)
@@ -510,7 +509,7 @@ func espDeviceIds(spec hostconfig.HostConfig) map[string]struct{} {
 // *current* boot entry unconditionally and read a hard-coded /efi/... path that
 // does not exist on these hosts - so the command failed, `&& exit 1 || exit 0`
 // turned that into success, and the check passed without testing anything.
-func ValidateUefiFallback(sa *SoftAsserter, client *ssh.Client, spec hostconfig.HostConfig) {
+func ValidateUefiFallback(sa *SoftAsserter, client *stormssh.Client, spec hostconfig.HostConfig) {
 	mode := "conservative"
 	if m, ok := spec.S("os", "uefiFallback").Data().(string); ok {
 		mode = m
@@ -532,10 +531,10 @@ func ValidateUefiFallback(sa *SoftAsserter, client *ssh.Client, spec hostconfig.
 
 func validateUefiFallbackDisabled(
 	sa *SoftAsserter,
-	client *ssh.Client,
+	client *stormssh.Client,
 	esp string,
-	findmnt func(*ssh.Client, string) ([]sysinspect.FindmntRow, error),
-	runCommand func(*ssh.Client, string) (*sshutils.SshCmdOutput, error),
+	findmnt func(*stormssh.Client, string) ([]sysinspect.FindmntRow, error),
+	runCommand func(*stormssh.Client, string) (*sshutils.SshCmdOutput, error),
 ) {
 	rows, err := findmnt(client, esp)
 	if err != nil {
@@ -602,7 +601,7 @@ func validateUefiFallbackDisabled(
 
 // describeMounts collects a short picture of the host's mount table and the
 // directory the ESP was expected under, for inclusion in a failure message.
-func describeMounts(client *ssh.Client, esp string) string {
+func describeMounts(client *stormssh.Client, esp string) string {
 	var b strings.Builder
 	for _, probe := range []struct{ label, cmd string }{
 		{"findmnt", "findmnt -n -o TARGET,SOURCE,FSTYPE | grep -iE 'vfat|efi' || echo '(no vfat/efi mounts)'"},

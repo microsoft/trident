@@ -14,14 +14,14 @@ import (
 	"testing"
 	"time"
 
-	"tridenttools/pkg/virtdeploy"
-	"tridenttools/storm/utils/sshutils"
-
 	"github.com/digitalocean/go-libvirt"
 	"github.com/google/uuid"
 	"github.com/klauspost/compress/zstd"
 	"github.com/microsoft/storm"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"golang.org/x/crypto/ssh"
+
+	"tridenttools/pkg/virtdeploy"
 )
 
 const (
@@ -184,8 +184,12 @@ func (s *failureVMScenario) RegisterTestCases(r storm.TestRegistrar) error {
 		if _, err := lv.DomainCreateWithFlags(domain, uint32(libvirt.DomainStartPaused)); err != nil {
 			return err
 		}
-		s.sshPrivateKey, _, err = sshutils.GenerateRsaKeyPair(2048)
-		return err
+		key, err := stormssh.GenerateKey()
+		if err != nil {
+			return err
+		}
+		s.sshPrivateKey = key.PEM
+		return nil
 	})
 	r.RegisterTestCase("fail", func(tc storm.TestCase) error {
 		tc.Fail(failureVMReason)

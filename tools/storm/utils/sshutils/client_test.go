@@ -2,10 +2,35 @@ package sshutils
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
+
+	stormssh "github.com/microsoft/storm/utils/ssh"
 )
+
+type cancelingCommand struct{}
+
+func (cancelingCommand) Run(ctx context.Context, _ string) (stormssh.Result, error) {
+	<-ctx.Done()
+	return stormssh.Result{Stdout: []byte("partial output"), ExitCode: -1}, ctx.Err()
+}
+
+func TestRunCommandContextPreservesCancellationAndOutput(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	out, err := RunCommandContext(ctx, cancelingCommand{}, "test")
+	if !errors.Is(err, context.DeadlineExceeded) || out.Status != -1 || out.Stdout != "partial output" {
+		t.Fatalf("lost command result or cancellation: %+v, %v", out, err)
+	}
+}
+
+func TestRunCommandRejectsNilClient(t *testing.T) {
+	if _, err := RunCommand(nil, "test"); err == nil {
+		t.Fatal("nil SSH client was accepted")
+	}
+}
 
 func TestCreateSshClientCancelsStalledHandshake(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -28,7 +53,7 @@ func TestCreateSshClientCancelsStalledHandshake(t *testing.T) {
 		<-serverDone
 	}()
 
-	key, _, err := GenerateRsaKeyPair(2048)
+	pair, err := stormssh.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +66,7 @@ func TestCreateSshClientCancelsStalledHandshake(t *testing.T) {
 			User:       "test",
 			Host:       "127.0.0.1",
 			Port:       uint16(listener.Addr().(*net.TCPAddr).Port),
-			PrivateKey: key,
+			PrivateKey: pair.PEM,
 		})
 		if client != nil {
 			client.Close()

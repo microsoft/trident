@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 	"tridenttools/storm/utils/trident"
@@ -35,7 +35,7 @@ const (
 // host runtime is under test. Container-runtime scenarios prepare SELinux
 // separately so Trident can run privileged in Docker; record that non-applicable
 // sub-check explicitly rather than silently omitting it.
-func ValidateSelinuxDenialsForRuntime(sa *SoftAsserter, client *ssh.Client, runtime trident.RuntimeType) {
+func ValidateSelinuxDenialsForRuntime(sa *SoftAsserter, client *stormssh.Client, runtime trident.RuntimeType) {
 	switch runtime {
 	case trident.RuntimeTypeHost:
 		ValidateSelinuxDenials(sa, client)
@@ -61,7 +61,7 @@ func ValidateSelinuxDenialsForRuntime(sa *SoftAsserter, client *ssh.Client, runt
 // not in the image. The legacy helper ignored the exit status, so both cases
 // were recorded as "no SELinux violations found".
 // audit2allow is still used, best effort, to render the matching policy rules.
-func ValidateSelinuxDenials(sa *SoftAsserter, client *ssh.Client) {
+func ValidateSelinuxDenials(sa *SoftAsserter, client *stormssh.Client) {
 	// grep exits 0 when it matches, 1 when it does not, and >1 on a real error
 	// such as the audit log being absent.
 	count, err := sshutils.RunCommand(client,
@@ -89,7 +89,7 @@ func ValidateSelinuxDenials(sa *SoftAsserter, client *ssh.Client) {
 // audit2allowDetail renders the denials as policy rules when audit2allow is
 // usable, and explains itself when it is not. It never fails the check: the
 // denial count above is the authoritative signal.
-func audit2allowDetail(client *ssh.Client) string {
+func audit2allowDetail(client *stormssh.Client) string {
 	out, err := sshutils.RunCommand(client, "sudo audit2allow -i "+sshutils.ShellQuote(auditLogPath))
 	switch {
 	case err != nil:
@@ -106,7 +106,7 @@ func audit2allowDetail(client *ssh.Client) string {
 // ValidateJournaldTracing ports check-tracing's check-journald. It confirms the
 // Trident tracing metric emitted by commit (trident_start) is present in the
 // host's journald logs under the trident-tracing syslog identifier.
-func ValidateJournaldTracing(sa *SoftAsserter, client *ssh.Client) {
+func ValidateJournaldTracing(sa *SoftAsserter, client *stormssh.Client) {
 	out, err := sshutils.RunCommand(client,
 		"sudo journalctl -t "+sshutils.ShellQuote(tridentTracingSyslogIdentifier)+" -o json")
 	if err != nil {

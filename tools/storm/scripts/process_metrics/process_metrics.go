@@ -10,17 +10,18 @@
 package process_metrics
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"tridenttools/storm/e2e/scenario"
-	stormutils "tridenttools/storm/utils"
-	"tridenttools/storm/utils/metrics"
-
+	"github.com/microsoft/storm/utils/ado"
 	"github.com/sirupsen/logrus"
+
+	"tridenttools/storm/e2e/scenario"
+	"tridenttools/storm/utils/metrics"
 )
 
 type ProcessMetricsScriptSet struct {
@@ -79,9 +80,8 @@ func (h *ProcessMetricsScript) Run() error {
 	if _, err := os.Stat(hostConfigPath); os.IsNotExist(err) {
 		// prepare-hc publishes the Host Configuration as its last action, so
 		// its absence means the run never deployed anything.
-		stormutils.SetAzureDevopsVariables(uploadMetricsVariable, "False")
 		logrus.Infof("No Host Configuration at %q; the run produced no metrics to upload.", hostConfigPath)
-		return nil
+		return ado.SetVariable(os.Stdout, uploadMetricsVariable, "False", false)
 	}
 
 	config, err := metrics.LoadHostConfig(hostConfigPath)
@@ -143,10 +143,11 @@ func (h *ProcessMetricsScript) Run() error {
 	// Record what is uploadable BEFORE returning any error: the caller must
 	// still be told to upload whatever did enrich.
 	if err := h.writeEnrichedList(enriched); err != nil {
-		stormutils.SetAzureDevopsVariables(uploadMetricsVariable, "False")
+		return errors.Join(err, ado.SetVariable(os.Stdout, uploadMetricsVariable, "False", false))
+	}
+	if err := ado.SetVariable(os.Stdout, uploadMetricsVariable, boolVariable(len(enriched) > 0), false); err != nil {
 		return err
 	}
-	stormutils.SetAzureDevopsVariables(uploadMetricsVariable, boolVariable(len(enriched) > 0))
 
 	if len(failed) > 0 {
 		return fmt.Errorf("failed to enrich these metrics files: %v", failed)

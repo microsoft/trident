@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 
 	"tridenttools/storm/utils/sshutils"
 )
 
 // Users runs `cat /etc/passwd` and returns the set of usernames on the host.
-func Users(client *ssh.Client) (map[string]struct{}, error) {
+func Users(client *stormssh.Client) (map[string]struct{}, error) {
 	out, err := sshutils.CommandOutput(client, "cat /etc/passwd")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read /etc/passwd: %w", err)
@@ -35,7 +35,7 @@ func ParsePasswd(stdout string) map[string]struct{} {
 
 // Groups runs `cat /etc/group` and returns, for each group, the set of member
 // usernames listed in the final field.
-func Groups(client *ssh.Client) (map[string]map[string]struct{}, error) {
+func Groups(client *stormssh.Client) (map[string]map[string]struct{}, error) {
 	out, err := sshutils.CommandOutput(client, "cat /etc/group")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read /etc/group: %w", err)

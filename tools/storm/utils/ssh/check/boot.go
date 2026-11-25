@@ -7,17 +7,17 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/ssh"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	stormretry "tridenttools/storm/utils/retry"
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
 )
 
 // WaitForBoot returns an SSH-ready boot distinct from previousBootID; the caller owns the client.
-func WaitForBoot(ctx context.Context, settings stormsshconfig.SshCliSettings, previousBootID string) (*ssh.Client, string, error) {
+func WaitForBoot(ctx context.Context, settings stormsshconfig.SshCliSettings, previousBootID string) (*stormssh.Client, string, error) {
 	// boot pairs a ready connection with the boot identity observed through it.
 	type boot struct {
-		client *ssh.Client
+		client *stormssh.Client
 		id     string
 	}
 	result, err := stormretry.RetryContext(ctx, 2*time.Second, func(ctx context.Context, _ int) (*boot, error) {

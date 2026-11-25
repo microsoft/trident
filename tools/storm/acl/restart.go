@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/ssh"
 	stormsshconfig "tridenttools/storm/utils/ssh/config"
 	stormtrident "tridenttools/storm/utils/trident"
 )
@@ -42,7 +41,7 @@ func waitForGuestRestart(ctx context.Context, serial io.Reader) ([]byte, error) 
 
 // invokeTridentWithGuestRestart requires both Trident's reboot announcement and a serial restart boundary.
 // It closes SSH when the serial wait finishes so a stalled warm reset cannot hang the command.
-func invokeTridentWithGuestRestart(ctx context.Context, client *ssh.Client, arguments string, serial io.Reader) (*stormsshconfig.SshCmdOutput, []byte, error) {
+func invokeTridentWithGuestRestart(ctx context.Context, client sshClient, arguments string, serial io.Reader) (*stormsshconfig.SshCmdOutput, []byte, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// restartResult carries the observed shutdown excerpt and any serial-wait error.
@@ -70,7 +69,7 @@ func invokeTridentWithGuestRestart(ctx context.Context, client *ssh.Client, argu
 }
 
 // tridentWithRestart saves fresh restart evidence before cold-cycling the existing MSHV domain.
-func (r *runner) tridentWithRestart(ctx context.Context, client *ssh.Client, arguments, logName string) (*stormsshconfig.SshCmdOutput, error) {
+func (r *runner) tridentWithRestart(ctx context.Context, client sshClient, arguments, logName string) (*stormsshconfig.SshCmdOutput, error) {
 	serial, err := os.Open(r.qemu.SerialLog)
 	if err != nil {
 		return nil, err

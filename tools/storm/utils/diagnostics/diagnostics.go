@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
+	stormssh "github.com/microsoft/storm/utils/ssh"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
 
 	stormsshclient "tridenttools/storm/utils/ssh/client"
 	"tridenttools/storm/utils/trident"
@@ -112,7 +112,7 @@ func VerifyBundleContents(bundlePath string) error {
 }
 
 // CheckDiagnostics runs trident diagnostics, copies the bundle locally, and verifies its contents
-func CheckDiagnostics(client *ssh.Client, runtime trident.RuntimeType, envVars []string) error {
+func CheckDiagnostics(client *stormssh.Client, runtime trident.RuntimeType, envVars []string) error {
 	// When running in container, write to /host/tmp so it persists on the host
 	bundlePath := "/tmp/bundle"
 	if runtime == trident.RuntimeTypeContainer {

@@ -292,7 +292,7 @@ stages:
                         set -eux
 
                         cd $(TRIDENT_SOURCE_DIR)
-                        ./bin/storm-trident run servicing -a \
+                        ./bin/storm-trident run servicing -a --junit-omit-skipped \
                           --output-path $(ob_outputDirectory) \
                           --platform azure \
                           --artifacts-dir $ARTIFACTS \
