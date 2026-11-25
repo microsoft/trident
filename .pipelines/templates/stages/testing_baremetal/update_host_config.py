@@ -90,13 +90,12 @@ def update_trident_host_config(
             }
         )
 
-    logging.info("Updating os disks device in trident.yaml")
+    logging.info("Configuring disk selectors in trident.yaml")
     disks = host_configuration.get("storage").get("disks")
     for disk in disks:
-        if disk["id"] == "os":
-            disk["device"] = "/dev/sda"
-        elif disk["id"] == "disk2":
-            disk["device"] = "/dev/sdb"
+        if disk["id"] in ("os", "disk2"):
+            disk.pop("device", None)
+            disk["selector"] = {"strategy": "tiered-smallest-fit"}
 
     # If this is root-verity, we need to set an internal param to be able to
     # configure the network.
