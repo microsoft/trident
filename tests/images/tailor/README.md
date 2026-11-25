@@ -97,6 +97,12 @@ instead of loading the AZL3 module; ISO enforcing-mode choices are unchanged.
 The build-only layer keeps legacy installer stages and artifacts in place.
 Native artifacts have a `tailor-` prefix, while their contained ISO filenames
 retain the legacy names. Adoption is a separate pipeline change.
+The adoption layer removes only the legacy standard host/container installer
+producers and supplies their stage/artifact names to the native templates.
+Existing AZL3 consumers therefore retain their contracts. AZL4 host tests opt
+into the native AZL4 installer through `useDistroInstaller`; the shared test
+templates keep their prior installer choice by default. MOS artifacts are
+exposed without the comparison prefix for download/local netlaunch use.
 Split/direct-streaming installers, ARM64 images and azl-installer remain on
 their existing build paths.
 

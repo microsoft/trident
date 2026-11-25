@@ -18,6 +18,9 @@ parameters:
     type: string
     default: azl3
     values: [azl3, azl4]
+  - name: useDistroInstaller
+    type: boolean
+    default: false
   - name: stageSuffix
     type: string
     default: ""
@@ -44,7 +47,10 @@ stages:
       - ${{ else }}:
           - BuildingTools
           - ${{ if eq(parameters.distro, 'azl4') }}:
-              - TridentTestImg_trident_installer
+              - ${{ if parameters.useDistroInstaller }}:
+                  - TridentTestImg_trident_azl4_installer
+              - ${{ else }}:
+                  - TridentTestImg_trident_installer
               - TridentTestImg_trident_azl4_testimage
           - ${{ elseif eq(parameters.runtimeType, 'CONTAINER') }}:
               - BuildTridentContainerImage
@@ -127,6 +133,11 @@ stages:
         steps:
           - template: ../common_tasks/checkout_trident.yml
           - template: ../common_tasks/avoid-pypi-usage.yml
+
+          - ${{ if and(eq(parameters.distro, 'azl4'), parameters.useDistroInstaller) }}:
+              - bash: |
+                  echo "##vso[task.setvariable variable=installerISOName]trident-azl4-installer"
+                displayName: Select the native AZL4 installer ISO
 
           - template: ../testing_common/download-test-images.yml
             parameters:

@@ -17,6 +17,9 @@ parameters:
   - name: includeAzl4
     type: boolean
     default: false
+  - name: useDistroInstaller
+    type: boolean
+    default: false
 
 stages:
   - stage: DefineTests_E2E
@@ -74,6 +77,7 @@ stages:
           hardwareType: "VM"
           runtimeType: "HOST"
           distro: azl4
+          useDistroInstaller: ${{ parameters.useDistroInstaller }}
           stageSuffix: "_AZL4"
           testingRun: ${{ parameters.testingRun }}
           acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
