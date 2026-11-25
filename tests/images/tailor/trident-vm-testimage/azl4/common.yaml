@@ -55,20 +55,20 @@ os:
         - tridentd.socket
   additionalFiles:
     $set:
-      - source: files/hostname-shim.sh
+      - source: ../common/files/hostname-shim.sh
         destination: /usr/local/bin/hostname
         permissions: "755"
       - source: files/sudoers-wheel
         destination: /etc/sudoers.d/wheel
       - source: files/99-dhcp-eth0.network
         destination: /etc/systemd/network/99-dhcp-eth0.network
-      - source: files/regen-sshd-keys.service
+      - source: ../common/files/regen-sshd-keys.service
         destination: /etc/systemd/system/regen-sshd-keys.service
 
 scripts:
   postCustomization:
     $set:
-      - path: scripts/azl4/ssh-move-host-keys-azl4.sh
-      - path: scripts/azl4/enable-regen-sshd-keys.sh
-      - path: scripts/azl4/rebuild-initrd-azl4.sh
-      - path: scripts/azl4/strip-selinux-xattrs.sh
+      - $include: ../common/scripts/azl4/ssh-move-host-keys-azl4.yaml
+      - $include: ../common/scripts/azl4/enable-regen-sshd-keys.yaml
+      - $include: ../common/scripts/azl4/rebuild-initrd-azl4.yaml
+      - $include: ../common/scripts/azl4/strip-selinux-xattrs.yaml

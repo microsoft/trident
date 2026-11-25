@@ -12,5 +12,9 @@ base:
 rpmSources:
   - ../../../../bin/RPMS
 
+params:
+  # Preserve shell ${...} expressions through Tailor interpolation.
+  shellDollar: "$"
+
 outputs:
   - format: cosi
