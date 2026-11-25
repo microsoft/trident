@@ -15,7 +15,7 @@ import sys
 from typing import Dict, Mapping
 
 
-def resolve_target_ips(
+def resolve_target_network(
     environment: Mapping[str, str], max_parallel: int
 ) -> Dict[str, str]:
     suffix = ""
@@ -50,7 +50,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        addresses = resolve_target_ips(os.environ, args.max_parallel)
+        addresses = resolve_target_network(os.environ, args.max_parallel)
     except ValueError as error:
         print(error, file=sys.stderr)
         return 1
