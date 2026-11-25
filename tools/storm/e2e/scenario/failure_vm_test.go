@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -127,7 +128,11 @@ type failureVMScenario struct {
 func (s *failureVMScenario) Args() any { return nil }
 func (s *failureVMScenario) RegisterTestCases(r storm.TestRegistrar) error {
 	r.RegisterTestCase("create-vm", func(storm.TestCase) error {
-		lv, closeLibvirt, err := virtdeploy.ConnectContext(context.Background())
+		uri, err := url.Parse(string(libvirt.QEMUSystem))
+		if err != nil {
+			return err
+		}
+		lv, err := libvirt.ConnectToURI(uri)
 		if err != nil {
 			return err
 		}
@@ -136,23 +141,23 @@ func (s *failureVMScenario) RegisterTestCases(r storm.TestRegistrar) error {
 			`<pool type="dir"><name>%s-pool</name><target><path>%s</path></target></pool>`,
 			s.namespace, s.volumeDir), 0)
 		if err != nil {
-			closeLibvirt()
+			lv.Disconnect()
 			return err
 		}
 		if err := lv.StoragePoolCreate(pool, 0); err != nil {
-			closeLibvirt()
+			lv.Disconnect()
 			return err
 		}
 		vol, err := lv.StorageVolCreateXML(pool, fmt.Sprintf(
 			`<volume><name>%s-volume-0.qcow2</name><capacity unit="MiB">4</capacity><target><format type="qcow2"/></target></volume>`,
 			name), 0)
 		if err != nil {
-			closeLibvirt()
+			lv.Disconnect()
 			return err
 		}
 		path, err := lv.StorageVolGetPath(vol)
 		if err != nil {
-			closeLibvirt()
+			lv.Disconnect()
 			return err
 		}
 		domain, err := lv.DomainDefineXML(fmt.Sprintf(`
@@ -170,12 +175,11 @@ func (s *failureVMScenario) RegisterTestCases(r storm.TestRegistrar) error {
   </devices>
 </domain>`, name, path))
 		if err != nil {
-			closeLibvirt()
+			lv.Disconnect()
 			return err
 		}
 		s.testHost = &testHostVirtDeploy{
 			namespace: s.namespace, vm: virtdeploy.VirtDeployVMStatus{Name: name, Domain: domain}, lv: lv,
-			closeLibvirt: closeLibvirt,
 		}
 		if _, err := lv.DomainCreateWithFlags(domain, uint32(libvirt.DomainStartPaused)); err != nil {
 			return err

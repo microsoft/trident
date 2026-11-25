@@ -1,13 +1,10 @@
 package virtdeploy
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path"
-	"runtime"
 
 	"github.com/digitalocean/go-libvirt"
 	"github.com/google/uuid"
@@ -129,27 +126,14 @@ func newVirtDeployResourceConfig(config VirtDeployConfig) (*virtDeployResourceCo
 	return r, nil
 }
 
-func cleanupNamespace(ctx context.Context, namespaceRaw string) error {
-	lvConn, closeConn, err := ConnectContext(ctx)
+func cleanupNamespace(namespaceRaw string) error {
+	ns := namespace(namespaceRaw)
+
+	// Connect to libvirt
+	lvConn, err := connect()
 	if err != nil {
 		return err
 	}
-	return cleanupResources(ctx, namespaceRaw, lvConn, closeConn)
-}
-
-func cleanupResources(ctx context.Context, namespaceRaw string, lvConn *libvirt.Libvirt, closeConn func() error) (err error) {
-	ns := namespace(namespaceRaw)
-	stop := context.AfterFunc(ctx, func() {
-		_ = closeConn()
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			const stackLimit = 64 * 1024
-			stack := make([]byte, stackLimit)
-			n := runtime.Stack(stack, true)
-			log.Errorf("Timed out cleaning namespace %q; goroutine stacks:\n%s", namespaceRaw, stack[:n])
-		}
-	})
-	defer stop()
-	defer func() { err = errors.Join(err, closeConn(), ctx.Err()) }()
 
 	rc := &virtDeployResourceConfig{
 		namespace: ns,
