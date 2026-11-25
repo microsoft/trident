@@ -321,7 +321,6 @@ stages:
           runtimeEnv: "host"
           distro: azl4
           stageSuffix: "_azl4"
-          testSecureBoot: false
 
   - ${{ if eq(parameters.stageType, 'pre') }}:
       # Functional Testing

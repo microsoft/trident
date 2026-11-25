@@ -79,7 +79,6 @@ ALLOWED_RUNTIMES = ["host", "container"]
 SPECIAL_SETTINGS = {
     "base-azl4": {
         "distro": "azl4",
-        "secureBoot": False,
     },
     "rerun": {
         "maxExpectedFailures": 1,

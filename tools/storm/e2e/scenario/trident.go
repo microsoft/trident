@@ -34,9 +34,6 @@ type TridentE2EHostConfigParams struct {
 	// Empty preserves AZL3 for existing configurations.
 	Distro string `yaml:"distro"`
 
-	// Nil preserves Secure Boot for existing configurations.
-	SecureBoot *bool `yaml:"secureBoot"`
-
 	// Maximum expected failures for this scenario
 	MaxExpectedFailures uint `yaml:"maxExpectedFailures"`
 
@@ -224,10 +221,6 @@ func (s *TridentE2EScenario) RuntimeType() trident.RuntimeType {
 
 func (s *TridentE2EScenario) Distro() string {
 	return s.configParams.Distro
-}
-
-func (s *TridentE2EScenario) secureBootEnabled() bool {
-	return s.configParams.SecureBoot == nil || *s.configParams.SecureBoot
 }
 
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {

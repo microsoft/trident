@@ -8,20 +8,18 @@ import (
 	"tridenttools/storm/utils/trident"
 )
 
-func TestDistroAndSecureBootDefaults(t *testing.T) {
+func TestDistroDefaults(t *testing.T) {
 	hc, err := hostconfig.NewHostConfigFromYaml([]byte("storage: {}\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	disabled := false
 	for _, tc := range []struct {
-		name       string
-		params     TridentE2EHostConfigParams
-		distro     string
-		secureBoot bool
+		name   string
+		params TridentE2EHostConfigParams
+		distro string
 	}{
-		{"legacy", TridentE2EHostConfigParams{}, "azl3", true},
-		{"azl4", TridentE2EHostConfigParams{Distro: "azl4", SecureBoot: &disabled}, "azl4", false},
+		{"legacy", TridentE2EHostConfigParams{}, "azl3"},
+		{"azl4", TridentE2EHostConfigParams{Distro: "azl4"}, "azl4"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, err := NewTridentE2EScenario("test", nil, hc, tc.params,
@@ -29,8 +27,8 @@ func TestDistroAndSecureBootDefaults(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if s.Distro() != tc.distro || s.secureBootEnabled() != tc.secureBoot {
-				t.Fatalf("unexpected distro/Secure Boot: %s/%t", s.Distro(), s.secureBootEnabled())
+			if s.Distro() != tc.distro {
+				t.Fatalf("unexpected distro: got %s, want %s", s.Distro(), tc.distro)
 			}
 		})
 	}

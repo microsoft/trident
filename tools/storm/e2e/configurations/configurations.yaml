@@ -31,7 +31,6 @@ base-azl4:
   vm:
     host: pr-e2e
   distro: azl4
-  secureBoot: false
 combined:
   vm:
     host: pr-e2e
