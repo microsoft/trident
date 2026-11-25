@@ -157,21 +157,20 @@ struct Response {
     data: Vec<u8>,
 }
 
-/// Minimal synchronous transport contract used by production and tests.
-trait Transport {
-    /// Submits one request to the local BMC.
-    fn send(&mut self, request: &Request) -> Result<(), Error>;
-    /// Receives one response or returns `None` when the timeout expires.
-    fn receive(&mut self, timeout: Duration) -> Result<Option<Response>, Error>;
+/// Kernel-facing operations required by the IPMI transport.
+trait Device {
+    /// Submits one UAPI request.
+    fn send(&mut self, request: &mut uapi::IpmiReq) -> Result<(), Error>;
+    /// Waits for and receives one UAPI response, returning `false` on timeout.
+    fn receive(&mut self, timeout: Duration, response: &mut uapi::IpmiRecv) -> Result<bool, Error>;
 }
 
-/// Linux character-device transport for the local IPMI system interface.
-struct LinuxTransport {
-    /// Open read/write handle used for polling and ioctls.
-    device: File,
+/// Real Linux character device and syscalls.
+struct LinuxDevice {
+    file: File,
 }
 
-impl LinuxTransport {
+impl LinuxDevice {
     /// Opens the primary local IPMI device without leaking the descriptor across exec.
     fn open() -> Result<Self, io::Error> {
         OpenOptions::new()
@@ -179,12 +178,49 @@ impl LinuxTransport {
             .write(true)
             .custom_flags(libc::O_CLOEXEC)
             .open(IPMI_DEVICE)
-            .map(|device| Self { device })
+            .map(|file| Self { file })
     }
 }
 
-impl Transport for LinuxTransport {
-    /// Converts the internal request into the Linux `ipmi_req` UAPI layout.
+impl Device for LinuxDevice {
+    fn send(&mut self, request: &mut uapi::IpmiReq) -> Result<(), Error> {
+        // SAFETY: the transport keeps the request, address and data alive for this call.
+        unsafe { uapi::send_command(self.file.as_raw_fd(), request) }
+            .context("IPMICTL_SEND_COMMAND failed")?;
+        Ok(())
+    }
+
+    fn receive(&mut self, timeout: Duration, response: &mut uapi::IpmiRecv) -> Result<bool, Error> {
+        let mut descriptors = [PollFd::new(self.file.as_fd(), PollFlags::POLLIN)];
+        let timeout = PollTimeout::try_from(timeout).context("IPMI response timeout is invalid")?;
+        if poll::poll(&mut descriptors, timeout).context("Failed to poll the IPMI device")? == 0 {
+            return Ok(false);
+        }
+        validate_poll_events(descriptors[0].revents())?;
+
+        // SAFETY: the transport provides initialized writable address and data buffers.
+        unsafe { uapi::receive_msg_trunc(self.file.as_raw_fd(), response) }
+            .context("IPMICTL_RECEIVE_MSG_TRUNC failed")?;
+        Ok(true)
+    }
+}
+
+/// IPMI request/response transport over a kernel-facing device.
+struct LinuxTransport<D> {
+    device: D,
+}
+
+impl LinuxTransport<LinuxDevice> {
+    fn open() -> Result<Self, io::Error> {
+        LinuxDevice::open().map(Self::new)
+    }
+}
+
+impl<D: Device> LinuxTransport<D> {
+    fn new(device: D) -> Self {
+        Self { device }
+    }
+
     fn send(&mut self, request: &Request) -> Result<(), Error> {
         let mut address = uapi::IpmiSystemInterfaceAddr {
             address_type: request.address_type,
@@ -206,31 +242,10 @@ impl Transport for LinuxTransport {
                 data: data.as_mut_ptr(),
             },
         };
-
-        // SAFETY: `request` and every pointer it contains refer to initialized, writable values
-        // that remain alive for the ioctl. Their C layouts match linux/ipmi.h.
-        unsafe { uapi::send_command(self.device.as_raw_fd(), &mut request) }
-            .context("IPMICTL_SEND_COMMAND failed")?;
-        Ok(())
+        self.device.send(&mut request)
     }
 
-    /// Polls the IPMI descriptor and copies one kernel response into owned storage.
     fn receive(&mut self, timeout: Duration) -> Result<Option<Response>, Error> {
-        let mut descriptors = [PollFd::new(self.device.as_fd(), PollFlags::POLLIN)];
-        let timeout = PollTimeout::try_from(timeout).context("IPMI response timeout is invalid")?;
-        if poll::poll(&mut descriptors, timeout).context("Failed to poll the IPMI device")? == 0 {
-            return Ok(None);
-        }
-        let events = descriptors[0]
-            .revents()
-            .ok_or_else(|| anyhow!("IPMI poll returned unrecognized event flags"))?;
-        if events.intersects(PollFlags::POLLERR | PollFlags::POLLHUP | PollFlags::POLLNVAL) {
-            bail!("IPMI device poll failed with {events:?}");
-        }
-        if !events.contains(PollFlags::POLLIN) {
-            bail!("IPMI device became ready without readable data: {events:?}");
-        }
-
         let mut address = [0_u8; uapi::MAX_ADDRESS_SIZE];
         let mut data = [0_u8; IPMI_RESPONSE_DATA_SIZE];
         let mut response = uapi::IpmiRecv {
@@ -251,11 +266,9 @@ impl Transport for LinuxTransport {
                 data: data.as_mut_ptr(),
             },
         };
-
-        // SAFETY: `response` points to initialized address and data buffers that outlive the ioctl.
-        // The kernel may update the scalar fields and buffer contents according to linux/ipmi.h.
-        unsafe { uapi::receive_msg_trunc(self.device.as_raw_fd(), &mut response) }
-            .context("IPMICTL_RECEIVE_MSG_TRUNC failed")?;
+        if !self.device.receive(timeout, &mut response)? {
+            return Ok(None);
+        }
         let data_len = usize::from(response.msg.data_len);
         if data_len > data.len() {
             bail!(
@@ -273,6 +286,18 @@ impl Transport for LinuxTransport {
     }
 }
 
+/// Verifies that polling made the IPMI device readable without terminal errors.
+fn validate_poll_events(events: Option<PollFlags>) -> Result<(), Error> {
+    let events = events.ok_or_else(|| anyhow!("IPMI poll returned unrecognized event flags"))?;
+    if events.intersects(PollFlags::POLLERR | PollFlags::POLLHUP | PollFlags::POLLNVAL) {
+        bail!("IPMI device poll failed with {events:?}");
+    }
+    if !events.contains(PollFlags::POLLIN) {
+        bail!("IPMI device became ready without readable data: {events:?}");
+    }
+    Ok(())
+}
+
 /// Converts a Rust structure size into the Linux UAPI's unsigned integer type.
 fn size_to_c_uint<T>() -> Result<c_uint, Error> {
     size_of::<T>()
@@ -281,12 +306,12 @@ fn size_to_c_uint<T>() -> Result<c_uint, Error> {
 }
 
 /// Opens a transport and distinguishes a missing local device from operational errors.
-fn send_with_opener<T>(
+fn send_with_opener<D>(
     data: [u8; 8],
-    open: impl FnOnce() -> Result<T, io::Error>,
+    open: impl FnOnce() -> Result<LinuxTransport<D>, io::Error>,
 ) -> Result<SendOutcome, Error>
 where
-    T: Transport,
+    D: Device,
 {
     let mut transport = match open() {
         Ok(transport) => transport,
@@ -300,7 +325,10 @@ where
 }
 
 /// Sends one event and waits for its correlated successful response.
-fn send_with_transport(data: [u8; 8], transport: &mut impl Transport) -> Result<(), Error> {
+fn send_with_transport<D: Device>(
+    data: [u8; 8],
+    transport: &mut LinuxTransport<D>,
+) -> Result<(), Error> {
     let request = Request {
         address_type: uapi::SYSTEM_INTERFACE_ADDRESS_TYPE,
         channel: uapi::BMC_CHANNEL,
@@ -368,35 +396,103 @@ fn validate_response(response: &Response) -> Result<(), Error> {
 mod tests {
     use super::*;
 
-    use std::collections::VecDeque;
+    use std::{collections::VecDeque, slice};
+
+    struct FakeResponse {
+        response: Response,
+        reported_len: Option<u16>,
+    }
+
+    impl From<Response> for FakeResponse {
+        fn from(response: Response) -> Self {
+            Self {
+                response,
+                reported_len: None,
+            }
+        }
+    }
 
     #[derive(Default)]
-    struct FakeTransport {
+    struct FakeDevice {
         requests: Vec<Request>,
-        responses: VecDeque<Result<Option<Response>, Error>>,
+        responses: VecDeque<Result<Option<FakeResponse>, Error>>,
+        receive_calls: Vec<(Duration, usize, usize)>,
         send_error: bool,
     }
 
-    impl FakeTransport {
+    impl FakeDevice {
         fn successful() -> Self {
             Self {
-                responses: VecDeque::from([Ok(Some(successful_response()))]),
+                responses: VecDeque::from([Ok(Some(FakeResponse {
+                    response: successful_response(),
+                    reported_len: None,
+                }))]),
                 ..Self::default()
             }
         }
     }
 
-    impl Transport for FakeTransport {
-        fn send(&mut self, request: &Request) -> Result<(), Error> {
-            self.requests.push(*request);
+    impl Device for FakeDevice {
+        fn send(&mut self, request: &mut uapi::IpmiReq) -> Result<(), Error> {
+            // SAFETY: the transport keeps both buffers valid for the duration of this call.
+            let address = unsafe {
+                &*request
+                    .addr
+                    .cast::<uapi::IpmiSystemInterfaceAddr>()
+                    .cast_const()
+            };
+            // SAFETY: the transport keeps the request data valid for the duration of this call.
+            let data = unsafe {
+                slice::from_raw_parts(request.msg.data, usize::from(request.msg.data_len))
+            };
+            self.requests.push(Request {
+                address_type: address.address_type,
+                channel: address.channel,
+                lun: address.lun,
+                netfn: request.msg.netfn,
+                cmd: request.msg.cmd,
+                msgid: request.msgid,
+                data: data.try_into().unwrap(),
+            });
             if self.send_error {
                 bail!("injected send failure");
             }
             Ok(())
         }
 
-        fn receive(&mut self, _timeout: Duration) -> Result<Option<Response>, Error> {
-            self.responses.pop_front().unwrap_or_else(|| Ok(None))
+        fn receive(
+            &mut self,
+            timeout: Duration,
+            response: &mut uapi::IpmiRecv,
+        ) -> Result<bool, Error> {
+            self.receive_calls.push((
+                timeout,
+                usize::try_from(response.addr_len).unwrap(),
+                usize::from(response.msg.data_len),
+            ));
+            let Some(response_data) = self.responses.pop_front().unwrap_or_else(|| Ok(None))?
+            else {
+                return Ok(false);
+            };
+            let FakeResponse {
+                response: fake,
+                reported_len,
+            } = response_data;
+            assert!(fake.data.len() <= usize::from(response.msg.data_len));
+            // SAFETY: the transport supplies a buffer large enough for `fake.data`.
+            unsafe {
+                response
+                    .msg
+                    .data
+                    .copy_from_nonoverlapping(fake.data.as_ptr(), fake.data.len());
+            }
+            response.recv_type = fake.recv_type;
+            response.msgid = fake.msgid;
+            response.msg.netfn = fake.netfn;
+            response.msg.cmd = fake.cmd;
+            response.msg.data_len =
+                reported_len.unwrap_or_else(|| fake.data.len().try_into().unwrap());
+            Ok(true)
         }
     }
 
@@ -426,23 +522,111 @@ mod tests {
     }
 
     #[test]
+    fn linux_transport_marshals_request_for_ioctl() {
+        let data = [1, 2, 3, 4, 5, 6, 7, 8];
+        let request = Request {
+            address_type: uapi::SYSTEM_INTERFACE_ADDRESS_TYPE,
+            channel: uapi::BMC_CHANNEL,
+            lun: IPMI_BMC_LUN,
+            netfn: IPMI_REQUEST_NETFN,
+            cmd: IPMI_PLATFORM_EVENT_COMMAND,
+            msgid: IPMI_MESSAGE_ID,
+            data,
+        };
+        let mut transport = LinuxTransport::new(FakeDevice::default());
+        transport.send(&request).unwrap();
+        assert_eq!(transport.device.requests.len(), 1);
+        assert_eq!(
+            transport.device.requests[0].address_type,
+            request.address_type
+        );
+        assert_eq!(transport.device.requests[0].channel, request.channel);
+        assert_eq!(transport.device.requests[0].lun, request.lun);
+        assert_eq!(transport.device.requests[0].msgid, request.msgid);
+        assert_eq!(transport.device.requests[0].netfn, request.netfn);
+        assert_eq!(transport.device.requests[0].cmd, request.cmd);
+        assert_eq!(transport.device.requests[0].data, request.data);
+    }
+
+    #[test]
+    fn linux_transport_owns_received_ioctl_data() {
+        let timeout = Duration::from_secs(3);
+        let payload = [0x00, 0x11, 0x22];
+        let mut transport = LinuxTransport::new(FakeDevice {
+            responses: VecDeque::from([Ok(Some(FakeResponse {
+                response: Response {
+                    recv_type: uapi::RESPONSE_RECEIVE_TYPE,
+                    msgid: IPMI_MESSAGE_ID,
+                    netfn: IPMI_RESPONSE_NETFN,
+                    cmd: IPMI_PLATFORM_EVENT_COMMAND,
+                    data: payload.to_vec(),
+                },
+                reported_len: None,
+            }))]),
+            ..FakeDevice::default()
+        });
+        let response = transport.receive(timeout).unwrap().unwrap();
+        assert_eq!(
+            transport.device.receive_calls,
+            [(timeout, uapi::MAX_ADDRESS_SIZE, IPMI_RESPONSE_DATA_SIZE)]
+        );
+        assert_eq!(response.recv_type, uapi::RESPONSE_RECEIVE_TYPE);
+        assert_eq!(response.msgid, IPMI_MESSAGE_ID);
+        assert_eq!(response.netfn, IPMI_RESPONSE_NETFN);
+        assert_eq!(response.cmd, IPMI_PLATFORM_EVENT_COMMAND);
+        assert_eq!(response.data, payload);
+    }
+
+    #[test]
+    fn linux_transport_handles_timeout_and_invalid_kernel_length() {
+        let mut transport = LinuxTransport::new(FakeDevice::default());
+        assert!(transport.receive(Duration::ZERO).unwrap().is_none());
+
+        let mut transport = LinuxTransport::new(FakeDevice {
+            responses: VecDeque::from([Ok(Some(FakeResponse {
+                response: successful_response(),
+                reported_len: Some((IPMI_RESPONSE_DATA_SIZE + 1).try_into().unwrap()),
+            }))]),
+            ..FakeDevice::default()
+        });
+        let error = transport.receive(Duration::ZERO).unwrap_err();
+        assert!(format!("{error:#}").contains("exceeds the 32-byte receive buffer"));
+    }
+
+    #[test]
+    fn linux_transport_validates_poll_events() {
+        validate_poll_events(Some(PollFlags::POLLIN)).unwrap();
+        for (events, expected) in [
+            (None, "unrecognized event flags"),
+            (Some(PollFlags::POLLERR), "poll failed"),
+            (Some(PollFlags::empty()), "without readable data"),
+        ] {
+            let error = validate_poll_events(events).unwrap_err();
+            assert!(format!("{error:#}").contains(expected), "{error:#}");
+        }
+    }
+
+    #[test]
     fn request_uses_platform_event_command_and_payload() {
         let data = [1, 2, 3, 4, 5, 6, 7, 8];
-        let mut transport = FakeTransport::successful();
+        let mut transport = LinuxTransport::new(FakeDevice::successful());
         send_with_transport(data, &mut transport).unwrap();
-        assert_eq!(transport.requests.len(), 1);
-        assert_eq!(transport.requests[0].address_type, 0x0c);
-        assert_eq!(transport.requests[0].channel, 0x0f);
-        assert_eq!(transport.requests[0].lun, 0);
-        assert_eq!(transport.requests[0].netfn, 0x04);
-        assert_eq!(transport.requests[0].cmd, 0x02);
-        assert_eq!(transport.requests[0].data, data);
+        assert_eq!(transport.device.requests.len(), 1);
+        assert_eq!(transport.device.requests[0].address_type, 0x0c);
+        assert_eq!(transport.device.requests[0].channel, 0x0f);
+        assert_eq!(transport.device.requests[0].lun, 0);
+        assert_eq!(transport.device.requests[0].netfn, 0x04);
+        assert_eq!(transport.device.requests[0].cmd, 0x02);
+        assert_eq!(transport.device.requests[0].data, data);
     }
 
     #[test]
     fn successful_response_reports_sent() {
         assert_eq!(
-            send_with_opener([0; 8], || { Ok(FakeTransport::successful()) }).unwrap(),
+            send_with_opener([0; 8], || {
+                Ok(LinuxTransport::new(FakeDevice::successful()))
+            })
+            .unwrap(),
             SendOutcome::Sent
         );
     }
@@ -450,7 +634,7 @@ mod tests {
     #[test]
     fn missing_device_reports_unavailable() {
         assert_eq!(
-            send_with_opener::<FakeTransport>([0; 8], || {
+            send_with_opener::<FakeDevice>([0; 8], || {
                 Err(io::Error::from(io::ErrorKind::NotFound))
             })
             .unwrap(),
@@ -460,16 +644,16 @@ mod tests {
 
     #[test]
     fn real_errors_are_propagated() {
-        let open = send_with_opener::<FakeTransport>([0; 8], || {
+        let open = send_with_opener::<FakeDevice>([0; 8], || {
             Err(io::Error::from(io::ErrorKind::PermissionDenied))
         })
         .unwrap_err();
         assert!(format!("{open:#}").contains("Failed to open local IPMI device"));
 
-        let mut transport = FakeTransport {
+        let mut transport = LinuxTransport::new(FakeDevice {
             send_error: true,
-            ..FakeTransport::default()
-        };
+            ..FakeDevice::default()
+        });
         let send = send_with_transport([0; 8], &mut transport).unwrap_err();
         assert!(format!("{send:#}").contains("injected send failure"));
     }
@@ -478,17 +662,17 @@ mod tests {
     fn nonzero_completion_code_is_an_error() {
         let mut response = successful_response();
         response.data[0] = 0xc1;
-        let mut transport = FakeTransport {
-            responses: VecDeque::from([Ok(Some(response))]),
-            ..FakeTransport::default()
-        };
+        let mut transport = LinuxTransport::new(FakeDevice {
+            responses: VecDeque::from([Ok(Some(response.into()))]),
+            ..FakeDevice::default()
+        });
         let error = send_with_transport([0; 8], &mut transport).unwrap_err();
         assert!(format!("{error:#}").contains("completion code 0xc1"));
     }
 
     #[test]
     fn timeout_is_an_error() {
-        let mut transport = FakeTransport::default();
+        let mut transport = LinuxTransport::new(FakeDevice::default());
         let error = send_with_transport([0; 8], &mut transport).unwrap_err();
         assert!(format!("{error:#}").contains("Timed out"));
     }
@@ -499,14 +683,14 @@ mod tests {
         async_event.recv_type = uapi::ASYNC_EVENT_RECEIVE_TYPE;
         let mut other_request = successful_response();
         other_request.msgid += 1;
-        let mut transport = FakeTransport {
+        let mut transport = LinuxTransport::new(FakeDevice {
             responses: VecDeque::from([
-                Ok(Some(async_event)),
-                Ok(Some(other_request)),
-                Ok(Some(successful_response())),
+                Ok(Some(async_event.into())),
+                Ok(Some(other_request.into())),
+                Ok(Some(successful_response().into())),
             ]),
-            ..FakeTransport::default()
-        };
+            ..FakeDevice::default()
+        });
         send_with_transport([0; 8], &mut transport).unwrap();
     }
 
@@ -543,10 +727,10 @@ mod tests {
             ),
         ];
         for (response, expected) in cases {
-            let mut transport = FakeTransport {
-                responses: VecDeque::from([Ok(Some(response))]),
-                ..FakeTransport::default()
-            };
+            let mut transport = LinuxTransport::new(FakeDevice {
+                responses: VecDeque::from([Ok(Some(response.into()))]),
+                ..FakeDevice::default()
+            });
             let error = send_with_transport([0; 8], &mut transport).unwrap_err();
             assert!(format!("{error:#}").contains(expected), "{error:#}");
         }
