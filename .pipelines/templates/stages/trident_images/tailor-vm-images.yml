@@ -1,0 +1,95 @@
+parameters:
+  - name: micBuildType
+    type: string
+    default: release
+    values: [dev, preview, release]
+  - name: micVersion
+    type: string
+    default: "*.*.*"
+  - name: tailorManifest
+    type: string
+    default: ""
+  - name: dependsOnStage
+    type: string
+    default: ""
+  - name: distros
+    type: object
+    default: [azl3, azl4]
+  - name: scenarios
+    type: object
+    default: [base, update]
+
+stages:
+  - stage: BuildTailorVMImages
+    displayName: Build Tailor AZL3 and AZL4 VM images
+    dependsOn:
+      - BuildingTools
+      - GetTridentBinaries_rpms_amd64
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+
+    jobs:
+      - job: PrepareTailorSSHKeys
+        displayName: Prepare shared VM image SSH keys
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+        variables:
+          ob_outputDirectory: /tmp/tailor-ssh-keys
+          ob_artifactBaseName: tailor-ssh-keys
+        steps:
+          - bash: |
+              set -euo pipefail
+              mkdir -p "$(ob_outputDirectory)"
+              ssh-keygen -q -t rsa -b 2048 -m PEM -N "" \
+                -f "$(ob_outputDirectory)/id_rsa"
+            displayName: Generate one SSH key for base and update images
+
+      - ${{ each distro in parameters.distros }}:
+          - ${{ each scenario in parameters.scenarios }}:
+              - job: TailorVM_${{ distro }}_${{ scenario }}
+                displayName: Build ${{ distro }} GRUB ${{ scenario }} image
+                dependsOn: PrepareTailorSSHKeys
+                timeoutInMinutes: 30
+                pool:
+                  type: linux
+                  name: trident-ubuntu-1es-pool-eastus2
+                  hostArchitecture: amd64
+                variables:
+                  ob_outputDirectory: /tmp/tailor-vm-output
+                  ${{ if eq(distro, 'azl3') }}:
+                    imageName: trident-vm-grub-testimage
+                    ${{ if eq(scenario, 'base') }}:
+                      ob_artifactBaseName: image-trident-vm-grub-testimage-qcow2
+                    ${{ else }}:
+                      ob_artifactBaseName: trident-vm-grub-testimage
+                  ${{ else }}:
+                    imageName: trident-vm-grub-azl4-testimage
+                    ${{ if eq(scenario, 'base') }}:
+                      ob_artifactBaseName: image-trident-vm-grub-azl4-testimage-qcow2
+                    ${{ else }}:
+                      ob_artifactBaseName: trident-vm-grub-azl4-testimage
+                steps:
+                  - template: ../common_tasks/checkout_trident.yml
+                  - template: ../common_tasks/avoid-pypi-usage.yml
+                  - template: ../common_tasks/find-base-image-version.yml
+                    parameters:
+                      tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+                      architecture: amd64
+                  - template: tailor-image-template.yml
+                    parameters:
+                      tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+                      outputDirectory: $(ob_outputDirectory)
+                      imageName: $(imageName)
+                      distro: ${{ distro }}
+                      scenario: ${{ scenario }}
+                      ${{ if eq(scenario, 'base') }}:
+                        clones: 1
+                      ${{ else }}:
+                        clones: 2
+                      baseimgBuildType: $(BASEIMG_BUILD_TYPE)
+                      baseimgVersion: $(BASEIMG_VERSION)
+                      micBuildType: ${{ parameters.micBuildType }}
+                      micVersion: ${{ parameters.micVersion }}
+                      tailorManifest: ${{ parameters.tailorManifest }}

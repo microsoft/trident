@@ -68,7 +68,7 @@ os:
 scripts:
   postCustomization:
     $set:
-      - path: scripts/ssh-move-host-keys-azl4.sh
-      - path: scripts/enable-regen-sshd-keys.sh
-      - path: scripts/rebuild-initrd-azl4.sh
-      - path: scripts/strip-selinux-xattrs.sh
+      - path: scripts/azl4/ssh-move-host-keys-azl4.sh
+      - path: scripts/azl4/enable-regen-sshd-keys.sh
+      - path: scripts/azl4/rebuild-initrd-azl4.sh
+      - path: scripts/azl4/strip-selinux-xattrs.sh
