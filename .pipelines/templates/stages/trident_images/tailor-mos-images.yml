@@ -1,0 +1,65 @@
+parameters:
+  - name: micBuildType
+    type: string
+    default: release
+    values: [dev, preview, release]
+  - name: micVersion
+    type: string
+    default: "*.*.*"
+  - name: dependsOnStage
+    type: string
+    default: ""
+  - name: distros
+    type: object
+    default: [azl3, azl4]
+
+stages:
+  - stage: BuildTailorMOSImages
+    displayName: Build Tailor AZL3 and AZL4 MOS ISOs
+    dependsOn:
+      - BuildingTools
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+    jobs:
+      - ${{ each distro in parameters.distros }}:
+          - job: TailorMOS_${{ distro }}
+            displayName: Build ${{ distro }} MOS ISO
+            timeoutInMinutes: 30
+            pool:
+              type: linux
+              name: trident-ubuntu-1es-pool-eastus2
+              hostArchitecture: amd64
+            variables:
+              ob_outputDirectory: /tmp/tailor-mos-output
+              ${{ if eq(distro, 'azl3') }}:
+                imageName: trident-mos
+                ob_artifactBaseName: trident-mos
+              ${{ else }}:
+                imageName: trident-azl4-mos
+                ob_artifactBaseName: trident-azl4-mos
+            steps:
+              - template: ../common_tasks/checkout_trident.yml
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              - ${{ if eq(distro, 'azl3') }}:
+                  - template: ../common_tasks/find-base-image-version.yml
+                    parameters:
+                      tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+                      architecture: amd64
+              - template: tailor-image-template.yml
+                parameters:
+                  tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+                  outputDirectory: $(ob_outputDirectory)
+                  imageName: $(imageName)
+                  tailorImage: trident-mos
+                  stageSshKeys: false
+                  stageTridentRpms: false
+                  stageRcpAgent: true
+                  baseImageType: baremetal
+                  distro: ${{ distro }}
+                  scenario: base
+                  clones: 1
+                  ${{ if eq(distro, 'azl3') }}:
+                    baseimgBuildType: $(BASEIMG_BUILD_TYPE)
+                    baseimgVersion: $(BASEIMG_VERSION)
+                  micBuildType: ${{ parameters.micBuildType }}
+                  micVersion: ${{ parameters.micVersion }}

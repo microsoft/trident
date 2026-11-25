@@ -159,29 +159,24 @@ stages:
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Trident installer ISO (host)
-  - template: stages/build_image/build-image.yml
+  # Build Tailor installer ISOs, preserving existing AZL3 stage/artifact names.
+  - template: stages/trident_images/tailor-installer-images.yml
     parameters:
-      imageName: trident-installer
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
-      clones: 1
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      dependsOnTrident: ${{ ne(parameters.tridentBuildOptions, 'prebuilt') }}
+
+  - template: stages/trident_images/tailor-mos-images.yml
+    parameters:
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # Build Trident split (stage and finalize separated) installer ISO (host)
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-split-installer
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      clones: 1
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
-  # Build Trident installer ISO (container)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-installer
-      runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       clones: 1
