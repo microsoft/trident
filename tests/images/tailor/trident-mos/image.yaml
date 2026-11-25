@@ -1,0 +1,15 @@
+name: trident-mos
+
+matrix:
+  arch: [amd64]
+  scenario: [base]
+  distro: [azl3, azl4]
+
+base:
+  path: ../../../../artifacts/baremetal.vhdx
+
+outputs:
+  - format: iso
+
+config:
+  $include: ./azl3.yaml

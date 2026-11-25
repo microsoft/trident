@@ -1,0 +1,6 @@
+- sshd
+- trident-install
+- tridentd.socket
+- systemd-networkd
+- systemd-resolved
+- netplan-configure.service

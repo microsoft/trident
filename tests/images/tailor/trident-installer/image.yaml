@@ -1,0 +1,13 @@
+name: trident-installer
+
+matrix:
+  arch: [amd64]
+  scenario: [base]
+  runtime: [host, container]
+  distro: [azl3, azl4]
+
+base:
+  path: ../../../../artifacts/baremetal.vhdx
+
+outputs:
+  - format: iso

@@ -1,0 +1,56 @@
+base:
+  $set:
+    path: ../../../../artifacts/azl4_minimal_os.vhdx
+
+config:
+  previewFeatures:
+    - preview-distro-version
+  storage:
+    disks:
+      $set:
+        - partitionTableType: gpt
+          maxSize: 4G
+          partitions:
+            - id: esp
+              type: esp
+              start: 1M
+              end: 33M
+            - id: rootfs
+              start: 33M
+  os:
+    packages:
+      install:
+        $set:
+          - binutils
+          - curl
+          - device-mapper
+          - dnf5
+          - dosfstools
+          - efibootmgr
+          - iproute
+          - iptables-nft
+          - lsof
+          - mdadm
+          - netplan
+          - netplan-default-backend-networkd
+          - ntfs-3g
+          - ntfsprogs
+          - openssh-server
+          - squashfs-tools
+          - tar
+          - tpm2-tools
+          - veritysetup
+          - vim
+          - selinux-policy-devel
+          - setools-console
+          - policycoreutils
+          - systemd-networkd
+          - systemd-resolved
+    services:
+      enable:
+        $set:
+          - rcp-agent
+          - tridentd.socket
+          - systemd-networkd
+          - systemd-resolved
+          - netplan-configure.service

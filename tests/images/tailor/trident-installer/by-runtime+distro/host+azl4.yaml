@@ -1,0 +1,10 @@
+config:
+  os:
+    packages:
+      install:
+        $set:
+          $include: ./azl4/host-packages.yaml
+    services:
+      enable:
+        $set:
+          $include: ./azl4/host-services.yaml

@@ -67,13 +67,13 @@ os:
       - tridentd.socket
 
   additionalFiles:
-    - source: files/getty@.service
+    - source: runtime/host/files/getty@.service
       destination: /usr/lib/systemd/system/getty@.service
-    - source: files/serial-getty@.service
+    - source: runtime/host/files/serial-getty@.service
       destination: /usr/lib/systemd/system/serial-getty@.service
-    - source: files/root.profile
+    - source: runtime/host/files/root.profile
       destination: /root/.profile
-    - source: files/trident-install.service
+    - source: runtime/host/files/trident-install.service
       destination: /usr/lib/systemd/system/trident-install.service
 
   selinux:
@@ -81,13 +81,13 @@ os:
 
 scripts:
   postCustomization:
-    - path: post-install.sh
+    - path: runtime/host/post-install.sh
 
 iso:
   additionalFiles:
-    - source: files/config-placeholder.yaml
+    - source: runtime/host/files/config-placeholder.yaml
       destination: /trident-config.yaml
-    - source: files/override-placeholder.conf
+    - source: runtime/host/files/override-placeholder.conf
       destination: /trident-override.conf
   kernelCommandLine:
     extraCommandLine:

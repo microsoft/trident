@@ -1,0 +1,18 @@
+base:
+  $set:
+    path: ../../../../artifacts/azl4_minimal_os.vhdx
+
+config:
+  previewFeatures:
+    - preview-distro-version
+  storage:
+    disks:
+      $set:
+        - partitionTableType: gpt
+          maxSize: 4G
+          partitions:
+            - id: esp
+              type: esp
+              size: 32M
+            - id: rootfs
+              size: grow

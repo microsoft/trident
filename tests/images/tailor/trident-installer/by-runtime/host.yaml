@@ -1,0 +1,5 @@
+rpmSources:
+  - ../../../../bin/RPMS
+
+config:
+  $include: ./azl3/host.yaml
