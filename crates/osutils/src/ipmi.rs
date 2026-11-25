@@ -109,15 +109,32 @@ pub fn send_installation_status(status: InstallationStatus) -> Result<SendOutcom
     send_with_opener(installation_status_payload(status), LinuxTransport::open)
 }
 
-/// Encodes the IPMI v2.0 system-interface Platform Event Message for an installation state.
+/// Encodes the standard host-software event that asks the BMC to process an installation state.
+///
+/// A Platform Event Message is used instead of writing an SEL record directly so the BMC can
+/// interpret the standard Base OS Boot/Installation Status event and expose its vendor-specific
+/// log, severity and management UI representation. IPMI sections 29.3 and 29.4 require the
+/// system-interface request body to contain, in order, the Generator ID, event-format revision,
+/// sensor type, sensor number, direction/type byte and three event-data bytes. Section 42.2 then
+/// defines Sensor Type `1Fh` and Event Data 1 offsets `07h` through `0Ah` as the installation
+/// lifecycle states. Sensor Number `00h` and zeroed Event Data 2/3 follow the established
+/// Anaconda-compatible software-event convention because the standard assigns no additional
+/// installation data to those fields.
 const fn installation_status_payload(status: InstallationStatus) -> [u8; 8] {
     [
+        // Generator ID: System Management Software ID in bits 7:1; bit 0 marks a software source.
         (IPMI_SYSTEM_MANAGEMENT_SOFTWARE_ID << 1) | IPMI_SOFTWARE_GENERATOR_FLAG,
+        // Event Message revision 04h identifies the IPMI 1.5/2.0 event format.
         IPMI_EVENT_MESSAGE_REVISION,
+        // Sensor Type 1Fh selects the standard Base OS Boot/Installation Status event class.
         IPMI_INSTALLATION_SENSOR_TYPE,
+        // Sensor Number 00h is the Anaconda-compatible synthetic software sensor.
         IPMI_INSTALLATION_SENSOR_NUMBER,
+        // Event Direction 0 asserts the state; Event Type 6Fh selects sensor-specific offsets.
         IPMI_SENSOR_SPECIFIC_EVENT_TYPE,
+        // Event Data 1 is the section 42.2 offset: started, completed, aborted or failed.
         status as u8,
+        // The installation-status event definition assigns no meaning to Event Data 2 or 3.
         IPMI_UNUSED_EVENT_DATA,
         IPMI_UNUSED_EVENT_DATA,
     ]
