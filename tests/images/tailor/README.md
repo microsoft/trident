@@ -88,6 +88,8 @@ All six cells produce one ISO each. Both models use the existing AZL3 baremetal
 VHDX or the AZL4 catalog base. The host installer uses the matching Trident RPMs;
 the container installer and MOS do not. MOS requires the built `rcp-agent` from
 the `go-tools` artifact at `bin/rcp-agent`.
+AZL4 ISO recipes install `dracut-live` explicitly because the minimal catalog
+base does not include the live-boot initramfs modules.
 
 The build-only layer keeps legacy installer stages and artifacts in place.
 Native artifacts have a `tailor-` prefix, while their contained ISO filenames

@@ -1,6 +1,7 @@
 - curl
 - device-mapper
 - dnf5
+- dracut-live
 - docker-cli
 - iproute
 - iptables-nft

@@ -25,6 +25,7 @@ config:
           - curl
           - device-mapper
           - dnf5
+          - dracut-live
           - dosfstools
           - efibootmgr
           - iproute
