@@ -6,3 +6,4 @@ toolchains:
     - name: imagecustomizer
       container: mcr.microsoft.com/azurelinux/imagecustomizer
       tag: latest
+      pull: missing

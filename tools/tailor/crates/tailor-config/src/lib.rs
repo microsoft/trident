@@ -28,4 +28,4 @@ pub use path::absolutize;
 pub use render::{MergeStep, RenderedCell, merge_plan, render_image, write_golden};
 pub use schema::*;
 pub use types::*;
-pub use workspace::{DiscoveredImage, Workspace, discover, discover_manifest, find_manifest};
+pub use workspace::{DiscoveredImage, Workspace, discover, find_manifest};
