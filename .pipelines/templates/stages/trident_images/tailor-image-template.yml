@@ -158,6 +158,19 @@ steps:
       if [[ "${STAGE_RCP_AGENT,,}" == true ]]; then
         cp -- artifacts/tailor-inputs/tools/rcp-agent "$SOURCE_DIRECTORY/bin/rcp-agent"
         chmod 755 "$SOURCE_DIRECTORY/bin/rcp-agent"
+        cp -- "$SOURCE_DIRECTORY/bin/rcp-agent" tests/images/tailor/trident-mos/files/rcp-agent
+        assets="$SOURCE_DIRECTORY/tests/images/tailor/common/files/mos"
+        mkdir -p "$assets/systemd" "$assets/selinux-policy" "$assets/static-pcrlock-files"
+        cp -- \
+          packaging/systemd/trident-install.service \
+          packaging/systemd/tridentd.socket \
+          packaging/systemd/tridentd.service \
+          tools/cmd/rcp-agent/rcp-agent.service "$assets/systemd/"
+        cp -- \
+          packaging/selinux-policy-trident/trident.if \
+          packaging/selinux-policy-trident/trident.fc \
+          packaging/selinux-policy-trident/trident.te "$assets/selinux-policy/"
+        cp -a -- packaging/static-pcrlock-files/. "$assets/static-pcrlock-files/"
       fi
       if [[ "${STAGE_SSH_KEYS,,}" == true ]]; then
         cp artifacts/tailor-inputs/ssh/id_rsa.pub tests/images/tailor/trident-vm-testimage/files/id_rsa.pub

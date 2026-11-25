@@ -87,7 +87,11 @@ trident-mos/
 All six cells produce one ISO each. Both models use the existing AZL3 baremetal
 VHDX or the AZL4 catalog base. The host installer uses the matching Trident RPMs;
 the container installer and MOS do not. MOS requires the built `rcp-agent` from
-the `go-tools` artifact at `bin/rcp-agent`.
+the `go-tools` artifact, staged at `bin/rcp-agent` and inside the MOS model.
+MOS policy/systemd/PCR assets are staged from the canonical repository sources
+into `common/files/mos`. These generated files are ignored by Git. Config assets
+must be inside the mounted Tailor workspace; unlike declared base/RPM inputs,
+arbitrary repository-relative asset paths are not mounted automatically.
 AZL4 ISO recipes install `dracut-live` explicitly because the minimal catalog
 base does not include the live-boot initramfs modules.
 The containerd SELinux mmap backport remains AZL3-only: its refpolicy symbols
