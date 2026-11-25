@@ -3,7 +3,7 @@
 use anyhow::Error;
 use log::{debug, warn};
 
-use osutils::ipmi::{self, InstallationStatus, SendOutcome};
+use osutils::ipmi::{InstallationStatus, SendOutcome};
 
 use crate::client::AttemptOutcome;
 
@@ -16,9 +16,20 @@ trait StatusReporter {
 /// Sends installer status through the local Linux IPMI interface.
 struct LocalStatusReporter;
 
+#[cfg(not(test))]
 impl StatusReporter for LocalStatusReporter {
     fn report(&mut self, status: InstallationStatus) -> Result<SendOutcome, Error> {
+        use osutils::ipmi;
+
         ipmi::send_installation_status(status)
+    }
+}
+
+/// Unit tests compile the live reporter with a no-I/O backend.
+#[cfg(test)]
+impl StatusReporter for LocalStatusReporter {
+    fn report(&mut self, _status: InstallationStatus) -> Result<SendOutcome, Error> {
+        Ok(SendOutcome::Sent)
     }
 }
 
@@ -213,5 +224,14 @@ mod tests {
                 [InstallationStatus::Started, InstallationStatus::Failed]
             );
         }
+    }
+
+    #[test]
+    fn live_reporter_uses_unit_test_backend() {
+        let mut reporter = LocalStatusReporter;
+        assert_eq!(
+            reporter.report(InstallationStatus::Started).unwrap(),
+            SendOutcome::Sent
+        );
     }
 }
