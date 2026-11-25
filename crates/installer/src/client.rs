@@ -62,8 +62,8 @@ pub(super) enum Completion {
 pub(super) enum AttemptOutcome {
     /// Trident returned a valid successful completion, including a no-op.
     Completed,
-    /// Preparation, transport, protocol validation or servicing failed cleanly.
-    Aborted,
+    /// Preparation, transport, protocol validation or servicing failed.
+    Failed,
 }
 
 /// Interprets a domain completion, enforcing the installer's caller-managed reboot contract.
@@ -109,7 +109,7 @@ pub(super) fn completion(
 fn attempt_outcome(completion_result: &Result<ClientCompletion, RemoteError>) -> AttemptOutcome {
     match completion(completion_result.clone()) {
         Ok(Completion::Success { .. }) => AttemptOutcome::Completed,
-        Ok(Completion::Failure(_)) | Err(_) => AttemptOutcome::Aborted,
+        Ok(Completion::Failure(_)) | Err(_) => AttemptOutcome::Failed,
     }
 }
 
@@ -223,7 +223,7 @@ pub(super) async fn execute(
     let (settings, plan) = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
-            return abort(
+            return fail(
                 &tx,
                 Event::Error {
                     details: format!("{error:#}"),
@@ -253,7 +253,7 @@ pub(super) async fn execute(
         match task::spawn_blocking(move || source::stream_preflight(&image)).await? {
             Ok(hash) => Some(hash),
             Err(error) => {
-                return abort(
+                return fail(
                     &tx,
                     Event::Error {
                         details: format!("{error:#}"),
@@ -271,7 +271,7 @@ pub(super) async fn execute(
     let client = match Client::connect_default().await {
         Ok(client) => client,
         Err(error) => {
-            return abort(
+            return fail(
                 &tx,
                 Event::Error {
                     details: format!("{error:#}"),
@@ -288,7 +288,7 @@ pub(super) async fn execute(
                 send(&tx, Event::IdleConfirmed).await?;
             }
             Ok(state) => {
-                return abort(
+                return fail(
                     &tx,
                     Event::Error {
                         details: format!("The previous operation's outcome is unknown. Trident returned an unsupported servicing state {state:?}; refusing another write."),
@@ -299,7 +299,7 @@ pub(super) async fn execute(
                 .await;
             }
             Err(error) => {
-                return abort(
+                return fail(
                     &tx,
                     Event::Error {
                         details: format!("The previous operation's outcome is unknown. Cannot establish that Trident is idle; refusing another write.\n{error}"),
@@ -327,7 +327,7 @@ pub(super) async fn execute(
     let response = match response {
         Ok(response) => response,
         Err(error) => {
-            return abort(
+            return fail(
                 &tx,
                 Event::Error {
                     details: format!("gRPC request failed: {error}"),
@@ -351,7 +351,7 @@ async fn receive(
         let event = match operation.next_event().await {
             Ok(Some(event)) => event,
             Ok(None) => {
-                return abort(
+                return fail(
                     tx,
                     Event::Error {
                         details: "The gRPC stream ended without a final Completed response. Installation outcome is unknown; it may still be running.".into(),
@@ -362,7 +362,7 @@ async fn receive(
                 .await;
             }
             Err(error) => {
-                return abort(
+                return fail(
                     tx,
                     Event::Error {
                         details: format!(
@@ -389,15 +389,15 @@ async fn receive(
     }
 }
 
-/// Sends a handled installation error and classifies the attempt as aborted.
-async fn abort(
+/// Sends a handled installation error and classifies the attempt as failed.
+async fn fail(
     tx: &Sender<Event>,
     event: Event,
     terminal: &mut impl FnMut(AttemptOutcome),
 ) -> Result<AttemptOutcome, Error> {
-    terminal(AttemptOutcome::Aborted);
+    terminal(AttemptOutcome::Failed);
     send(tx, event).await?;
-    Ok(AttemptOutcome::Aborted)
+    Ok(AttemptOutcome::Failed)
 }
 
 /// Sends an installer event, returning an error if the UI receiver has closed.
@@ -491,14 +491,14 @@ mod tests {
         );
         assert_eq!(
             attempt_outcome(&Err(remote_failure())),
-            AttemptOutcome::Aborted
+            AttemptOutcome::Failed
         );
         assert_eq!(
             attempt_outcome(&Ok(ClientCompletion {
                 servicing_kind: Some(ServicingKind::Unknown(42)),
                 ..successful()
             })),
-            AttemptOutcome::Aborted
+            AttemptOutcome::Failed
         );
     }
 

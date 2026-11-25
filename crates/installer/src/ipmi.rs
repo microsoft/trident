@@ -8,8 +8,8 @@ use osutils::ipmi::{self, SendOutcome};
 use crate::client::AttemptOutcome;
 
 /// Generator ID used by `ipmitool` for system-management software events.
-const ANACONDA_GENERATOR_ID: u8 = 0x41;
-/// Event Message revision required by the Anaconda-compatible payload.
+const IPMI_SYSTEM_MANAGEMENT_SOFTWARE_GENERATOR_ID: u8 = 0x41;
+/// Event Message revision required by the IPMI installation-status payload.
 const IPMI_EVENT_MESSAGE_REVISION: u8 = 0x04;
 /// IPMI sensor type for base OS boot and installation status.
 const IPMI_OS_BOOT_SENSOR_TYPE: u8 = 0x1f;
@@ -17,14 +17,12 @@ const IPMI_OS_BOOT_SENSOR_TYPE: u8 = 0x1f;
 const IPMI_SENSOR_NUMBER: u8 = 0x00;
 /// Sensor-specific assertion event type used by the installation statuses.
 const IPMI_SENSOR_SPECIFIC_EVENT_TYPE: u8 = 0x6f;
-/// Anaconda event code for an installation attempt starting.
-const ANACONDA_STARTED_EVENT: u8 = 0x07;
-/// Anaconda event code for an installation attempt completing successfully.
-const ANACONDA_COMPLETED_EVENT: u8 = 0x08;
-/// Anaconda event code for an installation ending through a handled error.
-const ANACONDA_ABORTED_EVENT: u8 = 0x09;
-/// Anaconda event code for an installation ending unexpectedly.
-const ANACONDA_FAILED_EVENT: u8 = 0x0a;
+/// IPMI event code for an installation attempt starting.
+const IPMI_INSTALLATION_STARTED_EVENT: u8 = 0x07;
+/// IPMI event code for an installation attempt completing successfully.
+const IPMI_INSTALLATION_COMPLETED_EVENT: u8 = 0x08;
+/// IPMI event code for an installation failure.
+const IPMI_INSTALLATION_FAILED_EVENT: u8 = 0x0a;
 
 /// Installer lifecycle state reported to the local BMC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -33,9 +31,7 @@ enum InstallerStatus {
     Started,
     /// Trident reported a successful terminal result.
     Completed,
-    /// The attempt ended through a handled preparation or servicing error.
-    Aborted,
-    /// The attempt disappeared without a handled terminal result.
+    /// The installation encountered an error or lost its worker unexpectedly.
     Failed,
 }
 
@@ -88,7 +84,7 @@ impl<R: StatusReporter> AttemptReporter<R> {
         self.active = false;
         self.emit(match outcome {
             AttemptOutcome::Completed => InstallerStatus::Completed,
-            AttemptOutcome::Aborted => InstallerStatus::Aborted,
+            AttemptOutcome::Failed => InstallerStatus::Failed,
         });
     }
 
@@ -148,16 +144,15 @@ impl LiveAttemptReporter {
     }
 }
 
-/// Encodes an installer lifecycle state as an Anaconda-compatible event payload.
+/// Encodes an installer lifecycle state as an IPMI installation-status event payload.
 const fn payload(status: InstallerStatus) -> [u8; 8] {
     let event = match status {
-        InstallerStatus::Started => ANACONDA_STARTED_EVENT,
-        InstallerStatus::Completed => ANACONDA_COMPLETED_EVENT,
-        InstallerStatus::Aborted => ANACONDA_ABORTED_EVENT,
-        InstallerStatus::Failed => ANACONDA_FAILED_EVENT,
+        InstallerStatus::Started => IPMI_INSTALLATION_STARTED_EVENT,
+        InstallerStatus::Completed => IPMI_INSTALLATION_COMPLETED_EVENT,
+        InstallerStatus::Failed => IPMI_INSTALLATION_FAILED_EVENT,
     };
     [
-        ANACONDA_GENERATOR_ID,
+        IPMI_SYSTEM_MANAGEMENT_SOFTWARE_GENERATOR_ID,
         IPMI_EVENT_MESSAGE_REVISION,
         IPMI_OS_BOOT_SENSOR_TYPE,
         IPMI_SENSOR_NUMBER,
@@ -213,12 +208,14 @@ mod tests {
     }
 
     #[test]
-    fn statuses_use_anaconda_payload_bytes() {
+    fn statuses_use_ipmi_payload_bytes() {
         for (status, event) in [
-            (InstallerStatus::Started, ANACONDA_STARTED_EVENT),
-            (InstallerStatus::Completed, ANACONDA_COMPLETED_EVENT),
-            (InstallerStatus::Aborted, ANACONDA_ABORTED_EVENT),
-            (InstallerStatus::Failed, ANACONDA_FAILED_EVENT),
+            (InstallerStatus::Started, IPMI_INSTALLATION_STARTED_EVENT),
+            (
+                InstallerStatus::Completed,
+                IPMI_INSTALLATION_COMPLETED_EVENT,
+            ),
+            (InstallerStatus::Failed, IPMI_INSTALLATION_FAILED_EVENT),
         ] {
             assert_eq!(
                 payload(status),
@@ -245,11 +242,11 @@ mod tests {
         {
             let mut attempt = AttemptReporter::new(reporter);
             attempt.start();
-            attempt.finish(AttemptOutcome::Aborted);
+            attempt.finish(AttemptOutcome::Failed);
         }
         assert_eq!(
             *statuses.borrow(),
-            [InstallerStatus::Started, InstallerStatus::Aborted]
+            [InstallerStatus::Started, InstallerStatus::Failed]
         );
     }
 
@@ -273,11 +270,11 @@ mod tests {
             {
                 let mut attempt = AttemptReporter::new(reporter);
                 attempt.start();
-                attempt.finish(AttemptOutcome::Aborted);
+                attempt.finish(AttemptOutcome::Failed);
             }
             assert_eq!(
                 *statuses.borrow(),
-                [InstallerStatus::Started, InstallerStatus::Aborted]
+                [InstallerStatus::Started, InstallerStatus::Failed]
             );
         }
     }

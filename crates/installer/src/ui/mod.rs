@@ -131,7 +131,7 @@ impl Drop for Display {
 
 /// Runs one live attempt and emits best-effort IPMI start and terminal events.
 ///
-/// Configuration and servicing errors produce handled `Aborted` outcomes. If the worker exits
+/// Configuration and servicing errors produce handled `Failed` outcomes. If the worker exits
 /// without a handled outcome, dropping its reporter emits `Failed`.
 fn spawn_operation(
     config_path: PathBuf,
@@ -150,7 +150,7 @@ fn spawn_operation(
                 .await
             }
             Err(error) => {
-                attempt.finish(AttemptOutcome::Aborted);
+                attempt.finish(AttemptOutcome::Failed);
                 client::send(
                     &tx,
                     Event::Error {
@@ -159,7 +159,7 @@ fn spawn_operation(
                     },
                 )
                 .await?;
-                Ok(AttemptOutcome::Aborted)
+                Ok(AttemptOutcome::Failed)
             }
         }
     })
