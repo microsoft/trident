@@ -244,6 +244,7 @@ pub(super) async fn run(
                 println!("{}", entry.plain());
             }
         }
+        output.flush_mirrors();
         // A finished worker cannot enqueue a terminal event after the queue check.
         if worker.as_ref().is_some_and(JoinHandle::is_finished) && rx.is_empty() {
             if let Some(finished) = worker.take() {
@@ -475,9 +476,11 @@ mod tests {
         let root = TempDir::new().unwrap();
         let diagnostic = root.path().join("installer.log");
         let serial = root.path().join("serial.log");
+        let mut mirrors = crate::serial::SerialMirrors::default();
+        mirrors.push(&serial, File::create(&serial).unwrap());
         let mut output = Output {
             log: Some(File::create(&diagnostic).unwrap()),
-            mirrors: vec![(serial.clone(), File::create(&serial).unwrap())],
+            mirrors,
         };
         let mut model = Model::new();
         for message in [
