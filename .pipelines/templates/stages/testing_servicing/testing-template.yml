@@ -123,6 +123,19 @@ jobs:
           targetPath: "$(Build.ArtifactStagingDirectory)/update-b"
         displayName: Download Update Image B
 
+      - ${{ if eq(parameters.flavor, 'grubazl4') }}:
+          - bash: |
+              set -euo pipefail
+              # Storm uses one basename for both update-server URLs.
+              name=trident-vm-grub-azl4-testimage
+              mv -- "$INPUT_DIRECTORY/update-a/${name}_0.cosi" \
+                "$INPUT_DIRECTORY/update-a/$name.cosi"
+              mv -- "$INPUT_DIRECTORY/update-b/${name}_1.cosi" \
+                "$INPUT_DIRECTORY/update-b/$name.cosi"
+            env:
+              INPUT_DIRECTORY: $(Build.ArtifactStagingDirectory)
+            displayName: Preserve the shared servicing COSI basename
+
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
