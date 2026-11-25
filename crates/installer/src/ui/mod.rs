@@ -29,8 +29,9 @@ use osutils::systemd;
 use trident_client::{LogLevel, ServicingEvent};
 
 use crate::{
-    client::{self, Event},
+    client::{self, AttemptOutcome, Event},
     config::Config,
+    ipmi::LiveAttemptReporter,
     source::{self, Request},
     terminal as installer_terminal, INSTALLER_LOG_TX,
 };
@@ -128,18 +129,28 @@ impl Drop for Display {
     }
 }
 
-/// Reloads live configuration for each installation attempt.
-/// Configuration read errors are reported as events rather than worker failures.
+/// Runs one live attempt and emits best-effort IPMI start and terminal events.
+///
+/// Configuration and servicing errors produce handled `Failed` outcomes. If the worker exits
+/// without a handled outcome, dropping its reporter emits `Failed`.
 fn spawn_operation(
     config_path: PathBuf,
     request: Request,
     uncertain: bool,
     tx: mpsc::Sender<Event>,
-) -> JoinHandle<Result<(), Error>> {
+) -> JoinHandle<Result<AttemptOutcome, Error>> {
     task::spawn(async move {
+        let mut attempt = LiveAttemptReporter::new();
+        attempt.start();
         match Config::read(config_path) {
-            Ok(settings) => client::execute(settings, request, uncertain, tx).await,
+            Ok(settings) => {
+                client::execute(settings, request, uncertain, tx, |outcome| {
+                    attempt.finish(outcome);
+                })
+                .await
+            }
             Err(error) => {
+                attempt.finish(AttemptOutcome::Failed);
                 client::send(
                     &tx,
                     Event::Error {
@@ -147,7 +158,8 @@ fn spawn_operation(
                         uncertain,
                     },
                 )
-                .await
+                .await?;
+                Ok(AttemptOutcome::Failed)
             }
         }
     })
@@ -249,7 +261,7 @@ pub(super) async fn run(
         if worker.as_ref().is_some_and(JoinHandle::is_finished) && rx.is_empty() {
             if let Some(finished) = worker.take() {
                 let failure = match finished.await {
-                    Ok(Ok(())) => None,
+                    Ok(Ok(_)) => None,
                     Ok(Err(error)) => {
                         Some(model.fail(format!("Installer worker failed: {error:#}"), true))
                     }

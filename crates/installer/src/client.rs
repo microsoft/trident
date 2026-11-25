@@ -57,6 +57,15 @@ pub(super) enum Completion {
     Failure(String),
 }
 
+/// Terminal classification for one live installer attempt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AttemptOutcome {
+    /// Trident returned a valid successful completion, including a no-op.
+    Completed,
+    /// Preparation, transport, protocol validation or servicing failed.
+    Failed,
+}
+
 /// Interprets a domain completion, enforcing the installer's caller-managed reboot contract.
 pub(super) fn completion(
     outcome: Result<ClientCompletion, RemoteError>,
@@ -93,6 +102,14 @@ pub(super) fn completion(
             })
         }
         Err(error) => Ok(Completion::Failure(format_error(&error))),
+    }
+}
+
+/// Classifies a daemon completion using the same rules that drive the result screen.
+fn attempt_outcome(completion_result: &Result<ClientCompletion, RemoteError>) -> AttemptOutcome {
+    match completion(completion_result.clone()) {
+        Ok(Completion::Success { .. }) => AttemptOutcome::Completed,
+        Ok(Completion::Failure(_)) | Err(_) => AttemptOutcome::Failed,
     }
 }
 
@@ -173,12 +190,17 @@ fn request_description(settings: &Config, request: &Request) -> String {
 ///
 /// After an uncertain previous operation, `require_idle` prevents a new write until the daemon
 /// answers a status request. Ambiguous RPC failures are reported as uncertain instead of retrying.
+///
+/// `terminal` is called exactly once for every handled terminal result before its UI event is
+/// queued. Unexpected internal failures return `Err` without calling it so the caller can report
+/// that the attempt failed without a handled result.
 pub(super) async fn execute(
     settings: Config,
     request: Request,
     require_idle: bool,
     tx: Sender<Event>,
-) -> Result<(), Error> {
+    mut terminal: impl FnMut(AttemptOutcome),
+) -> Result<AttemptOutcome, Error> {
     let description = request_description(&settings, &request);
     send(
         &tx,
@@ -201,12 +223,13 @@ pub(super) async fn execute(
     let (settings, plan) = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
-            return send(
+            return fail(
                 &tx,
                 Event::Error {
                     details: format!("{error:#}"),
                     uncertain: require_idle,
                 },
+                &mut terminal,
             )
             .await
         }
@@ -230,12 +253,13 @@ pub(super) async fn execute(
         match task::spawn_blocking(move || source::stream_preflight(&image)).await? {
             Ok(hash) => Some(hash),
             Err(error) => {
-                return send(
+                return fail(
                     &tx,
                     Event::Error {
                         details: format!("{error:#}"),
                         uncertain: false,
                     },
+                    &mut terminal,
                 )
                 .await
             }
@@ -247,12 +271,13 @@ pub(super) async fn execute(
     let client = match Client::connect_default().await {
         Ok(client) => client,
         Err(error) => {
-            return send(
+            return fail(
                 &tx,
                 Event::Error {
                     details: format!("{error:#}"),
                     uncertain: require_idle,
                 },
+                &mut terminal,
             )
             .await
         }
@@ -263,16 +288,26 @@ pub(super) async fn execute(
                 send(&tx, Event::IdleConfirmed).await?;
             }
             Ok(state) => {
-                return send(&tx, Event::Error {
-                    details: format!("The previous operation's outcome is unknown. Trident returned an unsupported servicing state {state:?}; refusing another write."),
-                    uncertain: true,
-                }).await;
+                return fail(
+                    &tx,
+                    Event::Error {
+                        details: format!("The previous operation's outcome is unknown. Trident returned an unsupported servicing state {state:?}; refusing another write."),
+                        uncertain: true,
+                    },
+                    &mut terminal,
+                )
+                .await;
             }
             Err(error) => {
-                return send(&tx, Event::Error {
-                    details: format!("The previous operation's outcome is unknown. Cannot establish that Trident is idle; refusing another write.\n{error}"),
-                    uncertain: true,
-                }).await;
+                return fail(
+                    &tx,
+                    Event::Error {
+                        details: format!("The previous operation's outcome is unknown. Cannot establish that Trident is idle; refusing another write.\n{error}"),
+                        uncertain: true,
+                    },
+                    &mut terminal,
+                )
+                .await;
             }
         }
     }
@@ -292,36 +327,42 @@ pub(super) async fn execute(
     let response = match response {
         Ok(response) => response,
         Err(error) => {
-            return send(
+            return fail(
                 &tx,
                 Event::Error {
                     details: format!("gRPC request failed: {error}"),
                     uncertain: operation_uncertain(&error),
                 },
+                &mut terminal,
             )
             .await;
         }
     };
-    receive(response, &tx).await
+    receive(response, &tx, &mut terminal).await
 }
 
 /// Forwards domain events until a completed result; a broken stream leaves the outcome unknown.
-async fn receive(mut operation: ServicingOperation, tx: &Sender<Event>) -> Result<(), Error> {
+async fn receive(
+    mut operation: ServicingOperation,
+    tx: &Sender<Event>,
+    terminal: &mut impl FnMut(AttemptOutcome),
+) -> Result<AttemptOutcome, Error> {
     loop {
         let event = match operation.next_event().await {
             Ok(Some(event)) => event,
             Ok(None) => {
-                return send(
+                return fail(
                     tx,
                     Event::Error {
                         details: "The gRPC stream ended without a final Completed response. Installation outcome is unknown; it may still be running.".into(),
                         uncertain: true,
                     },
+                    terminal,
                 )
                 .await;
             }
             Err(error) => {
-                return send(
+                return fail(
                     tx,
                     Event::Error {
                         details: format!(
@@ -329,16 +370,34 @@ async fn receive(mut operation: ServicingOperation, tx: &Sender<Event>) -> Resul
                         ),
                         uncertain: operation_uncertain(&error),
                     },
+                    terminal,
                 )
                 .await;
             }
         };
-        let completed = matches!(event, ServicingEvent::Completed(_));
+        let completed = match &event {
+            ServicingEvent::Completed(result) => Some(attempt_outcome(result)),
+            _ => None,
+        };
+        if let Some(outcome) = completed {
+            terminal(outcome);
+        }
         send(tx, Event::Response(event)).await?;
-        if completed {
-            return Ok(());
+        if let Some(outcome) = completed {
+            return Ok(outcome);
         }
     }
+}
+
+/// Sends a handled installation error and classifies the attempt as failed.
+async fn fail(
+    tx: &Sender<Event>,
+    event: Event,
+    terminal: &mut impl FnMut(AttemptOutcome),
+) -> Result<AttemptOutcome, Error> {
+    terminal(AttemptOutcome::Failed);
+    send(tx, event).await?;
+    Ok(AttemptOutcome::Failed)
 }
 
 /// Sends an installer event, returning an error if the UI receiver has closed.
@@ -415,6 +474,32 @@ mod tests {
             ..successful()
         }))
         .unwrap_err();
+    }
+
+    #[test]
+    fn daemon_completions_map_to_attempt_outcomes() {
+        assert_eq!(
+            attempt_outcome(&Ok(successful())),
+            AttemptOutcome::Completed
+        );
+        assert_eq!(
+            attempt_outcome(&Ok(ClientCompletion {
+                servicing_kind: Some(ServicingKind::NoneRequired),
+                ..successful()
+            })),
+            AttemptOutcome::Completed
+        );
+        assert_eq!(
+            attempt_outcome(&Err(remote_failure())),
+            AttemptOutcome::Failed
+        );
+        assert_eq!(
+            attempt_outcome(&Ok(ClientCompletion {
+                servicing_kind: Some(ServicingKind::Unknown(42)),
+                ..successful()
+            })),
+            AttemptOutcome::Failed
+        );
     }
 
     /// Builds a structured remote failure for formatting and execution-state tests.

@@ -53,6 +53,8 @@ rand = {workspace = true}
 
 [features]
 functional-test = ["pytest", "test-utilities"]
+# Local Linux IPMI system-interface support.
+ipmi = ["nix/ioctl", "nix/poll"]
 pytest-generator = ["pytest"]
 run-interactive = []
 test-utilities = ["rand"]

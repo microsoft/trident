@@ -19,6 +19,7 @@ use crate::{client::Event, config::DEFAULT_CONFIG, serial::SerialMirrors, ui::Ou
 
 mod client;
 mod config;
+mod ipmi;
 mod serial;
 mod source;
 mod terminal;
