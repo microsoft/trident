@@ -375,6 +375,204 @@ class ExecutionTests(unittest.TestCase):
         self.assertNotIn(b"arbitrary-private", raw)
         self.assertEqual(set(json.loads(raw)), set(execution.report()))
 
+    def test_failed_execution_retains_bound_facts_without_exporting_private_text(self):
+        private = "fixture-private-detail"
+
+        def failed(argv, work, name, timeout, **kwargs):
+            self.run_command(argv, work, name, timeout, **kwargs)
+            if name != "execution.log":
+                return 0
+            directory = Path(argv[argv.index("--output") + 1])
+            value = self.result()
+            value.update(outcome="failed", exitCode=23, error=private)
+            selected = value["scenarios"][0]
+            selected["outcome"] = "failed"
+            selected["cases"] = [
+                {"name": "install-vm-deps", "outcome": "failed"},
+                {"name": private, "outcome": "failed"},
+                {"name": "install-os", "outcome": "not_run"},
+            ]
+            (directory / "results.json").write_text(json.dumps(value))
+            scenario = directory / execution.SCENARIO
+            scenario.mkdir()
+            (scenario / "console.log").write_text(
+                private + "\nNo matching distribution found\nPermission denied\n"
+            )
+            (work / name).write_text(private)
+            return 23
+
+        with ExitStack() as stack:
+            self.patches(stack)
+            self.run.side_effect = failed
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = execution.execute(self.args, self.output)
+        self.assertEqual(code, 23)
+        result = json.loads(self.output.read_text())
+        self.assertEqual(result["outcome"], "failed")
+        self.assertTrue(result["resourceInventoryRestored"])
+        self.assertEqual(
+            result["caseCounts"],
+            {"passed": 0, "failed": 2, "skipped": 0, "not_run": 1},
+        )
+        diagnostic = result["executionDiagnostic"]
+        self.assertEqual(diagnostic["runnerProcessExitCode"], 23)
+        self.assertEqual(diagnostic["resultState"], "captured")
+        self.assertEqual(diagnostic["selectedOutcome"], "failed")
+        self.assertEqual(diagnostic["failedCaseIds"], ["install-vm-deps"])
+        self.assertEqual(diagnostic["unrecognizedCaseCount"], 1)
+        self.assertEqual(diagnostic["runnerFailureKind"], "unclassified")
+        self.assertEqual(
+            set(diagnostic["logs"]["scenario"]["markers"]),
+            {"pip-no-distribution", "permission-denied"},
+        )
+        self.assertNotIn(private, self.output.read_text())
+        self.assertEqual(stdout.getvalue() + stderr.getvalue(), "")
+        self.assertLessEqual(self.output.stat().st_size, execution.REPORT_LIMIT)
+
+    def diagnostic_fixture(self, value):
+        directory = self.root / "diagnostic"
+        directory.mkdir(exist_ok=True)
+        (directory / "results.json").write_text(json.dumps(value))
+        result = execution.report()
+        result["manifestSha256"] = "c" * 64
+        execution.diagnose_execution(directory, 1, result)
+        return result
+
+    def test_matrix_failure_is_classified_without_claiming_scenario_execution(self):
+        value = self.result()
+        value.update(
+            scenarios=[],
+            exitCode=1,
+            outcome="failed",
+            error="Storm matrix command failed: 1 fixture-private-detail",
+        )
+        result = self.diagnostic_fixture(value)
+        diagnostic = result["executionDiagnostic"]
+        self.assertEqual(diagnostic["resultState"], "captured")
+        self.assertEqual(diagnostic["runnerFailureKind"], "matrix-command-failed")
+        self.assertEqual(diagnostic["selectedOutcome"], "unknown")
+        self.assertIsNone(result["caseCounts"])
+        self.assertNotIn("fixture-private-detail", json.dumps(result))
+        self.assertEqual(result["outcome"], "failed")
+
+    def test_diagnostic_binding_limits_and_unknown_outcomes_fail_closed(self):
+        for kind in ("source", "manifest", "scenario", "cases", "outcome"):
+            with self.subTest(kind=kind):
+                value = self.result()
+                if kind == "source":
+                    value["candidateRevision"] = "d" * 40
+                elif kind == "manifest":
+                    value["manifestSha256"] = "d" * 64
+                elif kind == "scenario":
+                    value["scenarios"][0]["scenario"] = "other_vm-host"
+                elif kind == "cases":
+                    value["scenarios"][0]["cases"] *= 129
+                else:
+                    value["scenarios"][0]["cases"][0]["outcome"] = "unknown"
+                result = self.diagnostic_fixture(value)
+                self.assertEqual(
+                    result["executionDiagnostic"]["resultState"], "invalid"
+                )
+                self.assertIsNone(result["caseCounts"])
+                self.assertEqual(result["executionDiagnostic"]["failedCaseIds"], [])
+
+    def test_missing_or_malformed_diagnostics_never_replace_process_failure(self):
+        for code in (23, 124, 130):
+            with self.subTest(code=code), ExitStack() as stack:
+                self.patches(stack)
+
+                def malformed(argv, work, name, timeout, **kwargs):
+                    if name != "execution.log":
+                        return 0
+                    directory = Path(argv[argv.index("--output") + 1])
+                    directory.mkdir(exist_ok=True)
+                    (directory / "results.json").write_text("fixture-private-detail")
+                    return code
+
+                self.run.side_effect = malformed
+                self.assertEqual(execution.execute(self.args, self.output), code)
+                result = json.loads(self.output.read_text())
+                self.assertEqual(
+                    result["executionDiagnostic"]["resultState"], "invalid"
+                )
+                self.assertEqual(
+                    result["executionDiagnostic"]["runnerProcessExitCode"], code
+                )
+                self.assertNotIn("fixture-private-detail", self.output.read_text())
+                self.assertNotEqual(result["outcome"], "selected-scenario-passed")
+
+    def test_log_markers_read_only_bounded_head_tail_and_refuse_symlink(self):
+        path = self.root / "private.log"
+        path.write_bytes(
+            b"Permission denied\n"
+            + b"x" * 65536
+            + b"address already in use\n"
+            + b"x" * 65536
+            + b"\nexternally-managed-environment"
+        )
+        result = execution.log_markers(path)
+        self.assertEqual(result["sample"], "head-and-tail")
+        self.assertEqual(
+            set(result["markers"]), {"permission-denied", "pip-externally-managed"}
+        )
+        link = self.root / "private-link.log"
+        link.symlink_to(path)
+        self.assertEqual(
+            execution.log_markers(link), {"sample": "unavailable", "markers": []}
+        )
+
+    def test_unavailable_symlink_and_oversized_result_diagnostics_are_explicit(self):
+        directory = self.root / "diagnostic"
+        directory.mkdir()
+        path = directory / "results.json"
+        for kind in ("missing", "symlink", "oversized"):
+            with self.subTest(kind=kind):
+                if kind == "symlink":
+                    path.symlink_to(self.args.evidence)
+                elif kind == "oversized":
+                    path.unlink()
+                    path.write_bytes(b"x" * (1024 * 1024 + 1))
+                result = execution.report()
+                execution.diagnose_execution(directory, 23, result)
+                diagnostic = result["executionDiagnostic"]
+                self.assertEqual(
+                    diagnostic["resultState"],
+                    "invalid" if kind == "oversized" else "unavailable",
+                )
+                self.assertEqual(diagnostic["runnerProcessExitCode"], 23)
+                self.assertIsNone(result["caseCounts"])
+                self.assertEqual(result["outcome"], "failed")
+
+    def test_maximum_case_and_marker_diagnostic_stays_below_report_limit(self):
+        value = self.result()
+        value["scenarios"][0]["cases"] = [
+            {"name": name, "outcome": "failed"}
+            for name in sorted(execution.DIAGNOSTIC_CASES)
+        ]
+        value["scenarios"][0]["cases"] += [
+            {"name": "fixture-private-detail", "outcome": "failed"}
+        ] * (512 - len(execution.DIAGNOSTIC_CASES))
+        directory = self.root / "diagnostic"
+        scenario = directory / execution.SCENARIO
+        scenario.mkdir(parents=True)
+        text = b"\n".join(patterns[0] for patterns in execution.LOG_MARKERS.values())
+        for path in (
+            self.root / "execution.log",
+            directory / "matrix.log",
+            scenario / "console.log",
+        ):
+            path.write_bytes(text)
+        result = self.diagnostic_fixture(value)
+        execution.publish(self.output, result)
+        self.assertLessEqual(self.output.stat().st_size, execution.REPORT_LIMIT)
+        self.assertEqual(result["caseCounts"]["failed"], 512)
+        self.assertEqual(
+            result["executionDiagnostic"]["failedCaseIds"],
+            sorted(execution.DIAGNOSTIC_CASES),
+        )
+        self.assertNotIn("fixture-private-detail", self.output.read_text())
+
     @unittest.skipUnless(sys.platform == "linux", "requires Linux process groups")
     def test_native_process_failure_and_timeout_use_reviewed_group_reaping(self):
         self.assertEqual(

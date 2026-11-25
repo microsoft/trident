@@ -34,6 +34,44 @@ REQUIRED_CASES = {
     "check-trident-ssh",
     "validate-install",
 }
+DIAGNOSTIC_CASES = REQUIRED_CASES | {
+    "install-vm-deps",
+    "prepare-hc",
+    "prepare-test-images",
+    "validate-host-diagnostics",
+    "collect-container-logs",
+    "capture-install-screenshot",
+    "collect-install-boot-metrics",
+}
+LOG_MARKERS = {
+    "permission-denied": (b"permission denied",),
+    "missing-command-or-file": (b"command not found", b"no such file or directory"),
+    "python-import": (b"modulenotfounderror:", b"importerror:"),
+    "apt-package-unavailable": (
+        b"unable to locate package",
+        b"has no installation candidate",
+    ),
+    "pip-no-distribution": (b"no matching distribution found",),
+    "pip-externally-managed": (b"externally-managed-environment",),
+    "authentication-message": (b"authentication failed", b"unauthorized"),
+    "access-message": (b"forbidden", b"access denied"),
+    "libvirt-connect": (
+        b"failed to connect to the hypervisor",
+        b"failed to connect socket",
+        b"failed to connect to libvirt",
+    ),
+    "kvm-message": (b"could not access kvm", b"failed to initialize kvm"),
+    "timeout-message": (b"timed out", b"timeout expired"),
+    "address-in-use": (b"address already in use",),
+}
+RUNNER_FAILURES = {
+    "matrix-command-failed": "Storm matrix command failed:",
+    "scenario-not-in-matrix": "Requested scenario is not in the generated VM/HOST matrix",
+    "matrix-missing": "Expected exactly one VM/HOST matrix",
+    "matrix-empty": "Empty VM/HOST matrix is not a pass",
+    "matrix-ring-unsupported": "Unsupported stage type, refusing ring fallback",
+    "registry-unsupported": "Registry-backed extensions need verified OCI preparation;",
+}
 UKI = {
     "combined",
     "memory-constraint-combined",
@@ -83,6 +121,7 @@ def report():
         "unselectedScenarioCount": None,
         "unselectedConfigurationCounts": None,
         "caseCounts": None,
+        "executionDiagnostic": None,
         "resourceInventoryRestored": False,
         "cleanupBasis": "libvirt-uuid-inventory-only-not-proof-of-host-cleanliness",
         "hostDisposition": "dispose-required-no-further-lanes",
@@ -237,6 +276,113 @@ def summarize(path, result):
     result["caseCounts"] = counts
 
 
+def log_markers(path):
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            common.require(stat.S_ISREG(info.st_mode), "regular log required")
+            sample = stream.read(32768)
+            if info.st_size > 32768:
+                stream.seek(max(32768, info.st_size - 32768))
+                sample += b"\n" + stream.read(32768)
+        lowered = sample.lower()
+        return {
+            "sample": "head-and-tail" if info.st_size > 32768 else "head",
+            "markers": [
+                name
+                for name, patterns in LOG_MARKERS.items()
+                if any(pattern in lowered for pattern in patterns)
+            ],
+        }
+    except (OSError, ValueError):
+        return {"sample": "unavailable", "markers": []}
+
+
+def diagnose_execution(directory, process_status, result):
+    diagnostic = {
+        "basis": "bounded-runner-facts-and-log-markers-not-root-cause",
+        "runnerProcessExitCode": (
+            process_status
+            if type(process_status) is int and -128 <= process_status <= 255
+            else None
+        ),
+        "resultState": "unavailable",
+        "runnerFailureKind": "unclassified",
+        "selectedOutcome": "unknown",
+        "failedCaseIds": [],
+        "unrecognizedCaseCount": 0,
+        "logs": {
+            name: log_markers(path)
+            for name, path in (
+                ("runner", directory.parent / "execution.log"),
+                ("matrix", directory / "matrix.log"),
+                ("scenario", directory / SCENARIO / "console.log"),
+            )
+        },
+    }
+    result["executionDiagnostic"] = diagnostic
+    try:
+        _, data = read_json(directory / "results.json", 1024 * 1024)
+        diagnostic["resultState"] = "invalid"
+        common.require(
+            data["suite"] == "storm-vm-host-install-configuration"
+            and data["candidateRevision"] == SOURCE
+            and data["manifestSha256"] == result["manifestSha256"]
+            and data["stageType"] == STAGE,
+            "diagnostic binding mismatch",
+        )
+        rows = data["scenarios"]
+        common.require(isinstance(rows, list) and len(rows) <= 64, "matrix limit")
+        selected = [row for row in rows if row["selected"] is True]
+        common.require(
+            not rows or (len(selected) == 1 and selected[0]["scenario"] == SCENARIO),
+            "diagnostic selection mismatch",
+        )
+        if selected:
+            row = selected[0]
+            common.require(
+                row["outcome"] in ("passed", "failed", "not_run"),
+                "unknown selected outcome",
+            )
+            cases = row["cases"]
+            common.require(isinstance(cases, list) and len(cases) <= 512, "case limit")
+            counts = dict.fromkeys(("passed", "failed", "skipped", "not_run"), 0)
+            failed = set()
+            unknown = 0
+            for case in cases:
+                common.require(
+                    case["outcome"] in counts
+                    and isinstance(case["name"], str)
+                    and len(case["name"]) <= 256,
+                    "invalid diagnostic case",
+                )
+                counts[case["outcome"]] += 1
+                name = case["name"].rsplit("/", 1)[-1]
+                if name not in DIAGNOSTIC_CASES:
+                    unknown += 1
+                elif case["outcome"] == "failed":
+                    failed.add(name)
+            diagnostic["selectedOutcome"] = row["outcome"]
+            diagnostic["failedCaseIds"] = sorted(failed)
+            diagnostic["unrecognizedCaseCount"] = unknown
+            result["caseCounts"] = counts
+        error = data.get("error")
+        diagnostic["runnerFailureKind"] = next(
+            (
+                name
+                for name, prefix in RUNNER_FAILURES.items()
+                if isinstance(error, str) and error.startswith(prefix)
+            ),
+            "unclassified",
+        )
+        diagnostic["resultState"] = "captured"
+    except OSError:
+        diagnostic["resultState"] = "unavailable"
+    except (ValueError, KeyError, TypeError):
+        diagnostic["resultState"] = "invalid"
+
+
 class ProcessFailure(Exception):
     pass
 
@@ -252,6 +398,8 @@ def execute(args, output):
     status = 1
     before = None
     work = None
+    execution_directory = None
+    execution_status = None
     handlers = {
         sig: signal.signal(sig, common.interrupt)
         for sig in (signal.SIGINT, signal.SIGTERM)
@@ -384,7 +532,8 @@ def execute(args, output):
                 )
         result["phase"] = "execution"
         execution = work / "execution"
-        status = run(
+        execution_directory = execution
+        status = execution_status = run(
             [
                 sys.executable,
                 str(scripts / "run-vm-e2e-install.py"),
@@ -424,6 +573,8 @@ def execute(args, output):
         status = status or 1
     finally:
         with common.cleanup_signals():
+            if execution_directory is not None:
+                diagnose_execution(execution_directory, execution_status, result)
             if before is not None:
                 try:
                     with common.host_lock():

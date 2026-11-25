@@ -119,6 +119,34 @@ complete host cleanup. Any failure, timeout, cancellation or inventory uncertain
 stops this lane; the host must be disposed of and must not run further lanes.
 Successful hosts also require disposal.
 
+### Failed-run diagnostics
+
+The first actual attempt, run 45705918371 at
+`cff74badf95ebde70c62e75090f9b757841ad7cb`, failed during the execution phase.
+Its bounded report retained no case counts. Exact job 139527734553's log
+contained the output redirection (line 193) and exit code 1 (line 200), not
+the private runner result or Storm cases. This establishes a diagnostic gap,
+not the underlying execution cause. No product or infrastructure fix follows
+from that evidence.
+
+The wrapper now collects bounded diagnostics after the runner is reaped,
+including on failure, timeout and cancellation, before final publication.
+It reads only the existing runner result (at most 1 MiB) and fixed runner,
+matrix and selected-scenario log paths (at most 32 KiB head plus 32 KiB tail
+each). Result identities must match the pinned source/manifest and selected
+scenario. It exports only a bounded process exit code, fixed report/outcome
+states, case counts, failed IDs from the eleven existing simple-scenario case
+names, an unknown-case count and fixed error-marker labels. Unknown case
+names, result error strings and log excerpts are never copied.
+
+Missing, malformed, oversized or mismatched diagnostics are explicitly marked
+unavailable/invalid, preserving the original process failure. Fixed log markers
+are observations, not proof of root cause. Capturing diagnostics cannot turn
+failure into success, weaken any success/packet gate, expand suite selection,
+change cleanup or authorize another lane on this host. A fresh reviewed attempt
+is needed to obtain execution diagnostics and may not reproduce the original
+failure. Disposed-host private logs cannot be reconstructed from the first report.
+
 Preparation is bounded to 1200 seconds (its image helper to 600), host setup to
 900, matrix and selected scenario to 1800 each, and their outer install-runner
 process to 3780. Existing leader-first Storm cleanup gets 120 seconds internally
@@ -128,8 +156,9 @@ kill, inside larger workflow limits. Cancellation signaling and reaping reuse
 the reviewed process helpers. A forced kill is never treated as proven cleanup.
 
 Only `trident-install-report/execution.json`, at most 8 KiB, is uploaded. Its
-allowlist contains fixed scope/outcome/phase values, exact source/harness/pin
-identities and bounded counts/booleans. It never includes raw console, errors,
+allowlist contains fixed scope/outcome/phase/diagnostic values, exact
+source/harness/pin identities and bounded counts/booleans/exit code. It never
+includes raw console, errors,
 environment, command arguments, keys, certificates, images, packet/log excerpts
 or authentication/download URLs. Preparation logs, full runner results, JUnit,
 serial output and trace evidence remain private on the disposable host.
