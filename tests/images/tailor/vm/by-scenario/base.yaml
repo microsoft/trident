@@ -1,6 +1,3 @@
 outputs:
   $set:
     - format: qcow2
-
-config:
-  $include: ./azl3/baseimg-grub.yaml

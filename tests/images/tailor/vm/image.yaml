@@ -2,6 +2,7 @@ name: vm
 
 matrix:
   arch: [amd64]
+  distro: [azl3, azl4]
   scenario: [base, update]
 
 base:
