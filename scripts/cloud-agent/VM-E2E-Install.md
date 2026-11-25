@@ -6,6 +6,10 @@ netlaunch/pytest E2E, QEMU servicing/rollback/UKI, ACL-agent, container, ARM64,
 Azure-platform or bare-metal coverage. Source `validate.sh all` and agent
 startup remain source-only.
 
+The temporary packet-gated, single-host initial execution lane is documented in
+[VM-E2E-Install-Execution.md](VM-E2E-Install-Execution.md). Its bounded selection
+does not establish coverage of this runner's complete matrix.
+
 Run only on an exclusive, disposable amd64 Ubuntu 22.04 host. Configure
 KVM, host libvirt access (`qemu:///system`), sudo and the existing cloud
 execution lock first. This command uses

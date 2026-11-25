@@ -1,2 +1,3 @@
 scripts/cloud-agent/*.sh text eol=lf
 .github/workflows/copilot-setup-steps.yml text eol=lf
+.github/validation/vm-e2e-install-execution/*.json text eol=lf

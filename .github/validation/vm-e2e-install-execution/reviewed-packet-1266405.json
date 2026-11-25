@@ -1,0 +1,603 @@
+{
+  "schemaVersion": 1,
+  "producer": {
+    "organization": "mariner-org",
+    "projectId": "2311650c-e79e-4301-b4d2-96543fdd84ff",
+    "definitionId": 5073,
+    "buildId": 1266405,
+    "sourceVersion": "18dd6cd99d50a4268afd936acb1ee4d2b64881ea",
+    "sourceBranch": "refs/heads/user/britel/cloud-vm-e2e-install"
+  },
+  "review": {
+    "reviewer": "363958a3-7c63-415c-b171-12784034f1f2",
+    "reference": "github:microsoft/trident:actions-run:45697743843:artifact:15060449554:inspection.json:sha256:260d3e130fcd21747e6c3aee212410e75b5bf6da38a0d7af52b358fdef4fc650"
+  },
+  "logs": {
+    "58": {
+      "sha256": "97a2b1295015f66385a8d5a7467dd69f862d5b023f669a9ffd8a38aba27c0fad",
+      "lineCount": 38
+    },
+    "10": {
+      "sha256": "fdd0a58e0114b282310a0adf9ae72eb93d929ce521f1ee11d884ce07f3716a8a",
+      "lineCount": 38
+    },
+    "83": {
+      "sha256": "1805ea47706d8dbfe22135d8557f0bfd11bddae6f4692122e581370368fee40f",
+      "lineCount": 1964
+    },
+    "114": {
+      "sha256": "5a08303edff5473ecf0e268337397f739ad59b4c831dde563315dc03facbdb40",
+      "lineCount": 2905
+    },
+    "166": {
+      "sha256": "3f5594c07ab5876a8ffe3cba6b11436b335f323a120603e73a630f523d077b0d",
+      "lineCount": 38
+    },
+    "180": {
+      "sha256": "0f105b342a036c00e37c1f4814c07d7526f9b5da2f3004fa88de88960c18c9a4",
+      "lineCount": 33
+    },
+    "280": {
+      "sha256": "2e91dcd715a3519b4c67fdacffa988fcb29ebb264bdca986af9eb94d4d2024a4",
+      "lineCount": 65
+    },
+    "293": {
+      "sha256": "3a50f52253e71496d701c65a0e73ff4fe8730b0315b98694de37eaaf3bd02236",
+      "lineCount": 15
+    },
+    "327": {
+      "sha256": "475dd86e1090f53129da19f8e2193821f88473c8412b7999cdc333d1f2f2c271",
+      "lineCount": 1296
+    },
+    "149": {
+      "sha256": "1a37d208a18ae53687acf077af5eb7e98408510802e1f5b8d398a956e52675b3",
+      "lineCount": 38
+    },
+    "175": {
+      "sha256": "5af7cfd37809ba49bd3783f06916becd23cff649f0e4e276eb43d70d7aa47bb5",
+      "lineCount": 33
+    },
+    "275": {
+      "sha256": "1c317363d757d3b8cd3b3ec56c2446f04f4923e96c9cacdefb3fb37c9373d893",
+      "lineCount": 65
+    },
+    "289": {
+      "sha256": "5da1f5fcab7984c798ac072e94d83b7b018269d70da672ba42825f84048c0d7e",
+      "lineCount": 15
+    },
+    "323": {
+      "sha256": "71130d2f1ea3fa2d4d269a0caaf80ef655126faf9dff8a68a620b71f40e6487c",
+      "lineCount": 1105
+    },
+    "141": {
+      "sha256": "04f2f26e0f1edd2c07854750b75c4bb4d90cc9c3605a03724c6cfad7b266ae1c",
+      "lineCount": 38
+    },
+    "167": {
+      "sha256": "83171eab14c1101063e1e263830809ecd0248738f7f0eebfbda4718ccb9988b5",
+      "lineCount": 33
+    },
+    "264": {
+      "sha256": "e4c07221934360fb41fdd76678055d4d4cee5044fca0907e16c1135446a4d512",
+      "lineCount": 65
+    },
+    "276": {
+      "sha256": "683701ff26632c99fc739d0a298c108671cf20c5fc1107213ade901dd07ce476",
+      "lineCount": 15
+    },
+    "301": {
+      "sha256": "48cf83af8a5efec2b6e40cb3d1f273da5899ceaa1cd2e8c001cb0cd6f9ebc56c",
+      "lineCount": 2032
+    },
+    "132": {
+      "sha256": "763a349a5f8d5676be33c5db53251f0002bbf57cc69ed060c6d0772ef6f9aec3",
+      "lineCount": 38
+    },
+    "137": {
+      "sha256": "3d3163d3d6f20d1dc81a308d33f97823fc4d35725af536c7eef56a5a48c55ed1",
+      "lineCount": 33
+    },
+    "236": {
+      "sha256": "1c77526d0131568b02e6bd02db176ff6c6b8bb4c55f04244d8d51aa349632e5d",
+      "lineCount": 65
+    },
+    "243": {
+      "sha256": "bd566a377eb607dd58dc1e0aa4d69acadb8f293e9386ecc75e933f2cff213e03",
+      "lineCount": 15
+    },
+    "299": {
+      "sha256": "a7a7b6ac81ba7cd5e40b3d39121b19d68708f109ba9197677a7ffe8a2ef3aaf5",
+      "lineCount": 3988
+    },
+    "159": {
+      "sha256": "02f16b9ae4654cc0b2b61779278134ce2f6174893ff332ec7bdf76a0ef759e21",
+      "lineCount": 38
+    },
+    "179": {
+      "sha256": "9eca337ce00e82992ebbb933d2ddad9b489d8bb5b47bf9d02e39d5cea56cd3f8",
+      "lineCount": 33
+    },
+    "278": {
+      "sha256": "58a6e31267ebc3ba597591cc0534d3e54fd63fa5933804b4bffd46ac70ded873",
+      "lineCount": 65
+    },
+    "291": {
+      "sha256": "ec30323bf09daffa3531b85d201b4cbd77b4aa30c48e65bf55694d7562df476d",
+      "lineCount": 15
+    },
+    "325": {
+      "sha256": "5da11173680419fbdad87201f6e55fafdd5466de3e4859cefbd7c686bbeba8ed",
+      "lineCount": 3939
+    }
+  },
+  "rpms": {
+    "checkoutRevision": "18dd6cd99d50a4268afd936acb1ee4d2b64881ea",
+    "packages": [
+      {
+        "name": "trident",
+        "nevra": "trident-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+        "sha256": "e19af054da36d2138d842866340595c8819ba8920f34ef78863593d04fea3252"
+      },
+      {
+        "name": "trident-acl",
+        "nevra": "trident-acl-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+        "sha256": "65ebccae3e8379004e3606f3d6510be9049c8a81edbf44b4295167d541620eed"
+      },
+      {
+        "name": "trident-install-service",
+        "nevra": "trident-install-service-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+        "sha256": "0c3cb7276ae4967e73891699c5768cae8d2e048d95d8d2720b06589f894e9bb8"
+      },
+      {
+        "name": "trident-installer",
+        "nevra": "trident-installer-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+        "sha256": "9a8e65ea10e7a9c304567b01d6b0a12f16d6a68daeee462e51a265c3cd396de7"
+      },
+      {
+        "name": "trident-provisioning",
+        "nevra": "trident-provisioning-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+        "sha256": "db9b2ed453cd9e0aeed870fb39ad891d802fe37d1f0654f6e38792362408a842"
+      },
+      {
+        "name": "trident-selinux",
+        "nevra": "trident-selinux-0:0.31.0-2026112304.v18dd6cd.azl3.noarch",
+        "sha256": "4503cb52f6fa13c17db272fbe2142293246d36fee7ec7481ffe1cbf8ba3b96f4"
+      },
+      {
+        "name": "trident-service",
+        "nevra": "trident-service-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+        "sha256": "19bcbdc4fd99ffbc4c6db65f610061b45df8d26c102459c7b364e73ab738febf"
+      },
+      {
+        "name": "trident-static-pcrlock-files",
+        "nevra": "trident-static-pcrlock-files-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+        "sha256": "8eeba3dd157b378a46a2198f725a7d7fd18d8f52f1a9b068efd6546ac3721add"
+      }
+    ],
+    "evidence": {
+      "logId": 83,
+      "startLine": 812,
+      "endLine": 1962
+    }
+  },
+  "artifacts": {
+    "go-tools": {
+      "checkoutRevision": "18dd6cd99d50a4268afd936acb1ee4d2b64881ea",
+      "checkoutEvidence": {
+        "logId": 58,
+        "startLine": 36,
+        "endLine": 37
+      },
+      "files": {
+        "netlaunch": {
+          "size": 32627562,
+          "sha256": "c65e618e4e6bfec2249d0272447d1349a468b61031e1f691061abe9cc124dde3"
+        },
+        "netlisten": {
+          "size": 22050685,
+          "sha256": "4892d70b6450dbb87e330e8e1a3b01888d7382b3ce3bbb9c40f74f45ce287ee7"
+        },
+        "mkcosi": {
+          "size": 18803725,
+          "sha256": "99bdb50dd7dbfee3ee56744b3ee4436efbd9b4892623d8efbe8ac6e32db26116"
+        },
+        "storm-trident": {
+          "size": 61703570,
+          "sha256": "ea5a4a3f8439dc4e8617f164878172f521eddb26d2b13eca14a8b217df3667c8"
+        },
+        "virtdeploy": {
+          "size": 27699741,
+          "sha256": "61f601d65cb1a83b26674abd4bcacac2aeb098d211df298267497de66f6b5c87"
+        }
+      }
+    },
+    "trident-installer": {
+      "checkoutRevision": "18dd6cd99d50a4268afd936acb1ee4d2b64881ea",
+      "checkoutEvidence": {
+        "logId": 166,
+        "startLine": 36,
+        "endLine": 37
+      },
+      "files": {
+        "trident-installer.iso": {
+          "size": 262809600,
+          "sha256": "1759501f01ce4eaf26b70b8cf9bdc761616593d5a943fcc1cb3968746e2d012f",
+          "installedPackages": [
+            {
+              "name": "trident",
+              "nevra": "trident-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "e19af054da36d2138d842866340595c8819ba8920f34ef78863593d04fea3252"
+            },
+            {
+              "name": "trident-selinux",
+              "nevra": "trident-selinux-0:0.31.0-2026112304.v18dd6cd.azl3.noarch",
+              "sha256": "4503cb52f6fa13c17db272fbe2142293246d36fee7ec7481ffe1cbf8ba3b96f4"
+            },
+            {
+              "name": "trident-static-pcrlock-files",
+              "nevra": "trident-static-pcrlock-files-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "8eeba3dd157b378a46a2198f725a7d7fd18d8f52f1a9b068efd6546ac3721add"
+            }
+          ],
+          "installEvidence": {
+            "logId": 327,
+            "startLine": 723,
+            "endLine": 735
+          }
+        }
+      },
+      "rpmBuildId": 1266405,
+      "rpmArtifact": "trident-binaries",
+      "rpmEvidence": {
+        "logId": 180,
+        "startLine": 9,
+        "endLine": 32
+      },
+      "baseVhdx": {
+        "identity": "mariner-org/36d030d6-1d99-4ebd-878b-09af1f4f722f/AzureLinuxArtifacts/baremetal_vhdx-3.0-stable/3.0.20261116/core-3.0.20261116.vhdx",
+        "sha256": "90f470c32617b7ba9ef9ca435c9b9d84e1c23b65c9f64400d4a38854312b58fd",
+        "evidence": {
+          "logId": 280,
+          "startLine": 39,
+          "endLine": 47
+        }
+      },
+      "mic": {
+        "identity": "mcr.microsoft.com/azurelinux/imagecustomizer@sha256:3e7535e520cfed39561c1040f3ca2ee1ba96dd16bfd89aa643c74fde87c9e614",
+        "sha256": "3e7535e520cfed39561c1040f3ca2ee1ba96dd16bfd89aa643c74fde87c9e614",
+        "evidence": {
+          "logId": 327,
+          "startLine": 68,
+          "endLine": 69
+        }
+      }
+    },
+    "trident-split-installer": {
+      "checkoutRevision": "18dd6cd99d50a4268afd936acb1ee4d2b64881ea",
+      "checkoutEvidence": {
+        "logId": 149,
+        "startLine": 36,
+        "endLine": 37
+      },
+      "files": {
+        "trident-split-installer.iso": {
+          "size": 234829824,
+          "sha256": "9413bd5660356612f2ae307fe1c3e57f66bf477c6e5e9364218f513c93707725",
+          "installedPackages": [
+            {
+              "name": "trident",
+              "nevra": "trident-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "e19af054da36d2138d842866340595c8819ba8920f34ef78863593d04fea3252"
+            },
+            {
+              "name": "trident-selinux",
+              "nevra": "trident-selinux-0:0.31.0-2026112304.v18dd6cd.azl3.noarch",
+              "sha256": "4503cb52f6fa13c17db272fbe2142293246d36fee7ec7481ffe1cbf8ba3b96f4"
+            }
+          ],
+          "installEvidence": {
+            "logId": 323,
+            "startLine": 542,
+            "endLine": 551
+          }
+        }
+      },
+      "rpmBuildId": 1266405,
+      "rpmArtifact": "trident-binaries",
+      "rpmEvidence": {
+        "logId": 175,
+        "startLine": 9,
+        "endLine": 32
+      },
+      "baseVhdx": {
+        "identity": "mariner-org/36d030d6-1d99-4ebd-878b-09af1f4f722f/AzureLinuxArtifacts/baremetal_vhdx-3.0-stable/3.0.20261116/core-3.0.20261116.vhdx",
+        "sha256": "90f470c32617b7ba9ef9ca435c9b9d84e1c23b65c9f64400d4a38854312b58fd",
+        "evidence": {
+          "logId": 275,
+          "startLine": 39,
+          "endLine": 47
+        }
+      },
+      "mic": {
+        "identity": "mcr.microsoft.com/azurelinux/imagecustomizer@sha256:3e7535e520cfed39561c1040f3ca2ee1ba96dd16bfd89aa643c74fde87c9e614",
+        "sha256": "3e7535e520cfed39561c1040f3ca2ee1ba96dd16bfd89aa643c74fde87c9e614",
+        "evidence": {
+          "logId": 323,
+          "startLine": 68,
+          "endLine": 69
+        }
+      }
+    },
+    "trident-testimage": {
+      "checkoutRevision": "18dd6cd99d50a4268afd936acb1ee4d2b64881ea",
+      "checkoutEvidence": {
+        "logId": 141,
+        "startLine": 36,
+        "endLine": 37
+      },
+      "files": {
+        "trident-testimage_0.cosi": {
+          "size": 178687488,
+          "sha256": "4ecfc9efcf12a3134e5ef048ec043732d43bfc104fba6196a580763055242729",
+          "installedPackages": [
+            {
+              "name": "trident",
+              "nevra": "trident-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "e19af054da36d2138d842866340595c8819ba8920f34ef78863593d04fea3252"
+            },
+            {
+              "name": "trident-selinux",
+              "nevra": "trident-selinux-0:0.31.0-2026112304.v18dd6cd.azl3.noarch",
+              "sha256": "4503cb52f6fa13c17db272fbe2142293246d36fee7ec7481ffe1cbf8ba3b96f4"
+            },
+            {
+              "name": "trident-service",
+              "nevra": "trident-service-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "19bcbdc4fd99ffbc4c6db65f610061b45df8d26c102459c7b364e73ab738febf"
+            }
+          ],
+          "installEvidence": {
+            "logId": 301,
+            "startLine": 1059,
+            "endLine": 1135
+          }
+        },
+        "trident-testimage_1.cosi": {
+          "size": 176792576,
+          "sha256": "7ccb3ab8c0f9dc1364fd98ddd0767ed49df95deca9e3d9cc518ef2316dc34214",
+          "installedPackages": [
+            {
+              "name": "trident",
+              "nevra": "trident-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "e19af054da36d2138d842866340595c8819ba8920f34ef78863593d04fea3252"
+            },
+            {
+              "name": "trident-selinux",
+              "nevra": "trident-selinux-0:0.31.0-2026112304.v18dd6cd.azl3.noarch",
+              "sha256": "4503cb52f6fa13c17db272fbe2142293246d36fee7ec7481ffe1cbf8ba3b96f4"
+            },
+            {
+              "name": "trident-service",
+              "nevra": "trident-service-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "19bcbdc4fd99ffbc4c6db65f610061b45df8d26c102459c7b364e73ab738febf"
+            }
+          ],
+          "installEvidence": {
+            "logId": 301,
+            "startLine": 1059,
+            "endLine": 1135
+          }
+        }
+      },
+      "rpmBuildId": 1266405,
+      "rpmArtifact": "trident-binaries",
+      "rpmEvidence": {
+        "logId": 167,
+        "startLine": 9,
+        "endLine": 32
+      },
+      "baseVhdx": {
+        "identity": "mariner-org/36d030d6-1d99-4ebd-878b-09af1f4f722f/AzureLinuxArtifacts/baremetal_vhdx-3.0-stable/3.0.20261116/core-3.0.20261116.vhdx",
+        "sha256": "90f470c32617b7ba9ef9ca435c9b9d84e1c23b65c9f64400d4a38854312b58fd",
+        "evidence": {
+          "logId": 264,
+          "startLine": 39,
+          "endLine": 47
+        }
+      },
+      "mic": {
+        "identity": "mcr.microsoft.com/azurelinux/imagecustomizer@sha256:3e7535e520cfed39561c1040f3ca2ee1ba96dd16bfd89aa643c74fde87c9e614",
+        "sha256": "3e7535e520cfed39561c1040f3ca2ee1ba96dd16bfd89aa643c74fde87c9e614",
+        "evidence": {
+          "logId": 301,
+          "startLine": 121,
+          "endLine": 124
+        }
+      }
+    },
+    "trident-verity-testimage": {
+      "checkoutRevision": "18dd6cd99d50a4268afd936acb1ee4d2b64881ea",
+      "checkoutEvidence": {
+        "logId": 132,
+        "startLine": 36,
+        "endLine": 37
+      },
+      "files": {
+        "trident-verity-testimage_0.cosi": {
+          "size": 174015488,
+          "sha256": "3fe9088a838785a68890a77c444e3a34c4e161c625953d6048ac164a6895ab89",
+          "installedPackages": [
+            {
+              "name": "trident",
+              "nevra": "trident-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "e19af054da36d2138d842866340595c8819ba8920f34ef78863593d04fea3252"
+            },
+            {
+              "name": "trident-selinux",
+              "nevra": "trident-selinux-0:0.31.0-2026112304.v18dd6cd.azl3.noarch",
+              "sha256": "4503cb52f6fa13c17db272fbe2142293246d36fee7ec7481ffe1cbf8ba3b96f4"
+            },
+            {
+              "name": "trident-service",
+              "nevra": "trident-service-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "19bcbdc4fd99ffbc4c6db65f610061b45df8d26c102459c7b364e73ab738febf"
+            }
+          ],
+          "installEvidence": {
+            "logId": 299,
+            "startLine": 1474,
+            "endLine": 1567
+          }
+        },
+        "trident-verity-testimage_1.cosi": {
+          "size": 173991936,
+          "sha256": "1ee3818ad85b309b501843f3e8eccbdb3f508243d32a9f1dd73500ef2328bca7",
+          "installedPackages": [
+            {
+              "name": "trident",
+              "nevra": "trident-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "e19af054da36d2138d842866340595c8819ba8920f34ef78863593d04fea3252"
+            },
+            {
+              "name": "trident-selinux",
+              "nevra": "trident-selinux-0:0.31.0-2026112304.v18dd6cd.azl3.noarch",
+              "sha256": "4503cb52f6fa13c17db272fbe2142293246d36fee7ec7481ffe1cbf8ba3b96f4"
+            },
+            {
+              "name": "trident-service",
+              "nevra": "trident-service-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "19bcbdc4fd99ffbc4c6db65f610061b45df8d26c102459c7b364e73ab738febf"
+            }
+          ],
+          "installEvidence": {
+            "logId": 299,
+            "startLine": 1474,
+            "endLine": 1567
+          }
+        }
+      },
+      "rpmBuildId": 1266405,
+      "rpmArtifact": "trident-binaries",
+      "rpmEvidence": {
+        "logId": 137,
+        "startLine": 9,
+        "endLine": 32
+      },
+      "baseVhdx": {
+        "identity": "mariner-org/36d030d6-1d99-4ebd-878b-09af1f4f722f/AzureLinuxArtifacts/baremetal_vhdx-3.0-stable/3.0.20261116/core-3.0.20261116.vhdx",
+        "sha256": "90f470c32617b7ba9ef9ca435c9b9d84e1c23b65c9f64400d4a38854312b58fd",
+        "evidence": {
+          "logId": 236,
+          "startLine": 39,
+          "endLine": 47
+        }
+      },
+      "mic": {
+        "identity": "mcr.microsoft.com/azurelinux/imagecustomizer@sha256:3e7535e520cfed39561c1040f3ca2ee1ba96dd16bfd89aa643c74fde87c9e614",
+        "sha256": "3e7535e520cfed39561c1040f3ca2ee1ba96dd16bfd89aa643c74fde87c9e614",
+        "evidence": {
+          "logId": 299,
+          "startLine": 121,
+          "endLine": 124
+        }
+      }
+    },
+    "trident-usrverity-testimage": {
+      "checkoutRevision": "18dd6cd99d50a4268afd936acb1ee4d2b64881ea",
+      "checkoutEvidence": {
+        "logId": 159,
+        "startLine": 36,
+        "endLine": 37
+      },
+      "files": {
+        "trident-usrverity-testimage_0.cosi": {
+          "size": 214527488,
+          "sha256": "2043792685b28ca77f8e3c304ab60d2fce33fe62043d82ddcb89170a9b15ae80",
+          "installedPackages": [
+            {
+              "name": "trident",
+              "nevra": "trident-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "e19af054da36d2138d842866340595c8819ba8920f34ef78863593d04fea3252"
+            },
+            {
+              "name": "trident-selinux",
+              "nevra": "trident-selinux-0:0.31.0-2026112304.v18dd6cd.azl3.noarch",
+              "sha256": "4503cb52f6fa13c17db272fbe2142293246d36fee7ec7481ffe1cbf8ba3b96f4"
+            },
+            {
+              "name": "trident-service",
+              "nevra": "trident-service-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "19bcbdc4fd99ffbc4c6db65f610061b45df8d26c102459c7b364e73ab738febf"
+            },
+            {
+              "name": "trident-static-pcrlock-files",
+              "nevra": "trident-static-pcrlock-files-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "8eeba3dd157b378a46a2198f725a7d7fd18d8f52f1a9b068efd6546ac3721add"
+            }
+          ],
+          "installEvidence": {
+            "logId": 325,
+            "startLine": 1691,
+            "endLine": 1820
+          }
+        },
+        "trident-usrverity-testimage_1.cosi": {
+          "size": 211103744,
+          "sha256": "e3770e32e1b29248d25d01977ecca41cf16735f879d963990a85c2225d4a46cd",
+          "installedPackages": [
+            {
+              "name": "trident",
+              "nevra": "trident-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "e19af054da36d2138d842866340595c8819ba8920f34ef78863593d04fea3252"
+            },
+            {
+              "name": "trident-selinux",
+              "nevra": "trident-selinux-0:0.31.0-2026112304.v18dd6cd.azl3.noarch",
+              "sha256": "4503cb52f6fa13c17db272fbe2142293246d36fee7ec7481ffe1cbf8ba3b96f4"
+            },
+            {
+              "name": "trident-service",
+              "nevra": "trident-service-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "19bcbdc4fd99ffbc4c6db65f610061b45df8d26c102459c7b364e73ab738febf"
+            },
+            {
+              "name": "trident-static-pcrlock-files",
+              "nevra": "trident-static-pcrlock-files-0:0.31.0-2026112304.v18dd6cd.azl3.x86_64",
+              "sha256": "8eeba3dd157b378a46a2198f725a7d7fd18d8f52f1a9b068efd6546ac3721add"
+            }
+          ],
+          "installEvidence": {
+            "logId": 325,
+            "startLine": 1691,
+            "endLine": 1820
+          }
+        }
+      },
+      "rpmBuildId": 1266405,
+      "rpmArtifact": "trident-binaries",
+      "rpmEvidence": {
+        "logId": 179,
+        "startLine": 9,
+        "endLine": 32
+      },
+      "baseVhdx": {
+        "identity": "mariner-org/36d030d6-1d99-4ebd-878b-09af1f4f722f/AzureLinuxArtifacts/baremetal_vhdx-3.0-stable/3.0.20261116/core-3.0.20261116.vhdx",
+        "sha256": "90f470c32617b7ba9ef9ca435c9b9d84e1c23b65c9f64400d4a38854312b58fd",
+        "evidence": {
+          "logId": 278,
+          "startLine": 39,
+          "endLine": 47
+        }
+      },
+      "mic": {
+        "identity": "mcr.microsoft.com/azurelinux/imagecustomizer@sha256:3e7535e520cfed39561c1040f3ca2ee1ba96dd16bfd89aa643c74fde87c9e614",
+        "sha256": "3e7535e520cfed39561c1040f3ca2ee1ba96dd16bfd89aa643c74fde87c9e614",
+        "evidence": {
+          "logId": 325,
+          "startLine": 127,
+          "endLine": 130
+        }
+      }
+    }
+  }
+}

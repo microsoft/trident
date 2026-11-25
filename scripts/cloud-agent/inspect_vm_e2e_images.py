@@ -889,12 +889,13 @@ def failed_publication(output, fact):
     write_report(output, report)
 
 
-def prepare_publication(output):
-    require(output.name == "inspection.json", "invalid-publication-file")
+def prepare_publication(output, *, publication_name="inspection.json", failure_fn=None):
+    failure_fn = failure_fn or failed_publication
+    require(output.name == publication_name, "invalid-publication-file")
     output.parent.mkdir(mode=0o700, exist_ok=False)
     fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        failed_publication(fd, "privileged-inspection-not-started")
+        failure_fn(fd, "privileged-inspection-not-started")
     finally:
         os.close(fd)
 
@@ -1052,10 +1053,14 @@ def execute(output, scratch, bootstrap_guestfish=False):
     return code
 
 
-def privileged_inspection(args):
+def privileged_inspection(
+    args, *, execute_fn=None, failure_fn=None, publication_name="inspection.json"
+):
+    execute_fn = execute_fn or execute
+    failure_fn = failure_fn or failed_publication
     require(os.geteuid() == 0, "privileged-inspection-requires-root")
     require(
-        args.output.name == "inspection.json"
+        args.output.name == publication_name
         and args.publication_uid is not None
         and args.publication_uid >= 0
         and args.publication_gid is not None
@@ -1104,17 +1109,17 @@ def privileged_inspection(args):
                         GIT_CONFIG_KEY_0="safe.directory",
                         GIT_CONFIG_VALUE_0=str(Path(__file__).resolve().parents[2]),
                     )
-                    code = execute(report_file, args.scratch, bootstrap_guestfish=True)
+                    code = execute_fn(
+                        report_file, args.scratch, bootstrap_guestfish=True
+                    )
                     inspected = True
             except Cancelled:
                 if not inspected or code == 0:
-                    failed_publication(report_file, "privileged-inspection-cancelled")
+                    failure_fn(report_file, "privileged-inspection-cancelled")
                     code = 130
             except Exception:
                 if not inspected or code == 0:
-                    failed_publication(
-                        report_file, "privileged-inspection-setup-failed"
-                    )
+                    failure_fn(report_file, "privileged-inspection-setup-failed")
                 code = code or 1
             finally:
                 try:
@@ -1139,9 +1144,7 @@ def privileged_inspection(args):
                     print("Exact report publication failed", file=sys.stderr)
                     if code == 0:
                         code = 1
-                        failed_publication(
-                            report_file, "exact-report-publication-failed"
-                        )
+                        failure_fn(report_file, "exact-report-publication-failed")
             return code
         finally:
             os.close(report_file)

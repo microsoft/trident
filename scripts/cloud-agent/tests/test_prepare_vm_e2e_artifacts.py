@@ -341,6 +341,25 @@ class PrepareArtifactsTests(unittest.TestCase):
         self.records = json.loads(original) + [json.loads(original)[0]]
         self.assert_rejected("Missing or ambiguous")
 
+    def test_explicit_null_logs_on_unrelated_timeline_rows_are_optional(self):
+        self.records.extend(
+            {"id": f"unrelated-{index}", "log": None} for index in range(106)
+        )
+        manifest_path, pin = self.prepare()
+        self.assertEqual(len(self.downloads), 6)
+        runner.verify_bundle(manifest_path.parent, manifest_path, pin, REVISION)
+
+    def test_explicit_null_cited_log_is_not_evidence(self):
+        self.records[1]["log"] = None
+        self.assert_rejected("Evidence log is not in producer timeline")
+        self.assertEqual(self.downloads, [])
+
+    def test_optional_null_logs_do_not_relax_citation_ancestry(self):
+        self.records.append({"id": "unrelated", "log": None})
+        self.records[1]["parentId"] = self.records[2]["id"]
+        self.assert_rejected("parentId")
+        self.assertEqual(self.downloads, [])
+
     def test_unproven_lineage_and_unresolved_inputs_fail_before_download(self):
         original = json.dumps(self.packet)
         name = "trident-testimage"

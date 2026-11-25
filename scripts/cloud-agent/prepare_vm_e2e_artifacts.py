@@ -172,7 +172,7 @@ def verify_evidence(args, expected, records, stages, log_metadata):
             "Invalid producer log citation",
         )
         matches = [
-            row for row in records if row.get("log", {}).get("id") == value["logId"]
+            row for row in records if (row.get("log") or {}).get("id") == value["logId"]
         ]
         require(len(matches) == 1, "Evidence log is not in producer timeline")
         row = matches[0]

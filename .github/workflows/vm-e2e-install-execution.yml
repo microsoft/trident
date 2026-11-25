@@ -1,0 +1,68 @@
+name: Temporary initial VM install execution (packet gated)
+
+on:
+  push:
+    branches:
+      - user/britel/vm-e2e-install-execution-20261125
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vm-e2e-install-execution-20261125
+  cancel-in-progress: false
+
+jobs:
+  install:
+    if: github.ref == 'refs/heads/user/britel/vm-e2e-install-execution-20261125'
+    runs-on: trident-github-runner-ubuntu2204-amd64
+    timeout-minutes: 135
+    steps:
+      - name: Checkout reviewed harness (distinct from product image source)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: validation
+          persist-credentials: false
+
+      - name: Prepare bounded report
+        working-directory: validation
+        run: |
+          umask 077
+          publication="$RUNNER_TEMP/trident-install-report/execution.json"
+          python3 scripts/cloud-agent/execute_vm_e2e_install.py \
+            --prepare-publication --scratch "$RUNNER_TEMP" --output "$publication" \
+            >/dev/null 2>&1
+
+      - name: Qualify, prepare and execute on this exclusive disposable host
+        timeout-minutes: 130
+        env:
+          PACKET_SHA256: "2541fa0bfa52c9b35eae34c22b0e9fa31da57566de4e0b650b44d5991ce3190c"
+          HARNESS_REVISION: ${{ github.sha }}
+        working-directory: validation
+        run: |
+          umask 077
+          extension_root="${AZURE_EXTENSION_DIR:-${AZURE_CONFIG_DIR:-$HOME/.azure}/cliextensions}"
+          status=0
+          sudo -n env "PATH=$PATH" "AZURE_EXTENSION_DIR=$extension_root" \
+            EXCLUSIVE_DISPOSABLE_1ES=true \
+            timeout --signal=INT --kill-after=300s 125m \
+              python3 scripts/cloud-agent/execute_vm_e2e_install.py \
+              --publication-uid "$(id -u)" --publication-gid "$(id -g)" \
+              --expected-harness-revision "$HARNESS_REVISION" \
+              --evidence .github/validation/vm-e2e-install-execution/reviewed-packet-1266405.json \
+              --evidence-sha256 "$PACKET_SHA256" \
+              --scratch "$RUNNER_TEMP" \
+              --output "$RUNNER_TEMP/trident-install-report/execution.json" \
+              >/dev/null 2>&1 || status=$?
+          exit "$status"
+
+      - name: Upload only bounded sanitized execution facts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: initial-install-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/trident-install-report/execution.json
+          if-no-files-found: error
+          retention-days: 7
