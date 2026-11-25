@@ -1,10 +1,11 @@
 package scenario
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
-	"net/url"
+	"time"
 
 	"tridenttools/pkg/netlaunch"
 	"tridenttools/pkg/ref"
@@ -20,7 +21,10 @@ import (
 
 // defaultDataDiskSizeGB is the size (GB) virtdeploy creates the VM data disks
 // at (see setupTestHostVm Disks); used when replacing a failed RAID member disk.
-const defaultDataDiskSizeGB uint = 32
+const (
+	defaultDataDiskSizeGB uint = 32
+	libvirtConnectTimeout      = 30 * time.Second
+)
 
 type testHostInfo interface {
 	// Retrieve the IP address of the test host.
@@ -79,20 +83,16 @@ func (s *TridentE2EScenario) setupTestHost(tc storm.TestCase) error {
 }
 
 func (s *TridentE2EScenario) setupTestHostVm(tc storm.TestCase) error {
-	parsedURL, err := url.Parse("qemu:///system")
+	connectCtx, cancel := context.WithTimeout(tc.Context(), libvirtConnectTimeout)
+	defer cancel()
+	lvConn, closeLibvirt, err := virtdeploy.ConnectContext(connectCtx)
 	if err != nil {
-		return fmt.Errorf("failed to parse libvirt URI: %w", err)
-	}
-
-	log.Debugf("Connecting to libvirt at '%s'", parsedURL.String())
-	lvConn, err := libvirt.ConnectToURI(parsedURL)
-	if err != nil {
-		log.Errorf("Failed to connect to the hypervisor '%s'. Is your user in the libvirt group?", parsedURL.String())
-		return fmt.Errorf("failed to connect to libvirt: %w", err)
+		return err
 	}
 
 	_, ipNet, err := net.ParseCIDR("192.168.242.0/24")
 	if err != nil {
+		closeLibvirt()
 		return fmt.Errorf("failed to parse CIDR: %w", err)
 	}
 
@@ -110,7 +110,7 @@ func (s *TridentE2EScenario) setupTestHostVm(tc storm.TestCase) error {
 		},
 	})
 	if err != nil {
-		lvConn.Disconnect()
+		closeLibvirt()
 		return fmt.Errorf("failed to create VM resources: %w", err)
 	}
 
@@ -121,7 +121,8 @@ func (s *TridentE2EScenario) setupTestHostVm(tc storm.TestCase) error {
 			LocalVmUuid:  ref.Of(status.VMs[0].Uuid.String()),
 			LocalVmNvRam: &status.VMs[0].NvramPath,
 		},
-		lv: lvConn,
+		lv:           lvConn,
+		closeLibvirt: closeLibvirt,
 	}
 
 	return nil
@@ -133,7 +134,8 @@ type testHostVirtDeploy struct {
 	connectionConfig netlaunch.HostConnectionConfiguration
 
 	// Libvirt connection instance.
-	lv *libvirt.Libvirt
+	lv           *libvirt.Libvirt
+	closeLibvirt func() error
 }
 
 func (t *testHostVirtDeploy) IPAddress() net.IP {
@@ -147,10 +149,9 @@ func (t *testHostVirtDeploy) NetlaunchConnectionConfig() netlaunch.HostConnectio
 func (t *testHostVirtDeploy) Cleanup() error {
 	log.Infof("Cleaning virtdeploy resources in namespace %s", t.namespace)
 
-	if t.lv != nil && t.lv.IsConnected() {
-		err := t.lv.Disconnect()
-		if err != nil {
-			log.WithError(err).Warn("failed to close libvirt connection")
+	if t.closeLibvirt != nil {
+		if err := t.closeLibvirt(); err != nil {
+			log.WithError(err).Warn("failed to close libvirt socket")
 		}
 	}
 
@@ -182,13 +183,18 @@ func (t *testHostVirtDeploy) VmXml() *libvirtxml.Domain {
 }
 
 func (t *testHostVirtDeploy) SerialLogPath() (string, error) {
-	if t.vm.Definition == nil {
+	if t.vm.Definition == nil || t.vm.Definition.Devices == nil {
 		// Should never happen, but guard just in case
 		return "", fmt.Errorf("VM definition is nil")
 	}
 
+	for _, serial := range t.vm.Definition.Devices.Serials {
+		if serial.Log != nil && serial.Log.File != "" {
+			return serial.Log.File, nil
+		}
+	}
 	for _, console := range t.vm.Definition.Devices.Consoles {
-		if console.Log != nil {
+		if console.Log != nil && console.Log.File != "" {
 			logrus.Debugf("VM serial log file path: %s", console.Log.File)
 			return console.Log.File, nil
 		}

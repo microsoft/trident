@@ -1,9 +1,13 @@
 package virtdeploy
 
 import (
+	"context"
 	"fmt"
 	"runtime"
+	"time"
 )
+
+const resourceCleanupTimeout = 2 * time.Minute
 
 func CreateResources(config VirtDeployConfig) (*VirtDeployStatus, error) {
 	// Initialize VM architecture to host architecture if not set
@@ -33,7 +37,9 @@ func CreateResources(config VirtDeployConfig) (*VirtDeployStatus, error) {
 }
 
 func DeleteResources(namespace string) error {
-	err := cleanupNamespace(namespace)
+	ctx, cancel := context.WithTimeout(context.Background(), resourceCleanupTimeout)
+	defer cancel()
+	err := cleanupNamespace(ctx, namespace)
 	if err != nil {
 		return fmt.Errorf("failed to clean up namespace: %w", err)
 	}

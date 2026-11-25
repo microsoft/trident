@@ -394,8 +394,8 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, opts abUpdateOptions)
 	// servicing case starts its own.
 	defer stopListener()
 
-	monitorCtx, cancel := context.WithCancel(tc.Context())
-	defer cancel()
+	monitorCtx, monitorCancel := context.WithCancel(tc.Context())
+	defer monitorCancel()
 
 	// Start VM serial monitor (only runs if hardware is VM)
 	monWaitChan, monErr := s.spawnVMSerialMonitor(monitorCtx, tc.ArtifactBroker().StreamArtifactData(tc.Name()+"/serial.log"))
@@ -405,12 +405,8 @@ func (s *TridentE2EScenario) abUpdateOs(tc storm.TestCase, opts abUpdateOptions)
 
 	// On exit, give the monitor up to 1 minute to reach the login prompt and exit.
 	defer func() {
-		select {
-		case <-time.After(time.Minute):
-			logrus.Infof("Waited 1 minute for serial monitor to reach login prompt, cancelling monitor.")
-			cancel()
-		case <-monWaitChan:
-			// Monitor exited on its own
+		if err := waitForSerialMonitor(tc.Context(), monitorCancel, monWaitChan); err != nil {
+			tc.FailFromError(err)
 		}
 	}()
 
