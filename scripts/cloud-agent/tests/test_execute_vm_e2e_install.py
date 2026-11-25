@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 
 from contextlib import ExitStack, nullcontext, redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -439,6 +440,258 @@ class ExecutionTests(unittest.TestCase):
         execution.diagnose_execution(directory, 1, result)
         return result
 
+    def install_junit(self, message, directory=None):
+        root = ET.Element("testsuites", name="trident")
+        suite = ET.SubElement(root, "testsuite", name=execution.SCENARIO)
+        case = ET.SubElement(
+            suite,
+            "testcase",
+            name="install-os",
+            classname=execution.SCENARIO,
+            status="ERRO",
+        )
+        ET.SubElement(case, "error", message=message)
+        ET.SubElement(case, "system-out").text = "fixture-private-console-and-auth-url"
+        directory = (directory or self.root / "diagnostic") / execution.SCENARIO
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / "storm-e2e.junit.xml"
+        path.write_bytes(ET.tostring(root, encoding="utf-8"))
+        return root, path
+
+    def test_install_failure_identifies_each_pinned_call_site_without_raw_error(self):
+        for uefi, operations in (
+            ("", execution.INSTALL_OPERATIONS),
+            ("failed to set UEFI variables: ", execution.UEFI_OPERATIONS),
+        ):
+            for operation, prefix in operations.items():
+                with self.subTest(operation=operation):
+                    self.install_junit(uefi + prefix + "fixture-private-error")
+                    fact = execution.install_failure(self.root / "diagnostic")
+                    self.assertEqual(fact["state"], "captured")
+                    self.assertEqual(fact["operation"], operation)
+                    self.assertEqual(
+                        fact["knownCommand"],
+                        (
+                            "sudo-virt-fw-vars"
+                            if operation == "uefi-virt-fw-vars"
+                            else None
+                        ),
+                    )
+                    self.assertIsNone(fact["commandExitCode"])
+                    self.assertEqual(fact["missingKnownPaths"], [])
+                    self.assertNotIn("fixture-private", json.dumps(fact))
+
+    def test_install_failure_exact_known_command_exit_code_and_missing_paths(self):
+        for code in (1, 23, 255, 0, 256, 1234, "1 private"):
+            with self.subTest(code=code):
+                self.install_junit(
+                    "failed to set UEFI variables: "
+                    f"failed to set boot URI: exit status {code}"
+                )
+                fact = execution.install_failure(self.root / "diagnostic")
+                self.assertEqual(fact["knownCommand"], "sudo-virt-fw-vars")
+                self.assertEqual(
+                    fact["commandExitCode"], code if code in (1, 23, 255) else None
+                )
+        for path in execution.INSTALL_MISSING_PATHS:
+            with self.subTest(path=path):
+                self.install_junit(
+                    "failed to set UEFI variables: failed to create domain "
+                    f"'private-vm': Failed to open file '{path}': "
+                    "No such file or directory"
+                )
+                fact = execution.install_failure(self.root / "diagnostic")
+                self.assertEqual(fact["operation"], "uefi-domain-start-paused")
+                self.assertEqual(fact["missingKnownPaths"], [path])
+                self.assertIsNone(fact["knownCommand"])
+                self.assertNotIn("private-vm", json.dumps(fact))
+
+    def test_install_failure_does_not_infer_missing_path_from_unrelated_text(self):
+        for message in (
+            "fixture-private-error",
+            "failed to set UEFI variables: fixture-private-error",
+            "failed to start VM: exit status 23",
+            "failed to read ISO file '/private/fixture': no such file or directory",
+            "failed to start VM: /dev/kvm-extra: No such file or directory",
+            "failed to start VM: /private/dev/kvm: No such file or directory",
+            "failed to start VM: <xml>/dev/kvm</xml>: No such file or directory",
+            "failed to start VM: /dev/kvm: Permission denied",
+        ):
+            with self.subTest(message=message):
+                self.install_junit(message)
+                fact = execution.install_failure(self.root / "diagnostic")
+                self.assertEqual(fact["state"], "captured")
+                self.assertEqual(fact["missingKnownPaths"], [])
+                self.assertIsNone(fact["knownCommand"])
+                self.assertIsNone(fact["commandExitCode"])
+                self.assertNotIn("fixture-private", json.dumps(fact))
+
+    def test_install_failure_requires_exact_junit_scenario_case_status_and_single_error(
+        self,
+    ):
+        for kind in (
+            "suite",
+            "class",
+            "name",
+            "status",
+            "duplicate",
+            "errors",
+            "limit",
+        ):
+            with self.subTest(kind=kind):
+                root, path = self.install_junit("fixture-private-error")
+                suite = root.find("testsuite")
+                case = suite.find("testcase")
+                if kind == "suite":
+                    suite.set("name", "other_vm-host")
+                elif kind == "class":
+                    case.set("classname", "other_vm-host")
+                elif kind == "name":
+                    case.set("name", "install-vm-deps")
+                elif kind == "status":
+                    case.set("status", "PASS")
+                elif kind == "duplicate":
+                    suite.append(copy.deepcopy(case))
+                elif kind == "errors":
+                    ET.SubElement(case, "failure", message="fixture-private-error")
+                else:
+                    for _ in range(512):
+                        ET.SubElement(suite, "testcase", name="unrelated")
+                path.write_bytes(ET.tostring(root, encoding="utf-8"))
+                fact = execution.install_failure(self.root / "diagnostic")
+                self.assertEqual(fact["state"], "invalid")
+                self.assertEqual(fact["operation"], "unclassified")
+                self.assertNotIn("fixture-private", json.dumps(fact))
+        root, path = self.install_junit("failed to start VM: fixture-private-error")
+        case = root.find("testsuite/testcase")
+        case.set("status", "FAIL")
+        case.find("error").tag = "failure"
+        path.write_bytes(ET.tostring(root, encoding="utf-8"))
+        self.assertEqual(
+            execution.install_failure(self.root / "diagnostic")["operation"], "vm-start"
+        )
+
+    def test_install_junit_unavailable_or_invalid_never_exports_private_content(self):
+        for kind in ("missing", "symlink", "oversized", "malformed", "dtd", "utf16"):
+            with self.subTest(kind=kind):
+                _, path = self.install_junit("fixture-private-error")
+                raw = path.read_bytes()
+                path.unlink()
+                if kind == "symlink":
+                    path.symlink_to(self.args.evidence)
+                elif kind == "oversized":
+                    path.write_bytes(b"x" * (1024 * 1024 + 1))
+                elif kind == "malformed":
+                    path.write_bytes(b"<fixture-private")
+                elif kind == "dtd":
+                    path.write_bytes(
+                        b'<!DOCTYPE testsuites [<!ENTITY x "private">]>' + raw
+                    )
+                elif kind == "utf16":
+                    path.write_bytes(raw.decode().encode("utf-16"))
+                fact = execution.install_failure(self.root / "diagnostic")
+                self.assertEqual(
+                    fact["state"],
+                    "unavailable" if kind in ("missing", "symlink") else "invalid",
+                )
+                self.assertEqual(fact["operation"], "unclassified")
+                self.assertNotIn("fixture-private", json.dumps(fact))
+                if path.is_symlink():
+                    path.unlink()
+
+    def test_install_junit_is_only_read_after_bound_install_failure(self):
+        for kind in (
+            "failed",
+            "source",
+            "manifest",
+            "scenario",
+            "passed",
+            "other-case",
+        ):
+            with self.subTest(kind=kind):
+                self.install_junit(
+                    "failed to set UEFI variables: failed to create domain "
+                    "'private-vm': fixture-private-error"
+                )
+                value = self.result()
+                row = value["scenarios"][0]
+                row["outcome"] = "failed"
+                row["cases"] = [{"name": "install-os", "outcome": "failed"}]
+                if kind == "source":
+                    value["candidateRevision"] = "d" * 40
+                elif kind == "manifest":
+                    value["manifestSha256"] = "d" * 64
+                elif kind == "scenario":
+                    row["scenario"] = "other_vm-host"
+                elif kind == "passed":
+                    row["cases"][0]["outcome"] = "passed"
+                elif kind == "other-case":
+                    row["cases"][0]["name"] = "install-vm-deps"
+                with patch.object(
+                    execution, "install_failure", wraps=execution.install_failure
+                ) as read:
+                    result = self.diagnostic_fixture(value)
+                if kind == "failed":
+                    read.assert_called_once()
+                    self.assertEqual(
+                        result["executionDiagnostic"]["installOsFailure"]["operation"],
+                        "uefi-domain-start-paused",
+                    )
+                else:
+                    read.assert_not_called()
+                    self.assertIsNone(result["executionDiagnostic"]["installOsFailure"])
+                self.assertEqual(result["outcome"], "failed")
+                self.assertNotIn("private-vm", json.dumps(result))
+
+    def test_install_failure_details_cannot_replace_failure_timeout_or_cancellation(
+        self,
+    ):
+        for code in (23, 124, 130):
+            for malformed in (False, True):
+                with self.subTest(code=code, malformed=malformed), ExitStack() as stack:
+                    self.patches(stack)
+
+                    def failed(argv, work, name, timeout, **kwargs):
+                        if name != "execution.log":
+                            return 0
+                        directory = Path(argv[argv.index("--output") + 1])
+                        directory.mkdir(exist_ok=True)
+                        value = self.result()
+                        value.update(outcome="failed", exitCode=code)
+                        row = value["scenarios"][0]
+                        row["outcome"] = "failed"
+                        row["cases"] = [{"name": "install-os", "outcome": "failed"}]
+                        (directory / "results.json").write_text(json.dumps(value))
+                        _, junit = self.install_junit(
+                            "failed to set UEFI variables: "
+                            "failed to set boot URI: exit status 1",
+                            directory,
+                        )
+                        if malformed:
+                            junit.write_text("<fixture-private")
+                        return code
+
+                    self.run.side_effect = failed
+                    stdout, stderr = io.StringIO(), io.StringIO()
+                    with redirect_stdout(stdout), redirect_stderr(stderr):
+                        self.assertEqual(
+                            execution.execute(self.args, self.output), code
+                        )
+                    result = json.loads(self.output.read_text())
+                    self.assertEqual(
+                        result["outcome"],
+                        {23: "failed", 124: "timeout", 130: "cancelled"}[code],
+                    )
+                    self.assertTrue(result["resourceInventoryRestored"])
+                    diagnostic = result["executionDiagnostic"]
+                    self.assertEqual(diagnostic["runnerProcessExitCode"], code)
+                    self.assertEqual(
+                        diagnostic["installOsFailure"]["state"],
+                        "invalid" if malformed else "captured",
+                    )
+                    self.assertNotIn("fixture-private", self.output.read_text())
+                    self.assertEqual(stdout.getvalue() + stderr.getvalue(), "")
+
     def test_matrix_failure_is_classified_without_claiming_scenario_execution(self):
         value = self.result()
         value.update(
@@ -563,6 +816,13 @@ class ExecutionTests(unittest.TestCase):
             scenario / "console.log",
         ):
             path.write_bytes(text)
+        self.install_junit(
+            "failed to set UEFI variables: failed to create domain 'private-vm':\n"
+            + "\n".join(
+                f"Failed to open file '{path}': No such file or directory"
+                for path in execution.INSTALL_MISSING_PATHS
+            )
+        )
         result = self.diagnostic_fixture(value)
         execution.publish(self.output, result)
         self.assertLessEqual(self.output.stat().st_size, execution.REPORT_LIMIT)
@@ -572,6 +832,10 @@ class ExecutionTests(unittest.TestCase):
             sorted(execution.DIAGNOSTIC_CASES),
         )
         self.assertNotIn("fixture-private-detail", self.output.read_text())
+        self.assertEqual(
+            result["executionDiagnostic"]["installOsFailure"]["missingKnownPaths"],
+            list(execution.INSTALL_MISSING_PATHS),
+        )
 
     @unittest.skipUnless(sys.platform == "linux", "requires Linux process groups")
     def test_native_process_failure_and_timeout_use_reviewed_group_reaping(self):

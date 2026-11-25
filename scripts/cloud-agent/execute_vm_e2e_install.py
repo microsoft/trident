@@ -12,6 +12,7 @@ import signal
 import stat
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -72,6 +73,50 @@ RUNNER_FAILURES = {
     "matrix-ring-unsupported": "Unsupported stage type, refusing ring fallback",
     "registry-unsupported": "Registry-backed extensions need verified OCI preparation;",
 }
+# Exact error prefixes in the pinned product's install.go, netlaunch.go and libvirt.go.
+INSTALL_OPERATIONS = {
+    "host-config-create": "failed to create temporary host config file: ",
+    "host-config-write": "failed to write to temporary host config file: ",
+    "host-config-sync": "failed to sync temporary host config file: ",
+    "host-config-read": "failed to read prepared host config file: ",
+    "serial-monitor-start": "failed to start VM serial monitor: ",
+    "installer-iso-read": "failed to read ISO file '",
+    "netlaunch-listen": "failed to open port listening on '",
+    "outbound-ip-discovery": "failed to find default outbound IP: ",
+    "netlaunch-config-read": "failed to read Trident config: ",
+    "netlaunch-config-unmarshal": "failed to unmarshal Trident config: ",
+    "netlaunch-config-marshal": "failed to marshal Trident config: ",
+    "installer-config-patch": "failed to patch Trident config into ISO: ",
+    "logstream-setup": "failed to setup logstream: ",
+    "tracestream-setup": "failed to setup tracestream: ",
+    "signing-certificate-open": "failed to open signing certificate '",
+    "vm-initialize": "failed to initialize VM: ",
+    "vm-start": "failed to start VM: ",
+}
+UEFI_OPERATIONS = {
+    "uefi-domain-xml-read": "failed to get XML description of domain '",
+    "uefi-domain-xml-parse": "failed to parse domain XML: ",
+    "uefi-nvram-node-missing": "no <nvram> node found in domain XML",
+    "uefi-nvram-remove": "failed to remove existing NVRAM file: ",
+    "uefi-domain-redefine": "failed to define domain with XML '",
+    "uefi-domain-start-paused": "failed to create domain '",
+    "uefi-domain-destroy-paused": "failed to destroy domain '",
+    "uefi-virt-fw-vars": "failed to set boot URI: ",
+}
+INSTALL_MISSING_PATHS = (
+    "/usr/bin/qemu-system-x86_64",
+    "/usr/share/OVMF/OVMF_CODE_4M.ms.fd",
+    "/usr/share/OVMF/OVMF_VARS_4M.ms.fd",
+    "/dev/pts/2",
+    "/dev/kvm",
+    f"/tmp/trident-e2e-{SCENARIO}-vm-0-serial0.log",
+    f"/var/lib/trident-e2e-{SCENARIO}-nvram/trident-e2e-{SCENARIO}-vm-0_VARS.fd",
+    *(
+        f"/var/lib/libvirt/trident-e2e-{SCENARIO}/"
+        f"trident-e2e-{SCENARIO}-vm-0-volume-{index}.qcow2"
+        for index in (0, 1)
+    ),
+)
 UKI = {
     "combined",
     "memory-constraint-combined",
@@ -150,15 +195,20 @@ def failed_publication(output, _fact):
     publish(output, report())
 
 
-def read_json(path, limit):
+def read_bounded(path, limit):
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as stream:
         info = os.fstat(stream.fileno())
         common.require(
-            stat.S_ISREG(info.st_mode) and info.st_size <= limit, "bounded regular JSON"
+            stat.S_ISREG(info.st_mode) and info.st_size <= limit, "bounded regular file"
         )
         value = stream.read(limit + 1)
-    common.require(len(value) <= limit, "JSON limit")
+    common.require(len(value) <= limit, "file limit")
+    return value
+
+
+def read_json(path, limit):
+    value = read_bounded(path, limit)
     return value, json.loads(value)
 
 
@@ -299,6 +349,78 @@ def log_markers(path):
         return {"sample": "unavailable", "markers": []}
 
 
+def install_failure(directory):
+    fact = {
+        "state": "unavailable",
+        "basis": "bound-install-os-junit-message-not-independent-root-cause",
+        "operation": "unclassified",
+        "knownCommand": None,
+        "commandExitCode": None,
+        "missingKnownPaths": [],
+    }
+    try:
+        raw = read_bounded(directory / SCENARIO / "storm-e2e.junit.xml", 1024 * 1024)
+        fact["state"] = "invalid"
+        common.require(
+            b"\0" not in raw and b"<!DOCTYPE" not in raw and b"<!ENTITY" not in raw,
+            "plain UTF-8 JUnit required",
+        )
+        root = ET.fromstring(raw.decode("utf-8"))
+        suites = root.findall("testsuite")
+        common.require(
+            root.tag == "testsuites"
+            and len(suites) == 1
+            and suites[0].get("name") == SCENARIO,
+            "JUnit scenario mismatch",
+        )
+        cases = list(root.iter("testcase"))
+        common.require(len(cases) <= 512, "JUnit case limit")
+        selected = [case for case in cases if case.get("name") == "install-os"]
+        common.require(
+            len(selected) == 1
+            and selected[0].get("classname") == SCENARIO
+            and selected[0].get("status") in ("FAIL", "ERRO"),
+            "JUnit failed install case required",
+        )
+        errors = selected[0].findall("failure") + selected[0].findall("error")
+        common.require(len(errors) == 1, "one install failure required")
+        message = errors[0].get("message")
+        common.require(isinstance(message, str), "JUnit failure message required")
+        prefixes = INSTALL_OPERATIONS
+        uefi = "failed to set UEFI variables: "
+        if message.startswith(uefi):
+            message = message[len(uefi) :]
+            prefixes = UEFI_OPERATIONS
+            fact["operation"] = "uefi-unclassified"
+        fact["operation"] = next(
+            (name for name, prefix in prefixes.items() if message.startswith(prefix)),
+            fact["operation"],
+        )
+        if fact["operation"] == "uefi-virt-fw-vars":
+            fact["knownCommand"] = "sudo-virt-fw-vars"
+            match = re.fullmatch(
+                r"failed to set boot URI: exit status ([0-9]{1,3})", message
+            )
+            if match and 1 <= int(match[1]) <= 255:
+                fact["commandExitCode"] = int(match[1])
+        fact["missingKnownPaths"] = [
+            path
+            for path in INSTALL_MISSING_PATHS
+            if re.search(
+                r"""(?<![\w/.-])['"]?"""
+                + re.escape(path)
+                + r"""['"]?: [Nn]o such file or directory(?:$|\n)""",
+                message,
+            )
+        ]
+        fact["state"] = "captured"
+    except OSError:
+        fact["state"] = "unavailable"
+    except (ValueError, ET.ParseError):
+        fact["state"] = "invalid"
+    return fact
+
+
 def diagnose_execution(directory, process_status, result):
     diagnostic = {
         "basis": "bounded-runner-facts-and-log-markers-not-root-cause",
@@ -312,6 +434,7 @@ def diagnose_execution(directory, process_status, result):
         "selectedOutcome": "unknown",
         "failedCaseIds": [],
         "unrecognizedCaseCount": 0,
+        "installOsFailure": None,
         "logs": {
             name: log_markers(path)
             for name, path in (
@@ -377,6 +500,8 @@ def diagnose_execution(directory, process_status, result):
             "unclassified",
         )
         diagnostic["resultState"] = "captured"
+        if "install-os" in diagnostic["failedCaseIds"]:
+            diagnostic["installOsFailure"] = install_failure(directory)
     except OSError:
         diagnostic["resultState"] = "unavailable"
     except (ValueError, KeyError, TypeError):

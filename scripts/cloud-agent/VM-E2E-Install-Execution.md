@@ -1,7 +1,8 @@
 # Temporary initial plain VM install execution
 
-This is execution scaffolding, not an execution result. No guest has been run
-by this slice. The parent supplied the independently qualified initial-cohort
+This is a temporary execution harness, not a passing guest execution result.
+The attempts documented below failed. The parent supplied the independently
+qualified initial-cohort
 packet after private review of 29 hash/line-count-verified producer logs,
 source-build/current-run RPM consumption citations and offline installed payload
 measurements. The packet's claims and review reference must not be rewritten.
@@ -146,6 +147,42 @@ failure into success, weaken any success/packet gate, expand suite selection,
 change cleanup or authorize another lane on this host. A fresh reviewed attempt
 is needed to obtain execution diagnostics and may not reproduce the original
 failure. Disposed-host private logs cannot be reconstructed from the first report.
+
+Run 45709144152 at `72a5a0cff4ed918ae9c1c3fd838e026ad6e001cf` narrowed the
+failure to `install-os`: four cases passed, one failed and six were not run.
+Only the selected scenario log matched `missing-command-or-file`; this does
+not identify a command/path or establish causality. Exact job 139538735556
+again exposes redirection (line 193) and exit 1 (line 200), not private case
+errors. The retained artifact contains no JUnit or private runtime evidence.
+No original failure message is recoverable from that artifact or job log.
+
+On a bound `install-os` failure only, the wrapper now reads the fixed private
+`execution/simple_vm-host/storm-e2e.junit.xml` path (at most 1 MiB, regular
+file, no symlink, DTD or entity declarations). It requires exactly one matching
+scenario suite and failed `install-os` case/class. Storm v0.4.0-alpha3 writes
+the case reason into the failure/error `message` attribute; `system-out`,
+other cases and console text are not used for this classification.
+
+The exported `installOsFailure` identifies the pinned source's failing operation
+by an anchored error prefix. In particular it distinguishes the UEFI XML read,
+parse, missing NVRAM node, NVRAM removal, domain redefinition, paused start,
+paused stop and `sudo virt-fw-vars` invocation. Only the latter can report its
+exact bounded nonzero command exit code. This maps
+`tools/storm/e2e/scenario/install.go`, `tools/pkg/netlaunch/netlaunch.go` and
+`tools/storm/utils/libvirt.go` at the pinned product revision, without changing
+those files or running a diagnostic command.
+
+`missingKnownPaths` can contain only exact static paths used by the selected
+VM: the amd64 QEMU emulator, secure-boot OVMF code/vars, `/dev/kvm`, `/dev/pts/2`,
+and its fixed serial, NVRAM and two disk paths from virtdeploy. A path is
+reported only when immediately followed by `No such file or directory` in the
+case error, not merely mentioned in logged configuration or XML. No arbitrary
+path, failure message, XML, command argument, private output or unknown prefix
+is copied. Missing/invalid evidence and unknown operations remain explicit;
+this is an operation-level observation, not an independently proven root cause.
+The original failure status and all existing success/cleanup gates remain
+unchanged. A reviewed fresh attempt is still needed, not a product fix inferred
+from the generic marker.
 
 Preparation is bounded to 1200 seconds (its image helper to 600), host setup to
 900, matrix and selected scenario to 1800 each, and their outer install-runner
