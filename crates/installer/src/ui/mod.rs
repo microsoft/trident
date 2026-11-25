@@ -41,7 +41,7 @@ mod render;
 mod theme;
 
 use model::{Action, LogSource, Model, Screen};
-pub(super) use output::Output;
+pub(super) use output::{Output, SerialMirror};
 use theme::VERBOSITY_LEVELS;
 
 /// Refresh often enough to show progress without busy-polling the terminal.
@@ -244,6 +244,7 @@ pub(super) async fn run(
                 println!("{}", entry.plain());
             }
         }
+        output.flush_mirrors();
         // A finished worker cannot enqueue a terminal event after the queue check.
         if worker.as_ref().is_some_and(JoinHandle::is_finished) && rx.is_empty() {
             if let Some(finished) = worker.take() {
@@ -477,7 +478,7 @@ mod tests {
         let serial = root.path().join("serial.log");
         let mut output = Output {
             log: Some(File::create(&diagnostic).unwrap()),
-            mirrors: vec![(serial.clone(), File::create(&serial).unwrap())],
+            mirrors: vec![SerialMirror::new(&serial, File::create(&serial).unwrap())],
         };
         let mut model = Model::new();
         for message in [

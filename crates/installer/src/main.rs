@@ -15,7 +15,11 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use osutils::systemd;
 
-use crate::{client::Event, config::DEFAULT_CONFIG, ui::Output};
+use crate::{
+    client::Event,
+    config::DEFAULT_CONFIG,
+    ui::{Output, SerialMirror},
+};
 
 mod client;
 mod config;
@@ -142,7 +146,7 @@ async fn run(args: Args) -> Result<(), Error> {
         }
         for path in consoles.iter().filter(|path| !path.ends_with("tty1")) {
             match terminal::open_nonblocking_console(path) {
-                Ok(terminal) => output.mirrors.push((path.clone(), terminal)),
+                Ok(terminal) => output.mirrors.push(SerialMirror::new(path, terminal)),
                 Err(error) => warn!("Could not mirror status to '{}': {error}", path.display()),
             }
         }
