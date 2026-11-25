@@ -131,6 +131,7 @@ stages:
   - template: stages/testing_e2e/storm_e2e.yml
     parameters:
       stageType: ${{ parameters.stageType }}
+      includeAzl4: true
       acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   # Makefile validation, only for CI
@@ -305,6 +306,23 @@ stages:
       micVersion: ${{ parameters.micVersion }}
 
   # TESTING stages for PRERELEASE
+  # AZL4 currently supports the regular GRUB host scenario only.
+  - ${{ if in(parameters.stageType, 'pr-e2e', 'ci', 'pre', 'full-validation') }}:
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          ${{ if eq(parameters.stageType, 'pr-e2e') }}:
+            buildPurpose: "pullrequest"
+          ${{ elseif eq(parameters.stageType, 'ci') }}:
+            buildPurpose: "post_merge"
+          ${{ elseif eq(parameters.stageType, 'pre') }}:
+            buildPurpose: "daily"
+          ${{ else }}:
+            buildPurpose: "weekly"
+          runtimeEnv: "host"
+          distro: azl4
+          stageSuffix: "_azl4"
+          testSecureBoot: false
+
   - ${{ if eq(parameters.stageType, 'pre') }}:
       # Functional Testing
       - template: stages/testing_functional/functional-testing.yml
