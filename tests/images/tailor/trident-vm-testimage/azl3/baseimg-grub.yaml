@@ -96,6 +96,6 @@ scripts:
     - path: scripts/post-install.sh
     - path: scripts/update-host-status.sh
     - path: scripts/prepare-update-config.sh
-    - path: scripts/ssh-move-host-keys.sh
-    - path: scripts/create-ssh-dirs.sh
-    - path: scripts/duid-type-to-link-layer.sh
+    - path: scripts/azl3/ssh-move-host-keys.sh
+    - path: scripts/azl3/create-ssh-dirs.sh
+    - path: scripts/azl3/duid-type-to-link-layer.sh

@@ -115,10 +115,18 @@ stages:
 
   # Build tools (Go stuff)
   - template: stages/building_tools/building-tools.yml
-    ${{ if eq(parameters.stageType, 'ci') }}:
-      parameters:
+    parameters:
+      buildTailor: ${{ and(or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')), ne(parameters.tridentBuildOptions, 'prebuilt')) }}
+      ${{ if eq(parameters.stageType, 'ci') }}:
         # Run CodeQL for this in CI only
         runCodeql: true
+
+  - ${{ if and(or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')), ne(parameters.tridentBuildOptions, 'prebuilt')) }}:
+      - template: stages/trident_images/tailor-vm-images.yml
+        parameters:
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
+          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
   # E2E Test Matrix Definition
   - template: stages/testing_e2e/storm_e2e.yml
