@@ -57,9 +57,9 @@ pub(super) enum Completion {
     Failure(String),
 }
 
-/// Terminal classification for one live installer attempt.
+/// Terminal classification returned by one live client execution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AttemptOutcome {
+pub(crate) enum AttemptOutcome {
     /// Trident returned a valid successful completion, including a no-op.
     Completed,
     /// Preparation, transport, protocol validation or servicing failed.

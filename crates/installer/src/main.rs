@@ -17,6 +17,7 @@ use osutils::systemd;
 
 use crate::{client::Event, config::DEFAULT_CONFIG, serial::SerialMirrors, ui::Output};
 
+mod attempt;
 mod client;
 mod config;
 mod ipmi;

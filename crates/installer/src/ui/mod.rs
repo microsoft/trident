@@ -28,13 +28,7 @@ use tokio::{
 use osutils::systemd;
 use trident_client::{LogLevel, ServicingEvent};
 
-use crate::{
-    client::{self, AttemptOutcome, Event},
-    config::Config,
-    ipmi::LiveAttemptReporter,
-    source::{self, Request},
-    terminal as installer_terminal, INSTALLER_LOG_TX,
-};
+use crate::{attempt, client::Event, source, terminal as installer_terminal, INSTALLER_LOG_TX};
 
 mod model;
 mod output;
@@ -129,42 +123,6 @@ impl Drop for Display {
     }
 }
 
-/// Runs one live attempt and emits best-effort IPMI start and terminal events.
-///
-/// Configuration and servicing errors produce handled `Failed` outcomes. If the worker exits
-/// without a handled outcome, dropping its reporter emits `Failed`.
-fn spawn_operation(
-    config_path: PathBuf,
-    request: Request,
-    uncertain: bool,
-    tx: mpsc::Sender<Event>,
-) -> JoinHandle<Result<AttemptOutcome, Error>> {
-    task::spawn(async move {
-        let mut attempt = LiveAttemptReporter::new();
-        attempt.start();
-        match Config::read(config_path) {
-            Ok(settings) => {
-                client::execute(settings, request, uncertain, tx, |outcome| {
-                    attempt.finish(outcome);
-                })
-                .await
-            }
-            Err(error) => {
-                attempt.finish(AttemptOutcome::Failed);
-                client::send(
-                    &tx,
-                    Event::Error {
-                        details: format!("{error:#}"),
-                        uncertain,
-                    },
-                )
-                .await?;
-                Ok(AttemptOutcome::Failed)
-            }
-        }
-    })
-}
-
 /// Reports shell failures without changing the result of an independent installation.
 fn shell_result_event(result: Result<Result<(), Error>, JoinError>) -> Option<Event> {
     match result {
@@ -222,7 +180,7 @@ pub(super) async fn run(
     let mut termination = unix::signal(SignalKind::terminate())?;
     let mut model = Model::new();
     model.linux_vt = linux_vt;
-    let mut worker = Some(spawn_operation(
+    let mut worker = Some(attempt::spawn(
         config_path.clone(),
         model.last_request.clone(),
         false,
@@ -385,7 +343,7 @@ pub(super) async fn run(
                                     model.scroll = 0;
                                     model.selected = 0;
                                     model.last_request = request.clone();
-                                    worker = Some(spawn_operation(
+                                    worker = Some(attempt::spawn(
                                         config_path.clone(),
                                         request,
                                         model.uncertain,
@@ -567,25 +525,6 @@ mod tests {
         assert_eq!(model.screen, Screen::Success);
         assert!(!model.failed);
         assert_eq!(model.reboot_at, reboot_at);
-    }
-
-    /// Recovery reports invalid reloaded configuration instead of using defaults.
-    #[tokio::test]
-    async fn recovery_reloads_configuration_without_using_defaults_on_error() {
-        let root = TempDir::new().unwrap();
-        let path = root.path().join("installer.toml");
-        for (text, diagnostic) in [("", "mode"), ("mode = 'not-a-mode'", "not-a-mode")] {
-            fs::write(&path, text).unwrap();
-            let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
-            let worker = spawn_operation(path.clone(), Request::Autorun, false, tx);
-            let Event::Error { details, uncertain } = rx.recv().await.unwrap() else {
-                panic!("Invalid settings must fail before preparing a source");
-            };
-            assert!(!uncertain);
-            assert!(details.contains(diagnostic), "{details}");
-            worker.await.unwrap().unwrap();
-            rx.try_recv().unwrap_err();
-        }
     }
 
     /// An enqueued completion must be handled before the worker stops blocking power actions.
