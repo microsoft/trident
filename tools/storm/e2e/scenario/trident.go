@@ -31,6 +31,12 @@ const (
 )
 
 type TridentE2EHostConfigParams struct {
+	// Empty preserves AZL3 for existing configurations.
+	Distro string `yaml:"distro"`
+
+	// Nil preserves Secure Boot for existing configurations.
+	SecureBoot *bool `yaml:"secureBoot"`
+
 	// Maximum expected failures for this scenario
 	MaxExpectedFailures uint `yaml:"maxExpectedFailures"`
 
@@ -132,6 +138,16 @@ func NewTridentE2EScenario(
 	runtime trident.RuntimeType,
 	testRings testrings.TestRingSet,
 ) (*TridentE2EScenario, error) {
+	if configParams.Distro == "" {
+		configParams.Distro = "azl3"
+	}
+	if configParams.Distro != "azl3" && configParams.Distro != "azl4" {
+		return nil, fmt.Errorf("unsupported E2E distro %q", configParams.Distro)
+	}
+	if configParams.Distro == "azl4" &&
+		(hardware != HardwareTypeVM || runtime != trident.RuntimeTypeHost || configParams.IsUki) {
+		return nil, fmt.Errorf("AZL4 E2E currently supports GRUB VM host scenarios only")
+	}
 	configClone, err := config.Clone()
 	if err != nil {
 		return nil, fmt.Errorf("failed to clone Host Configuration: %w", err)
@@ -204,6 +220,14 @@ func (s *TridentE2EScenario) HardwareType() HardwareType {
 
 func (s *TridentE2EScenario) RuntimeType() trident.RuntimeType {
 	return s.runtime
+}
+
+func (s *TridentE2EScenario) Distro() string {
+	return s.configParams.Distro
+}
+
+func (s *TridentE2EScenario) secureBootEnabled() bool {
+	return s.configParams.SecureBoot == nil || *s.configParams.SecureBoot
 }
 
 func (s *TridentE2EScenario) RegisterTestCases(r storm.TestRegistrar) error {

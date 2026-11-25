@@ -105,7 +105,7 @@ func (s *TridentE2EScenario) setupTestHostVm(tc storm.TestCase) error {
 				Mem:         12,
 				Disks:       []uint{32, 32},
 				EmulatedTPM: true,
-				SecureBoot:  true,
+				SecureBoot:  s.secureBootEnabled(),
 			},
 		},
 	})

@@ -131,6 +131,7 @@ stages:
   - template: stages/testing_e2e/storm_e2e.yml
     parameters:
       stageType: ${{ parameters.stageType }}
+      includeAzl4: true
       acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   # Makefile validation, only for CI
