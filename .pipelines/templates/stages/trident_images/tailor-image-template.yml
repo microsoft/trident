@@ -33,10 +33,6 @@ parameters:
   - name: micVersion
     type: string
     default: "*.*.*"
-  - name: tailorManifest
-    type: string
-    default: ""
-
 
 steps:
   - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines
@@ -144,11 +140,20 @@ steps:
       tailor="$SOURCE_DIRECTORY/artifacts/tailor-tool/tailor"
       chmod +x "$tailor"
       manifest="$SOURCE_DIRECTORY/tests/images/tailor/tailor.yaml"
-      if [[ -n "$TAILOR_MANIFEST" ]]; then
-        manifest="$TAILOR_MANIFEST"
-      elif [[ "$MIC_BUILD_TYPE" == dev ]]; then
-        manifest="$SOURCE_DIRECTORY/tests/images/tailor/tailor-dev.yaml"
+      case "$MIC_BUILD_TYPE" in
+        dev|preview|release) ;;
+        *) echo "Unsupported Image Customizer build type: $MIC_BUILD_TYPE" >&2; exit 1 ;;
+      esac
+      # Reset only this job's manifest so reused checkouts cannot retain a dev override.
+      git show HEAD:tests/images/tailor/tailor.yaml > "$manifest"
+      if [[ "$MIC_BUILD_TYPE" == dev ]]; then
+        sed -i \
+          -e 's|container: mcr.microsoft.com/azurelinux/imagecustomizer|container: imagecustomizer|' \
+          -e 's|tag: latest|tag: dev|' \
+          -e 's|pull: missing|pull: never|' "$manifest"
       fi
+      mkdir -p "$OUTPUT_DIRECTORY/logs"
+      cp -- "$manifest" "$OUTPUT_DIRECTORY/logs/tailor.yaml"
 
       selection="arch=amd64,scenario=${SCENARIO},distro=${DISTRO}"
       matrix=$("$tailor" --manifest "$manifest" matrix "$TAILOR_IMAGE" -s "$selection" --format json)
@@ -179,6 +184,5 @@ steps:
       SCENARIO: ${{ parameters.scenario }}
       CLONES: ${{ parameters.clones }}
       MIC_BUILD_TYPE: ${{ parameters.micBuildType }}
-      TAILOR_MANIFEST: ${{ parameters.tailorManifest }}
     workingDirectory: ${{ parameters.tridentSourceDirectory }}
     displayName: Build Tailor cell and preserve legacy filenames

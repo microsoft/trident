@@ -62,7 +62,14 @@ pub fn find_manifest(start: impl AsRef<Path>) -> Option<PathBuf> {
 pub fn discover(start: impl AsRef<Path>) -> Result<Workspace, ConfigError> {
     let start = start.as_ref();
     if let Some(manifest) = find_manifest(start) {
-        return discover_manifest(manifest);
+        let root = manifest.parent().unwrap_or(start).to_path_buf();
+        let tool = load_tool_config(&manifest)?;
+        let images = discover_members(&root, &tool)?;
+        return Ok(Workspace {
+            root,
+            tool: Some(tool),
+            images,
+        });
     }
     let definition = load_image(start.join(IMAGE_FILE))?;
     Ok(Workspace {
@@ -72,19 +79,6 @@ pub fn discover(start: impl AsRef<Path>) -> Result<Workspace, ConfigError> {
             definition,
             dir: start.to_path_buf(),
         }],
-    })
-}
-
-/// Load the specified workspace manifest without searching for a different filename.
-pub fn discover_manifest(manifest: impl AsRef<Path>) -> Result<Workspace, ConfigError> {
-    let manifest = manifest.as_ref();
-    let root = manifest.parent().unwrap_or(Path::new(".")).to_path_buf();
-    let tool = load_tool_config(manifest)?;
-    let images = discover_members(&root, &tool)?;
-    Ok(Workspace {
-        root,
-        tool: Some(tool),
-        images,
     })
 }
 
