@@ -5,7 +5,7 @@ storage:
       partitions:
         - id: esp
           type: esp
-          size: 16M
+          size: "${espSize}"
 
         - id: root-a
           size: 4G

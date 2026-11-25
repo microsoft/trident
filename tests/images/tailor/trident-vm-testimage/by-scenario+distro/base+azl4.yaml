@@ -1,0 +1,5 @@
+params:
+  espSize: 32M
+
+config:
+  $include: ./azl4/base.yaml

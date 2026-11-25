@@ -1,2 +1,0 @@
-config:
-  $include: ./azl4/baseimg-grub-azl4.yaml
