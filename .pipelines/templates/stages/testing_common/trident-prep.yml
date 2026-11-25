@@ -19,7 +19,6 @@ parameters:
     default: trident-testimage
     values:
       - trident-testimage
-      - trident-azl4-testimage
       - trident-container-testimage
 
   - name: config

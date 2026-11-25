@@ -64,7 +64,7 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 		WaitForProvisioning: true,
 		HostConfigFile:      tempHostConfigFilePath,
 		CertificateFile:     signingCert,
-		EnableSecureBoot:    s.secureBootEnabled(),
+		EnableSecureBoot:    true,
 	}
 
 	timeoutCtx, cancel := context.WithTimeout(tc.Context(), time.Duration(s.args.VmWaitForLoginTimeout)*time.Second)

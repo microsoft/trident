@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Invert the target configuration files to produce a configurations.yaml file
+# Invert the target-configurations.yaml file to produce a configurations.yaml file
 # that lists, for each test configuration, the lowest pipeline ring it should be run in.
 
 import sys
@@ -35,8 +35,8 @@ header = """\
 # Scenarios not listed in this file will not be run in any ring.
 """
 
-# Configurations enabled for the storm-based E2E flow. AZL4 currently covers
-# the regular GRUB VM host scenario only.
+# Configurations enabled for the storm-based E2E flow, validated end-to-end on
+# a real VM (base/encryption/verity/uki paths).
 #
 # Runtime note: the encryption+UKI configs (combined, memory-constraint-combined,
 # rerun) seal to PCR 7, which Trident forbids under a containerized runtime. On
@@ -52,7 +52,6 @@ header = """\
 # for usrverity images).
 ALLOWED_CONFIGS = [
     "base",
-    "base-azl4",
     "simple",
     "misc",
     "raid-big",
@@ -77,10 +76,6 @@ ALLOWED_RUNTIMES = ["host", "container"]
 
 # Special settings to merge into specific configurations
 SPECIAL_SETTINGS = {
-    "base-azl4": {
-        "distro": "azl4",
-        "secureBoot": False,
-    },
     "rerun": {
         "maxExpectedFailures": 1,
     },
@@ -114,20 +109,13 @@ def config_has_uki_marker(repo_root, name):
 
 def main():
     repo_root = Path(__file__).parent.parent.parent.parent
-    target_configurations_yamls = [
-        Path("tests") / "e2e_tests" / "target-configurations.yaml",
-        Path("tests") / "e2e_tests" / "target-configurations-azl4.yaml",
-    ]
-    data = {}
-    for source in target_configurations_yamls:
-        with open(repo_root / source, "r") as f:
-            source_data = yaml.safe_load(f)
-        for hardware, runtimes in source_data.items():
-            for runtime, purposes in runtimes.items():
-                for purpose, configs in purposes.items():
-                    data.setdefault(hardware, {}).setdefault(runtime, {}).setdefault(
-                        purpose, []
-                    ).extend(configs)
+    target_configurations_yaml = (
+        Path("tests") / "e2e_tests" / "target-configurations.yaml"
+    )
+    input_file = repo_root / target_configurations_yaml
+
+    with open(input_file, "r") as f:
+        data = yaml.safe_load(f)
 
     # Rename hardware types
     hw_renames = {
@@ -204,7 +192,7 @@ def main():
     output_yaml_file = Path(__file__).parent / "configurations" / "configurations.yaml"
 
     formatted_header = header.format(
-        ", ".join(map(str, target_configurations_yamls)), ", ".join(pl_order)
+        str(target_configurations_yaml), ", ".join(pl_order)
     )
 
     with open(output_yaml_file, "w") as f:

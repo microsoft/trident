@@ -49,6 +49,22 @@ The pipeline adapts Tailor slugs to the existing artifact/file contracts:
 `image-` prefix and `-qcow2` suffix; update artifacts contain `_0.cosi` and
 `_1.cosi` files.
 
+## Host test-image model
+
+```text
+trident-testimage/
+  image.yaml          AMD64/base/AZL4 matrix and COSI output
+  base-azl4.yaml       Host test-image recipe
+  scripts/            Host-specific post-customization
+```
+
+The `trident-testimage` model produces the AZL4 GRUB host COSI image.
+It reuses `common` customization assets and the staged AZL4 RPMs/base.
+The native host job publishes two clones under the existing
+`trident-azl4-testimage` artifact name. It does not stage VM SSH keys:
+the installer/Host Configuration creates the test user.
+Image production is separate from test selection and adoption.
+
 ## Shared assets and rendering
 
 `$include` paths resolve relative to the image directory, including nested

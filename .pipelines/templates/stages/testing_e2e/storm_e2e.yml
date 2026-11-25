@@ -14,9 +14,6 @@ parameters:
   - name: testingRun
     type: boolean
     default: false
-  - name: includeAzl4
-    type: boolean
-    default: false
 
 stages:
   - stage: DefineTests_E2E
@@ -67,16 +64,6 @@ stages:
       runtimeType: "CONTAINER"
       testingRun: ${{ parameters.testingRun }}
       acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
-
-  - ${{ if parameters.includeAzl4 }}:
-      - template: test_execution_template.yml
-        parameters:
-          hardwareType: "VM"
-          runtimeType: "HOST"
-          distro: azl4
-          stageSuffix: "_AZL4"
-          testingRun: ${{ parameters.testingRun }}
-          acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   # TODO: enable once bare-metal host setup is supported in storm
   # - template: test_execution_template.yml

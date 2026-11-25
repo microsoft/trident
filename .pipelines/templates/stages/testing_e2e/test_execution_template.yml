@@ -14,13 +14,6 @@ parameters:
   - name: testingRun
     type: boolean
     default: false
-  - name: distro
-    type: string
-    default: azl3
-    values: [azl3, azl4]
-  - name: stageSuffix
-    type: string
-    default: ""
 
   - name: maxParallel
     type: string
@@ -32,8 +25,8 @@ parameters:
     default: trident-dev-acr-write-umi-ECF
 
 stages:
-  - stage: E2ETesting_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}${{ parameters.stageSuffix }}
-    displayName: E2E ${{ parameters.hardwareType }} ${{ parameters.runtimeType }} Testing (${{ parameters.distro }})
+  - stage: E2ETesting_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}
+    displayName: E2E ${{ parameters.hardwareType }} ${{ parameters.runtimeType }} Testing
     dependsOn:
       - DefineTests_E2E
       - ${{ if eq(parameters.testingRun, true) }}:
@@ -43,10 +36,7 @@ stages:
           - BuildingTools
       - ${{ else }}:
           - BuildingTools
-          - ${{ if eq(parameters.distro, 'azl4') }}:
-              - TridentTestImg_trident_installer
-              - TridentTestImg_trident_azl4_testimage
-          - ${{ elseif eq(parameters.runtimeType, 'CONTAINER') }}:
+          - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
               - BuildTridentContainerImage
               - TridentTestImg_trident_container_installer
               - TridentTestImg_trident_container_testimage
@@ -60,10 +50,7 @@ stages:
               - TridentTestImg_trident_usrverity_testimage
     variables:
       - name: matrixJson
-        ${{ if eq(parameters.distro, 'azl4') }}:
-          value: "$[ stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}_AZL4'] ]"
-        ${{ else }}:
-          value: "$[ stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'] ]"
+        value: "$[ stageDependencies.DefineTests_E2E.DefineTests.outputs['matrices.TEST_MATRIX_E2E_${{ parameters.hardwareType }}_${{ parameters.runtimeType }}'] ]"
 
     jobs:
       - job: Testing
@@ -96,16 +83,7 @@ stages:
             value: /tmp/output
           - name: ob_artifactBaseName
             value: $(SCENARIO)_$(System.JobAttempt)
-          - ${{ if eq(parameters.distro, 'azl4') }}:
-              - name: testImageName
-                value: trident-azl4-testimage
-              - name: verityTestImageName
-                value: skip
-              - name: usrVerityTestImageName
-                value: skip
-              - name: downloadTridentContainer
-                value: false
-          - ${{ elseif eq(parameters.runtimeType, 'CONTAINER') }}:
+          - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
               - name: testImageName
                 value: trident-container-testimage
               - name: verityTestImageName
