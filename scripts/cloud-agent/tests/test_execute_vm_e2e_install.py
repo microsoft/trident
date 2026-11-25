@@ -332,6 +332,182 @@ class ExecutionTests(unittest.TestCase):
                 self.assertFalse(data["resourceInventoryRestored"])
                 self.assertEqual(data["outcome"], "failed")
 
+    def test_prepare_failure_retains_actual_preparer_safe_footer_only(self):
+        for error, name, http in (
+            (
+                execution.prepare.ado.ArtifactError("fixture-private HTTP 503"),
+                "ArtifactError",
+                503,
+            ),
+            (ValueError("fixture-private"), "ValueError", None),
+            (
+                execution.prepare.subprocess.CalledProcessError(
+                    23, ["fixture-private"]
+                ),
+                "CalledProcessError",
+                None,
+            ),
+        ):
+            with self.subTest(name=name), ExitStack() as stack:
+                self.patches(stack)
+
+                def failing(argv, work, name, timeout, **kwargs):
+                    self.assertEqual(name, "prepare.log")
+                    private = io.StringIO()
+                    with (
+                        patch.object(sys, "argv", argv[1:]),
+                        patch.object(
+                            execution.prepare.ado,
+                            "get_ado_token",
+                            return_value="fixture",
+                        ),
+                        patch.object(execution.prepare, "prepare", side_effect=error),
+                        redirect_stdout(private),
+                        redirect_stderr(private),
+                    ):
+                        code = execution.prepare.main()
+                    (work / name).write_text(private.getvalue())
+                    return code
+
+                self.run.side_effect = failing
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    self.assertEqual(execution.execute(self.args, self.output), 1)
+                result = json.loads(self.output.read_text())
+                self.assertEqual(
+                    result["preparationDiagnostic"],
+                    {"state": "captured", "exceptionClass": name, "httpStatus": http},
+                )
+                self.assertEqual(result["phase"], "prepare")
+                self.assertEqual(result["outcome"], "failed")
+                self.assertIsNone(result["manifestSha256"])
+                self.assertIsNone(result["caseCounts"])
+                self.assertIsNone(result["executionDiagnostic"])
+                self.assertFalse(result["resourceInventoryRestored"])
+                self.assertEqual(
+                    result["hostDisposition"], "dispose-required-no-further-lanes"
+                )
+                self.inspect_inventory.assert_not_called()
+                self.verify.assert_not_called()
+                self.run.assert_called_once()
+                self.assertNotIn("fixture-private", self.output.read_text())
+                self.assertEqual(stdout.getvalue() + stderr.getvalue(), "")
+                self.assertLessEqual(self.output.stat().st_size, execution.REPORT_LIMIT)
+
+    def test_preparation_footer_closed_classes_statuses_and_sensitive_text_rejection(
+        self,
+    ):
+        path = self.root / "prepare.log"
+        unavailable = {
+            "state": "unavailable",
+            "exceptionClass": None,
+            "httpStatus": None,
+        }
+        for footer in (
+            b"Artifact preparation failed (UnknownPrivateError)",
+            b"Artifact preparation failed (ArtifactError, HTTP 999)",
+            b"Artifact preparation failed (ArtifactError, HTTP 000)",
+            b"Artifact preparation failed (ArtifactError, HTTP 599)",
+            b"Artifact preparation failed (ArtifactError, HTTP 503 fixture-private)",
+            b"Artifact preparation failed (ArtifactError) fixture-private-url",
+            b"fixture-private Artifact preparation failed (ArtifactError)",
+            b"Artifact preparation failed (ArtifactError)\nfixture-private",
+            b"fixture-private HTTP 503",
+            b"",
+        ):
+            with self.subTest(footer=footer):
+                path.write_bytes(footer + b"\n")
+                self.assertEqual(execution.preparation_failure(path), unavailable)
+        for name in sorted(execution.PREPARATION_EXCEPTION_CLASSES):
+            path.write_bytes(
+                b"fixture-private-url-and-console\n"
+                + f"Artifact preparation failed ({name}, HTTP 403)\n".encode()
+            )
+            fact = execution.preparation_failure(path)
+            self.assertEqual(
+                fact, {"state": "captured", "exceptionClass": name, "httpStatus": 403}
+            )
+            self.assertNotIn("fixture-private", json.dumps(fact))
+
+    def test_preparation_footer_missing_symlink_oversized_and_nonregular_are_unavailable(
+        self,
+    ):
+        path = self.root / "prepare.log"
+        for kind in ("missing", "symlink", "oversized", "directory"):
+            with self.subTest(kind=kind):
+                if kind == "symlink":
+                    path.symlink_to(self.args.evidence)
+                elif kind == "oversized":
+                    path.unlink()
+                    path.write_bytes(
+                        b"x" * 65536
+                        + b"\nArtifact preparation failed (ArtifactError)\n"
+                    )
+                elif kind == "directory":
+                    path.unlink()
+                    path.mkdir()
+                self.assertEqual(
+                    execution.preparation_failure(path),
+                    {
+                        "state": "unavailable",
+                        "exceptionClass": None,
+                        "httpStatus": None,
+                    },
+                )
+
+    def test_preparation_footer_never_changes_failure_timeout_or_cancellation(self):
+        for failure in (23, 124, 130, KeyboardInterrupt()):
+            with self.subTest(failure=type(failure)), ExitStack() as stack:
+                self.patches(stack)
+
+                def failing(argv, work, name, timeout, **kwargs):
+                    self.assertEqual(name, "prepare.log")
+                    (work / name).write_text(
+                        "fixture-private\nArtifact preparation failed (ArtifactError, HTTP 503)\n"
+                    )
+                    if isinstance(failure, BaseException):
+                        raise failure
+                    return failure
+
+                self.run.side_effect = failing
+                code = 130 if isinstance(failure, BaseException) else failure
+                self.assertEqual(execution.execute(self.args, self.output), code)
+                result = json.loads(self.output.read_text())
+                self.assertEqual(
+                    result["outcome"],
+                    {23: "failed", 124: "timeout", 130: "cancelled"}[code],
+                )
+                self.assertEqual(result["preparationDiagnostic"]["state"], "captured")
+                self.assertFalse(result["resourceInventoryRestored"])
+                self.run.assert_called_once()
+                self.assertNotIn("fixture-private", self.output.read_text())
+
+    def test_preparation_footer_is_not_read_after_prepare_phase(self):
+        for failed_setup in (False, True):
+            with self.subTest(failed_setup=failed_setup), ExitStack() as stack:
+                self.patches(stack)
+
+                def run(argv, work, name, timeout, **kwargs):
+                    if name == "prepare.log":
+                        (work / name).write_text(
+                            "Artifact preparation failed (ArtifactError)\n"
+                        )
+                    if failed_setup and name == "host-setup.log":
+                        return 23
+                    return self.run_command(argv, work, name, timeout, **kwargs)
+
+                self.run.side_effect = run
+                read = stack.enter_context(
+                    patch.object(execution, "preparation_failure")
+                )
+                self.assertEqual(
+                    execution.execute(self.args, self.output), 23 if failed_setup else 0
+                )
+                read.assert_not_called()
+                self.assertIsNone(
+                    json.loads(self.output.read_text())["preparationDiagnostic"]
+                )
+
     def test_guest_cases_and_unselected_not_run_cannot_be_overclaimed(self):
         for kind in (
             "missing-guest",

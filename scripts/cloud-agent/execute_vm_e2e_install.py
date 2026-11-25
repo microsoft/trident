@@ -14,6 +14,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
+from http import HTTPStatus
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,6 +30,27 @@ REVIEWED_PACKET_SHA256 = (
 )
 PACKET_LIMIT = 64 * 1024
 REPORT_LIMIT = 8192
+PREPARATION_EXCEPTION_CLASSES = {
+    "ArtifactError",
+    "OSError",
+    "FileNotFoundError",
+    "PermissionError",
+    "FileExistsError",
+    "IsADirectoryError",
+    "NotADirectoryError",
+    "TimeoutError",
+    "ValueError",
+    "JSONDecodeError",
+    "UnicodeDecodeError",
+    "UnicodeEncodeError",
+    "KeyError",
+    "TypeError",
+    "SubprocessError",
+    "CalledProcessError",
+    "TimeoutExpired",
+    "BadZipFile",
+}
+PREPARATION_HTTP_STATUSES = frozenset(status.value for status in HTTPStatus)
 REQUIRED_CASES = {
     "setup-test-host",
     "install-os",
@@ -166,6 +188,7 @@ def report():
         "unselectedScenarioCount": None,
         "unselectedConfigurationCounts": None,
         "caseCounts": None,
+        "preparationDiagnostic": None,
         "executionDiagnostic": None,
         "resourceInventoryRestored": False,
         "cleanupBasis": "libvirt-uuid-inventory-only-not-proof-of-host-cleanliness",
@@ -210,6 +233,27 @@ def read_bounded(path, limit):
 def read_json(path, limit):
     value = read_bounded(path, limit)
     return value, json.loads(value)
+
+
+def preparation_failure(path):
+    fact = {"state": "unavailable", "exceptionClass": None, "httpStatus": None}
+    try:
+        raw = read_bounded(path, 64 * 1024)
+        footer = raw.removesuffix(b"\n").rsplit(b"\n", 1)[-1]
+        match = re.fullmatch(
+            rb"Artifact preparation failed \(([A-Za-z]+)(?:, HTTP ([0-9]{3}))?\)",
+            footer,
+        )
+        if match:
+            name = match[1].decode("ascii")
+            status = int(match[2]) if match[2] else None
+            if name in PREPARATION_EXCEPTION_CLASSES and (
+                status is None or status in PREPARATION_HTTP_STATUSES
+            ):
+                fact.update(state="captured", exceptionClass=name, httpStatus=status)
+    except (OSError, ValueError):
+        return fact
+    return fact
 
 
 def packet(args, target):
@@ -698,6 +742,10 @@ def execute(args, output):
         status = status or 1
     finally:
         with common.cleanup_signals():
+            if result["phase"] == "prepare" and work is not None:
+                result["preparationDiagnostic"] = preparation_failure(
+                    work / "prepare.log"
+                )
             if execution_directory is not None:
                 diagnose_execution(execution_directory, execution_status, result)
             if before is not None:

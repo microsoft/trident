@@ -184,6 +184,23 @@ The original failure status and all existing success/cleanup gates remain
 unchanged. A reviewed fresh attempt is still needed, not a product fix inferred
 from the generic marker.
 
+Run 45712867453 at `072f2c38109e9bea00789d32c3ca9caa49b83871` failed earlier,
+in preparation, before any manifest, host setup or guest execution. Exact job
+139551435468 exposed only redirection/exit 1, not the private preparation error.
+This does not establish a transient service failure or justify a product fix.
+
+On a prepare-phase failure, `preparationDiagnostic` now retains only the existing
+preparer footer's exception class and optional HTTP status. The fixed private
+`prepare.log` must be a regular non-symlink file of at most 64 KiB. Only an exact
+final `Artifact preparation failed (...)` line is parsed, with a closed exception
+class allowlist and a status from the standard `HTTPStatus` enumeration.
+Unknown/malformed/missing evidence is explicitly `unavailable`, with null fields.
+No preamble, raw footer, message or URL is copied; later-phase failures never
+reuse this footer. Outcomes, cleanup and the 8 KiB report cap are unchanged.
+These fields are observations from the preparer, not an automatic transient
+classification or retry authorization. The earlier discarded footer cannot be
+recovered from its retained report, and no surviving-host access is assumed.
+
 Preparation is bounded to 1200 seconds (its image helper to 600), host setup to
 900, matrix and selected scenario to 1800 each, and their outer install-runner
 process to 3780. Existing leader-first Storm cleanup gets 120 seconds internally
