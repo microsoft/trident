@@ -217,15 +217,16 @@ fn print_notice() {
 
 fn load_workspace(cli: &Cli) -> Result<Workspace, AppError> {
     let cwd = env::current_dir().map_err(|e| AppError::Message(format!("current dir: {e}")))?;
+    let start = match &cli.manifest {
+        Some(path) if path.is_file() => path
+            .parent()
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf),
+        Some(path) => path.clone(),
+        None => cwd.clone(),
+    };
     // Resolve to an absolute root so every derived path (image dirs, base, cache, outputs) is absolute
     // — relative paths break Docker bind mounts and the `/host` translation.
-    match &cli.manifest {
-        Some(path) if !path.is_dir() => Ok(tailor_config::discover_manifest(
-            tailor_config::absolutize(path, &cwd),
-        )?),
-        Some(path) => Ok(discover(tailor_config::absolutize(path, &cwd))?),
-        None => Ok(discover(cwd)?),
-    }
+    Ok(discover(tailor_config::absolutize(start, &cwd))?)
 }
 
 // ───────────────────────────── pure verbs (no Docker / network) ─────────────────────────────

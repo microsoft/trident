@@ -6,9 +6,6 @@ parameters:
   - name: micVersion
     type: string
     default: "*.*.*"
-  - name: tailorManifest
-    type: string
-    default: ""
   - name: dependsOnStage
     type: string
     default: ""
@@ -75,4 +72,3 @@ stages:
                       baseimgVersion: $(BASEIMG_VERSION)
                       micBuildType: ${{ parameters.micBuildType }}
                       micVersion: ${{ parameters.micVersion }}
-                      tailorManifest: ${{ parameters.tailorManifest }}
