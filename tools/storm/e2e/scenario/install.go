@@ -75,6 +75,11 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 	if monErr != nil {
 		return fmt.Errorf("failed to start VM serial monitor: %w", monErr)
 	}
+	defer func() {
+		if err := stopSerialMonitor(cancel, monWaitChan); err != nil {
+			tc.FailFromError(err)
+		}
+	}()
 
 	nlErr := netlaunch.RunNetlaunch(timeoutCtx, &config)
 	if nlErr != nil {
@@ -104,12 +109,8 @@ func (s *TridentE2EScenario) installOs(tc storm.TestCase) error {
 
 	// If we got here netlaunch completed successfully, give some time for the
 	// serial monitor to get to the login prompt.
-	select {
-	case <-time.After(time.Minute):
-		log.Infof("Waited 1 minute for serial monitor to reach login prompt, cancelling monitor.")
-		cancel()
-	case <-monWaitChan:
-		// Monitor exited on its own
+	if err := waitForSerialMonitor(tc.Context(), cancel, monWaitChan); err != nil {
+		return err
 	}
 
 	return nil

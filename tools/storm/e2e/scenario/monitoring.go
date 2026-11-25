@@ -2,21 +2,30 @@ package scenario
 
 import (
 	"bufio"
+	"bytes"
 	"container/ring"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"strings"
-	"sync"
+	"syscall"
 	"time"
 
-	"github.com/digitalocean/go-libvirt"
 	stormutils "github.com/microsoft/storm/pkg/storm/utils"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 
 	"tridenttools/pkg/ref"
-	ioutils "tridenttools/storm/utils/io"
+)
+
+const (
+	serialLoginGrace      = time.Minute
+	serialShutdownTimeout = 5 * time.Second
+	serialRetryInterval   = 100 * time.Millisecond
+	serialLogTailLines    = 30
 )
 
 // spawnVMSerialMonitor starts the VM serial monitor for the test host IF it is a
@@ -64,8 +73,10 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 			close(doneChannel)
 		}()
 		defer output.Close()
+		monitorCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
 
-		err := waitForVmSerialLogLoginLibvirt(ctx, vmInfo.Lv(), vmInfo.LvDomain(), output)
+		err := monitorVMConsole(monitorCtx, cancel, vmInfo.VmName(), output)
 		if err != nil {
 			errStr := fmt.Sprintf("VM serial log monitor ended with error: %v", err)
 			logrus.Error(errStr)
@@ -83,93 +94,105 @@ func (s *TridentE2EScenario) spawnVMSerialMonitor(ctx context.Context, output io
 	return doneChannel, nil
 }
 
-func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, domain libvirt.Domain, out io.Writer) error {
-	pipeReader, pipeWriter := io.Pipe()
-	consoleCtx, consoleCancel := context.WithCancel(ctx)
-	var wg sync.WaitGroup
-
-	// Context to track whether the console is open. This is used to cancel the
-	// reader loop if the console goroutine exits, because this means there will
-	// never be any more data to read, so we should exit the reader loop as
-	// well.
-	consoleIsOpenCtx, consoleIsOpenCancel := context.WithCancel(ctx)
-	defer consoleIsOpenCancel()
-
-	// Spawn DomainOpenConsole in a goroutine because it's a blocking call.
-	errCh := make(chan error, 1)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		defer consoleIsOpenCancel()
-		defer pipeWriter.Close()
-		pipeNotifyWriter := ioutils.NewNotifyWriter(pipeWriter)
-		for {
-			// If context is cancelled, exit the goroutine.
-			if consoleCtx.Err() != nil {
-				return
-			}
-
-			// Try to open the console. This is a blocking call that only
-			// returns when the console is closed or an error occurs. It writes
-			// to the provided writer in the background.
-			err := lv.DomainOpenConsole(domain, nil, pipeNotifyWriter, uint32(libvirt.DomainConsoleForce))
-			if err == nil && pipeNotifyWriter.Active() {
-				// DomainOpenConsole returned without error and data was
-				// written, this is an expected outcome when the console closed
-				// naturally.
-				return
-			}
-
-			if consoleCtx.Err() != nil {
-				// Context was cancelled while the console was open/opening,
-				// exit the goroutine.
-				return
-			}
-
-			if !pipeNotifyWriter.Active() {
-				// No data has been written yet, so this is likely a
-				// transient error such as the domain not being fully
-				// started yet. Retry silently.
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-
-			// If we get here, there was an error after some data was
-			// successfully written. Log the error and exit the goroutine. This
-			// may happen naturally when the pipe is closed. But if that happens
-			// naturally, the readerLoop will have exited first, so this error
-			// won't matter.
-			logrus.Errorf("DomainOpenConsole error after data written: %v", err)
-			errCh <- err
-			return
-		}
-	}()
-
-	// Call inner loop
-	loopErr := readerLoop(consoleIsOpenCtx, pipeReader, errCh, out, 30)
-	// Regardless of whether readerLoop returned an error, cancel the console
-	// context and close the pipe to stop the DomainOpenConsole goroutine.
-	consoleCancel()
-	pipeReader.Close()
-	pipeWriter.Close()
-
-	// Even after we close all of this, the DomainOpenConsole goroutine may
-	// still be running because it doesn't take in a context. We force it to
-	// close by opening a new console with the DomainConsoleForce flag, and a
-	// nil stream, which will signal the existing DomainOpenConsole to exit, and
-	// make this new one exit immediately.
-	err := lv.DomainOpenConsole(domain, nil, nil, uint32(libvirt.DomainConsoleForce))
-	if err != nil {
-		logrus.Warnf("failed to force close DomainOpenConsole: %v", err)
+func waitForSerialMonitor(ctx context.Context, cancel context.CancelFunc, done <-chan bool) error {
+	timer := time.NewTimer(serialLoginGrace)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+	case <-timer.C:
+		logrus.Info("Waited 1 minute for serial monitor to reach login prompt, cancelling monitor.")
 	}
-
-	// Wait for DomainOpenConsole goroutine to exit
-	wg.Wait()
-
-	return loopErr
+	return stopSerialMonitor(cancel, done)
 }
 
-func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Writer, ringSize int) error {
+func stopSerialMonitor(cancel context.CancelFunc, done <-chan bool) error {
+	cancel()
+	timer := time.NewTimer(serialShutdownTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("serial monitor did not stop within %s", serialShutdownTimeout)
+	}
+}
+
+// virsh owns the stream on a separate root-less connection. Canceling its process
+// avoids go-libvirt's response-router deadlock without touching the control client.
+func monitorVMConsole(ctx context.Context, cancel context.CancelFunc, name string, out io.Writer) error {
+	// virsh requires a controlling terminal even when console output is piped.
+	master, err := os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		return fmt.Errorf("opening console terminal: %w", err)
+	}
+	defer master.Close()
+	if err := unix.IoctlSetPointerInt(int(master.Fd()), unix.TIOCSPTLCK, 0); err != nil {
+		return fmt.Errorf("unlocking console terminal: %w", err)
+	}
+	number, err := unix.IoctlGetInt(int(master.Fd()), unix.TIOCGPTN)
+	if err != nil {
+		return fmt.Errorf("locating console terminal: %w", err)
+	}
+	terminal, err := os.OpenFile(fmt.Sprintf("/dev/pts/%d", number), os.O_RDWR|syscall.O_NOCTTY, 0)
+	if err != nil {
+		return fmt.Errorf("opening console terminal slave: %w", err)
+	}
+	defer terminal.Close()
+	return runSerialMonitor(ctx, cancel, func() *exec.Cmd {
+		cmd := exec.CommandContext(ctx, "virsh", "--connect", "qemu:///system", "console", name, "--force")
+		cmd.Stdin = terminal
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
+		return cmd
+	}, out)
+}
+
+func runSerialMonitor(ctx context.Context, cancel context.CancelFunc, command func() *exec.Cmd, out io.Writer) error {
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	done := make(chan error, 1)
+	go func() {
+		ticker := time.NewTicker(serialRetryInterval)
+		defer ticker.Stop()
+		for {
+			var stderr bytes.Buffer
+			cmd := command()
+			cmd.Stdout = writer
+			cmd.Stderr = &stderr
+			cmd.WaitDelay = serialShutdownTimeout / 2
+			err := cmd.Run()
+			if ctx.Err() != nil {
+				err = ctx.Err()
+			} else if err != nil {
+				err = fmt.Errorf("VM console failed: %w: %s", err, stderr.String())
+			}
+			// A monitor may start before netlaunch powers on the VM.
+			if err == nil || !strings.Contains(stderr.String(), "domain is not running") || ctx.Err() != nil {
+				writer.CloseWithError(err)
+				done <- err
+				return
+			}
+			select {
+			case <-ctx.Done():
+			case <-ticker.C:
+			}
+		}
+	}()
+	stop := context.AfterFunc(ctx, func() { _ = reader.CloseWithError(ctx.Err()) })
+	defer stop()
+	err := readerLoop(ctx, reader, out, serialLogTailLines)
+	cause := ctx.Err()
+	cancel()
+	reader.Close()
+	commandErr := <-done
+	if !errors.Is(commandErr, context.Canceled) {
+		err = errors.Join(err, commandErr)
+	}
+	return errors.Join(err, cause)
+}
+
+func readerLoop(ctx context.Context, in io.Reader, out io.Writer, ringSize int) error {
 	// Create a ring buffer to hold the last N lines of the serial log
 	ring := ring.New(ringSize)
 
@@ -192,18 +215,6 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 			return ctx.Err()
 		}
 
-		// Check if the console stream has ended
-		select {
-		case err := <-errCh:
-			if err != nil {
-				err = fmt.Errorf("libvirt console stream ended with error: %w", err)
-			}
-			logrus.Infof("Libvirt console stream ended")
-			return err
-		default:
-			// Continue reading
-		}
-
 		// Check if the current line contains the login prompt, and return if it
 		// does. The log-in prompt is expected to contain the string "login:"
 		// but we need to block the false positive caused by the installer OS
@@ -215,13 +226,9 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 			return nil
 		}
 
-		// Read a rune from reader, if EOF is encountered, retry until either a new
-		// character is read or the timeout is reached
 		readRune, _, err := reader.ReadRune()
 		if errors.Is(err, io.EOF) {
-			// Wait for new serial output
-			time.Sleep(100 * time.Millisecond)
-			continue
+			return fmt.Errorf("VM console ended before the login prompt")
 		} else if err != nil {
 			return fmt.Errorf("failed to read from serial log file: %w", err)
 		}

@@ -67,18 +67,15 @@ func (s *TridentE2EScenario) manualRollback(tc storm.TestCase) error {
 	// servicing case starts its own.
 	defer stopListener()
 
-	monitorCtx, cancel := context.WithCancel(tc.Context())
-	defer cancel()
+	monitorCtx, monitorCancel := context.WithCancel(tc.Context())
+	defer monitorCancel()
 	monWaitChan, monErr := s.spawnVMSerialMonitor(monitorCtx, tc.ArtifactBroker().StreamArtifactData(tc.Name()+"/serial.log"))
 	if monErr != nil {
 		return fmt.Errorf("failed to start VM serial monitor: %w", monErr)
 	}
 	defer func() {
-		select {
-		case <-time.After(time.Minute):
-			logrus.Infof("Waited 1 minute for serial monitor to reach login prompt, cancelling monitor.")
-			cancel()
-		case <-monWaitChan:
+		if err := waitForSerialMonitor(tc.Context(), monitorCancel, monWaitChan); err != nil {
+			tc.FailFromError(err)
 		}
 	}()
 
