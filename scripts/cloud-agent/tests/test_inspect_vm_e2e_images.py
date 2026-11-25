@@ -5,7 +5,10 @@ import importlib.util
 import io
 import json
 import os
+import shlex
+import shutil
 import signal
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -786,6 +789,7 @@ while True:
                 ),
             ),
             patch.object(inspector, "guest", side_effect=guest_answers),
+            patch.object(inspector, "checkpoint_rpmdb"),
             patch.object(
                 inspector,
                 "command",
@@ -801,7 +805,7 @@ while True:
     def test_actual_rpmdb_and_each_critical_payload_required(self):
         count = sum(len(row["payload"]) for row in self.packages.values())
         proof = self.inspect_fixture(
-            ["true\ntrue\n", "false\n", "", (self.digest + "\n") * count]
+            ["true\ntrue\n", "false\n" * 4, "", (self.digest + "\n") * count]
         )
         self.assertEqual(len(proof["installedPackages"]), 2)
         self.assertEqual(len(proof["payloadSha256"]), count)
@@ -816,12 +820,231 @@ while True:
                 self.subTest(installed=installed),
                 self.assertRaises(inspector.Failure),
             ):
-                self.inspect_fixture(["true\ntrue\n", "false\n", ""], installed)
+                self.inspect_fixture(["true\ntrue\n", "false\n" * 4, ""], installed)
 
-    def test_missing_rpmdb_or_live_wal_fails(self):
-        for answers in (["false\nfalse\n"], ["true\ntrue\n", "true\n"]):
+    def test_missing_rpmdb_or_unsupported_sidecars_fail(self):
+        for answers in (
+            ["false\nfalse\n"],
+            ["true\nunexpected\n"],
+            ["true\ntrue\n", "true\n"],
+            ["true\ntrue\n", "false\ntrue\n" * 2],
+            ["true\ntrue\n", "true\nfalse\nfalse\nfalse\n"],
+            ["true\nfalse\n", "true\nfalse\n", "false\n"],
+        ):
             with self.subTest(answers=answers), self.assertRaises(inspector.Failure):
                 self.inspect_fixture(answers)
+
+    def sqlite_snapshot(self):
+        source = Path(tempfile.mkdtemp(dir=self.root, prefix="sqlite-source-"))
+        connection = sqlite3.connect(source / "rpmdb.sqlite")
+        self.addCleanup(connection.close)
+        connection.execute("CREATE TABLE fixture(value TEXT)")
+        connection.execute("INSERT INTO fixture VALUES ('main-only')")
+        connection.commit()
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA wal_autocheckpoint=0")
+        connection.execute("UPDATE fixture SET value='committed-in-wal'")
+        connection.commit()
+        return source, connection
+
+    def copy_sqlite_snapshot(self, source, wal=True):
+        target = Path(tempfile.mkdtemp(dir=self.root, prefix="sqlite-copy-"))
+        for suffix in ("", "-wal") if wal else ("",):
+            shutil.copyfile(
+                source / ("rpmdb.sqlite" + suffix), target / ("rpmdb.sqlite" + suffix)
+            )
+        return target
+
+    def test_checkpoint_includes_committed_wal_without_changing_source(self):
+        source, connection = self.sqlite_snapshot()
+        # An uncommitted transaction is not installed-package state.
+        wal = source / "rpmdb.sqlite-wal"
+        committed_size = wal.stat().st_size
+        connection.execute("PRAGMA cache_size=1")
+        connection.execute("UPDATE fixture SET value=?", ("uncommitted" * 10000,))
+        self.assertGreater(wal.stat().st_size, committed_size)
+        before = {path.name: path.read_bytes() for path in source.iterdir()}
+        target = self.copy_sqlite_snapshot(source)
+        self.assertFalse((target / "rpmdb.sqlite-shm").exists())
+        inspector.checkpoint_rpmdb(target)
+        with contextlib.closing(sqlite3.connect(target / "rpmdb.sqlite")) as db:
+            self.assertEqual(
+                db.execute("SELECT value FROM fixture").fetchall(),
+                [("committed-in-wal",)],
+            )
+        self.assertEqual(
+            {path.name: path.read_bytes() for path in source.iterdir()}, before
+        )
+
+    def test_main_only_and_empty_wal_are_supported(self):
+        source, _ = self.sqlite_snapshot()
+        for empty_wal in (False, True):
+            with self.subTest(empty_wal=empty_wal):
+                target = self.copy_sqlite_snapshot(source, wal=False)
+                if empty_wal:
+                    (target / "rpmdb.sqlite-wal").touch()
+                inspector.checkpoint_rpmdb(target)
+                with contextlib.closing(sqlite3.connect(target / "rpmdb.sqlite")) as db:
+                    self.assertEqual(
+                        db.execute("SELECT value FROM fixture").fetchall(),
+                        [("main-only",)],
+                    )
+
+    def test_nonempty_wal_without_recoverable_commit_fails(self):
+        source, _ = self.sqlite_snapshot()
+        wal = (source / "rpmdb.sqlite-wal").read_bytes()
+        for content in (b"invalid-wal", wal[:32], bytes(len(wal))):
+            with self.subTest(length=len(content)):
+                target = self.copy_sqlite_snapshot(source)
+                (target / "rpmdb.sqlite-wal").write_bytes(content)
+                with self.assertRaisesRegex(
+                    inspector.Failure, "image-rpmdb-wal-unrecoverable"
+                ):
+                    inspector.checkpoint_rpmdb(target)
+
+    def test_invalid_sqlite_and_integrity_failure_are_sanitized(self):
+        target = self.root / "invalid-db"
+        target.mkdir()
+        db = target / "rpmdb.sqlite"
+        db.write_bytes(b"fixture-private-corrupt-database")
+        with self.assertRaisesRegex(inspector.Failure, "^image-rpmdb-sqlite-invalid$"):
+            inspector.checkpoint_rpmdb(target)
+        db.unlink()
+        with contextlib.closing(sqlite3.connect(db)) as connection:
+            connection.execute("CREATE TABLE fixture(value TEXT)")
+            connection.execute("CREATE TABLE other(value TEXT)")
+            connection.execute("PRAGMA writable_schema=ON")
+            connection.execute(
+                "UPDATE sqlite_master SET rootpage="
+                "(SELECT rootpage FROM sqlite_master WHERE name='other') "
+                "WHERE name='fixture'"
+            )
+            connection.commit()
+        with self.assertRaisesRegex(inspector.Failure, "^image-rpmdb-integrity$"):
+            inspector.checkpoint_rpmdb(target)
+
+    def test_checkpoint_busy_and_cancellation_remain_failures(self):
+        source, _ = self.sqlite_snapshot()
+        target = self.copy_sqlite_snapshot(source)
+        with contextlib.closing(sqlite3.connect(target / "rpmdb.sqlite")) as reader:
+            reader.execute("BEGIN")
+            reader.execute("SELECT * FROM fixture").fetchall()
+            with contextlib.closing(sqlite3.connect(target / "rpmdb.sqlite")) as writer:
+                writer.execute("UPDATE fixture SET value='newer-commit'")
+                writer.commit()
+            with self.assertRaisesRegex(
+                inspector.Failure, "^image-rpmdb-wal-unrecoverable$"
+            ):
+                inspector.checkpoint_rpmdb(target)
+        primary = inspector.Cancelled()
+        with patch.object(inspector.sqlite3, "connect") as connect:
+            connect.return_value.execute.side_effect = primary
+            with self.assertRaises(inspector.Cancelled) as caught:
+                inspector.checkpoint_rpmdb(target)
+            self.assertIs(caught.exception, primary)
+            connect.return_value.close.assert_called_once_with()
+
+    def test_image_wal_recovery_still_requires_nevra_and_payload_validation(self):
+        source, _ = self.sqlite_snapshot()
+        before = {path.name: path.read_bytes() for path in source.iterdir()}
+        for suffix, wrong in (
+            (".iso", None),
+            (".cosi", None),
+            (".cosi", "nevra"),
+            (".cosi", "payload"),
+            (".cosi", "wal"),
+            (".cosi", "missing-wal"),
+        ):
+            work = Path(tempfile.mkdtemp(dir=self.root, prefix="image-wal-"))
+            commands = []
+
+            def guest(drives, mounts, script):
+                commands.extend(script)
+                if script == ["is-file /liveos/rootfs.img"]:
+                    return "true\n"
+                if (
+                    script[0].startswith("is-file ")
+                    and "rpmdb.sqlite-wal" not in script[0]
+                ):
+                    return "true\nfalse\n"
+                if script[0].startswith("exists "):
+                    return "true\nfalse\n"
+                if script[0].startswith("is-file "):
+                    return "true\n"
+                if script[0].startswith("download "):
+                    for line in script:
+                        _, remote, local = shlex.split(line)
+                        if remote == "/liveos/rootfs.img":
+                            Path(local).write_bytes(b"fixture image, never mounted")
+                        elif remote.endswith("-wal") and wrong == "missing-wal":
+                            continue
+                        elif remote.endswith("-wal") and wrong == "wal":
+                            Path(local).write_bytes(b"fixture-invalid-wal")
+                        else:
+                            shutil.copyfile(source / Path(remote).name, local)
+                    return ""
+                self.assertTrue(
+                    all(line.startswith("checksum sha256 ") for line in script)
+                )
+                return ((self.digest if wrong != "payload" else "0" * 64) + "\n") * len(
+                    script
+                )
+
+            def rpm(argv, **kwargs):
+                self.assertEqual(argv[:3], ["rpm", "--noplugins", "--dbpath"])
+                with contextlib.closing(
+                    sqlite3.connect(Path(argv[3]) / "rpmdb.sqlite")
+                ) as db:
+                    self.assertEqual(
+                        db.execute("SELECT value FROM fixture").fetchall(),
+                        [("committed-in-wal",)],
+                    )
+                rows = self.installed_rows()
+                return rows.replace("0.31.0", "0.30.0") if wrong == "nevra" else rows
+
+            with (
+                self.subTest(suffix=suffix, wrong=wrong),
+                patch.object(inspector, "cosi_layout", return_value=([], [])),
+                patch.object(inspector, "guest", side_effect=guest),
+                patch.object(inspector, "command", side_effect=rpm) as rpm_command,
+            ):
+                if wrong:
+                    with self.assertRaisesRegex(
+                        inspector.Failure,
+                        {
+                            "nevra": "image-rpm-nevra-mismatch",
+                            "payload": "image-critical-payload-mismatch",
+                            "wal": "image-rpmdb-wal-unrecoverable",
+                            "missing-wal": "image-rpmdb-wal-missing",
+                        }[wrong],
+                    ):
+                        inspector.inspect_image(
+                            self.root / ("fixture" + suffix), work, self.packages
+                        )
+                    if wrong in ("wal", "missing-wal"):
+                        rpm_command.assert_not_called()
+                else:
+                    proof = inspector.inspect_image(
+                        self.root / ("fixture" + suffix), work, self.packages
+                    )
+                    self.assertEqual(len(proof["installedPackages"]), 2)
+                    self.assertEqual(proof["basis"], "rpmdb-and-read-only-payload")
+            self.assertTrue(any("rpmdb.sqlite-wal " in line for line in commands))
+            self.assertFalse(any("-shm" in line for line in commands))
+        self.assertEqual(
+            {path.name: path.read_bytes() for path in source.iterdir()}, before
+        )
+
+    def test_equal_main_databases_with_distinct_wals_fail_closed(self):
+        with self.assertRaisesRegex(inspector.Failure, "image-ambiguous-rpmdb"):
+            self.inspect_fixture(
+                [
+                    "true\ntrue\n",
+                    "true\nfalse\n" * 2,
+                    "true\ntrue\n",
+                    self.digest + "\n" + "0" * 64 + "\n",
+                ]
+            )
 
     def test_distinct_rpmdb_locations_fail_closed(self):
         with (
@@ -839,7 +1062,9 @@ while True:
 
     def test_payload_mismatch_and_inspection_command_failure_fail(self):
         with self.assertRaisesRegex(inspector.Failure, "payload-mismatch"):
-            self.inspect_fixture(["true\ntrue\n", "false\n", "", ("0" * 64 + "\n") * 4])
+            self.inspect_fixture(
+                ["true\ntrue\n", "false\n" * 4, "", ("0" * 64 + "\n") * 4]
+            )
         with patch.object(
             inspector,
             "guest",

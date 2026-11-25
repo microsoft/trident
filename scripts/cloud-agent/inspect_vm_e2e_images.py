@@ -11,6 +11,7 @@ import selectors
 import shlex
 import shutil
 import signal
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -20,6 +21,7 @@ import time
 import urllib.request
 import zipfile
 
+from contextlib import closing
 from pathlib import Path, PurePosixPath
 
 import download_functional_artifact as ado
@@ -515,6 +517,38 @@ def cosi_layout(path, work):
         return drives, mounts
 
 
+def checkpoint_rpmdb(directory):
+    db = directory / "rpmdb.sqlite"
+    wal = directory / "rpmdb.sqlite-wal"
+    has_wal = wal.exists()
+    nonempty_wal = has_wal and wal.stat().st_size > 0
+    try:
+        # Only private downloaded copies are writable, never the source image.
+        with closing(
+            sqlite3.connect(db.resolve().as_uri() + "?mode=rw", uri=True, timeout=0)
+        ) as connection:
+            connection.execute("PRAGMA trusted_schema=OFF")
+            if has_wal:
+                status, frames, checkpointed = connection.execute(
+                    "PRAGMA wal_checkpoint(FULL)"
+                ).fetchone()
+                # SQLite can silently ignore an invalid WAL. A nonempty WAL
+                # without any recoverable committed frames is unsupported.
+                require(
+                    status == 0
+                    and frames >= 0
+                    and frames == checkpointed
+                    and (not nonempty_wal or frames > 0),
+                    "image-rpmdb-wal-unrecoverable",
+                )
+            require(
+                connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)],
+                "image-rpmdb-integrity",
+            )
+    except sqlite3.Error:
+        raise Failure("image-rpmdb-sqlite-invalid") from None
+
+
 def inspect_image(path, work, packages):
     if path.suffix == ".iso":
         rootfs = work / "rootfs.img"
@@ -529,7 +563,12 @@ def inspect_image(path, work, packages):
         drives, mounts = cosi_layout(path, work)
     dbs = ("/usr/lib/sysimage/rpm/rpmdb.sqlite", "/var/lib/rpm/rpmdb.sqlite")
     found = guest(drives, mounts, ["is-file " + db for db in dbs]).splitlines()
-    require(len(found) == 2 and "true" in found, "image-sqlite-rpmdb-missing")
+    require(
+        len(found) == 2
+        and all(value in ("true", "false") for value in found)
+        and "true" in found,
+        "image-sqlite-rpmdb-missing",
+    )
     if found == ["true", "true"]:
         hashes = guest(
             drives, mounts, ["checksum sha256 " + db for db in dbs]
@@ -539,17 +578,60 @@ def inspect_image(path, work, packages):
             "image-ambiguous-rpmdb",
         )
     db = dbs[found.index("true")]
+    present = [db for db, exists in zip(dbs, found) if exists == "true"]
+    sidecars = guest(
+        drives,
+        mounts,
+        [
+            "exists " + candidate + suffix
+            for candidate in present
+            for suffix in ("-wal", "-journal")
+        ],
+    ).splitlines()
     require(
-        guest(drives, mounts, ["exists " + db + "-wal"]).strip() == "false",
-        "image-rpmdb-uncheckpointed-wal",
+        len(sidecars) == 2 * len(present)
+        and all(value in ("true", "false") for value in sidecars),
+        "image-rpmdb-sidecar-layout",
     )
+    require("true" not in sidecars[1::2], "image-rpmdb-rollback-journal-unsupported")
+    wals = sidecars[::2]
+    require(len(set(wals)) == 1, "image-ambiguous-rpmdb")
+    if wals[0] == "true":
+        regular = guest(
+            drives, mounts, ["is-file " + candidate + "-wal" for candidate in present]
+        ).splitlines()
+        require(regular == ["true"] * len(present), "image-rpmdb-wal-not-file")
+        if len(present) == 2:
+            hashes = guest(
+                drives,
+                mounts,
+                ["checksum sha256 " + candidate + "-wal" for candidate in present],
+            ).splitlines()
+            require(
+                len(hashes) == 2
+                and prepare.sha256(hashes[0])
+                and hashes[0] == hashes[1],
+                "image-ambiguous-rpmdb",
+            )
     local_db = work / "rpmdb"
     local_db.mkdir()
     guest(
         drives,
         mounts,
-        ["download " + db + " " + shlex.quote(str(local_db / "rpmdb.sqlite"))],
+        [
+            "download "
+            + db
+            + suffix
+            + " "
+            + shlex.quote(str(local_db / ("rpmdb.sqlite" + suffix)))
+            for suffix in (("", "-wal") if wals[0] == "true" else ("",))
+        ],
     )
+    require(
+        wals[0] == "false" or (local_db / "rpmdb.sqlite-wal").is_file(),
+        "image-rpmdb-wal-missing",
+    )
+    checkpoint_rpmdb(local_db)
     installed = rpm_rows(
         command(["rpm", "--noplugins", "--dbpath", str(local_db), "-qa", "--qf", QF])
     )

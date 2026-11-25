@@ -112,10 +112,37 @@ read-only squashfs filesystem containing the full OS, then reads its RPMDB.
 Source research in Azure Linux image-tools `docs/imagecustomizer/concepts/liveos.md`
 and `liveosisogrub.go` identifies this bootstrap layout. That source observation
 is a layout hypothesis, not proof of the recorded MIC digest's layout. Missing
-rootfs, full-OS initramfs, nested filesystem images, non-SQLite RPMDBs, or a live
-SQLite WAL fail with a fixed missing-fact diagnostic. They never qualify via a
+rootfs, full-OS initramfs, nested filesystem images, or non-SQLite RPMDBs fail
+with a fixed missing-fact diagnostic. They never qualify via a
 package-name/configuration proxy. Establish any additional actual layout through
 bounded private 1ES inspection and independent review before extending this code.
+
+Run `45483451022`, attempt 3, measured the exact base file at 562036736 bytes,
+SHA256 `90f470c32617b7ba9ef9ca435c9b9d84e1c23b65c9f64400d4a38854312b58fd`,
+then stopped on `image-rpmdb-uncheckpointed-wal` in the installer inspection.
+That report does not establish installed payload identity or VM qualification.
+
+An offline image can legitimately contain committed RPMDB transactions only in
+`rpmdb.sqlite-wal`. The inspector now downloads the main database and any regular
+WAL together through the unchanged read-only guestfish boundary into private
+scratch. When both RPMDB locations exist, both main hashes, WAL presence, and
+any WAL hashes must match. A rollback `-journal` file remains unsupported.
+The source `-shm` is not copied: SQLite rebuilds this transient WAL index locally.
+
+Only the scratch copy is opened writable, using Python's standard SQLite module
+with `mode=rw` (no implicit database creation). A full checkpoint must report
+success and equal logged/checkpointed frame counts. Nonempty WALs with no
+recoverable committed frames fail closed, since SQLite may silently ignore an
+invalid WAL; empty WALs are accepted. SQLite's normal recovery selects the last
+valid committed snapshot, excluding uncommitted or invalid trailing frames.
+The resulting database must pass `PRAGMA integrity_check` before the existing
+`rpm --noplugins --dbpath ... -qa` query. There is no main-only fallback after
+WAL recovery failure. See the [official SQLite WAL documentation](https://www.sqlite.org/wal.html)
+for commit records, checkpoints and rebuilding the shared-memory index.
+No source image is checkpointed or mounted writable, no journal content is
+published, and SQLite errors produce only fixed diagnostics. Recovery alone is
+not installed-package proof: the unchanged required-package, exact NEVRA and
+source-RPM/guest-file SHA256 comparisons must all succeed.
 
 Base download uses only the recorded Universal Package version
 `3.0.20261116` and exact file filter `core-3.0.20261116.vhdx`. ManifestId and
