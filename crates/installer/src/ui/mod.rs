@@ -41,7 +41,7 @@ mod render;
 mod theme;
 
 use model::{Action, LogSource, Model, Screen};
-pub(super) use output::{Output, SerialMirror};
+pub(super) use output::Output;
 use theme::VERBOSITY_LEVELS;
 
 /// Refresh often enough to show progress without busy-polling the terminal.
@@ -476,9 +476,11 @@ mod tests {
         let root = TempDir::new().unwrap();
         let diagnostic = root.path().join("installer.log");
         let serial = root.path().join("serial.log");
+        let mut mirrors = crate::serial::SerialMirrors::default();
+        mirrors.push(&serial, File::create(&serial).unwrap());
         let mut output = Output {
             log: Some(File::create(&diagnostic).unwrap()),
-            mirrors: vec![SerialMirror::new(&serial, File::create(&serial).unwrap())],
+            mirrors,
         };
         let mut model = Model::new();
         for message in [
