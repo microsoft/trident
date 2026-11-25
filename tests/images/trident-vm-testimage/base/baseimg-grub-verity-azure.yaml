@@ -122,7 +122,6 @@ os:
       - iptables
       - jq
       - kexec-tools
-      - linux-firmware-intel
       - lvm2
       - openssh-server
       - selinux-policy
@@ -159,12 +158,6 @@ os:
 
 scripts:
   postCustomization:
-    - content: |
-        set -eu
-        cd /lib/firmware/intel/ice/ddp
-        test -f ice-1.3.30.0.pkg
-        ln -sfn ice-1.3.30.0.pkg ice.pkg
-        test -r ice.pkg
     - path: scripts/post-install.sh
     - path: scripts/create-rw-overlay-dirs.sh
     - path: scripts/update-host-status.sh

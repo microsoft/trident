@@ -83,7 +83,6 @@ os:
       - efibootmgr
       - iproute
       - iptables
-      - linux-firmware-intel
       - lvm2
       - mdadm
       - netplan
@@ -135,12 +134,3 @@ output:
 previewFeatures:
   - uki
   - output-artifacts
-
-scripts:
-  postCustomization:
-    - content: |
-        set -eu
-        cd /lib/firmware/intel/ice/ddp
-        test -f ice-1.3.30.0.pkg
-        ln -sfn ice-1.3.30.0.pkg ice.pkg
-        test -r ice.pkg
