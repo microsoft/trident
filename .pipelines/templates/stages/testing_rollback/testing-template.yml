@@ -171,10 +171,7 @@ jobs:
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
             if [[ "${{ parameters.testSecureBoot }}" == 'True' ]]; then
-              # grubazl4 is skipped: its base image does not support secure boot yet.
-              if [[ "${{ parameters.flavor }}" != 'grubazl4' ]]; then
-                STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
-              fi
+              STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
             fi
           fi
           if [ "${{ parameters.skipManualRollbackTesting }}" == "true" ]; then
