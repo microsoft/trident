@@ -7,10 +7,10 @@ readonly TAILOR_RUST_TOOLCHAIN="1.98.1"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/cloud-agent/validate.sh [all|format|rust|go|tailor]
+Usage: scripts/cloud-agent/validate.sh [all|format|rust|go|tailor|cloud-agent|functional]
 
-Runs source-only validation that does not require VM image artifacts.
-The default group is "all".
+The default "all" group runs source-only validation. The explicit "functional"
+group downloads the selected VM artifact and runs the bounded functional smoke suite.
 EOF
 }
 
@@ -82,6 +82,16 @@ validate_tailor() (
         --locked
 )
 
+validate_cloud_agent() {
+    run python3 -m unittest discover \
+        -s scripts/cloud-agent/tests \
+        -p 'test_*.py'
+}
+
+validate_functional() {
+    run bash scripts/cloud-agent/run-functional.sh smoke
+}
+
 main() {
     cd "$REPO_ROOT"
 
@@ -91,6 +101,7 @@ main() {
             validate_rust
             validate_go
             validate_tailor
+            validate_cloud_agent
             ;;
         format)
             validate_format
@@ -103,6 +114,12 @@ main() {
             ;;
         tailor)
             validate_tailor
+            ;;
+        cloud-agent)
+            validate_cloud_agent
+            ;;
+        functional)
+            validate_functional
             ;;
         -h | --help)
             usage

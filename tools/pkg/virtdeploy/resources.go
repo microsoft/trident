@@ -139,56 +139,91 @@ func cleanupNamespace(namespaceRaw string) error {
 		namespace: ns,
 		lv:        lvConn,
 	}
+	defer rc.close()
 
-	// Delete all VMs in the namespace
-	domains, _, err := rc.lv.ConnectListAllDomains(1, libvirt.ConnectListDomainsActive|libvirt.ConnectListDomainsInactive)
+	return cleanupNamespaceResources(ns, rc.lv, rc.teardownDomain, rc.teardownNetwork, rc.teardownStoragePool)
+}
+
+type namespaceCleanupClient interface {
+	ConnectListAllDomains(int32, libvirt.ConnectListAllDomainsFlags) ([]libvirt.Domain, uint32, error)
+	ConnectListAllNetworks(int32, libvirt.ConnectListAllNetworksFlags) ([]libvirt.Network, uint32, error)
+	ConnectListAllStoragePools(int32, libvirt.ConnectListAllStoragePoolsFlags) ([]libvirt.StoragePool, uint32, error)
+	StoragePoolGetXMLDesc(libvirt.StoragePool, libvirt.StorageXMLFlags) (string, error)
+}
+
+func cleanupNamespaceResources(
+	ns namespace,
+	lv namespaceCleanupClient,
+	teardownDomain func(libvirt.Domain) error,
+	teardownNetwork func(libvirt.Network) error,
+	teardownStoragePool func(libvirt.StoragePool) error,
+) error {
+	domains, _, err := lv.ConnectListAllDomains(1, libvirt.ConnectListDomainsActive|libvirt.ConnectListDomainsInactive)
 	if err != nil {
 		return fmt.Errorf("list domains: %w", err)
 	}
 
+	networks, _, err := lv.ConnectListAllNetworks(1, libvirt.ConnectListNetworksActive|libvirt.ConnectListNetworksInactive)
+	if err != nil {
+		return fmt.Errorf("list networks: %w", err)
+	}
+
+	pools, _, err := lv.ConnectListAllStoragePools(1, libvirt.ConnectListStoragePoolsActive|libvirt.ConnectListStoragePoolsInactive)
+	if err != nil {
+		return fmt.Errorf("list storage pools: %w", err)
+	}
+
+	// Names alone are ambiguous: foo's NVRAM pool and foo-nvram's disk pool
+	// are both foo-nvram-pool. Validate every candidate before any deletion.
+	selectedPools := make([]libvirt.StoragePool, 0, 2)
+	for _, pool := range pools {
+		target, selected := ns.poolTarget(pool.Name)
+		if !selected {
+			continue
+		}
+		definition, err := lv.StoragePoolGetXMLDesc(pool, 0)
+		if err != nil {
+			return fmt.Errorf("get storage pool %s XML: %w", pool.Name, err)
+		}
+		var decoded libvirtxml.StoragePool
+		if err := decoded.Unmarshal(definition); err != nil {
+			return fmt.Errorf("unmarshal storage pool %s XML: %w", pool.Name, err)
+		}
+		if decoded.Name != pool.Name || decoded.Type != "dir" || decoded.Target == nil || decoded.Target.Path != target {
+			return fmt.Errorf("storage pool %s conflicts with namespace %s: expected a dir pool named %s targeting %s",
+				pool.Name, ns, pool.Name, target)
+		}
+		selectedPools = append(selectedPools, pool)
+	}
+
+	// Preserve the teardown order: domains, networks, then pools.
 	for _, dom := range domains {
-		if !ns.isInNamespace(dom.Name) {
+		if !ns.matchesDomainName(dom.Name) {
 			continue
 		}
 
 		log.Debugf("Tearing down domain %s", dom.Name)
-		err = rc.teardownDomain(dom)
+		err = teardownDomain(dom)
 		if err != nil {
 			return fmt.Errorf("teardown domain %s: %w", dom.Name, err)
 		}
 	}
 
-	// Delete all networks in the namespace
-	networks, _, err := rc.lv.ConnectListAllNetworks(1, libvirt.ConnectListNetworksActive|libvirt.ConnectListNetworksInactive)
-	if err != nil {
-		return fmt.Errorf("list networks: %w", err)
-	}
-
 	for _, nw := range networks {
-		if !ns.isInNamespace(nw.Name) {
+		if nw.Name != ns.libvirtNetworkName() {
 			continue
 		}
 
 		log.Debugf("Tearing down network %s", nw.Name)
-		err = rc.teardownNetwork(nw)
+		err = teardownNetwork(nw)
 		if err != nil {
 			return fmt.Errorf("teardown network %s: %w", nw.Name, err)
 		}
 	}
 
-	// Delete all storage pools in the namespace
-	pools, _, err := rc.lv.ConnectListAllStoragePools(1, libvirt.ConnectListStoragePoolsActive|libvirt.ConnectListStoragePoolsInactive)
-	if err != nil {
-		return fmt.Errorf("list storage pools: %w", err)
-	}
-
-	for _, pool := range pools {
-		if !ns.isInNamespace(pool.Name) {
-			continue
-		}
-
+	for _, pool := range selectedPools {
 		log.Debugf("Tearing down storage pool %s", pool.Name)
-		err = rc.teardownStoragePool(pool)
+		err = teardownStoragePool(pool)
 		if err != nil {
 			return fmt.Errorf("teardown storage pool %s: %w", pool.Name, err)
 		}
