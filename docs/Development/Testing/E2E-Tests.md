@@ -106,6 +106,150 @@ protobuf compiler requirements.
 Unless otherwise noted, commands are run from the repository root. Pytest
 commands are run from `tests/e2e_tests`.
 
+## GitHub cloud agent fresh-install smoke test
+
+The GitHub cloud agent has a bounded Phase C1 smoke test for code changes that
+affect installer boot, clean installation, or initial provisioning. It uses a
+pinned RCP-capable installer ISO and two regular COSIs from an existing
+successful ADO build instead of rebuilding images during the task. C1 uses the
+first COSI; the Phase C2 A/B update test uses the second. The installer is the
+direct-streaming variant because it contains the RCP agent used to inject the
+candidate binaries, but C1 runs its normal installation path rather than
+stream-image mode. The complete pin, including the ADO build and payload
+SHA-256 values, is recorded in `scripts/cloud-agent/install-artifacts.json`.
+
+On the configured 1ES runner, install the nested-virtualization dependencies:
+
+```bash
+bash scripts/cloud-agent/setup-install.sh
+```
+
+Run the smoke test:
+
+```bash
+scripts/cloud-agent/validate.sh install
+```
+
+The test:
+
+1. Verifies and downloads the exact pinned RCP-capable installer ISO and both
+   regular COSIs. Payloads from the shared ADO artifact are extracted from one
+   downloaded archive.
+2. Builds the candidate branch's `trident`, `trident-acl-agent`, `netlaunch`,
+   and `virtdeploy` binaries.
+3. Creates a fresh two-disk libvirt VM and a temporary copy of the `base` Host
+   Configuration with an ephemeral SSH key and the development-only
+   `selfUpgradeTrident` flag. A pre-servicing hook compiles and loads the
+   candidate `trident-selinux` policy in the installer environment so policy
+   changes from the branch are exercised even though the installer is pinned.
+4. Uses netlaunch's RCP CLI mode to inject the candidate Trident and launcher
+   binaries into the pinned installer environment.
+5. Waits for the installed host to reach `servicingState: provisioned`.
+6. Connects to the target over SSH, verifies `abActiveVolume: volume-a`, and
+   checks that `/usr/bin/trident` has the same SHA-256 as the candidate binary.
+7. Cleans the VM and libvirt network even when the test fails.
+
+The large fixtures are cached under `/mnt/storage/trident-cloud-agent/install`.
+Run logs and the verified `provenance.json` are retained under
+`/mnt/storage/trident-cloud-agent/install-runs`. Record the ADO build ID,
+pinned source commit, installer and COSI SHA-256 values, candidate binary
+SHA-256, installed binary SHA-256, and exact result in the pull request.
+
+This lane intentionally does not build the installer or COSI from source, run
+a rollback, or cover the full configuration matrix. The `install` group is
+also excluded from the default source-only
+`scripts/cloud-agent/validate.sh all` run.
+
+## GitHub cloud agent A/B update smoke test
+
+The bounded Phase C2 smoke test extends the same C1 VM lifecycle through one
+A/B servicing update. Run the install setup first:
+
+```bash
+bash scripts/cloud-agent/setup-install.sh
+```
+
+Then run:
+
+```bash
+scripts/cloud-agent/validate.sh update
+```
+
+The test performs the complete fresh installation described above, then:
+
+1. Reads the installed Host Configuration and prepares a temporary update
+   configuration that points from `regular.cosi` to `regular_v2.cosi`, removes
+   the install-only storage section, and keeps `selfUpgradeTrident` enabled.
+2. Starts `netlisten` on the same host port retained in the installed image
+   URL and verifies the pinned update COSI is reachable.
+3. Stages the update directly through the candidate `/usr/bin/trident` and
+   verifies `servicingState: ab-update-staged` while the active volume remains
+   `volume-a`.
+4. Finalizes the update, waits for the reboot and SSH recovery, and verifies
+   the Trident service commits the update.
+5. Verifies the final host is `servicingState: provisioned` on `volume-b`,
+   `/usr/bin/trident` still matches the candidate SHA-256, and SELinux remains
+   enforcing before, during, and after servicing.
+6. Stops the update server and cleans the VM and libvirt network on both
+   success and failure.
+
+The retained run directory records the ADO build and pinned source, installer,
+install COSI, and update COSI hashes, candidate and installed Trident hashes,
+Host Configuration snapshots, initial, staged, and final host states, update
+logs, SELinux states, and cleanup diagnostics. Record those values and the
+exact command result in the pull request.
+
+The update lane intentionally uses pinned ADO-produced images. It does not
+rebuild fixtures from source, run rollback, or cover the full configuration
+matrix. The `update` group is excluded from the default source-only validation
+and requires the configured 1ES runner with nested virtualization and internal
+ADO access.
+
+## GitHub cloud agent manual rollback smoke test
+
+The bounded Phase C3 smoke test extends the same C1 and C2 VM lifecycle through
+a manual A/B rollback. Run the install setup first:
+
+```bash
+bash scripts/cloud-agent/setup-install.sh
+```
+
+Then run:
+
+```bash
+scripts/cloud-agent/validate.sh rollback
+```
+
+The test performs the complete fresh installation and A/B update described
+above, then:
+
+1. Captures the rollback chain and verifies the next rollback is an A/B
+   rollback that restores `volume-a`.
+2. Stages the rollback directly through the candidate `/usr/bin/trident` and
+   verifies `servicingState: manual-rollback-ab-staged` while the active volume
+   remains `volume-b`.
+3. Finalizes the rollback, verifies that the VM boot ID changes, waits for SSH
+   recovery and the Trident service commit, and verifies the final host is
+   `servicingState: provisioned` on `volume-a`.
+4. Verifies `/usr/bin/trident` still matches the candidate SHA-256, SELinux
+   remains enforcing, and the candidate Trident SELinux module is installed
+   after booting back into the initial OS volume.
+5. Verifies the completed rollback is removed from the rollback chain, then
+   stops the update server and cleans the VM and libvirt network.
+
+The retained run directory adds the rollback chain and target, rollback stage
+and finalize logs, pre- and post-rollback boot IDs, rollback-staged and final
+host states, candidate and installed Trident hashes, SELinux policy evidence,
+and cleanup diagnostics. Record those values and the exact command result in
+the pull request.
+
+The rollback lane intentionally validates one manual A/B rollback using the
+pinned C1/C2 fixtures. It does not rebuild fixtures from source, test runtime or
+health-check-triggered rollback, or cover the full configuration matrix. The
+`rollback` group is excluded from the default source-only validation and
+requires the configured 1ES runner with nested virtualization and internal ADO
+access.
+
 ## Building Dependencies
 
 ### 1. Build Trident

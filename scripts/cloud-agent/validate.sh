@@ -7,10 +7,16 @@ readonly TAILOR_RUST_TOOLCHAIN="1.98.1"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/cloud-agent/validate.sh [all|format|rust|go|tailor]
+Usage: scripts/cloud-agent/validate.sh [all|format|rust|go|tailor|cloud-agent|functional|install|update|rollback]
 
-Runs source-only validation that does not require VM image artifacts.
-The default group is "all".
+The default "all" group runs source-only validation. The explicit "functional"
+group downloads the pinned VM artifact and runs the bounded functional smoke suite.
+The explicit "install" group downloads the pinned installer and COSI artifacts
+and runs the Phase C1 fresh-install smoke test.
+The explicit "update" group extends the fresh installation through the Phase C2
+A/B stage, finalize, reboot, and commit smoke test.
+The explicit "rollback" group extends Phase C2 through a Phase C3 manual A/B
+rollback to the initial installation.
 EOF
 }
 
@@ -82,6 +88,28 @@ validate_tailor() (
         --locked
 )
 
+validate_cloud_agent() {
+    run python3 -m unittest discover \
+        -s scripts/cloud-agent/tests \
+        -p 'test_*.py'
+}
+
+validate_functional() {
+    run bash scripts/cloud-agent/run-functional.sh smoke
+}
+
+validate_install() {
+    run bash scripts/cloud-agent/run-install.sh install
+}
+
+validate_update() {
+    run bash scripts/cloud-agent/run-install.sh update
+}
+
+validate_rollback() {
+    run bash scripts/cloud-agent/run-install.sh rollback
+}
+
 main() {
     cd "$REPO_ROOT"
 
@@ -91,6 +119,7 @@ main() {
             validate_rust
             validate_go
             validate_tailor
+            validate_cloud_agent
             ;;
         format)
             validate_format
@@ -103,6 +132,21 @@ main() {
             ;;
         tailor)
             validate_tailor
+            ;;
+        cloud-agent)
+            validate_cloud_agent
+            ;;
+        functional)
+            validate_functional
+            ;;
+        install)
+            validate_install
+            ;;
+        update)
+            validate_update
+            ;;
+        rollback)
+            validate_rollback
             ;;
         -h | --help)
             usage
