@@ -2,6 +2,7 @@ package virtdeploy
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -27,6 +28,22 @@ func (n namespace) vmName(index int) string {
 	return string(n) + "-vm-" + fmt.Sprintf("%d", index)
 }
 
-func (n namespace) isInNamespace(name string) bool {
-	return strings.HasPrefix(name, string(n)+"-")
+func (n namespace) matchesDomainName(name string) bool {
+	index, found := strings.CutPrefix(name, string(n)+"-vm-")
+	if !found {
+		return false
+	}
+	vmIndex, err := strconv.Atoi(index)
+	return err == nil && vmIndex >= 0 && name == n.vmName(vmIndex)
+}
+
+func (n namespace) poolTarget(name string) (string, bool) {
+	switch name {
+	case n.storagePoolName():
+		return "/var/lib/libvirt/" + string(n), true
+	case n.nvramPoolName():
+		return "/var/lib/" + string(n) + "-nvram", true
+	default:
+		return "", false
+	}
 }
