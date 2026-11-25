@@ -1,0 +1,9 @@
+schemaVersion: 1
+
+toolchains:
+  default: imagecustomizer
+  entries:
+    - name: imagecustomizer
+      container: imagecustomizer
+      tag: dev
+      pull: never
