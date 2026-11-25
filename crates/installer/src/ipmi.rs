@@ -3,50 +3,22 @@
 use anyhow::Error;
 use log::{debug, warn};
 
-use osutils::ipmi::{self, SendOutcome};
+use osutils::ipmi::{self, InstallationStatus, SendOutcome};
 
 use crate::client::AttemptOutcome;
-
-/// Generator ID used by `ipmitool` for system-management software events.
-const IPMI_SYSTEM_MANAGEMENT_SOFTWARE_GENERATOR_ID: u8 = 0x41;
-/// Event Message revision required by the IPMI installation-status payload.
-const IPMI_EVENT_MESSAGE_REVISION: u8 = 0x04;
-/// IPMI sensor type for base OS boot and installation status.
-const IPMI_OS_BOOT_SENSOR_TYPE: u8 = 0x1f;
-/// Sensor number reserved for software-generated installation status.
-const IPMI_SENSOR_NUMBER: u8 = 0x00;
-/// Sensor-specific assertion event type used by the installation statuses.
-const IPMI_SENSOR_SPECIFIC_EVENT_TYPE: u8 = 0x6f;
-/// IPMI event code for an installation attempt starting.
-const IPMI_INSTALLATION_STARTED_EVENT: u8 = 0x07;
-/// IPMI event code for an installation attempt completing successfully.
-const IPMI_INSTALLATION_COMPLETED_EVENT: u8 = 0x08;
-/// IPMI event code for an installation failure.
-const IPMI_INSTALLATION_FAILED_EVENT: u8 = 0x0a;
-
-/// Installer lifecycle state reported to the local BMC.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum InstallerStatus {
-    /// A live installation attempt began.
-    Started,
-    /// Trident reported a successful terminal result.
-    Completed,
-    /// The installation encountered an error or lost its worker unexpectedly.
-    Failed,
-}
 
 /// Abstracts status delivery so lifecycle behavior can be tested without IPMI.
 trait StatusReporter {
     /// Reports one lifecycle state without changing the installation outcome.
-    fn report(&mut self, status: InstallerStatus) -> Result<SendOutcome, Error>;
+    fn report(&mut self, status: InstallationStatus) -> Result<SendOutcome, Error>;
 }
 
 /// Sends installer status through the local Linux IPMI interface.
 struct LocalStatusReporter;
 
 impl StatusReporter for LocalStatusReporter {
-    fn report(&mut self, status: InstallerStatus) -> Result<SendOutcome, Error> {
-        ipmi::send_platform_event(payload(status))
+    fn report(&mut self, status: InstallationStatus) -> Result<SendOutcome, Error> {
+        ipmi::send_installation_status(status)
     }
 }
 
@@ -72,7 +44,7 @@ impl<R: StatusReporter> AttemptReporter<R> {
         if self.active {
             return;
         }
-        self.emit(InstallerStatus::Started);
+        self.emit(InstallationStatus::Started);
         self.active = true;
     }
 
@@ -83,8 +55,8 @@ impl<R: StatusReporter> AttemptReporter<R> {
         }
         self.active = false;
         self.emit(match outcome {
-            AttemptOutcome::Completed => InstallerStatus::Completed,
-            AttemptOutcome::Failed => InstallerStatus::Failed,
+            AttemptOutcome::Completed => InstallationStatus::Completed,
+            AttemptOutcome::Failed => InstallationStatus::Failed,
         });
     }
 
@@ -94,11 +66,11 @@ impl<R: StatusReporter> AttemptReporter<R> {
             return;
         }
         self.active = false;
-        self.emit(InstallerStatus::Failed);
+        self.emit(InstallationStatus::Failed);
     }
 
     /// Attempts delivery while keeping all reporting failures non-fatal.
-    fn emit(&mut self, status: InstallerStatus) {
+    fn emit(&mut self, status: InstallationStatus) {
         match self.reporter.report(status) {
             Ok(SendOutcome::Sent) => {}
             Ok(SendOutcome::Unavailable) => {
@@ -144,25 +116,6 @@ impl LiveAttemptReporter {
     }
 }
 
-/// Encodes an installer lifecycle state as an IPMI installation-status event payload.
-const fn payload(status: InstallerStatus) -> [u8; 8] {
-    let event = match status {
-        InstallerStatus::Started => IPMI_INSTALLATION_STARTED_EVENT,
-        InstallerStatus::Completed => IPMI_INSTALLATION_COMPLETED_EVENT,
-        InstallerStatus::Failed => IPMI_INSTALLATION_FAILED_EVENT,
-    };
-    [
-        IPMI_SYSTEM_MANAGEMENT_SOFTWARE_GENERATOR_ID,
-        IPMI_EVENT_MESSAGE_REVISION,
-        IPMI_OS_BOOT_SENSOR_TYPE,
-        IPMI_SENSOR_NUMBER,
-        IPMI_SENSOR_SPECIFIC_EVENT_TYPE,
-        event,
-        0,
-        0,
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,12 +132,12 @@ mod tests {
     }
 
     struct MockStatusReporter {
-        statuses: Rc<RefCell<Vec<InstallerStatus>>>,
+        statuses: Rc<RefCell<Vec<InstallationStatus>>>,
         result: MockReportResult,
     }
 
     impl StatusReporter for MockStatusReporter {
-        fn report(&mut self, status: InstallerStatus) -> Result<SendOutcome, Error> {
+        fn report(&mut self, status: InstallationStatus) -> Result<SendOutcome, Error> {
             self.statuses.borrow_mut().push(status);
             match self.result {
                 MockReportResult::Sent => Ok(SendOutcome::Sent),
@@ -196,7 +149,7 @@ mod tests {
 
     fn mock_reporter(
         result: MockReportResult,
-    ) -> (MockStatusReporter, Rc<RefCell<Vec<InstallerStatus>>>) {
+    ) -> (MockStatusReporter, Rc<RefCell<Vec<InstallationStatus>>>) {
         let statuses = Rc::new(RefCell::new(Vec::new()));
         (
             MockStatusReporter {
@@ -205,23 +158,6 @@ mod tests {
             },
             statuses,
         )
-    }
-
-    #[test]
-    fn statuses_use_ipmi_payload_bytes() {
-        for (status, event) in [
-            (InstallerStatus::Started, IPMI_INSTALLATION_STARTED_EVENT),
-            (
-                InstallerStatus::Completed,
-                IPMI_INSTALLATION_COMPLETED_EVENT,
-            ),
-            (InstallerStatus::Failed, IPMI_INSTALLATION_FAILED_EVENT),
-        ] {
-            assert_eq!(
-                payload(status),
-                [0x41, 0x04, 0x1f, 0x00, 0x6f, event, 0x00, 0x00]
-            );
-        }
     }
 
     #[test]
@@ -235,7 +171,7 @@ mod tests {
         }
         assert_eq!(
             *statuses.borrow(),
-            [InstallerStatus::Started, InstallerStatus::Completed]
+            [InstallationStatus::Started, InstallationStatus::Completed]
         );
 
         let (reporter, statuses) = mock_reporter(MockReportResult::Sent);
@@ -246,7 +182,7 @@ mod tests {
         }
         assert_eq!(
             *statuses.borrow(),
-            [InstallerStatus::Started, InstallerStatus::Failed]
+            [InstallationStatus::Started, InstallationStatus::Failed]
         );
     }
 
@@ -259,7 +195,7 @@ mod tests {
         }
         assert_eq!(
             *statuses.borrow(),
-            [InstallerStatus::Started, InstallerStatus::Failed]
+            [InstallationStatus::Started, InstallationStatus::Failed]
         );
     }
 
@@ -274,7 +210,7 @@ mod tests {
             }
             assert_eq!(
                 *statuses.borrow(),
-                [InstallerStatus::Started, InstallerStatus::Failed]
+                [InstallationStatus::Started, InstallationStatus::Failed]
             );
         }
     }

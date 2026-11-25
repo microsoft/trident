@@ -2,6 +2,22 @@
 //!
 //! A direct ioctl is deliberate for this one local command: it avoids ipmi-rs's broad RMCP
 //! crypto dependencies and ipmitool's image binary and temporary-file dependency.
+//!
+//! Wire-value references:
+//!
+//! | Values | Definition |
+//! | --- | --- |
+//! | address `0Ch`, channel `0Fh`, receive types `1` and `2` | [Linux IPMI userspace API] |
+//! | NetFn `04h`/`05h`, command `02h`, LUN `00b` | [IPMI v2.0 revision 1.1], sections 29.1, 29.3 and 29.6 |
+//! | software ID `20h`, encoded Generator ID `41h` | IPMI sections 5.4 and 29.4 |
+//! | Event Message revision `04h` | IPMI section 29.4 |
+//! | sensor type `1Fh`, offsets `07h`-`0Ah` | IPMI section 42.2 |
+//! | sensor-specific event type `6Fh` | IPMI sections 41.2 and 42.1 |
+//! | sensor number and unused data `00h` | [Anaconda's software-generated event layout] |
+//!
+//! [Linux IPMI userspace API]: https://github.com/torvalds/linux/blob/4dce97c6c265544342e716e62fd24bbb232590c5/include/uapi/linux/ipmi.h
+//! [IPMI v2.0 revision 1.1]: https://www.intel.com/content/dam/www/public/us/en/documents/product-briefs/ipmi-second-gen-interface-spec-v2-rev1-1.pdf
+//! [Anaconda's software-generated event layout]: https://github.com/rhinstaller/anaconda/blob/8f123da05ee8e8936b201265ade18a15c267f2ac/pyanaconda/core/util.py#L605-L623
 
 use std::{
     fs::{File, OpenOptions},
@@ -24,26 +40,59 @@ use nix::{
 const IPMI_DEVICE: &str = "/dev/ipmi0";
 /// Maximum time to wait for the BMC response to one request.
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
-/// Linux IPMI address type for the local system interface.
+/// Linux local-system-interface address type from `linux/ipmi.h`.
 const IPMI_SYSTEM_INTERFACE_ADDR_TYPE: c_int = 0x0c;
-/// IPMI channel number reserved for the local BMC.
+/// Linux BMC channel sentinel from `linux/ipmi.h`.
 const IPMI_BMC_CHANNEL: c_short = 0x0f;
-/// Linux IPMI receive type for a response to a submitted request.
+/// Linux response receive type from `linux/ipmi.h`.
 const IPMI_RESPONSE_RECV_TYPE: c_int = 1;
-/// Linux IPMI receive type for an unsolicited asynchronous event.
+/// Linux asynchronous-event receive type from `linux/ipmi.h`.
 const IPMI_ASYNC_EVENT_RECV_TYPE: c_int = 2;
-/// Sensor/Event request network function.
+/// Sensor/Event request NetFn from IPMI v2.0 section 29.1.
 const IPMI_REQUEST_NETFN: c_uchar = 0x04;
-/// Sensor/Event response network function.
+/// Sensor/Event response NetFn from IPMI v2.0 section 29.1.
 const IPMI_RESPONSE_NETFN: c_uchar = 0x05;
-/// IPMI command number for a Platform Event Message.
+/// Platform Event Message command from IPMI v2.0 section 29.3.
 const IPMI_PLATFORM_EVENT_COMMAND: c_uchar = 0x02;
+/// Local BMC logical unit used by the system-interface format in IPMI v2.0 section 29.6.
+const IPMI_BMC_LUN: c_uchar = 0x00;
 /// Correlation identifier for this module's single synchronous request.
 const IPMI_MESSAGE_ID: c_long = 1;
 /// Address buffer size accepted by `IPMICTL_RECEIVE_MSG_TRUNC`.
 const IPMI_MAX_ADDR_SIZE: usize = 32;
 /// Response buffer size for the completion code and any BMC response data.
 const IPMI_RESPONSE_DATA_SIZE: usize = 32;
+/// System Management Software ID assigned by IPMI v2.0 table 5-4.
+const IPMI_SYSTEM_MANAGEMENT_SOFTWARE_ID: u8 = 0x20;
+/// Marks a Generator ID as a software ID per IPMI v2.0 sections 5.4 and 29.4.
+const IPMI_SOFTWARE_GENERATOR_FLAG: u8 = 0x01;
+/// Event Message revision required by IPMI v2.0 section 29.4.
+const IPMI_EVENT_MESSAGE_REVISION: u8 = 0x04;
+/// Base OS Boot/Installation Status sensor type from IPMI v2.0 section 42.2.
+const IPMI_INSTALLATION_SENSOR_TYPE: u8 = 0x1f;
+/// Synthetic sensor number used by Anaconda-compatible software-generated installation events.
+const IPMI_INSTALLATION_SENSOR_NUMBER: u8 = 0x00;
+/// Sensor-specific event type from IPMI v2.0 sections 41.2 and 42.1.
+const IPMI_SENSOR_SPECIFIC_EVENT_TYPE: u8 = 0x6f;
+/// Unused Event Data fields for the installation-status offsets in IPMI v2.0 section 42.2.
+const IPMI_UNUSED_EVENT_DATA: u8 = 0x00;
+/// Successful command completion code from IPMI v2.0 section 5.2.
+const IPMI_COMPLETION_CODE_SUCCESS: u8 = 0x00;
+
+/// Base OS or hypervisor installation state defined by IPMI v2.0 section 42.2.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+#[repr(u8)]
+pub enum InstallationStatus {
+    /// Base OS or hypervisor installation started (`07h`).
+    Started = 0x07,
+    /// Base OS or hypervisor installation completed (`08h`).
+    Completed = 0x08,
+    /// Base OS or hypervisor installation was explicitly aborted (`09h`).
+    Aborted = 0x09,
+    /// Base OS or hypervisor installation failed (`0Ah`).
+    Failed = 0x0a,
+}
 
 /// Result of attempting to send an event to the local BMC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,17 +104,31 @@ pub enum SendOutcome {
     Unavailable,
 }
 
-/// Sends one Platform Event Message through the local Linux IPMI interface.
+/// Reports an IPMI-defined base OS or hypervisor installation state to the local BMC.
 ///
-/// `data` is the eight-byte system-interface payload: the generator ID followed by the seven-byte
-/// Platform Event Message body. The call waits up to five seconds for the matching BMC response,
-/// ignoring unrelated asynchronous messages.
+/// The event uses the system-management software Generator ID and the Base OS Boot/Installation
+/// Status sensor layout defined by IPMI v2.0. The call waits up to five seconds for the matching
+/// BMC response, ignoring unrelated asynchronous messages.
 ///
 /// Returns [`SendOutcome::Unavailable`] only when `/dev/ipmi0` does not exist. Device-open errors,
 /// ioctl failures, timeouts, malformed replies, and BMC completion errors are returned to the
 /// caller.
-pub fn send_platform_event(data: [u8; 8]) -> Result<SendOutcome, Error> {
-    send_with_opener(data, LinuxTransport::open)
+pub fn send_installation_status(status: InstallationStatus) -> Result<SendOutcome, Error> {
+    send_with_opener(installation_status_payload(status), LinuxTransport::open)
+}
+
+/// Encodes the IPMI v2.0 system-interface Platform Event Message for an installation state.
+const fn installation_status_payload(status: InstallationStatus) -> [u8; 8] {
+    [
+        (IPMI_SYSTEM_MANAGEMENT_SOFTWARE_ID << 1) | IPMI_SOFTWARE_GENERATOR_FLAG,
+        IPMI_EVENT_MESSAGE_REVISION,
+        IPMI_INSTALLATION_SENSOR_TYPE,
+        IPMI_INSTALLATION_SENSOR_NUMBER,
+        IPMI_SENSOR_SPECIFIC_EVENT_TYPE,
+        status as u8,
+        IPMI_UNUSED_EVENT_DATA,
+        IPMI_UNUSED_EVENT_DATA,
+    ]
 }
 
 /// Internal representation of one Linux IPMI request.
@@ -249,7 +312,7 @@ fn send_with_transport(data: [u8; 8], transport: &mut impl Transport) -> Result<
     let request = Request {
         address_type: IPMI_SYSTEM_INTERFACE_ADDR_TYPE,
         channel: IPMI_BMC_CHANNEL,
-        lun: 0,
+        lun: IPMI_BMC_LUN,
         netfn: IPMI_REQUEST_NETFN,
         cmd: IPMI_PLATFORM_EVENT_COMMAND,
         msgid: IPMI_MESSAGE_ID,
@@ -303,7 +366,7 @@ fn validate_response(response: &Response) -> Result<(), Error> {
         .data
         .first()
         .ok_or_else(|| anyhow!("IPMI Platform Event Message response has no completion code"))?;
-    if *completion != 0 {
+    if *completion != IPMI_COMPLETION_CODE_SUCCESS {
         bail!("BMC rejected Platform Event Message with completion code {completion:#04x}");
     }
     Ok(())
@@ -412,6 +475,21 @@ mod tests {
             netfn: IPMI_RESPONSE_NETFN,
             cmd: IPMI_PLATFORM_EVENT_COMMAND,
             data: vec![0],
+        }
+    }
+
+    #[test]
+    fn installation_statuses_use_ipmi_payload_bytes() {
+        for (status, event) in [
+            (InstallationStatus::Started, 0x07),
+            (InstallationStatus::Completed, 0x08),
+            (InstallationStatus::Aborted, 0x09),
+            (InstallationStatus::Failed, 0x0a),
+        ] {
+            assert_eq!(
+                installation_status_payload(status),
+                [0x41, 0x04, 0x1f, 0x00, 0x6f, event, 0x00, 0x00]
+            );
         }
     }
 
