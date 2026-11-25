@@ -11,6 +11,8 @@ use log::warn;
 
 /// Bounds memory use when a serial consumer remains backpressured.
 const SERIAL_BACKLOG_LIMIT_BYTES: usize = 64 * 1024;
+/// Leave room to terminate a partially written line when stale output is discarded.
+const SERIAL_RECORD_LIMIT_BYTES: usize = SERIAL_BACKLOG_LIMIT_BYTES - 1;
 
 /// Serial destinations with independent bounded pending output.
 #[derive(Default)]
@@ -35,7 +37,7 @@ impl SerialMirrors {
                 ),
                 EnqueueOutcome::RecordTooLarge(bytes) => {
                     warn!(
-                        "Skipped {bytes}-byte installer status record for '{}'; serial backlog limit is {SERIAL_BACKLOG_LIMIT_BYTES} bytes",
+                        "Skipped {bytes}-byte installer status record for '{}'; serial record limit is {SERIAL_RECORD_LIMIT_BYTES} bytes",
                         mirror.path.display()
                     );
                     return true;
@@ -80,14 +82,17 @@ impl SerialMirror {
     }
 
     /// Queues one complete record, bounding stale output during sustained backpressure.
+    /// An overflow keeps a separator so the next record cannot join an already-written fragment.
     fn enqueue(&mut self, data: &[u8]) -> EnqueueOutcome {
-        if data.len() > SERIAL_BACKLOG_LIMIT_BYTES {
+        if data.len() > SERIAL_RECORD_LIMIT_BYTES {
             return EnqueueOutcome::RecordTooLarge(data.len());
         }
         let dropped = (self.pending.len().saturating_add(data.len()) > SERIAL_BACKLOG_LIMIT_BYTES)
             .then(|| {
                 let bytes = self.pending.len();
                 self.pending.clear();
+                // The old record may already be partly on the wire, without its final newline.
+                self.pending.push_back(b'\n');
                 bytes
             });
         self.pending.extend(data);
@@ -142,7 +147,10 @@ mod tests {
         io::{Read, Write},
     };
 
-    use nix::{fcntl::OFlag, unistd};
+    use nix::{
+        fcntl::{self, FcntlArg, OFlag},
+        unistd,
+    };
     use tempfile::TempDir;
 
     #[test]
@@ -230,12 +238,62 @@ mod tests {
             mirror.enqueue(&[2_u8; 8]),
             EnqueueOutcome::DroppedBacklog(bytes) if bytes == SERIAL_BACKLOG_LIMIT_BYTES - 4
         ));
-        assert_eq!(mirror.pending, [2_u8; 8]);
+        let expected = [b"\n".as_slice(), &[2_u8; 8]].concat();
+        assert_eq!(mirror.pending, expected);
 
         assert!(matches!(
-            mirror.enqueue(&vec![3_u8; SERIAL_BACKLOG_LIMIT_BYTES + 1]),
-            EnqueueOutcome::RecordTooLarge(bytes) if bytes == SERIAL_BACKLOG_LIMIT_BYTES + 1
+            mirror.enqueue(&vec![3_u8; SERIAL_BACKLOG_LIMIT_BYTES]),
+            EnqueueOutcome::RecordTooLarge(bytes) if bytes == SERIAL_BACKLOG_LIMIT_BYTES
         ));
-        assert_eq!(mirror.pending, [2_u8; 8]);
+        assert_eq!(mirror.pending, expected);
+    }
+
+    /// Dropping an unfinished record must not join its written prefix to the newest record.
+    #[test]
+    fn partial_write_then_overflow_preserves_record_boundary() {
+        const PIPE_CAPACITY_BYTES: i32 = 4096;
+
+        let (reader, writer) = unistd::pipe2(OFlag::O_NONBLOCK).unwrap();
+        fcntl::fcntl(&writer, FcntlArg::F_SETPIPE_SZ(PIPE_CAPACITY_BYTES)).unwrap();
+        let mut reader = File::from(reader);
+        let mut mirror = SerialMirror::new("/dev/ttyS0", File::from(writer));
+        let mut original = vec![b'x'; SERIAL_RECORD_LIMIT_BYTES];
+        *original.last_mut().unwrap() = b'\n';
+        assert!(matches!(mirror.enqueue(&original), EnqueueOutcome::Queued));
+        assert!(matches!(
+            mirror.flush_pending().unwrap(),
+            FlushOutcome::Backpressured
+        ));
+        let written_prefix = original.len() - mirror.pending.len();
+        assert!(written_prefix > 0 && written_prefix < original.len());
+
+        // Fill the entire budget with the replacement and its required separator.
+        let mut latest = vec![b'n'; SERIAL_RECORD_LIMIT_BYTES];
+        *latest.last_mut().unwrap() = b'\n';
+        assert!(matches!(
+            mirror.enqueue(&latest),
+            EnqueueOutcome::DroppedBacklog(_)
+        ));
+        assert_eq!(mirror.pending.len(), SERIAL_BACKLOG_LIMIT_BYTES);
+        assert!(matches!(
+            mirror.flush_pending().unwrap(),
+            FlushOutcome::Backpressured
+        ));
+
+        let mut output = Vec::new();
+        loop {
+            match reader.read_to_end(&mut output) {
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("Failed to read serial output: {error}"),
+            }
+            if mirror.pending.is_empty() {
+                break;
+            }
+            mirror.flush_pending().unwrap();
+        }
+        assert_eq!(&output[..written_prefix], &original[..written_prefix]);
+        assert_eq!(output[written_prefix], b'\n');
+        assert_eq!(&output[written_prefix + 1..], latest);
     }
 }
