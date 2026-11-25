@@ -1,0 +1,14 @@
+name: vm
+
+matrix:
+  arch: [amd64]
+  scenario: [base, update]
+
+base:
+  path: ../../../../artifacts/qemu_guest.vhdx
+
+rpmSources:
+  - ../../../../bin/RPMS
+
+outputs:
+  - format: cosi
