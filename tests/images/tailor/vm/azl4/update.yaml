@@ -1,0 +1,4 @@
+scripts:
+  postCustomization:
+    $prepend:
+      - path: scripts/post-install.sh
