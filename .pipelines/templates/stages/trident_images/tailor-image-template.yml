@@ -24,7 +24,6 @@ parameters:
   - name: runtimeEnv
     type: string
     default: ""
-    values: ["", host, container]
   - name: distro
     type: string
     values: [azl3, azl4]
@@ -200,6 +199,7 @@ steps:
 
       selection="arch=amd64,scenario=${SCENARIO},distro=${DISTRO}"
       if [[ -n "$RUNTIME_ENV" ]]; then
+        [[ "$RUNTIME_ENV" == host || "$RUNTIME_ENV" == container ]]
         selection+=",runtime=${RUNTIME_ENV}"
       fi
       matrix=$("$tailor" --manifest "$manifest" matrix "$TAILOR_IMAGE" -s "$selection" --format json)
