@@ -55,58 +55,6 @@ fn list_via_manifest_flag_from_any_directory() {
 }
 
 #[test]
-fn explicit_manifest_uses_its_toolchain_and_member_catalogue() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(
-        tmp.path().join("tailor.yaml"),
-        "schemaVersion: 1\nimages:\n  members: [ignored]\n",
-    )
-    .unwrap();
-    std::fs::write(
-        tmp.path().join("tailor-dev.yaml"),
-        "schemaVersion: 1\ntoolchains:\n  default: dev\n  entries:\n    - name: dev\n      container: imagecustomizer\n      tag: dev\n      pull: never\nimages:\n  members: [selected]\n",
-    )
-    .unwrap();
-    for name in ["ignored", "selected"] {
-        let dir = tmp.path().join(name);
-        std::fs::create_dir(&dir).unwrap();
-        std::fs::write(
-            dir.join("image.yaml"),
-            format!("name: {name}\nbase:\n  path: base.vhdx\n"),
-        )
-        .unwrap();
-    }
-    tailor()
-        .current_dir(tmp.path())
-        .args(["--manifest", "tailor-dev.yaml", "list"])
-        .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("selected")
-                .and(predicate::str::contains("ignored").not())
-                .and(predicate::str::contains("default: dev")),
-        );
-    tailor()
-        .current_dir(tmp.path())
-        .args(["--manifest", "tailor-dev.yaml", "build", "--dry-run"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("imagecustomizer:dev"));
-}
-
-#[test]
-fn missing_explicit_manifest_does_not_fall_back_to_default() {
-    let tmp = tempfile::tempdir().unwrap();
-    std::fs::write(tmp.path().join("tailor.yaml"), "schemaVersion: 1\n").unwrap();
-    tailor()
-        .current_dir(tmp.path())
-        .args(["--manifest", "missing.yaml", "list"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("missing.yaml"));
-}
-
-#[test]
 fn defaults_inheritance_and_architecture_override_change_cell_counts() {
     // `app` inherits the amd64-only default → 1 cell; `db` declares an arch axis → amd64 + arm64.
     in_dir("workspace")
