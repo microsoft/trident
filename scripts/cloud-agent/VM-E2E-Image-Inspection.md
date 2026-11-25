@@ -102,7 +102,11 @@ are read separately.
 COSI selection follows the repository metadata schema and `compare-cosi.py`:
 regular tar, `metadata.json`, bounded unique regular members, compressed
 `images/*.raw.zst`, compressed SHA384/length and raw length checks, ext4 root and
-optional separate `/usr`. Only those two filesystems enter the appliance.
+optional separate `/usr` and `/var`, and the producer's separate
+`/var/lib/extensions` and `/var/lib/confexts` ext4 filesystems. All present
+filesystems in this fixed inspection set enter the appliance, parent before
+child. The known `/boot` and `/boot/efi` entries remain outside the payload
+inspection set; any other mount still fails closed.
 Decompression streams through a bounded pipe, checking the declared length and
 absolute 16 GiB ceiling before writing bytes. Overflow stops the producer and its
 owned group and removes the incomplete raw file. Truncation fails the exact-length
@@ -116,6 +120,30 @@ rootfs, full-OS initramfs, nested filesystem images, or non-SQLite RPMDBs fail
 with a fixed missing-fact diagnostic. They never qualify via a
 package-name/configuration proxy. Establish any additional actual layout through
 bounded private 1ES inspection and independent review before extending this code.
+
+Run `45693919524` progressed beyond WAL handling and stopped at
+`cosi-unknown-mount` while inspecting `trident-verity-testimage_0.cosi`.
+Its 26916-byte report SHA256 is
+`e8bc147a726a6944ccb6251bb43d47e4ef97f6f4fdff8152576546da170e0eb1`.
+The report does not name the rejected mount. At exact producer revision
+`18dd6cd99d50a4268afd936acb1ee4d2b64881ea`,
+`tests/images/testimages.py` selects
+`tests/images/trident-verity-testimage/base/baseimg.yaml` for the root-verity
+image. That config defines `/var`, `/var/lib/extensions` and `/var/lib/confexts`
+as separate ext4 filesystems. The inspector now recognizes exactly those extra
+paths, checking each member's compressed SHA384/length and bounded raw length
+before mounting it read-only. `/var` is not skipped: the fallback RPMDB path
+is inside it. The nested filesystems are also mounted, not replaced with the
+underlying directories in the `/var` image.
+
+The same selector uses `usr/host.yaml` for the `/usr`-verity variant.
+Both configs and the COSI schema are unchanged from the exact producer revision.
+The schema's `Filesystem.verity.image` describes a separate hash image, not
+another filesystem mount. Root and `/usr` data images remain in the inspection
+set even when they have verity metadata. This does not remove verity metadata,
+skip the verity variants, validate dm-verity root hashes or qualify boot/runtime
+extension overlays. The unchanged offline RPMDB/NEVRA and critical payload
+checks remain mandatory; actual image qualification is still pending.
 
 Run `45483451022`, attempt 3, measured the exact base file at 562036736 bytes,
 SHA256 `90f470c32617b7ba9ef9ca435c9b9d84e1c23b65c9f64400d4a38854312b58fd`,

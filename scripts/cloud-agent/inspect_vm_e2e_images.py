@@ -485,8 +485,20 @@ def cosi_layout(path, work):
             mount = image["mountPoint"]
             require(mount not in seen, "cosi-duplicate-mount")
             seen.add(mount)
-            require(mount in ("/", "/usr", "/boot", "/boot/efi"), "cosi-unknown-mount")
-            if mount not in ("/", "/usr"):
+            require(
+                mount
+                in (
+                    "/",
+                    "/usr",
+                    "/boot",
+                    "/boot/efi",
+                    "/var",
+                    "/var/lib/extensions",
+                    "/var/lib/confexts",
+                ),
+                "cosi-unknown-mount",
+            )
+            if mount in ("/boot", "/boot/efi"):
                 continue
             require(image["fsType"] == "ext4", "cosi-required-ext4")
             info = image["image"]

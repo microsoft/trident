@@ -124,7 +124,13 @@ class ImageInspectionTests(unittest.TestCase):
             with self.assertRaisesRegex(inspector.Failure, "source-rpm-payload-digest"):
                 inspector.rpm_payload(self.root / "fixture.rpm", "trident")
 
-    def cosi(self, unsafe=None, declared_size=None):
+    def cosi(
+        self,
+        unsafe=None,
+        declared_size=None,
+        mounts=(("/", "root"), ("/usr", "usr")),
+        adjust=None,
+    ):
         image = b"fixture raw filesystem, not mountable or bootable"
         metadata = {
             "version": "1.2",
@@ -143,15 +149,21 @@ class ImageInspectionTests(unittest.TestCase):
                         "sha384": hashlib.sha384(image).hexdigest(),
                     },
                 }
-                for mount, stem in (("/", "root"), ("/usr", "usr"))
+                for mount, stem in mounts
             ],
         }
+        if adjust:
+            adjust(metadata)
         path = self.root / "fixture.cosi"
         with tarfile.open(path, "w") as target:
             for name, body in (
                 ("metadata.json", json.dumps(metadata).encode()),
-                ("images/root.raw.zst", image),
-                ("images/usr.raw.zst", image),
+                *((f"images/{stem}.raw.zst", image) for _, stem in mounts),
+                *(
+                    (row["verity"]["image"]["path"], image)
+                    for row in metadata["images"]
+                    if row.get("verity")
+                ),
                 *(([(unsafe, b"unsafe")]) if unsafe else []),
             ):
                 entry = tarfile.TarInfo(name)
@@ -168,6 +180,146 @@ class ImageInspectionTests(unittest.TestCase):
             drives, mounts = inspector.cosi_layout(self.cosi(), self.root)
         self.assertEqual(mounts, [("/dev/sda", "/"), ("/dev/sdb", "/usr")])
         self.assertEqual(len(drives), 2)
+
+    def producer_verity_cosi(self, usr=False, adjust=None):
+        mounts = (
+            (("/usr", "usr"), ("/boot/efi", "esp"), ("/", "root"), ("/boot", "boot"))
+            if usr
+            else (
+                ("/var/lib/extensions", "sysexts"),
+                ("/boot/efi", "esp"),
+                ("/var", "var"),
+                ("/var/lib/confexts", "confexts"),
+                ("/boot", "boot"),
+                ("/", "root"),
+            )
+        )
+
+        def metadata_layout(metadata):
+            root = next(
+                row
+                for row in metadata["images"]
+                if row["mountPoint"] == ("/usr" if usr else "/")
+            )
+            root["verity"] = {
+                "image": {**root["image"], "path": "images/verity-hash.raw.zst"},
+                "roothash": "1" * 64,
+            }
+            if adjust:
+                adjust(metadata)
+
+        return self.cosi(mounts=mounts, adjust=metadata_layout)
+
+    def test_cosi_source_shaped_verity_layouts_keep_all_data_mounts_readonly(self):
+        for usr in (False, True):
+            with self.subTest(usr=usr):
+                path = self.producer_verity_cosi(usr)
+                before = path.read_bytes()
+                decompressed = []
+
+                def decompress(compressed, raw, expected_size):
+                    self.assertEqual(expected_size, compressed.stat().st_size)
+                    raw.write_bytes(compressed.read_bytes())
+                    decompressed.append(raw)
+
+                with patch.object(inspector, "decompress_cosi", side_effect=decompress):
+                    drives, mounts = inspector.cosi_layout(path, self.root)
+                expected = (
+                    ["/", "/usr"]
+                    if usr
+                    else ["/", "/var", "/var/lib/confexts", "/var/lib/extensions"]
+                )
+                self.assertEqual(
+                    mounts,
+                    [
+                        (f"/dev/sd{chr(97 + index)}", mount)
+                        for index, mount in enumerate(expected)
+                    ],
+                )
+                self.assertEqual([drive for drive, _ in drives], decompressed)
+                self.assertEqual(len(drives), len(expected))
+                with patch.object(inspector, "command", return_value="") as command:
+                    inspector.guest(
+                        drives, mounts, ["is-file /var/lib/rpm/rpmdb.sqlite"]
+                    )
+                self.assertEqual(command.call_args.args[0][:2], ["guestfish", "--ro"])
+                self.assertEqual(
+                    command.call_args.kwargs["data"],
+                    "run\n"
+                    + "".join(
+                        f"mount-ro {device} {mount}\n" for device, mount in mounts
+                    )
+                    + "is-file /var/lib/rpm/rpmdb.sqlite\n",
+                )
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_cosi_verity_data_and_new_mounts_keep_ext4_hash_and_size_guards(self):
+        for mount in ("/", "/usr", "/var", "/var/lib/extensions", "/var/lib/confexts"):
+            for key, value, failure in (
+                ("fsType", "xfs", "cosi-required-ext4"),
+                ("sha384", "0" * 96, "cosi-member-sha384"),
+                ("compressedSize", 1, "cosi-size"),
+                ("uncompressedSize", inspector.MAX_RAW_SIZE + 1, "cosi-image-layout"),
+            ):
+                with self.subTest(mount=mount, key=key):
+
+                    def adjust(metadata):
+                        row = next(
+                            row
+                            for row in metadata["images"]
+                            if row["mountPoint"] == mount
+                        )
+                        (row if key == "fsType" else row["image"])[key] = value
+
+                    path = self.producer_verity_cosi(
+                        usr=(mount == "/usr"), adjust=adjust
+                    )
+                    with (
+                        patch.object(
+                            inspector,
+                            "decompress_cosi",
+                            side_effect=lambda compressed, raw, size: raw.write_bytes(
+                                compressed.read_bytes()
+                            ),
+                        ),
+                        self.assertRaisesRegex(inspector.Failure, failure),
+                    ):
+                        inspector.cosi_layout(path, self.root)
+
+    def test_cosi_unknown_and_duplicate_mounts_still_fail(self):
+        for mount, failure in (
+            ("/opt", "cosi-unknown-mount"),
+            ("/var/lib/rpm", "cosi-unknown-mount"),
+            ("/var/../etc", "cosi-unknown-mount"),
+            ("/var/lib/extensions/unrecognized", "cosi-unknown-mount"),
+            ("/var", "cosi-duplicate-mount"),
+        ):
+            with self.subTest(mount=mount):
+
+                def adjust(metadata):
+                    metadata["images"].append(
+                        {
+                            **metadata["images"][0],
+                            "mountPoint": mount,
+                            "image": {
+                                **metadata["images"][0]["image"],
+                                "path": "images/unexpected.raw.zst",
+                            },
+                        }
+                    )
+
+                path = self.producer_verity_cosi(adjust=adjust)
+                with (
+                    patch.object(
+                        inspector,
+                        "decompress_cosi",
+                        side_effect=lambda compressed, raw, size: raw.write_bytes(
+                            compressed.read_bytes()
+                        ),
+                    ),
+                    self.assertRaisesRegex(inspector.Failure, failure),
+                ):
+                    inspector.cosi_layout(path, self.root)
 
     def test_cosi_traversal_rejected_without_extraction(self):
         with self.assertRaisesRegex(inspector.Failure, "unsafe-member"):
@@ -846,6 +998,77 @@ while True:
         connection.execute("UPDATE fixture SET value='committed-in-wal'")
         connection.commit()
         return source, connection
+
+    def test_cosi_split_var_rpmdb_recovery_keeps_payload_proof(self):
+        source, _ = self.sqlite_snapshot()
+        for mismatch in (False, True):
+            with self.subTest(mismatch=mismatch):
+                path = self.producer_verity_cosi()
+                work = Path(tempfile.mkdtemp(dir=self.root, prefix="cosi-var-"))
+
+                def guest(drives, mounts, script):
+                    self.assertEqual(
+                        [mount for _, mount in mounts],
+                        [
+                            "/",
+                            "/var",
+                            "/var/lib/confexts",
+                            "/var/lib/extensions",
+                        ],
+                    )
+                    self.assertEqual(len(drives), 4)
+                    if script[0].startswith("is-file ") and "-wal" not in script[0]:
+                        return "false\ntrue\n"
+                    if script[0].startswith("exists "):
+                        return "true\nfalse\n"
+                    if script[0].startswith("is-file "):
+                        return "true\n"
+                    if script[0].startswith("download "):
+                        for line in script:
+                            _, remote, local = shlex.split(line)
+                            self.assertTrue(
+                                remote.startswith("/var/lib/rpm/rpmdb.sqlite")
+                            )
+                            shutil.copyfile(source / Path(remote).name, local)
+                        return ""
+                    self.assertTrue(
+                        all(line.startswith("checksum sha256 ") for line in script)
+                    )
+                    return (("0" * 64 if mismatch else self.digest) + "\n") * len(
+                        script
+                    )
+
+                def rpm(argv, **kwargs):
+                    self.assertEqual(argv[:3], ["rpm", "--noplugins", "--dbpath"])
+                    with contextlib.closing(
+                        sqlite3.connect(Path(argv[3]) / "rpmdb.sqlite")
+                    ) as db:
+                        self.assertEqual(
+                            db.execute("SELECT value FROM fixture").fetchall(),
+                            [("committed-in-wal",)],
+                        )
+                    return self.installed_rows()
+
+                with (
+                    patch.object(
+                        inspector,
+                        "decompress_cosi",
+                        side_effect=lambda compressed, raw, size: raw.write_bytes(
+                            compressed.read_bytes()
+                        ),
+                    ),
+                    patch.object(inspector, "guest", side_effect=guest),
+                    patch.object(inspector, "command", side_effect=rpm),
+                ):
+                    if mismatch:
+                        with self.assertRaisesRegex(
+                            inspector.Failure, "image-critical-payload-mismatch"
+                        ):
+                            inspector.inspect_image(path, work, self.packages)
+                    else:
+                        proof = inspector.inspect_image(path, work, self.packages)
+                        self.assertEqual(len(proof["installedPackages"]), 2)
+                        self.assertEqual(proof["basis"], "rpmdb-and-read-only-payload")
 
     def copy_sqlite_snapshot(self, source, wal=True):
         target = Path(tempfile.mkdtemp(dir=self.root, prefix="sqlite-copy-"))
