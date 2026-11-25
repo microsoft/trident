@@ -68,6 +68,8 @@ os:
 
   services:
     enable:
+      - systemd-networkd
+      - systemd-networkd-wait-online
       - sshd
       - rcp-agent
       - tridentd.socket
@@ -75,6 +77,14 @@ os:
       - trident-install
 
   additionalFiles:
+    - source: ../../shared/05-installer-dhcp.network
+      destination: /etc/systemd/network/05-installer-dhcp.network
+    - source: ../../shared/99-installer-networking.cfg
+      destination: /etc/cloud/cloud.cfg.d/99-installer-networking.cfg
+    - source: ../../shared/10-installer-wait-online.conf
+      destination: /etc/systemd/system/systemd-networkd-wait-online.service.d/10-installer-wait-online.conf
+    - source: ../../shared/10-installer-network-online.conf
+      destination: /etc/systemd/system/rcp-agent.service.d/10-installer-network-online.conf
     - source: files/getty@.service
       destination: /usr/lib/systemd/system/getty@.service
     - source: files/serial-getty@.service

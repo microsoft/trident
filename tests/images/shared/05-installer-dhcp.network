@@ -1,0 +1,8 @@
+[Match]
+Name=eth* en*
+
+[Network]
+DHCP=ipv4
+
+[Link]
+RequiredForOnline=routable
