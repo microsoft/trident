@@ -6,6 +6,7 @@
   ["info", "Starting clean install"],
   ["trace", "Executed 'lsblk --json --output-all --bytes': exited with status: 0. Report:\nstdout:\n{\n  \"blockdevices\": [\n    {\"name\": \"vda\", \"type\": \"disk\", \"size\": 21474836480}\n  ]\n}"],
   ["debug", "Creating temporary datastore at /var/lib/trident/datastore.sqlite"],
+  ["info", "Host Configuration:\nstorage:\n  disks:\n  - id: os\n    selector:\n      strategy: smallest-fit\n    partitionTableType: gpt\n    partitions:\n    - id: esp\n      type: esp\n      size: 192M\n    - id: root\n      type: root\n      size: grow\n  filesystems:\n  - deviceId: esp\n    mountPoint:\n      path: /boot/efi\n  - deviceId: root\n    mountPoint:\n      path: /\nos:\n  hostname: example-host\nimage:\n  url: file:///run/trident/installer-media/cosi/payload.cosi\n  sha384: ignored"],
   ["debug", "Successfully read COSI metadata [v1.2]"],
   ["debug", "OS image provides the following mount points: /"],
   ["debug", "Building storage graph"],

@@ -358,7 +358,12 @@ impl Model {
                 ServicingEvent::Log(log) => {
                     let level = log.level;
                     if level == LogLevel::Info {
-                        self.activity = display_text(&log.message);
+                        // Keep multiline dumps in the log panel, not in its one-line activity heading.
+                        let heading = log
+                            .message
+                            .split_once('\n')
+                            .map_or(log.message.as_str(), |(first, _)| first);
+                        self.activity = display_text(heading);
                     }
                     self.log(LogSource::Trident, level, log.message)
                 }

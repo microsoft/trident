@@ -465,7 +465,7 @@ mod tests {
     use ratatui::{backend::TestBackend, style::Color, Terminal};
 
     use trident_client::{
-        Completion as ClientCompletion, LogLevel, RebootDisposition, RemoteError,
+        Completion as ClientCompletion, LogLevel, LogRecord, RebootDisposition, RemoteError,
         RemoteErrorCategory, ServicingEvent, ServicingKind,
     };
 
@@ -610,6 +610,52 @@ mod tests {
             .collect::<String>();
         assert!(row.contains("StreamDisk from file://"), "{row}");
         assert!(row.contains("Logs: DEBUG [V]"), "{row}");
+    }
+
+    /// Configuration dumps keep their YAML layout; only the activity heading is single-line.
+    #[test]
+    fn host_configuration_logs_preserve_nested_fields() {
+        let message = indoc! {"
+            Host Configuration:
+            storage:
+              disks:
+              - id: os
+                selector:
+                  strategy: smallest-fit
+                partitions:
+                - id: root
+                  type: root
+                  size: grow
+            os:
+              hostname: example-host
+        "};
+        let mut model = Model::new();
+        model.event(Event::Response(ServicingEvent::Log(LogRecord {
+            timestamp: None,
+            level: LogLevel::Info,
+            message: message.into(),
+            module: String::new(),
+            target: String::new(),
+            location: None,
+        })));
+        assert_eq!(model.activity, "Host Configuration:");
+        assert_eq!(model.logs.back().unwrap().message, message);
+        let mut terminal = Terminal::new(TestBackend::new(80, 40)).unwrap();
+        terminal.draw(|frame| render(frame, &model)).unwrap();
+        let rows = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(80)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>();
+        for line in message.lines() {
+            assert!(
+                rows.iter().any(|row| row.starts_with(&format!("|{line}"))),
+                "missing line {line:?}:\n{}",
+                rows.join("\n")
+            );
+        }
     }
 
     /// A success result remains highlighted even when earlier logs are filtered out.
