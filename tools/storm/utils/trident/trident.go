@@ -1,6 +1,7 @@
 package trident
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -76,6 +77,22 @@ func InvokeTrident(runtime RuntimeType, client *ssh.Client, envVars []string, ar
 	return stormsshclient.RunCommand(client, fmt.Sprintf("%s %s %s", cmdPrefix, cmd, arguments))
 }
 
+// CheckCommandResult accepts a reboot disconnect only when Trident announced that reboot.
+func CheckCommandResult(out *stormsshconfig.SshCmdOutput, err error, expectReboot bool) error {
+	var disconnected *ssh.ExitMissingError
+	if expectReboot && out != nil && errors.As(err, &disconnected) &&
+		strings.Contains(out.Stderr, REBOOTING_LOG_MESSAGE) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if out == nil {
+		return fmt.Errorf("Trident returned no command result")
+	}
+	return out.Check()
+}
+
 // Loads the Trident container stored in DOCKER_IMAGE_PATH int the remote host's
 // Docker daemon by invoking the `docker load` command. It returns an error if
 // the command fails or if the SSH client is nil. The function checks if the
@@ -86,7 +103,13 @@ func LoadTridentContainer(client *ssh.Client) error {
 		return fmt.Errorf("SSH client is nil")
 	}
 
-	out, err := stormsshclient.RunCommand(client, fmt.Sprintf("sudo docker images --format json %s", DOCKER_IMAGE_PATH))
+	// Filter by image reference, not by the tarball path: `docker images`
+	// treats its positional argument as a repository reference, so passing a
+	// file path matches nothing and the load below would run on every
+	// reconnect. That matters because this is called from populateSshClient,
+	// which re-dials after every reboot and on every retry that drops its
+	// client.
+	out, err := stormsshclient.RunCommand(client, fmt.Sprintf("sudo docker images --format json %s", TRIDENT_CONTAINER))
 	if err != nil {
 		return fmt.Errorf("failed to run docker images command: %w", err)
 	}

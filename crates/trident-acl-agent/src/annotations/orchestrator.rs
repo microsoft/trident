@@ -2046,6 +2046,7 @@ fn indicates_target_boot_failed(error: &TridentClientError) -> bool {
             // instead of TargetBootFailed.
             remote.subkind == ServicingError::AB_UPDATE_REBOOT_CHECK_SUBKIND
                 || remote.subkind == HealthChecksError::AB_UPDATE_HEALTH_CHECK_COMMIT_CHECK_SUBKIND
+                || remote.subkind == ServicingError::AB_UPDATE_HYPERVISOR_COMMIT_CHECK_SUBKIND
                 || remote.subkind == ServicingError::MANUAL_ROLLBACK_REBOOT_CHECK_SUBKIND
         })
         .unwrap_or(false)

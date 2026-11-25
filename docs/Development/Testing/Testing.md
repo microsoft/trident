@@ -58,6 +58,9 @@ manual rollback chains without using `netlaunch` or an installer ISO.
   `trident-acl-agent`'s annotation-driven update protocol against fake
   Kubernetes API server and Nebraska/Omaha endpoints via
   `storm-trident run aclagent`
+- [ACL Tests](ACL-Tests.md) — native ACL adoption and
+  update/rollback/update/update with regular-kernel or MSHV fixtures via
+  `storm-trident run acl`
 
 ## Code Coverage
 

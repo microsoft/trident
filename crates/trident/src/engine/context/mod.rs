@@ -8,7 +8,10 @@ use anyhow::{bail, Context, Error};
 use filesystem::FileSystemData;
 use log::{debug, trace};
 
-use osutils::osrelease::{Distro, OsRelease};
+use osutils::{
+    container,
+    osrelease::{Distro, OsRelease},
+};
 use trident_api::{
     config::{HostConfiguration, Partition, VerityDevice},
     constants::{
@@ -25,7 +28,8 @@ use trident_api::{
 };
 
 use crate::{
-    osimage::OsImage, STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT,
+    osimage::{bootloader::Bootloader, OsImage},
+    STREAM_SLOW_SPEED_REPORTING_INTERVAL_SECONDS_DEFAULT,
     STREAM_SLOW_SPEED_REPORTING_THRESHOLD_MBPS_DEFAULT,
 };
 
@@ -99,6 +103,9 @@ pub struct EngineContext {
     /// The OS image that Trident is using to service the host.
     pub image: Option<OsImage>,
 
+    /// Bootloader metadata exposed by the OS image.
+    pub(crate) bootloader: Option<Bootloader>,
+
     /// The storage graph representing the storage configuration of the host.
     pub storage_graph: StorageGraph,
 
@@ -130,6 +137,7 @@ impl Default for EngineContext {
             disk_uuids: Default::default(),
             install_index: Default::default(),
             image: Default::default(),
+            bootloader: Default::default(),
             storage_graph: Default::default(),
             filesystems: Default::default(),
             is_uki: Default::default(),
@@ -155,9 +163,15 @@ impl EngineContext {
                 )))?
                 .to_path_buf();
 
-        let os_release = OsRelease::read().structured(InternalError::Internal(
+        let os_release = if container::is_running_in_container()? {
+            OsRelease::read_root(container::get_host_root_path()?)
+        } else {
+            OsRelease::read()
+        }
+        .structured(InternalError::Internal(
             "Failed to read OS release information",
         ))?;
+        let bootloader = params.image.as_ref().and_then(OsImage::bootloader);
         Ok(Self {
             spec: params.spec,
             spec_old: params.spec_old,
@@ -168,12 +182,17 @@ impl EngineContext {
             disk_uuids: params.disk_uuids,
             install_index: params.install_index,
             image: params.image,
+            bootloader,
             storage_graph: graph,
             filesystems: Vec::new(),
             is_uki: params.is_uki,
             esp_mount_path,
             host_os_release: os_release,
         })
+    }
+
+    pub(crate) fn bootloader(&self) -> Option<&Bootloader> {
+        self.bootloader.as_ref()
     }
 
     /// Returns the update volume selection for all A/B volume pairs. The update volume is the one
@@ -214,7 +233,7 @@ impl EngineContext {
     }
 
     /// Using the `/` mount point, fetches the root block device path.
-    pub(super) fn get_root_block_device_path(&self) -> Option<PathBuf> {
+    pub(crate) fn get_root_block_device_path(&self) -> Option<PathBuf> {
         self.get_root_block_device_id()
             .and_then(|id| self.get_block_device_path(&id))
     }

@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{anyhow, ensure, Context, Error};
 use const_format::formatcp;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use procfs::sys::kernel::Version;
 
 use osutils::path::join_relative;
@@ -22,7 +22,7 @@ use trident_api::{
     status::{AbVolumeSelection, ServicingType},
 };
 
-use crate::engine::EngineContext;
+use crate::engine::{boot, EngineContext};
 
 /// UKI filename prefix used by both Trident-managed and preexisting UKIs.
 const UKI_FILENAME_PREFIX: &str = "vmlinuz-";
@@ -34,6 +34,63 @@ const UKI_STAGED_MARKER: &str = "staged";
 pub const TMP_UKI_NAME: &str = "vmlinuz-0.efi.staged";
 pub const UKI_DIRECTORY: &str = formatcp!("{ESP_EFI_DIRECTORY}/Linux");
 const TMP_UKI_ADDON_DIR_NAME: &str = formatcp!("{TMP_UKI_NAME}{UKI_ADDON_DIR_SUFFIX}");
+
+/// Checks whether the EFI loader originated from the expected managed A/B slot.
+///
+/// Missing slot expectations and unavailable/unsupported loader metadata skip
+/// validation. Only a recognized opposite-slot origin is rejected; this does
+/// not attest loader or hypervisor payloads.
+pub(in crate::engine) fn validate_efi_loader_origin(
+    install_index: usize,
+    expected_volume: Option<AbVolumeSelection>,
+) -> Result<(), TridentError> {
+    let Some(expected_volume) = expected_volume else {
+        return Ok(());
+    };
+    let image = match efivar::read_loader_image_identifier() {
+        Ok(image) => image,
+        Err(error) => {
+            // Missing evidence must not be reported as a rejected A/B trial.
+            warn!("Cannot determine EFI loader origin; skipping validation: {error:?}");
+            return Ok(());
+        }
+    };
+    validate_loader_origin(install_index, expected_volume, &image)
+}
+
+/// Checks a loader-image identifier against the expected slot for `install_index`.
+///
+/// Normalizes EFI separators and ASCII case, recognizing only this installation's
+/// complete slot-local `second.efi` paths. Unsupported origins, including fallback
+/// paths, warn and succeed. Only a recognized opposite A/B slot returns a mismatch
+/// error; success does not attest the running payload.
+fn validate_loader_origin(
+    install_index: usize,
+    expected_volume: AbVolumeSelection,
+    image: &str,
+) -> Result<(), TridentError> {
+    let image = image.replace('/', "\\");
+
+    let observed_directory = [AbVolumeSelection::VolumeA, AbVolumeSelection::VolumeB]
+        .into_iter()
+        .map(|volume| boot::make_esp_dir_name(install_index, volume))
+        .find(|directory| image.eq_ignore_ascii_case(&format!(r"\EFI\{directory}\second.efi")));
+    let Some(observed_directory) = observed_directory else {
+        warn!("Unsupported EFI loader origin {image:?}; skipping validation");
+        return Ok(());
+    };
+
+    let expected_directory = boot::make_esp_dir_name(install_index, expected_volume);
+    if observed_directory != expected_directory {
+        return Err(TridentError::new(
+            ServicingError::ValidateAbActiveEfiLoader {
+                expected_slot: expected_directory,
+                observed_slot: Some(observed_directory),
+            },
+        ));
+    }
+    Ok(())
+}
 
 /// Returns the lowercased UKI slot name for a given A/B volume
 /// (e.g. `"azla"` for VolumeA). Derived from the install-id prefix + volume name.
@@ -221,73 +278,91 @@ fn remove_uki_and_addons(path: &Path) -> Result<(), Error> {
 }
 
 /// Cleans up old UKIs for the target slot before staging a new one, freeing
-/// ESP space.  This runs for all UKI-based A/B updates (not just ACL) because
+/// ESP space. This runs for all UKI-based A/B updates (not just ACL) because
 /// ESP space constraints are a general concern.
 ///
 /// When staging a UKI for slot X on OS N, the old slot X/OS N UKI is being
 /// replaced and can be removed. Other slots and other OS indices are preserved.
+/// Each selected UKI's addon directory is removed with it.
 ///
 /// Removes:
-/// 1. Trident-managed UKIs matching the target slot+os-index (e.g. all `azla0`
+/// 1. Trident-managed UKIs matching the target slot+OS-index (e.g. all `azla0`
 ///    files when staging for slot A OS 0, regardless of update index).
-/// 2. Non-trident-managed (original install) UKIs, but only when a
-///    trident-managed UKI for the *active* slot+os-index already exists —
-///    meaning trident has taken over boot management and the original install
-///    UKI is no longer the sole rollback.
+/// 2. Non-Trident-managed (original install) UKIs, but only for OS index 0
+///    when a Trident-managed UKI for its active slot already exists, so the
+///    original install UKI is no longer the sole rollback.
+/// 3. Interrupted staging's temporary UKI and any orphaned addon directory.
 pub fn cleanup_ukis_before_staging(
     ctx: &EngineContext,
     mount_point: &Path,
     esp_mount_path: &Path,
 ) -> Result<(), Error> {
     let esp_uki_directory = join_relative(mount_point, esp_mount_path).join(UKI_DIRECTORY);
-    if !esp_uki_directory.exists() {
-        return Ok(());
+    for path in find_ukis_to_remove_before_staging(ctx, &esp_uki_directory)? {
+        debug!("Pre-staging cleanup: removing old UKI '{}'", path.display());
+        remove_uki_and_addons(&path)?;
     }
+    Ok(())
+}
+
+/// Selects UKIs to discard before staging, without modifying the ESP.
+///
+/// Candidates include all generations of the target slot/install and interrupted
+/// staging. Managed UKIs for the active slot and other installations are retained.
+/// Original-image UKIs are eligible only for install 0, once a managed active-slot
+/// UKI exists to retain as rollback.
+///
+/// Returns UKI paths; the caller also removes their companion addon directories.
+/// The temporary UKI path may be absent, allowing cleanup of orphaned staging
+/// addons. A missing UKI directory yields no candidates.
+fn find_ukis_to_remove_before_staging(
+    ctx: &EngineContext,
+    esp_uki_directory: &Path,
+) -> Result<Vec<PathBuf>, Error> {
+    let mut removals = Vec::new();
+    if !esp_uki_directory.exists() {
+        return Ok(removals);
+    }
+
+    // Reclaim interrupted staging, including orphaned addons.
+    removals.push(esp_uki_directory.join(TMP_UKI_NAME));
 
     let target_slot = target_slot_os_id(ctx);
     let target_suffix = format!("{target_slot}.efi");
     let active_slot = active_slot_os_id(ctx);
     let active_suffix = format!("{active_slot}.efi");
-    let trident_ukis = enumerate_trident_managed_ukis(&esp_uki_directory)?;
+    let trident_ukis = enumerate_trident_managed_ukis(esp_uki_directory)?;
 
-    // 1. Remove trident-managed UKIs for the target slot+os-index
-    //    (all update indices, e.g. vmlinuz-100-azla0.efi, vmlinuz-102-azla0.efi).
+    // Select Trident-managed UKIs for the target slot+OS-index, across all
+    // update indices (e.g. vmlinuz-100-azla0.efi, vmlinuz-102-azla0.efi).
     for (_index, suffix, path) in &trident_ukis {
         if *suffix == target_suffix {
-            debug!(
-                "Pre-staging cleanup: removing old target-slot UKI '{}'",
-                path.display()
-            );
-            remove_uki_and_addons(path)?;
+            removals.push(path.clone());
         }
     }
 
-    // 2. Remove non-trident-managed UKIs only if:
-    //    - This is install_index 0 (the OS that placed the original UKI), AND
-    //    - Trident already manages the active slot (proving the original is
-    //      superseded as rollback).
-    //    In multiboot, install_index > 0 never owns the original UKI — it has
-    //    OS 0's partition refs baked in and can't boot other OS instances.
-    //    Note: this intentionally does NOT require both slots to be managed.
-    //    The ESP (~125 MB) cannot hold 3 UKIs (~50 MB each), so the original
-    //    must be removed before staging to free space. Staging already breaks
-    //    rollback to the original, so deleting it here is acceptable.
+    // Select non-Trident-managed UKIs only if:
+    // - This is install_index 0 (the OS that placed the original UKI), AND
+    // - Trident already manages the active slot, so the original UKI is
+    //   superseded as rollback.
+    // In multiboot, install_index > 0 never owns the original UKI: it has
+    // OS 0's partition references baked in and cannot boot other OS instances.
+    // This intentionally does not require both slots to be managed. For
+    // example, a roughly 125 MB ESP cannot hold three roughly 50 MB UKIs.
+    // Removing the original before staging frees space while retaining the
+    // managed active slot as rollback.
     let has_active_slot_uki = trident_ukis
         .iter()
         .any(|(_index, suffix, _)| *suffix == active_suffix);
 
     if has_active_slot_uki && ctx.install_index == 0 {
-        let non_trident_ukis = enumerate_non_trident_managed_ukis(&esp_uki_directory)?;
+        let non_trident_ukis = enumerate_non_trident_managed_ukis(esp_uki_directory)?;
         for (_version, path) in non_trident_ukis {
-            debug!(
-                "Pre-staging cleanup: removing superseded original UKI '{}'",
-                path.display()
-            );
-            remove_uki_and_addons(&path)?;
+            removals.push(path);
         }
     }
 
-    Ok(())
+    Ok(removals)
 }
 
 /// Enumerates existing UKIs managed by Trident (defined by naming convention: vmlinuz-<index>-azl<a|b><number>.efi)
@@ -743,9 +818,82 @@ pub fn use_previous_uki_as_default(esp_dir_path: &Path) -> Result<(), TridentErr
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use std::fs::File;
+
     use tempfile::tempdir;
-    use trident_api::constants::DEFAULT_ESP_MOUNT_POINT_PATH;
+
+    use trident_api::{
+        constants::DEFAULT_ESP_MOUNT_POINT_PATH, error::ErrorKind as TridentErrorKind,
+    };
+
+    #[test]
+    fn matching_loader_origins_accept_efi_case_and_separators() {
+        for (index, volume, image) in [
+            (0, AbVolumeSelection::VolumeA, r"\EFI\AZLA\second.efi"),
+            (0, AbVolumeSelection::VolumeB, "/efi/azlb/SECOND.EFI"),
+            (1, AbVolumeSelection::VolumeA, r"\EFI\AZL2A\second.efi"),
+            (2, AbVolumeSelection::VolumeB, r"\EFI\AZL3B\second.efi"),
+        ] {
+            validate_loader_origin(index, volume, image).unwrap();
+        }
+    }
+
+    #[test]
+    fn opposite_loader_slot_returns_structured_mismatch() {
+        for (index, volume, image, expected, observed) in [
+            (
+                0,
+                AbVolumeSelection::VolumeA,
+                r"\EFI\AZLB\second.efi",
+                "AZLA",
+                "AZLB",
+            ),
+            (
+                0,
+                AbVolumeSelection::VolumeB,
+                "/efi/azla/SECOND.EFI",
+                "AZLB",
+                "AZLA",
+            ),
+            (
+                1,
+                AbVolumeSelection::VolumeB,
+                r"\EFI\AZL2A\second.efi",
+                "AZL2B",
+                "AZL2A",
+            ),
+        ] {
+            let error = validate_loader_origin(index, volume, image).unwrap_err();
+            assert!(
+                matches!(
+                    error.kind(),
+                    TridentErrorKind::Servicing(ServicingError::ValidateAbActiveEfiLoader {
+                        expected_slot,
+                        observed_slot,
+                    }) if expected_slot == expected && observed_slot.as_deref() == Some(observed)
+                ),
+                "got {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_loader_origins_do_not_reject_trial() {
+        for image in [
+            r"\EFI\BOOT\second.efi",
+            r"\EFI\AZL2B\second.efi",
+            r"\EFI\AZLB\bootx64.efi",
+            r"\EFI\AZLB\second.efi.extra",
+            r"\EFI\AZLB\second.efi\extra",
+            r"\EFI\other\second.efi",
+            r"EFI\AZLB\second.efi",
+            "",
+        ] {
+            validate_loader_origin(0, AbVolumeSelection::VolumeA, image).unwrap();
+        }
+        validate_efi_loader_origin(0, None).unwrap();
+    }
 
     /// Validates that `uki_suffix` produces the correct A/B suffix based on
     /// the active volume and install index.
@@ -1597,6 +1745,40 @@ mod tests {
             File::create(esp_uki_dir.join(name)).unwrap();
         }
         (mount, esp_uki_dir)
+    }
+
+    #[test]
+    fn test_cleanup_ukis_reclaims_interrupted_staging() {
+        for staged_uki_exists in [true, false] {
+            let ctx = make_ctx(Some(AbVolumeSelection::VolumeA), 0);
+            let (mount, uki_dir) = setup_esp_for_cleanup(&["vmlinuz-101-azla0.efi"]);
+            let staged_uki = uki_dir.join(TMP_UKI_NAME);
+            if staged_uki_exists {
+                fs::write(&staged_uki, b"partial-uki").unwrap();
+            }
+            let staged_addons = uki::uki_addon_dir(&staged_uki);
+            fs::create_dir_all(&staged_addons).unwrap();
+            fs::write(staged_addons.join("cmdline.addon.efi"), b"partial-addon").unwrap();
+            let active_uki = uki_dir.join("vmlinuz-101-azla0.efi");
+            let active_addons = uki::uki_addon_dir(&active_uki);
+            fs::create_dir_all(&active_addons).unwrap();
+            fs::write(active_addons.join("cmdline.addon.efi"), b"retained").unwrap();
+
+            cleanup_ukis_before_staging(
+                &ctx,
+                mount.path(),
+                Path::new(DEFAULT_ESP_MOUNT_POINT_PATH),
+            )
+            .unwrap();
+
+            assert!(!staged_uki.exists());
+            assert!(!staged_addons.exists());
+            assert!(active_uki.exists());
+            assert_eq!(
+                fs::read(active_addons.join("cmdline.addon.efi")).unwrap(),
+                b"retained",
+            );
+        }
     }
 
     /// Validates that cleanup removes only UKIs matching the target slot+os-index
