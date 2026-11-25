@@ -17,4 +17,3 @@
 - policycoreutils
 - systemd-networkd
 - systemd-resolved
-- selinux-policy-devel

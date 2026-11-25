@@ -8,3 +8,17 @@ config:
       enable:
         $set:
           $include: ./azl4/container-services.yaml
+    additionalFiles:
+      $set:
+        - source: runtime/container/files/getty@.service
+          destination: /usr/lib/systemd/system/getty@.service
+        - source: runtime/container/files/serial-getty@.service
+          destination: /usr/lib/systemd/system/serial-getty@.service
+        - source: runtime/container/files/root.profile
+          destination: /root/.profile
+        - source: runtime/container/files/trident-container.service
+          destination: /usr/lib/systemd/system/trident-container.service
+  scripts:
+    postCustomization:
+      $set:
+        - path: runtime/container/scripts/post-install.sh

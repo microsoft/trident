@@ -90,6 +90,9 @@ the container installer and MOS do not. MOS requires the built `rcp-agent` from
 the `go-tools` artifact at `bin/rcp-agent`.
 AZL4 ISO recipes install `dracut-live` explicitly because the minimal catalog
 base does not include the live-boot initramfs modules.
+The containerd SELinux mmap backport remains AZL3-only: its refpolicy symbols
+do not resolve on AZL4. The AZL4 container recipe retains its native policy
+instead of loading the AZL3 module; ISO enforcing-mode choices are unchanged.
 
 The build-only layer keeps legacy installer stages and artifacts in place.
 Native artifacts have a `tailor-` prefix, while their contained ISO filenames
