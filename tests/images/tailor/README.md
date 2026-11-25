@@ -65,6 +65,36 @@ The native host job publishes two clones under the existing
 the installer/Host Configuration creates the test user.
 Image production is separate from test selection and adoption.
 
+## Installer and MOS models
+
+```text
+trident-installer/
+  image.yaml              AMD64/base, host/container, AZL3/AZL4 matrix
+  azl3/                   Original host/container recipes shared by both distros
+  runtime/                Runtime-specific files and customization scripts
+  by-runtime/             Recipe and optional Trident RPM selection
+  by-distro/              AZL4 base, preview feature and ESP geometry
+  by-runtime+distro/      AZL4 runtime-specific package/service selection
+  azl4/                   Package and service list fragments
+trident-mos/
+  image.yaml              AMD64/base, AZL3/AZL4 matrix
+  azl3.yaml               Original MOS recipe
+  by-distro/              AZL4 customization overrides
+  files/                  ISO placeholders and boot configuration
+  post-install.sh         MOS customization
+```
+
+All six cells produce one ISO each. Both models use the existing AZL3 baremetal
+VHDX or the AZL4 catalog base. The host installer uses the matching Trident RPMs;
+the container installer and MOS do not. MOS requires the built `rcp-agent` from
+the `go-tools` artifact at `bin/rcp-agent`.
+
+The build-only layer keeps legacy installer stages and artifacts in place.
+Native artifacts have a `tailor-` prefix, while their contained ISO filenames
+retain the legacy names. Adoption is a separate pipeline change.
+Split/direct-streaming installers, ARM64 images and azl-installer remain on
+their existing build paths.
+
 ## Shared assets and rendering
 
 `$include` paths resolve relative to the image directory, including nested

@@ -159,7 +159,16 @@ stages:
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build Tailor installer ISOs, preserving existing AZL3 stage/artifact names.
+  # Keep legacy installer consumers unchanged while native ISO builds are validated.
+  - template: stages/build_image/build-image.yml
+    parameters:
+      imageName: trident-installer
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      clones: 1
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+
+  # Native ISO artifacts use distinct names until the adoption layer.
   - template: stages/trident_images/tailor-installer-images.yml
     parameters:
       micBuildType: ${{ parameters.micBuildType }}
@@ -177,6 +186,15 @@ stages:
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-split-installer
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      clones: 1
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+
+  - template: stages/build_image/build-image.yml
+    parameters:
+      imageName: trident-container-installer
+      runtimeEnv: container
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       clones: 1

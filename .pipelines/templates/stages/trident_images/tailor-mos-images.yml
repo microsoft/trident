@@ -6,6 +6,9 @@ parameters:
   - name: micVersion
     type: string
     default: "*.*.*"
+  - name: artifactPrefix
+    type: string
+    default: tailor-
   - name: dependsOnStage
     type: string
     default: ""
@@ -33,10 +36,10 @@ stages:
               ob_outputDirectory: /tmp/tailor-mos-output
               ${{ if eq(distro, 'azl3') }}:
                 imageName: trident-mos
-                ob_artifactBaseName: trident-mos
+                ob_artifactBaseName: ${{ format('{0}trident-mos', parameters.artifactPrefix) }}
               ${{ else }}:
                 imageName: trident-azl4-mos
-                ob_artifactBaseName: trident-azl4-mos
+                ob_artifactBaseName: ${{ format('{0}trident-azl4-mos', parameters.artifactPrefix) }}
             steps:
               - template: ../common_tasks/checkout_trident.yml
               - template: ../common_tasks/avoid-pypi-usage.yml

@@ -6,6 +6,12 @@ parameters:
   - name: micVersion
     type: string
     default: "*.*.*"
+  - name: stagePrefix
+    type: string
+    default: BuildTailorInstaller
+  - name: artifactPrefix
+    type: string
+    default: tailor-
   - name: dependsOnStage
     type: string
     default: ""
@@ -30,7 +36,7 @@ parameters:
 
 stages:
   - ${{ each image in parameters.images }}:
-      - stage: TridentTestImg_${{ replace(image.name, '-', '_') }}
+      - stage: ${{ parameters.stagePrefix }}_${{ replace(image.name, '-', '_') }}
         displayName: Build Tailor ${{ image.distro }} ${{ image.runtime }} installer ISO
         dependsOn:
           - BuildingTools
@@ -47,7 +53,7 @@ stages:
               hostArchitecture: amd64
             variables:
               ob_outputDirectory: /tmp/tailor-installer-output
-              ob_artifactBaseName: ${{ image.name }}
+              ob_artifactBaseName: ${{ format('{0}{1}', parameters.artifactPrefix, image.name) }}
             steps:
               - template: ../common_tasks/checkout_trident.yml
               - template: ../common_tasks/avoid-pypi-usage.yml
