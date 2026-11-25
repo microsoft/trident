@@ -1,0 +1,169 @@
+parameters:
+  - name: tridentSourceDirectory
+    type: string
+  - name: outputDirectory
+    type: string
+  - name: imageName
+    type: string
+  - name: distro
+    type: string
+    values: [azl3, azl4]
+  - name: scenario
+    type: string
+    values: [base, update]
+  - name: clones
+    type: number
+    default: 1
+  - name: baseimgBuildType
+    type: string
+    default: release
+  - name: baseimgVersion
+    type: string
+    default: "*.*.*"
+  - name: micBuildType
+    type: string
+    default: release
+    values: [dev, preview, release]
+  - name: micVersion
+    type: string
+    default: "*.*.*"
+
+steps:
+  - template: common/sfi-enforce-isolation-with-etc-hosts.yaml@platform-pipelines
+  - bash: |
+      set -euo pipefail
+      sudo apt-get update
+      sudo apt-get install -y createrepo-c jq xz-utils curl
+      sudo systemctl start docker
+    displayName: Install native Tailor prerequisites
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: current
+      artifactName: tailor
+      targetPath: ${{ parameters.tridentSourceDirectory }}/artifacts/tailor-tool
+    displayName: Download Tailor
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: current
+      artifactName: trident-binaries
+      targetPath: ${{ parameters.tridentSourceDirectory }}/artifacts/tailor-inputs/rpms
+    displayName: Download Trident RPMs
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      buildType: current
+      artifactName: tailor-ssh-keys
+      targetPath: ${{ parameters.tridentSourceDirectory }}/artifacts/tailor-inputs/ssh
+    displayName: Download shared VM SSH keys
+
+  - template: common/mic-download-template.yaml@platform-pipelines
+    parameters:
+      buildType: ${{ parameters.micBuildType }}
+      arch: amd64
+      micVersion: ${{ parameters.micVersion }}
+
+  - ${{ if eq(parameters.distro, 'azl3') }}:
+      - template: common/base-images-download-template.yaml@platform-pipelines
+        parameters:
+          buildType: ${{ parameters.baseimgBuildType }}
+          baseImageType: qemu_guest
+          imageVersion: ${{ parameters.baseimgVersion }}
+          azureLinuxVersion: "3.0"
+      - bash: |
+          set -euo pipefail
+          mapfile -t bases < <(find "$BASE_DIRECTORY" -maxdepth 1 -type f -name '*.vhdx')
+          [[ "${#bases[@]}" -eq 1 ]]
+          mkdir -p "$SOURCE_DIRECTORY/artifacts"
+          cp -- "${bases[0]}" "$SOURCE_DIRECTORY/artifacts/qemu_guest.vhdx"
+        env:
+          BASE_DIRECTORY: $(Build.ArtifactStagingDirectory)/images
+          SOURCE_DIRECTORY: ${{ parameters.tridentSourceDirectory }}
+        displayName: Stage the existing AZL3 QEMU base
+
+  - ${{ else }}:
+      - bash: |
+          set -euo pipefail
+          mkdir -p "$SOURCE_DIRECTORY/artifacts"
+          download_dir=$(mktemp -d "$SOURCE_DIRECTORY/artifacts/azl4-base.XXXXXX")
+          trap 'rm -rf -- "$download_dir"' EXIT
+          if ! command -v oras >/dev/null 2>&1; then
+            curl -fsSL \
+              https://github.com/oras-project/oras/releases/download/v1.3.0/oras_1.3.0_linux_amd64.tar.gz \
+              -o "$download_dir/oras.tar.gz"
+            echo "6cdc692f929100feb08aa8de584d02f7bcc30ec7d88bc2adc2054d782db57c64  $download_dir/oras.tar.gz" \
+              | sha256sum -c -
+            tar -xzf "$download_dir/oras.tar.gz" -C "$download_dir" oras
+            export PATH="$download_dir:$PATH"
+          fi
+          oras pull mcr.microsoft.com/azurelinux/catalog/minimal-os:4 \
+            --platform linux/amd64 --output "$download_dir"
+          mapfile -t bases < <(find "$download_dir" -maxdepth 1 -type f \
+            \( -name '*.vhdx' -o -name '*.vhdx.xz' \))
+          [[ "${#bases[@]}" -eq 1 ]]
+          destination="$SOURCE_DIRECTORY/artifacts/azl4_minimal_os.vhdx"
+          if [[ "${bases[0]}" == *.xz ]]; then
+            xz -dc -- "${bases[0]}" > "$destination.tmp"
+          else
+            cp -- "${bases[0]}" "$destination.tmp"
+          fi
+          mv -- "$destination.tmp" "$destination"
+        env:
+          SOURCE_DIRECTORY: ${{ parameters.tridentSourceDirectory }}
+        displayName: Download and unpack the AZL4 catalogue base
+        retryCountOnTaskFailure: 3
+
+  - bash: |
+      set -euo pipefail
+      [[ "$IMAGE_NAME" =~ ^[A-Za-z0-9_-]+$ ]]
+      [[ "$CLONES" =~ ^[1-9][0-9]*$ ]]
+      mkdir -p "$SOURCE_DIRECTORY/bin/RPMS" "$OUTPUT_DIRECTORY"
+      mapfile -t rpms < <(find artifacts/tailor-inputs/rpms -type f -name "*.${DISTRO}.*.rpm")
+      [[ "${#rpms[@]}" -gt 0 ]]
+      cp -- "${rpms[@]}" "$SOURCE_DIRECTORY/bin/RPMS/"
+      cp artifacts/tailor-inputs/ssh/id_rsa.pub tests/images/tailor/vm/files/id_rsa.pub
+      cp artifacts/tailor-inputs/ssh/id_rsa "$OUTPUT_DIRECTORY/key_${IMAGE_NAME}_private.pem"
+      cp artifacts/tailor-inputs/ssh/id_rsa.pub "$OUTPUT_DIRECTORY/key_${IMAGE_NAME}_public.pub"
+
+      tailor="$SOURCE_DIRECTORY/artifacts/tailor-tool/tailor"
+      chmod +x "$tailor"
+      manifest="$SOURCE_DIRECTORY/tests/images/tailor/tailor.yaml"
+      temporary_manifest=""
+      trap 'if [[ -n "$temporary_manifest" ]]; then rm -f -- "$temporary_manifest"; fi' EXIT
+      if [[ "$MIC_BUILD_TYPE" == dev ]]; then
+        temporary_manifest=$(mktemp "$SOURCE_DIRECTORY/tests/images/tailor/tailor.pipeline.XXXXXX.yaml")
+        sed -e 's|container: mcr.microsoft.com/azurelinux/imagecustomizer|container: imagecustomizer|' \
+            -e 's|tag: latest|tag: dev|' "$manifest" > "$temporary_manifest"
+        manifest="$temporary_manifest"
+      fi
+
+      selection="arch=amd64,scenario=${SCENARIO},distro=${DISTRO}"
+      matrix=$("$tailor" --manifest "$manifest" matrix vm -s "$selection" --format json)
+      jq -e 'length == 1' <<< "$matrix" >/dev/null
+      slug=$(jq -r '.[0].slug' <<< "$matrix")
+      format=$(jq -r '.[0].format' <<< "$matrix")
+      [[ "$slug" =~ ^[A-Za-z0-9_-]+$ ]]
+      [[ "$format" == qcow2 || "$format" == cosi ]]
+      build_output="$SOURCE_DIRECTORY/artifacts/tailor-output"
+      "$tailor" --manifest "$manifest" --log-dir "$OUTPUT_DIRECTORY/logs" \
+        build vm --cell "$slug" --clones "$CLONES" --output-dir "$build_output"
+
+      if [[ "$CLONES" -eq 1 ]]; then
+        cp -- "$build_output/$slug.$format" "$OUTPUT_DIRECTORY/$IMAGE_NAME.$format"
+      else
+        for ((clone=0; clone<CLONES; clone++)); do
+          cp -- "$build_output/${slug}_clone${clone}.$format" \
+            "$OUTPUT_DIRECTORY/${IMAGE_NAME}_${clone}.$format"
+        done
+      fi
+    env:
+      SOURCE_DIRECTORY: ${{ parameters.tridentSourceDirectory }}
+      OUTPUT_DIRECTORY: ${{ parameters.outputDirectory }}
+      IMAGE_NAME: ${{ parameters.imageName }}
+      DISTRO: ${{ parameters.distro }}
+      SCENARIO: ${{ parameters.scenario }}
+      CLONES: ${{ parameters.clones }}
+      MIC_BUILD_TYPE: ${{ parameters.micBuildType }}
+    workingDirectory: ${{ parameters.tridentSourceDirectory }}
+    displayName: Build Tailor cell and preserve legacy filenames

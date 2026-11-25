@@ -16,5 +16,5 @@ scripts:
     $prepend:
       - path: scripts/post-install.sh
       - path: scripts/update-host-status.sh
-      - path: scripts/enable-trident-service-azl4.sh
+      - path: scripts/azl4/enable-trident-service-azl4.sh
       - path: scripts/prepare-update-config.sh

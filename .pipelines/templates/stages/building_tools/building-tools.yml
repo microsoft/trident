@@ -27,6 +27,10 @@ parameters:
     type: boolean
     default: true
 
+  - name: buildTailor
+    type: boolean
+    default: false
+
   - name: architecture
     displayName: System Architecture
     type: string
@@ -155,3 +159,34 @@ stages:
                   mv bin/rcp-agent $(ob_outputDirectory)
                 workingDirectory: $(TRIDENT_SOURCE_DIR)
                 displayName: "Building rcp-agent"
+
+      - ${{ if and(parameters.buildTailor, eq(parameters.architecture, 'amd64')) }}:
+          - job: BuildTailor
+            displayName: Build Tailor
+            timeoutInMinutes: 20
+            pool:
+              type: linux
+              name: trident-ubuntu-1es-pool-eastus2
+              hostArchitecture: amd64
+
+            variables:
+              ob_outputDirectory: /tmp/tailor
+              ob_artifactBaseName: tailor
+              ${{ if parameters.runCodeql }}:
+                ob_sdl_codeql_compiled_enabled: true
+
+            steps:
+              - template: ../common_tasks/checkout_trident.yml
+              - template: ../common_tasks/avoid-pypi-usage.yml
+              - template: ../common_tasks/rustup.yml
+              - template: ../common_tasks/cargo-auth.yml
+                parameters:
+                  cargoConfigPath: $(TRIDENT_SOURCE_DIR)/.cargo/config.toml
+              - bash: |
+                  set -euo pipefail
+                  cargo build --manifest-path tools/tailor/Cargo.toml --locked --release \
+                    --bin tailor --target-dir artifacts/tailor-build
+                  mkdir -p "$(ob_outputDirectory)"
+                  install -m 755 artifacts/tailor-build/release/tailor "$(ob_outputDirectory)/tailor"
+                workingDirectory: $(TRIDENT_SOURCE_DIR)
+                displayName: Build and stage Tailor once
