@@ -1,0 +1,3 @@
+base:
+  $set:
+    path: ../../../../artifacts/azl4_minimal_os.vhdx
