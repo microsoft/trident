@@ -125,9 +125,9 @@ def main():
         for hardware, runtimes in source_data.items():
             for runtime, purposes in runtimes.items():
                 for purpose, configs in purposes.items():
-                    data.setdefault(hardware, {}).setdefault(
-                        runtime, {}
-                    ).setdefault(purpose, []).extend(configs)
+                    data.setdefault(hardware, {}).setdefault(runtime, {}).setdefault(
+                        purpose, []
+                    ).extend(configs)
 
     # Rename hardware types
     hw_renames = {
