@@ -1,11 +1,11 @@
 //! Persists installer diagnostics and mirrors eligible records to serial consoles.
 
-use std::{fs::File, io::Write, path::PathBuf};
+use std::{fs::File, io::Write};
 
 use anyhow::{Context, Error};
-use log::{warn, LevelFilter};
+use log::LevelFilter;
 
-use crate::client::Event;
+use crate::{client::Event, serial::SerialMirrors};
 
 use super::model::{log_visible, LogEntry};
 
@@ -13,8 +13,8 @@ use super::model::{log_visible, LogEntry};
 pub(crate) struct Output {
     /// Opened by startup with restrictive permissions; optional in tests.
     pub(crate) log: Option<File>,
-    /// Device paths identify failing mirrors so only those ports are disabled.
-    pub(crate) mirrors: Vec<(PathBuf, File)>,
+    /// Serial destinations with independent bounded pending output.
+    pub(crate) mirrors: SerialMirrors,
 }
 
 impl Output {
@@ -27,21 +27,19 @@ impl Output {
         Ok(())
     }
 
-    /// Sends visible records to serial mirrors, dropping mirrors that fail to write.
+    /// Sends visible records without dropping mirrors for temporary write backpressure.
     pub(super) fn announce(&mut self, entry: &LogEntry, verbosity: LevelFilter) {
         if !log_visible(entry.level, verbosity) {
             return;
         }
-        self.mirrors.retain_mut(|(path, mirror)| {
-            if let Err(error) = writeln!(mirror, "{}", entry.plain()) {
-                warn!(
-                    "Stopped mirroring installer status to '{}': {error}",
-                    path.display()
-                );
-                return false;
-            }
-            true
-        });
+        let mut record = entry.plain().into_bytes();
+        record.push(b'\n');
+        self.mirrors.announce(&record);
+    }
+
+    /// Retries queued serial output, removing only mirrors with permanent write failures.
+    pub(super) fn flush_mirrors(&mut self) {
+        self.mirrors.flush();
     }
 }
 
@@ -49,10 +47,7 @@ impl Output {
 mod tests {
     use super::*;
 
-    use std::{
-        fs::{self, OpenOptions},
-        time::Duration,
-    };
+    use std::fs;
 
     use tempfile::TempDir;
     use trident_client::LogLevel;
@@ -61,61 +56,15 @@ mod tests {
 
     use super::super::model::{LogSource, Model};
 
-    /// A failed serial destination is removed without blocking healthy mirrors.
-    #[test]
-    fn unavailable_serial_mirror_does_not_stop_the_installer() {
-        let root = TempDir::new().unwrap();
-        let transcript = root.path().join("serial.log");
-        let mut output = Output {
-            log: None,
-            mirrors: vec![
-                (
-                    PathBuf::from("/dev/full"),
-                    OpenOptions::new().write(true).open("/dev/full").unwrap(),
-                ),
-                (
-                    transcript.clone(),
-                    OpenOptions::new()
-                        .create(true)
-                        .truncate(true)
-                        .write(true)
-                        .open(&transcript)
-                        .unwrap(),
-                ),
-            ],
-        };
-        let entry = LogEntry {
-            elapsed: Duration::from_secs(125),
-            source: LogSource::Inst,
-            level: LogLevel::Info,
-            message: "Preparing installer".into(),
-            result_color: None,
-        };
-        output.announce(&entry, LevelFilter::Debug);
-        assert_eq!(output.mirrors.len(), 1);
-        output.announce(
-            &LogEntry {
-                message: "Still running".into(),
-                ..entry
-            },
-            LevelFilter::Debug,
-        );
-        assert_eq!(
-            fs::read_to_string(transcript).unwrap(),
-            "02:05 [INST:INFO] Preparing installer\n02:05 [INST:INFO] Still running\n"
-        );
-    }
-
     /// Serial filtering preserves line prefixes and does not change display filtering.
     #[test]
     fn serial_verbosity_filters_independently_of_display() {
         let mut model = Model::new();
         let root = TempDir::new().unwrap();
         let serial = root.path().join("serial.log");
-        let mut output = Output {
-            log: None,
-            mirrors: vec![(serial.clone(), File::create(&serial).unwrap())],
-        };
+        let mut mirrors = SerialMirrors::default();
+        mirrors.push(&serial, File::create(&serial).unwrap());
+        let mut output = Output { log: None, mirrors };
         for level in [
             LogLevel::Error,
             LogLevel::Warn,

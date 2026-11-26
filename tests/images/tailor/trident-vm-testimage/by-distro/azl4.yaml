@@ -1,6 +1,0 @@
-base:
-  $set:
-    path: ../../../../artifacts/azl4_minimal_os.vhdx
-
-config:
-  $include: ./azl4/common.yaml
