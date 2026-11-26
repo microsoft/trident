@@ -1,5 +1,0 @@
-- trident-container
-- sshd
-- systemd-networkd
-- systemd-resolved
-- netplan-configure.service

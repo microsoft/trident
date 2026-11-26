@@ -1,125 +1,79 @@
 # Tailor test images
 
-This directory contains declarative image models built by Tailor using Image
-Customizer. The existing Make/Python image definitions outside this directory
-remain available; a new model does not move its consumers automatically.
+Each image family has one image.yaml containing its inputs, axes, base config
+and conditional fragments. The legacy Make/Python definitions remain available
+until their consumers are explicitly migrated.
 
 ## Layout
 
 ```text
-tailor.yaml
-common/
-  files/                 Shared files copied into images
-  scripts/azl4/          Shared inline Bash snippets in YAML
-trident-vm-testimage/
-  image.yaml             Inputs, matrix axes, parameters and output defaults
-  by-scenario/           Base QCOW2 versus update COSI configuration
-  by-distro/             Distro-specific overrides
-  by-scenario+distro/    ESP geometry for each scenario/distro combination
-  azl3/                  Original AZL3 configuration recipes
-  azl4/                  AZL4 package/service/script overrides
-  files/                 Image-local customization files
-  scripts/               Distro-specific customization scripts
+tailor.yaml                     Job-local Image Customizer toolchain manifest
+common/scripts.yaml             Named shared Bash bodies, selected with $include
+common/files/                   Shared image-owned configuration/runtime assets
+trident-vm-testimage/image.yaml  VM inputs, matrix and in-file variant deltas
+trident-vm-testimage/.gitignore  Generated SSH inputs
 ```
 
-`tailor.yaml` is the workspace manifest and selects the Image Customizer
-toolchain. Each image directory has an `image.yaml`. Fragments named
-`by-<axis>/<value>.yaml` apply to matching cells; composite fragments such as
-`by-scenario+distro/base+azl4.yaml` constrain several axes. Composite fragments
-apply after single-axis fragments.
+The VM model remains named vm, with arch=amd64, scenario=base/update and
+distro=azl3/azl4. Base produces QCOW2; update produces two distinct COSI clones.
+AZL3 consumes the existing QEMU guest base; AZL4 consumes minimal-os:4.
+The pipeline preserves legacy artifact names and the existing SSH-key producer.
 
-## VM model
+## Sharing
 
-The directory `trident-vm-testimage` declares the model name `vm`.
+In-file fragments apply in declaration order after the base. They use normal
+Tailor match/merge rules; $set replaces inherited values/lists explicitly.
+The tooling prerequisite supports selecting a node, for example:
 
-| Axis | Values |
-|---|---|
-| arch | amd64 |
-| scenario | base, update |
-| distro | azl3, azl4 |
+```yaml
+config:
+  scripts:
+    postCustomization:
+      - interpreter: /bin/bash
+        content:
+          $include: ../common/scripts.yaml#/audit-directory
+```
 
-Base cells produce QCOW2 images. Update cells produce COSI images, with the
-pipeline generating two independently identified clones. AZL3 uses the existing
-QEMU guest VHDX; AZL4 uses the AMD64 `minimal-os:4` catalog VHDX.
-Inputs are staged under the repository's `artifacts` and `bin/RPMS` directories.
+Includes are literal and image-directory-relative. Shared file sources use
+../common/files. Library bodies preserve shell expressions through shellDollar;
+lint the rendered Bash, not its interpolation template. image.yaml, the containing
+library and common assets are declared dependencies for incremental invalidation.
+Generated public keys remain model-local inputs, not committed common assets.
 
-The pipeline adapts Tailor slugs to the existing artifact/file contracts:
-`trident-vm-grub-testimage` for AZL3 and
-`trident-vm-grub-azl4-testimage` for AZL4. QCOW2 artifact names have the
-`image-` prefix and `-qcow2` suffix; update artifacts contain `_0.cosi` and
-`_1.cosi` files.
+Image jobs reset canonical tailor.yaml from Git, select an existing dev container
+only when requested, and archive the effective manifest in logs/tailor.yaml.
+No alternate manifest is used. Future producers extend the existing library and
+place new assets directly in common instead of moving them between image models.
+
 
 ## Host test-image model
 
-```text
-trident-testimage/
-  image.yaml          AMD64/base/AZL4 matrix and COSI output
-  base-azl4.yaml       Host test-image recipe
-  scripts/            Host-specific post-customization
-```
+trident-testimage/image.yaml contains the AMD64/base/AZL4 host recipe and COSI
+output. It reuses the existing audit-directory and AZL4 script-library entries,
+common assets, staged AZL4 base and RPMs. Its source dependencies include the
+model, containing library and common files.
 
-The `trident-testimage` model produces the AZL4 GRUB host COSI image.
-It reuses `common` customization assets and the staged AZL4 RPMs/base.
 The native host job publishes two clones under the existing
-`trident-azl4-testimage` artifact name. It does not stage VM SSH keys:
-the installer/Host Configuration creates the test user.
-Image production is separate from test selection and adoption.
+trident-azl4-testimage artifact name. It does not stage VM SSH keys: the installer
+and Host Configuration create the test user. Production remains separate from
+test selection/adoption; adding this model does not change consumer defaults.
+
 
 ## Installer and MOS models
 
-```text
-trident-installer/
-  image.yaml              AMD64/base, host/container, AZL3/AZL4 matrix
-  azl3/                   Original host/container recipes shared by both distros
-  runtime/                Runtime-specific files and customization scripts
-  by-runtime/             Recipe and optional Trident RPM selection
-  by-distro/              AZL4 base, preview feature and ESP geometry
-  by-runtime+distro/      AZL4 runtime-specific package/service selection
-  azl4/                   Package and service list fragments
-trident-mos/
-  image.yaml              AMD64/base, AZL3/AZL4 matrix
-  azl3.yaml               Original MOS recipe
-  by-distro/              AZL4 customization overrides
-  files/                  ISO placeholders and boot configuration
-  post-install.sh         MOS customization
-```
+trident-installer/image.yaml declares runtime=host/container and distro=azl3/azl4.
+trident-mos/image.yaml declares distro=azl3/azl4. All six AMD64/base cells produce
+ISOs; packages, services, storage and script differences stay in those manifests.
+Script bodies extend common/scripts.yaml; live console/config assets live in
+common/files. Distinct root profiles and services keep role-specific names.
 
-All six cells produce one ISO each. Both models use the existing AZL3 baremetal
-VHDX or the AZL4 catalog base. The host installer uses the matching Trident RPMs;
-the container installer and MOS do not. MOS requires the built `rcp-agent` from
-the `go-tools` artifact, staged at `bin/rcp-agent` and inside the MOS model.
-MOS policy/systemd/PCR assets are staged from the canonical repository sources
-into `common/files/mos`. These generated files are ignored by Git. Config assets
-must be inside the mounted Tailor workspace; unlike declared base/RPM inputs,
-arbitrary repository-relative asset paths are not mounted automatically.
-AZL4 ISO recipes install `dracut-live` explicitly because the minimal catalog
-base does not include the live-boot initramfs modules.
-The containerd SELinux mmap backport remains AZL3-only: its refpolicy symbols
-do not resolve on AZL4. The AZL4 container recipe retains its native policy
-instead of loading the AZL3 module; ISO enforcing-mode choices are unchanged.
-AZL4 live images also include a shared Ethernet DHCP configuration: the minimal
-catalog base supplies no persistent Ethernet configuration. Matching by link
-type avoids depending on `eth*` versus `enp*` names; AZL3 networking is unchanged.
+Generated MOS policy, systemd, PCR and RCP inputs remain in ignored staging paths,
+not source copies. Model/library/common files are declared cache dependencies.
+AZL3 keeps its containerd policy module; AZL4 keeps explicit Ethernet DHCP.
+Producer artifacts remain separate from installer selection and adoption.
 
 The build-only layer keeps legacy installer stages and artifacts in place.
 Native artifacts have a `tailor-` prefix, while their contained ISO filenames
 retain the legacy names. Adoption is a separate pipeline change.
 Split/direct-streaming installers, ARM64 images and azl-installer remain on
 their existing build paths.
-
-## Shared assets and rendering
-
-`$include` paths resolve relative to the image directory, including nested
-includes. Paths are literal; select runtime/distro-specific includes through
-fragments rather than interpolating the include filename.
-Files can reference `../common/files`. Shared scripts are included YAML
-snippets containing inline `content` and an explicit `/bin/bash` interpreter,
-because Image Customizer script `path` entries cannot escape the image directory.
-The `shellDollar` parameter preserves Bash `${...}` expressions through Tailor
-interpolation; shared snippets spell them `${shellDollar}{...}`.
-
-Pipeline jobs reset their local `tailor.yaml` from Git, select the dev container
-when requested, and archive the effective manifest in `logs/tailor.yaml`.
-No alternate manifest or Tailor Rust changes are required.
-
-Inspect cells with `tailor --manifest tests/images/tailor/tailor.yaml matrix vm`.

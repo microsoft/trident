@@ -1,6 +1,6 @@
 //! Draws the Ratatui screens, their action lists and the scrollable log panel.
 
-use std::time::Instant;
+use std::{borrow::Cow, ops::Range, time::Instant};
 
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
@@ -10,13 +10,14 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
+use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
 
 use crate::APPLICATION_NAME;
 
 use super::{
-    model::{display_text, log_visible, Model, Screen},
+    model::{self, Model, Screen},
     theme::{
-        theme_color, COLOR_BACKGROUND, COLOR_BRAND, COLOR_ERROR, COLOR_FRAME, COLOR_SUCCESS,
+        self, COLOR_BACKGROUND, COLOR_BRAND, COLOR_ERROR, COLOR_FRAME, COLOR_SUCCESS,
         VERBOSITY_LEVELS,
     },
 };
@@ -27,6 +28,10 @@ const WORDMARK_HEADER_HEIGHT: u16 = 12;
 const COMPACT_HEADER_HEIGHT: u16 = 2;
 /// Leave enough height for logs and actions beneath the full wordmark.
 const MIN_WORDMARK_TERMINAL_HEIGHT: u16 = 24;
+/// Leave at least one content row inside the panel borders.
+const MIN_CONTENT_HEIGHT: u16 = 3;
+/// Keep key hints and elapsed time below the action list.
+const FOOTER_HEIGHT: u16 = 2;
 /// Trident name drawn without relying on terminal-specific fonts or graphics.
 const TRIDENT_WORDMARK: [&str; 8] = [
     r#"88888888888      d8b      888                   888"#,
@@ -68,8 +73,8 @@ fn block(title: &str, linux_vt: bool) -> Block<'_> {
     Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
-        .style(Style::default().bg(theme_color(COLOR_BACKGROUND, linux_vt)))
-        .border_style(Style::default().fg(theme_color(COLOR_FRAME, linux_vt)))
+        .style(Style::default().bg(theme::theme_color(COLOR_BACKGROUND, linux_vt)))
+        .border_style(Style::default().fg(theme::theme_color(COLOR_FRAME, linux_vt)))
         .title(title)
 }
 
@@ -94,7 +99,7 @@ fn header_height(viewport: Rect) -> u16 {
 /// Draws the wordmark when space permits, plus the installer status.
 fn render_header(frame: &mut Frame, area: Rect, state: &str, state_color: Color, linux_vt: bool) {
     let brand = Style::default()
-        .fg(theme_color(COLOR_BRAND, linux_vt))
+        .fg(theme::theme_color(COLOR_BRAND, linux_vt))
         .add_modifier(Modifier::BOLD);
     let mut lines = Vec::new();
     if area.height >= WORDMARK_HEADER_HEIGHT {
@@ -110,7 +115,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &str, state_color: Color,
     lines.push(Line::from(Span::styled(APPLICATION_NAME, brand)));
     lines.push(Line::from(Span::styled(
         state,
-        Style::default().fg(theme_color(state_color, linux_vt)),
+        Style::default().fg(theme::theme_color(state_color, linux_vt)),
     )));
     frame.render_widget(Paragraph::new(lines).alignment(Alignment::Center), area);
 }
@@ -131,14 +136,16 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
     if header_lines > 0 {
         lines.push(Line::from(Span::styled(
             model.activity.clone(),
-            Style::default().fg(theme_color(COLOR_BRAND, model.linux_vt)),
+            Style::default().fg(theme::theme_color(COLOR_BRAND, model.linux_vt)),
         )));
         lines.push(Line::default());
     }
     let mut logs = model
         .logs
         .iter()
-        .filter(|entry| entry.result_color.is_some() || log_visible(entry.level, model.verbosity))
+        .filter(|entry| {
+            entry.result_color.is_some() || model::log_visible(entry.level, model.verbosity)
+        })
         .collect::<Vec<_>>();
     if matches!(model.screen, Screen::Success | Screen::Error) {
         if let Some(index) = logs.iter().rposition(|entry| entry.result_color.is_some()) {
@@ -146,51 +153,158 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
             logs.push(result);
         }
     }
-    lines.extend(logs.into_iter().map(|entry| entry.styled(model.linux_vt)));
+    lines.extend(
+        logs.into_iter()
+            .flat_map(|entry| entry.styled(model.linux_vt).lines),
+    );
     let block = Block::default()
         .borders(Borders::ALL)
         .border_set(ASCII_BORDER)
-        .style(Style::default().bg(theme_color(COLOR_BACKGROUND, model.linux_vt)))
-        .border_style(Style::default().fg(theme_color(color, model.linux_vt)))
+        .style(Style::default().bg(theme::theme_color(COLOR_BACKGROUND, model.linux_vt)))
+        .border_style(Style::default().fg(theme::theme_color(color, model.linux_vt)))
         .title(Span::styled(
             title,
-            Style::default().fg(theme_color(color, model.linux_vt)),
+            Style::default().fg(theme::theme_color(color, model.linux_vt)),
         ));
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
-    let visible_rows = usize::from(area.height.saturating_sub(2));
-    // Wrapped rows, not entry counts, determine whether the final result remains visible.
-    let total_rows = paragraph.line_count(area.width.saturating_sub(2).max(1));
-    let offset = total_rows
-        .saturating_sub(visible_rows)
-        .saturating_sub(usize::from(model.scroll));
-    paragraph
-        .block(block)
-        .scroll((u16::try_from(offset).unwrap_or(u16::MAX), 0))
+    let rows = log_window(
+        &lines,
+        area.width.saturating_sub(2),
+        area.height.saturating_sub(2),
+        model.scroll,
+    );
+    // Paragraph only paints this prewrapped window; it never receives the full-history offset.
+    Paragraph::new(rows).block(block)
 }
 
-/// Draws the current screen, actions, log controls, and any pending reboot countdown.
+/// Wraps before windowing so neither accumulated history nor one long line needs u16 scrolling.
+/// `scroll` counts wrapped rows back from the end; overscroll returns the first viewport.
+fn log_window<'a>(lines: &[Line<'a>], width: u16, height: u16, scroll: usize) -> Vec<Line<'a>> {
+    if width == 0 || height == 0 {
+        return Vec::new();
+    }
+    // Greedy wrapping without inserted hyphens keeps each rendered row a slice of the source.
+    let columns = usize::from(width);
+    let options = Options::new(columns)
+        .wrap_algorithm(WrapAlgorithm::FirstFit)
+        .word_separator(WordSeparator::AsciiSpace)
+        .word_splitter(WordSplitter::NoHyphenation);
+    let row_counts = lines
+        .iter()
+        .map(|line| {
+            if line.width() <= columns {
+                1
+            } else {
+                textwrap::wrap(&line.to_string(), &options).len()
+            }
+        })
+        .collect::<Vec<_>>();
+    let visible_rows = usize::from(height);
+    // Clamp overscroll at the top; all offsets stay wide until only the viewport remains.
+    let mut skip = row_counts
+        .iter()
+        .sum::<usize>()
+        .saturating_sub(visible_rows)
+        .saturating_sub(scroll);
+    let mut rows = Vec::with_capacity(visible_rows);
+    for (line, count) in lines.iter().zip(row_counts) {
+        if skip >= count {
+            skip -= count;
+            continue;
+        }
+        // Most historical lines fit already; copy only the handful inside the visible window.
+        if line.width() <= columns {
+            rows.push(line.clone());
+            if rows.len() == visible_rows {
+                return rows;
+            }
+            continue;
+        }
+        let text = line.to_string();
+        let mut position = 0;
+        for row in textwrap::wrap(&text, &options) {
+            let start = position
+                + text[position..]
+                    .find(row.as_ref())
+                    .expect("invariant: unhyphenated rows are source substrings");
+            position = start + row.len();
+            if skip > 0 {
+                skip -= 1;
+                continue;
+            }
+            rows.push(styled_slice(line, start..position));
+            if rows.len() == visible_rows {
+                return rows;
+            }
+        }
+    }
+    rows
+}
+
+/// Reapplies the original span colors to a wrapped row, whose byte boundaries come from textwrap.
+fn styled_slice<'a>(line: &Line<'a>, range: Range<usize>) -> Line<'a> {
+    let mut position = 0;
+    let spans = line
+        .spans
+        .iter()
+        .filter_map(|span| {
+            let span_start = position;
+            position += span.content.len();
+            let start = range.start.max(span_start);
+            let end = range.end.min(position);
+            if start >= end {
+                return None;
+            }
+            let range = start - span_start..end - span_start;
+            // Borrow log-message slices; copy only spans already owned by the formatted prefix.
+            let content = match &span.content {
+                Cow::Borrowed(text) => Cow::Borrowed(&text[range]),
+                Cow::Owned(text) => Cow::Owned(text[range].to_owned()),
+            };
+            Some(Span::styled(content, span.style))
+        })
+        .collect();
+    Line {
+        spans,
+        style: line.style,
+        alignment: line.alignment,
+    }
+}
+
+/// Draws the current screen without changing its state or performing runtime actions.
+/// Compact headers preserve room for full errors and every action on small terminals.
 pub(super) fn render(frame: &mut Frame, model: &Model) {
     frame.render_widget(
-        Block::default().style(Style::default().bg(theme_color(COLOR_BACKGROUND, model.linux_vt))),
+        Block::default()
+            .style(Style::default().bg(theme::theme_color(COLOR_BACKGROUND, model.linux_vt))),
         frame.area(),
     );
     let choices = model.choices();
     let action_height = if choices.is_empty() {
         0
     } else {
-        u16::try_from(choices.len())
-            .expect("invariant: static action lists have at most four items")
-            + 2
+        u16::try_from(choices.len()).expect("invariant: static action lists fit in u16") + 2
+    };
+    let source_height = if model.screen == Screen::Recovery {
+        0
+    } else {
+        2
+    };
+    let full_header = header_height(frame.area());
+    // Keep diagnostics and every recovery action visible before reserving space for the wordmark.
+    let header = if model.screen == Screen::Error
+        || full_header + source_height + MIN_CONTENT_HEIGHT + action_height + FOOTER_HEIGHT
+            > frame.area().height
+    {
+        COMPACT_HEADER_HEIGHT
+    } else {
+        full_header
     };
     let areas = Layout::vertical([
-        Constraint::Length(header_height(frame.area())),
-        Constraint::Length(match model.screen {
-            Screen::Recovery => 0,
-            _ => 2,
-        }),
-        Constraint::Min(3),
+        Constraint::Length(header),
+        Constraint::Length(source_height),
+        Constraint::Min(MIN_CONTENT_HEIGHT),
         Constraint::Length(action_height),
-        Constraint::Length(2),
+        Constraint::Length(FOOTER_HEIGHT),
     ])
     .split(frame.area());
     render_header(
@@ -208,18 +322,18 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         let operation =
             Layout::horizontal([Constraint::Min(0), Constraint::Length(21)]).split(areas[1]);
         frame.render_widget(
-            Paragraph::new(display_text(&model.source)).wrap(Wrap { trim: false }),
+            Paragraph::new(model::display_text(&model.source)).wrap(Wrap { trim: false }),
             operation[0],
         );
         frame.render_widget(
             Paragraph::new(format!("Logs: {} [V]", model.verbosity))
                 .alignment(Alignment::Right)
-                .style(Style::default().fg(theme_color(COLOR_BRAND, model.linux_vt))),
+                .style(Style::default().fg(theme::theme_color(COLOR_BRAND, model.linux_vt))),
             operation[1],
         );
     } else {
         frame.render_widget(
-            Paragraph::new(display_text(&model.source)).wrap(Wrap { trim: false }),
+            Paragraph::new(model::display_text(&model.source)).wrap(Wrap { trim: false }),
             areas[1],
         );
     }
@@ -227,18 +341,11 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         _ if model.showing_logs() => log_panel(model, areas[2]),
         Screen::StreamUrl | Screen::HostConfigUrl => Paragraph::new(format!(
             "Enter an http:// or https:// URL:\n\n{}\n\nEnter: start   Esc: back",
-            display_text(&model.url)
+            model::display_text(&model.url)
         ))
         .block(block("Remote source", model.linux_vt))
         .wrap(Wrap { trim: false }),
-        Screen::Error => Paragraph::new(display_text(&model.details))
-            .block(
-                block("Full error details / Esc to return", model.linux_vt)
-                    .border_style(Style::default().fg(theme_color(COLOR_ERROR, model.linux_vt))),
-            )
-            .wrap(Wrap { trim: false })
-            .scroll((model.scroll, 0)),
-        _ => Paragraph::new(display_text(&model.details))
+        _ => Paragraph::new(model::display_text(&model.details))
             .block(block("Result", model.linux_vt))
             .wrap(Wrap { trim: false }),
     };
@@ -248,12 +355,13 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         .enumerate()
         .map(|(index, choice)| {
             ListItem::new(format!(
-                "{} {choice}",
-                if index == model.selected { ">" } else { " " }
+                "{} {}",
+                if index == model.selected { ">" } else { " " },
+                choice.label()
             ))
             .style(if index == model.selected {
                 Style::default()
-                    .fg(theme_color(COLOR_BRAND, model.linux_vt))
+                    .fg(theme::theme_color(COLOR_BRAND, model.linux_vt))
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -274,20 +382,13 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         })
         .unwrap_or_else(|| format!("Elapsed {}s", model.started.elapsed().as_secs()));
     let controls = if matches!(model.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
-        "Enter: start   Esc: return to recovery".to_owned()
+        "Enter: start   Esc: return to recovery"
     } else {
-        format!(
-            "Arrows: choose  Enter: select  S: shell  V: logs{}  Esc: back",
-            if model.screen == Screen::Error {
-                "  D: details"
-            } else {
-                ""
-            },
-        )
+        "Arrows: choose  Enter: select  S: shell  V: logs  PgUp/PgDn: scroll  Esc: back"
     };
     frame.render_widget(
         Paragraph::new(format!("{controls}\n{countdown}"))
-            .style(Style::default().fg(theme_color(COLOR_BRAND, model.linux_vt))),
+            .style(Style::default().fg(theme::theme_color(COLOR_BRAND, model.linux_vt))),
         areas[4],
     );
     if model.verbosity_open {
@@ -322,7 +423,7 @@ fn render_verbosity_picker(frame: &mut Frame, model: &Model) {
                 ),
                 if index == model.verbosity_selected {
                     Style::default()
-                        .fg(theme_color(COLOR_BRAND, model.linux_vt))
+                        .fg(theme::theme_color(COLOR_BRAND, model.linux_vt))
                         .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
@@ -341,19 +442,23 @@ fn render_verbosity_picker(frame: &mut Frame, model: &Model) {
 mod tests {
     use super::*;
 
+    use std::slice;
+
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use indoc::indoc;
     use log::LevelFilter;
     use ratatui::{backend::TestBackend, style::Color, Terminal};
 
     use trident_client::{
-        Completion as ClientCompletion, LogLevel, RebootDisposition, ServicingEvent, ServicingKind,
+        Completion as ClientCompletion, LogLevel, RebootDisposition, RemoteError,
+        RemoteErrorCategory, ServicingEvent, ServicingKind,
     };
 
     use crate::{client::Event, APPLICATION_NAME};
 
     use super::super::{
         model::LogSource,
-        theme::{vt_rgb_palette, COLOR_DEBUG, COLOR_INFO, COLOR_TRACE},
+        theme::{COLOR_DEBUG, COLOR_INFO, COLOR_TRACE},
     };
 
     /// The full-size header and background keep their intended colors and spacing.
@@ -431,15 +536,18 @@ mod tests {
     /// VT palette slots distinguish log severities without changing RGB-mode colors.
     #[test]
     fn linux_vt_palette_uses_distinct_slots_for_a1_log_levels() {
-        let entries = vt_rgb_palette().unwrap();
+        let entries = theme::vt_rgb_palette().unwrap();
         assert!(entries.contains(&(15, 229, 234, 236)));
         assert!(entries.contains(&(7, 167, 180, 189)));
         assert!(entries.contains(&(8, 99, 115, 129)));
-        assert_eq!(theme_color(COLOR_INFO, true), Color::White);
-        assert_eq!(theme_color(COLOR_DEBUG, true), Color::Gray);
-        assert_eq!(theme_color(COLOR_TRACE, true), Color::DarkGray);
-        assert_eq!(theme_color(COLOR_SUCCESS, true), Color::LightGreen);
-        assert_eq!(theme_color(COLOR_DEBUG, false), Color::Rgb(167, 180, 189));
+        assert_eq!(theme::theme_color(COLOR_INFO, true), Color::White);
+        assert_eq!(theme::theme_color(COLOR_DEBUG, true), Color::Gray);
+        assert_eq!(theme::theme_color(COLOR_TRACE, true), Color::DarkGray);
+        assert_eq!(theme::theme_color(COLOR_SUCCESS, true), Color::LightGreen);
+        assert_eq!(
+            theme::theme_color(COLOR_DEBUG, false),
+            Color::Rgb(167, 180, 189)
+        );
 
         let mut model = Model::new();
         model.linux_vt = true;
@@ -566,6 +674,9 @@ mod tests {
     /// Wrapped diagnostics and activity cannot hide the latest result at 80x24.
     #[test]
     fn wrapped_log_rows_keep_the_result_visible_and_scrollable() {
+        /// Five single-row presses move past the short result into earlier wrapped output.
+        const SCROLL_ROWS: usize = 5;
+
         let mut model = Model::new();
         model.log(
             LogSource::Trident,
@@ -595,10 +706,14 @@ mod tests {
             "{}",
             visible_text(&terminal)
         );
-        model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
+        for _ in 0..SCROLL_ROWS {
+            model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
+        }
         terminal.draw(|frame| render(frame, &model)).unwrap();
         assert!(!visible_text(&terminal).contains("SUCCESS: Installation"));
-        model.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE), false);
+        for _ in 0..SCROLL_ROWS {
+            model.key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE), false);
+        }
         terminal.draw(|frame| render(frame, &model)).unwrap();
         assert!(visible_text(&terminal).contains("SUCCESS: Installation"));
 
@@ -609,9 +724,9 @@ mod tests {
         assert!(visible_text(&terminal).contains("Latest activity"));
     }
 
-    /// Failures show prior logs first while still allowing full diagnostic details.
+    /// Failures keep prior logs and the full diagnostic together in the same panel.
     #[test]
-    fn failure_shows_logs_by_default_and_keeps_full_details_accessible() {
+    fn failure_shows_logs_and_full_diagnostics_together() {
         let mut model = Model::new();
         model.log(LogSource::Trident, LogLevel::Warn, "Earlier warning".into());
         let result = model.event(Event::Error {
@@ -650,20 +765,152 @@ mod tests {
                 Color::Rgb(255, 107, 115)
             );
         }
-        model.key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), false);
-        assert!(!model.showing_logs());
-        terminal.draw(|frame| render(frame, &model)).unwrap();
-        let text = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<String>();
         assert!(text.contains("Underlying transport failure"));
+        assert!(!text.contains("D: details"));
         model.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), false);
-        assert_eq!(model.screen, Screen::Error);
-        assert!(model.showing_logs());
+        assert_eq!(model.screen, Screen::Recovery);
+    }
+
+    /// A real-shaped error must remain readable without switching out of the log panel.
+    #[test]
+    fn error_chain_keeps_its_layout_in_the_scrollable_log_panel() {
+        /// Covers the complete sample even when wrapped in the narrowest test terminal.
+        const MAX_SCROLL_PRESSES: usize = 40;
+
+        let details = indoc! {"
+            Trident failed due to a servicing error
+
+            Context:
+                0: Failed to execute a clean install
+                1: Failed to execute in chroot
+                2: Step 'Configure' failed for subsystem 'network'
+                3: Failed to write Netplan config
+                4: Failed to open Netplan configuration file
+                5: No such file or directory (os error 2)
+        "};
+        let mut model = Model::new();
+        let record = model.event(Event::Response(ServicingEvent::Completed(Err(
+            RemoteError {
+                category: RemoteErrorCategory::Servicing,
+                subkind: "write-netplan-config".into(),
+                message: details.into(),
+                error_message: "Failed to write Netplan config".into(),
+                location: None,
+            },
+        ))));
+        assert!(record
+            .plain()
+            .contains("[INST:ERROR]     5: No such file or directory"));
+        assert!(model.details.contains(details));
+
+        for (width, height) in [(40, 16), (80, 24), (160, 50)] {
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            let rows = |terminal: &Terminal<TestBackend>| {
+                terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .chunks(usize::from(width))
+                    .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                    .collect::<Vec<_>>()
+            };
+            model.scroll = 0;
+            terminal.draw(|frame| render(frame, &model)).unwrap();
+            if width == 160 {
+                let text = rows(&terminal).join("\n");
+                assert!(text.contains("FAILURE:"), "{text}");
+                assert!(text.contains("Context:"), "{text}");
+                assert!(
+                    text.contains("    0: Failed to execute a clean install"),
+                    "{text}"
+                );
+                assert!(text.contains("    5: No such file or directory"), "{text}");
+                assert!(text.contains("Code: write-netplan-config"), "{text}");
+            } else {
+                let mut found = [false; 3];
+                for _ in 0..MAX_SCROLL_PRESSES {
+                    let text = rows(&terminal).join("\n");
+                    for (seen, marker) in
+                        found
+                            .iter_mut()
+                            .zip(["FAILURE:", "Context:", "No such file or directory"])
+                    {
+                        *seen |= text.contains(marker);
+                    }
+                    if found.iter().all(|seen| *seen) {
+                        break;
+                    }
+                    model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
+                    terminal.draw(|frame| render(frame, &model)).unwrap();
+                }
+                assert!(
+                    found.iter().all(|seen| *seen),
+                    "{width}x{height}: error lines are not reachable: {found:?}"
+                );
+            }
+        }
+    }
+
+    /// Many short multiline records must not push the latest failure beyond the viewport API.
+    #[test]
+    fn newest_failure_remains_reachable_beyond_u16_rows() {
+        const HISTORY_RECORDS: usize = 499;
+        const LINES_PER_RECORD: usize = 150;
+
+        let mut model = Model::new();
+        for index in 0..HISTORY_RECORDS {
+            let first_line = if index == 0 { "oldest record\n" } else { "" };
+            model.log(
+                LogSource::Trident,
+                LogLevel::Info,
+                format!("{first_line}{}", "x\n".repeat(LINES_PER_RECORD)),
+            );
+        }
+        model.fail(
+            "latest failure\n    actionable underlying cause".into(),
+            false,
+        );
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let text = |terminal: &Terminal<TestBackend>| {
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .iter()
+                .map(|cell| cell.symbol())
+                .collect::<String>()
+        };
+        terminal.draw(|frame| render(frame, &model)).unwrap();
+        assert!(text(&terminal).contains("FAILURE: latest failure"));
+        assert!(text(&terminal).contains("actionable underlying cause"));
+
+        model.scroll = usize::from(u16::MAX);
+        model.key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE), false);
+        assert!(model.scroll > usize::from(u16::MAX));
+        model.scroll = usize::MAX;
+        terminal.draw(|frame| render(frame, &model)).unwrap();
+        assert!(text(&terminal).contains("oldest record"));
+
+        model.scroll = 0;
+        terminal.draw(|frame| render(frame, &model)).unwrap();
+        assert!(text(&terminal).contains("FAILURE: latest failure"));
+    }
+
+    /// One untruncated result can itself wrap past u16 rows; UTF-8 and span colors must survive.
+    #[test]
+    fn a_single_line_can_wrap_past_u16_rows() {
+        let line = Line::from(vec![
+            Span::styled("é", Style::default().fg(COLOR_ERROR)),
+            Span::raw("x".repeat(usize::from(u16::MAX) * 2)),
+            Span::styled("界", Style::default().fg(COLOR_SUCCESS)),
+        ]);
+        let latest = log_window(slice::from_ref(&line), 2, 1, 0);
+        assert_eq!(latest[0].to_string(), "界");
+        assert_eq!(latest[0].spans[0].style.fg, Some(COLOR_SUCCESS));
+
+        let oldest = log_window(slice::from_ref(&line), 2, 1, usize::MAX);
+        assert!(oldest[0].to_string().starts_with('é'));
+        assert_eq!(oldest[0].spans[0].style.fg, Some(COLOR_ERROR));
     }
 
     /// Compact layouts retain the application heading and available actions.
@@ -714,6 +961,8 @@ mod tests {
                 assert!(text.contains("Reboot"), "{text}");
             }
             if screen == Screen::Recovery {
+                assert!(text.contains("Retry"), "{text}");
+                assert!(text.contains("Reboot"), "{text}");
                 assert!(text.contains("Shutdown"), "{text}");
             }
         }

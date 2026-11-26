@@ -1,13 +1,307 @@
 name: trident-installer
-
 matrix:
-  arch: [amd64]
-  scenario: [base]
-  runtime: [host, container]
-  distro: [azl3, azl4]
-
+  arch:
+  - amd64
+  scenario:
+  - base
+  runtime:
+  - host
+  - container
+  distro:
+  - azl3
+  - azl4
 base:
   path: ../../../../artifacts/baremetal.vhdx
-
 outputs:
-  - format: iso
+- format: iso
+config:
+  storage:
+    bootType: efi
+    disks:
+    - partitionTableType: gpt
+      maxSize: 4G
+      partitions:
+      - id: esp
+        type: esp
+        size: 8M
+      - id: rootfs
+        size: grow
+    filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: rootfs
+      type: ext4
+      mountPoint:
+        path: /
+  os:
+    bootloader:
+      resetType: hard-reset
+    hostname: trident-container-mos-testimg
+    packages:
+      install:
+      - curl
+      - device-mapper
+      - dnf
+      - docker-cli
+      - iproute
+      - iptables
+      - mdadm
+      - moby-engine
+      - openssh-server
+      - selinux-policy
+      - squashfs-tools
+      - tar
+      - vim
+    additionalFiles:
+    - source: ../common/files/live-getty@.service
+      destination: /usr/lib/systemd/system/getty@.service
+    - source: ../common/files/live-serial-getty@.service
+      destination: /usr/lib/systemd/system/serial-getty@.service
+    - source: ../common/files/installer-container-root.profile
+      destination: /root/.profile
+    - source: ../common/files/installer-container-trident-container.service
+      destination: /usr/lib/systemd/system/trident-container.service
+    - source: ../common/files/installer-container-containerd-mmap-fix.cil
+      destination: /usr/share/selinux/packages/containerd-mmap-fix.cil
+    services:
+      enable:
+      - trident-container
+      - sshd
+  scripts:
+    postCustomization:
+    - content:
+        $include: ../common/scripts.yaml#/installer-container-post-install
+      interpreter: /bin/bash
+    - content:
+        $include: ../common/scripts.yaml#/azl3-load-containerd-selinux-fix
+      interpreter: /bin/bash
+  iso:
+    additionalFiles:
+    - source: ../common/files/live-config-placeholder.yaml
+      destination: /trident-config.yaml
+    - source: ../common/files/live-override-placeholder.conf
+      destination: /trident-override.conf
+    kernelCommandLine:
+      extraCommandLine:
+      - enforcing=0
+      - console=tty0
+      - console=ttyS0
+      - rd.luks=0
+params:
+  shellDollar: $
+extraDependencies:
+- image.yaml
+- ../common/scripts.yaml
+- ../common/files
+fragments:
+- match:
+    distro: azl3
+    runtime: host
+  config:
+    os:
+      hostname:
+        $set: trident-mos-testimage
+      packages:
+        install:
+          $set:
+          - binutils
+          - curl
+          - device-mapper
+          - dnf
+          - dosfstools
+          - efibootmgr
+          - iproute
+          - iptables
+          - lsof
+          - mdadm
+          - netplan
+          - ntfs-3g
+          - ntfsprogs
+          - openssh-server
+          - trident-static-pcrlock-files
+          - squashfs-tools
+          - tar
+          - tpm2-tools
+          - trident
+          - vim
+          - veritysetup
+          - selinux-policy
+          - selinux-policy-devel
+          - audit
+      services:
+        enable:
+          $set:
+          - sshd
+          - trident-install
+          - tridentd.socket
+      additionalFiles:
+        $set:
+        - source: ../common/files/live-getty@.service
+          destination: /usr/lib/systemd/system/getty@.service
+        - source: ../common/files/live-serial-getty@.service
+          destination: /usr/lib/systemd/system/serial-getty@.service
+        - source: ../common/files/installer-host-root.profile
+          destination: /root/.profile
+        - source: ../common/files/installer-host-trident-install.service
+          destination: /usr/lib/systemd/system/trident-install.service
+      selinux:
+        mode: enforcing
+    scripts: &iso_shared_1
+      postCustomization:
+        $set:
+        - content:
+            $include: ../common/scripts.yaml#/installer-host-post-install
+          interpreter: /bin/bash
+    iso: &iso_shared_2
+      kernelCommandLine:
+        extraCommandLine:
+          $set:
+          - console=tty0
+          - console=ttyS0
+          - rd.luks=0
+  rpmSources:
+  - ../../../../bin/RPMS
+- match:
+    distro: azl4
+    runtime: host
+  config:
+    storage: &iso_shared_3
+      disks:
+        $set:
+        - partitionTableType: gpt
+          maxSize: 4G
+          partitions:
+          - id: esp
+            type: esp
+            size: 32M
+          - id: rootfs
+            size: grow
+    os:
+      hostname:
+        $set: trident-mos-testimage
+      packages:
+        install:
+          $set:
+          - binutils
+          - curl
+          - device-mapper
+          - dnf5
+          - dracut-live
+          - dosfstools
+          - efibootmgr
+          - iproute
+          - iptables-nft
+          - lsof
+          - mdadm
+          - netplan
+          - netplan-default-backend-networkd
+          - ntfs-3g
+          - ntfsprogs
+          - openssh-server
+          - trident-static-pcrlock-files
+          - squashfs-tools
+          - tar
+          - tpm2-tools
+          - trident
+          - vim
+          - veritysetup
+          - selinux-policy
+          - selinux-policy-devel
+          - audit
+          - policycoreutils
+          - systemd-networkd
+          - systemd-resolved
+      services:
+        enable:
+          $set:
+          - sshd
+          - trident-install
+          - tridentd.socket
+          - systemd-networkd
+          - systemd-resolved
+          - netplan-configure.service
+      additionalFiles:
+        $set:
+        - source: ../common/files/live-getty@.service
+          destination: /usr/lib/systemd/system/getty@.service
+        - source: ../common/files/live-serial-getty@.service
+          destination: /usr/lib/systemd/system/serial-getty@.service
+        - source: ../common/files/installer-host-root.profile
+          destination: /root/.profile
+        - source: ../common/files/installer-host-trident-install.service
+          destination: /usr/lib/systemd/system/trident-install.service
+        - source: ../common/files/10-live-ethernet-dhcp.network
+          destination: /usr/lib/systemd/network/10-live-ethernet-dhcp.network
+      selinux:
+        mode: enforcing
+    scripts: *iso_shared_1
+    iso: *iso_shared_2
+    previewFeatures:
+    - preview-distro-version
+  base:
+    $set:
+      path: ../../../../artifacts/azl4_minimal_os.vhdx
+  rpmSources:
+  - ../../../../bin/RPMS
+- match:
+    distro: azl4
+    runtime: container
+  config:
+    storage: *iso_shared_3
+    os:
+      packages:
+        install:
+          $set:
+          - curl
+          - device-mapper
+          - dnf5
+          - dracut-live
+          - docker-cli
+          - iproute
+          - iptables-nft
+          - mdadm
+          - moby-engine
+          - openssh-server
+          - selinux-policy
+          - squashfs-tools
+          - tar
+          - vim
+          - netplan
+          - netplan-default-backend-networkd
+          - policycoreutils
+          - systemd-networkd
+          - systemd-resolved
+      additionalFiles:
+        $set:
+        - source: ../common/files/live-getty@.service
+          destination: /usr/lib/systemd/system/getty@.service
+        - source: ../common/files/live-serial-getty@.service
+          destination: /usr/lib/systemd/system/serial-getty@.service
+        - source: ../common/files/installer-container-root.profile
+          destination: /root/.profile
+        - source: ../common/files/installer-container-trident-container.service
+          destination: /usr/lib/systemd/system/trident-container.service
+        - source: ../common/files/10-live-ethernet-dhcp.network
+          destination: /usr/lib/systemd/network/10-live-ethernet-dhcp.network
+      services:
+        enable:
+          $set:
+          - trident-container
+          - sshd
+          - systemd-networkd
+          - systemd-resolved
+          - netplan-configure.service
+    scripts:
+      postCustomization:
+        $set:
+        - content:
+            $include: ../common/scripts.yaml#/installer-container-post-install
+          interpreter: /bin/bash
+    previewFeatures:
+    - preview-distro-version
+  base:
+    $set:
+      path: ../../../../artifacts/azl4_minimal_os.vhdx

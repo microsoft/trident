@@ -114,6 +114,38 @@ fn a_non_pinning_selector_does_not_resurrect_skip_cells() {
 }
 
 #[test]
+fn inline_skip_respects_explicit_value_selection() {
+    let ws = TempDir::new().unwrap();
+    tailor_in(ws.path())
+        .args(["init", "gadget", "advanced"])
+        .assert()
+        .success();
+    let path = ws.path().join("gadget/image.yaml");
+    let original = fs::read_to_string(&path).unwrap();
+    fs::write(
+        &path,
+        format!("{original}\nfragments:\n  - match: {{ variant: full }}\n    skip: true\n"),
+    )
+    .unwrap();
+    tailor_in(ws.path()).arg("slugs").assert().success().stdout(
+        predicate::str::contains("gadget_minimal_").and(predicate::str::contains("full").not()),
+    );
+    tailor_in(ws.path())
+        .args(["slugs", "-s", "variant=full"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("gadget_full_"));
+    tailor_in(ws.path())
+        .args(["slugs", "-s", "arch=amd64"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("gadget_minimal_amd64")
+                .and(predicate::str::contains("full").not()),
+        );
+}
+
+#[test]
 fn naming_a_skip_cell_keeps_it() {
     let ws = workspace_with_fragment_skip();
     tailor_in(ws.path())
