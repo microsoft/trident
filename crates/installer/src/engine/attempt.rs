@@ -21,7 +21,7 @@ use crate::{
 /// and forwards operation events through `tx`. Configuration and servicing errors produce handled
 /// [`AttemptOutcome::Failed`] results. Exiting without a handled outcome causes the IPMI reporter
 /// to emit `Failed` when the task future is dropped.
-pub(crate) fn spawn(
+pub(super) fn spawn(
     config_path: PathBuf,
     request: Request,
     uncertain: bool,
@@ -61,6 +61,7 @@ mod tests {
 
     use tempfile::TempDir;
 
+    /// Invalid settings must fail before source selection, rather than fall back to defaults.
     #[tokio::test]
     async fn reloads_configuration_without_using_defaults_on_error() {
         let root = TempDir::new().unwrap();

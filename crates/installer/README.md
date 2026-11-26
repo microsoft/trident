@@ -7,6 +7,21 @@ crate, not a partitioning engine.
 See the [Installer reference](../../docs/Reference/Installer.md) for the
 source-selection and screen flows.
 
+## Crate layout
+
+| Module | Owns |
+| --- | --- |
+| `engine` | Attempt lifecycle, current installation state, retries, power guards, reboot timing, and the shared application loop. |
+| `diagnostics` | Redacted records, plain formatting, private logging, and serial output. It does not depend on the UI. |
+| `ui` | Terminal ownership, screens, keyboard navigation, rendering, and display-only history and filters. |
+| `client`, `source`, `ipmi` | Trident communication, input preparation, and best-effort lifecycle reporting. |
+
+The engine sends state snapshots and diagnostics through its `Frontend`
+interface; a frontend returns typed commands, never executes servicing or
+power actions. Plain and headless runs use the same engine as the TUI.
+Terminal colors and wrapped display history stay in `ui`; complete
+diagnostics reach the private log and serial filters first.
+
 ## Configuration
 
 Read `/etc/trident/installer.toml` or the path supplied with `--config`.

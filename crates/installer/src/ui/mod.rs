@@ -1,13 +1,11 @@
-//! Runs the live installer console, coordinating operations, TTY ownership and power actions.
+//! Terminal adapter: rendering, navigation, input and display ownership only.
 
 use std::{
-    fs::OpenOptions,
     io::{self, IsTerminal},
-    path::PathBuf,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
-use anyhow::{anyhow, Error};
+use anyhow::Error;
 use crossterm::{
     cursor::MoveTo,
     event::{self, Event as TerminalEvent},
@@ -16,35 +14,24 @@ use crossterm::{
         self, Clear as ClearTerminal, ClearType, EnterAlternateScreen, LeaveAlternateScreen,
     },
 };
-use log::{error, Level};
+use log::error;
 use ratatui::{backend::CrosstermBackend, Terminal};
-use tokio::{
-    signal::unix::{self, SignalKind},
-    sync::mpsc,
-    task::{self, JoinError, JoinHandle},
-    time,
+
+use crate::{
+    diagnostics,
+    engine::{Command, Frontend, State, Update},
+    terminal as installer_terminal,
 };
 
-use osutils::systemd;
-use trident_client::{LogLevel, ServicingEvent};
-
-use crate::{attempt, client::Event, source, terminal as installer_terminal, INSTALLER_LOG_TX};
-
 mod model;
-mod output;
 mod render;
 mod theme;
 
-use model::{Action, LogSource, Model, Screen};
-pub(super) use output::Output;
+use model::{Model, Screen};
 use theme::VERBOSITY_LEVELS;
 
-/// Refresh often enough to show progress without busy-polling the terminal.
-const FRAME_INTERVAL: Duration = Duration::from_millis(100);
-/// Drain pasted input promptly without starving worker events.
+/// Bound each input batch so pasted text cannot starve the engine's next tick.
 const INPUT_EVENTS_PER_FRAME: usize = 256;
-/// Bound the worker event queue and the amount processed in one loop iteration.
-const EVENT_CAPACITY: usize = 64;
 
 /// Owns the alternate screen and restores terminal state even on early exit.
 struct Display {
@@ -123,534 +110,132 @@ impl Drop for Display {
     }
 }
 
-/// Reports shell failures without changing the result of an independent installation.
-fn shell_result_event(result: Result<Result<(), Error>, JoinError>) -> Option<Event> {
-    match result {
-        Ok(Ok(())) => None,
-        Ok(Err(error)) => Some(Event::InstallerLog {
-            level: Level::Warn,
-            message: format!("Recovery shell failed: {error:#}"),
-        }),
-        Err(error) => Some(Event::InstallerLog {
-            level: Level::Warn,
-            message: format!("Recovery shell task terminated: {error}"),
-        }),
-    }
+/// Presentation adapter for both the full-screen console and line-oriented/headless output.
+pub(crate) struct Console {
+    /// Navigation, filters and display-only history.
+    model: Model,
+    /// Absent in plain and headless operation.
+    display: Option<Display>,
+    /// Captured before input handling; headless runs never offer recovery menus.
+    interactive: bool,
+    /// Prevent plain records from interrupting the recovery shell.
+    suspended: bool,
+    /// Avoid repeating unchanged menus in the line-oriented frontend.
+    printed_screen: Option<(Screen, bool)>,
 }
 
-/// Sanitizes received diagnostics before persistence, display, or serial mirroring.
-fn redact_event(mut event: Event) -> Event {
-    match &mut event {
-        Event::InstallerLog { message, .. } | Event::Preparing(message) => {
-            *message = source::redact_message_urls(message);
-        }
-        Event::Prepared { description, .. } => {
-            *description = source::redact_message_urls(description);
-        }
-        Event::Error { details, .. } => {
-            *details = source::redact_message_urls(details);
-        }
-        Event::Response(ServicingEvent::Log(record)) => {
-            record.message = source::redact_message_urls(&record.message);
-        }
-        Event::Response(ServicingEvent::Completed(Err(error))) => {
-            error.message = source::redact_message_urls(&error.message);
-            error.error_message = source::redact_message_urls(&error.error_message);
-        }
-        _ => {}
-    }
-    event
-}
-
-/// Starts autorun and handles worker events, recovery input and caller-managed power actions.
-/// `plain` disables full-screen drawing, not servicing. Without an interactive terminal,
-/// failures return an error instead of offering recovery; servicing may outlive a disconnected UI.
-pub(super) async fn run(
-    config_path: PathBuf,
-    plain: bool,
-    linux_vt: bool,
-    mut output: Output,
-) -> Result<(), Error> {
-    let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
-    let (log_tx, mut log_rx) = mpsc::unbounded_channel();
-    INSTALLER_LOG_TX
-        .set(log_tx)
-        .map_err(|_| anyhow!("Installer log receiver already initialized"))?;
-    let mut interrupts = unix::signal(SignalKind::interrupt())?;
-    let mut termination = unix::signal(SignalKind::terminate())?;
-    let mut model = Model::new();
-    model.linux_vt = linux_vt;
-    let mut worker = Some(attempt::spawn(
-        config_path.clone(),
-        model.last_request.clone(),
-        false,
-        tx.clone(),
-    ));
-    let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
-    let mut display = if interactive && !plain {
-        Some(Display::new(linux_vt)?)
-    } else {
-        None
-    };
-    let mut shell: Option<JoinHandle<Result<(), Error>>> = None;
-    let mut printed_screen = None;
-    loop {
-        for _ in 0..EVENT_CAPACITY {
-            let event = match rx.try_recv() {
-                Ok(event) => event,
-                Err(_) => match log_rx.try_recv() {
-                    Ok(event) => event,
-                    Err(_) => break,
-                },
-            };
-            let event = redact_event(event);
-            output.record(&event)?;
-            let entry = model.event(event);
-            output.announce(&entry, model.serial_verbosity);
-            if display.is_none()
-                && shell.is_none()
-                && model::log_visible(entry.level, model.verbosity)
-            {
-                println!("{}", entry.plain());
-            }
-        }
-        output.flush_mirrors();
-        // A finished worker cannot enqueue a terminal event after the queue check.
-        if worker.as_ref().is_some_and(JoinHandle::is_finished) && rx.is_empty() {
-            if let Some(finished) = worker.take() {
-                let failure = match finished.await {
-                    Ok(Ok(_)) => None,
-                    Ok(Err(error)) => {
-                        Some(model.fail(format!("Installer worker failed: {error:#}"), true))
-                    }
-                    Err(error) => {
-                        Some(model.fail(format!("Installer worker terminated: {error}"), true))
-                    }
-                };
-                if let Some(failure) = failure {
-                    output.announce(&failure, model.serial_verbosity);
-                }
-            }
-        }
-        if shell.as_ref().is_some_and(JoinHandle::is_finished) {
-            if let Some(finished) = shell.take() {
-                if let Some(event) = shell_result_event(finished.await) {
-                    let event = redact_event(event);
-                    output.record(&event)?;
-                    let warning = model.event(event);
-                    output.announce(&warning, model.serial_verbosity);
-                }
-            }
-            if let Some(display) = &mut display {
-                display.resume()?;
-            }
-            printed_screen = None;
-        }
-        if shell.is_some() {
-            // Keep draining servicing events while the shell owns the TTY, but hold reboot.
-            tokio::select! {
-                _ = time::sleep(FRAME_INTERVAL) => {}
-                _ = termination.recv() => return Err(anyhow!("Installer stopped; servicing may continue in Trident")),
-            }
-            continue;
-        }
-        if model
-            .reboot_at
-            .is_some_and(|deadline| Instant::now() >= deadline)
-        {
-            model.reboot_at = None;
-            let reboot = model.log(
-                LogSource::Inst,
-                LogLevel::Info,
-                "Rebooting after successful installation".into(),
-            );
-            output.announce(&reboot, model.serial_verbosity);
-            match systemd::reboot() {
-                Ok(()) => return Ok(()),
-                Err(error) => {
-                    let failure = model.fail(format!("Failed to reboot: {error:#}"), false);
-                    output.announce(&failure, model.serial_verbosity);
-                }
-            }
-        }
-        if !interactive {
-            if worker.is_none() && rx.is_empty() && log_rx.is_empty() && model.reboot_at.is_none() {
-                if model.failed {
-                    return Err(anyhow!(
-                        "{}\nRecovery requires an interactive terminal.",
-                        model.details
-                    ));
-                }
-                return Ok(());
-            }
+impl Console {
+    /// Opens a display only for an interactive terminal when `plain` is false.
+    /// No source discovery, servicing task, logger, or power operation is started here.
+    pub(crate) fn new(plain: bool, linux_vt: bool) -> Result<Self, Error> {
+        let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
+        let display = if interactive && !plain {
+            Some(Display::new(linux_vt)?)
         } else {
-            if let Some(display) = &mut display {
-                display
-                    .terminal
-                    .draw(|frame| render::render(frame, &model))?;
-            } else if printed_screen != Some((model.screen, model.verbosity_open)) {
-                if model.verbosity_open {
-                    println!("\nLOG VERBOSITY (display only)");
-                    for (index, level) in VERBOSITY_LEVELS.iter().enumerate() {
-                        println!("{}: {level}", index + 1);
-                    }
-                    println!("Number + Enter: apply; Esc: cancel");
-                } else {
-                    println!(
-                        "\n{}\n{}",
-                        render::title(model.screen),
-                        model::display_text(&model.details)
-                    );
-                    for (index, choice) in model.choices().iter().enumerate() {
-                        println!("{}: {}", index + 1, choice.label());
-                    }
-                    if matches!(model.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
-                        println!("Enter an http:// or https:// URL, then press Enter");
-                    }
-                    println!("Number + Enter: select; S + Enter: shell; Esc: menu; V: verbosity");
-                }
-                printed_screen = Some((model.screen, model.verbosity_open));
-            }
-            for _ in 0..INPUT_EVENTS_PER_FRAME {
-                if !event::poll(Duration::ZERO)? {
-                    break;
-                }
-                let event = event::read()?;
-                if let TerminalEvent::Key(key) = event {
-                    if let Some(action) = model.key(key, worker.is_some()) {
-                        match action {
-                            Action::Shell => {
-                                if let Some(display) = &mut display {
-                                    display.suspend()?;
-                                }
-                                println!("\nShell: type exit to return. Installation continues; automatic reboot waits.");
-                                let tty =
-                                    OpenOptions::new().read(true).write(true).open("/dev/tty")?;
-                                shell = Some(task::spawn_blocking(move || {
-                                    installer_terminal::shell(&tty)
-                                }));
-                                break;
-                            }
-                            Action::Start(request) => {
-                                if worker.is_some() {
-                                    let failure = model.fail("An installer operation is still active. Wait for it to finish.".into(), true);
-                                    output.announce(&failure, model.serial_verbosity);
-                                } else {
-                                    model.screen = Screen::Progress;
-                                    model.activity = "Preparing installation".into();
-                                    model.started = Instant::now();
-                                    model.reboot_at = None;
-                                    model.scroll = 0;
-                                    model.selected = 0;
-                                    model.last_request = request.clone();
-                                    worker = Some(attempt::spawn(
-                                        config_path.clone(),
-                                        request,
-                                        model.uncertain,
-                                        tx.clone(),
-                                    ));
-                                }
-                            }
-                            Action::BlockedPower => {
-                                model.screen = if worker.is_some() {
-                                    Screen::Menu
-                                } else {
-                                    Screen::Recovery
-                                };
-                                model.selected = 0;
-                                model.activity = "Servicing may still be active; power actions are unavailable until Trident confirms it is idle".into();
-                                let warning = model.log(
-                                    LogSource::Inst,
-                                    LogLevel::Warn,
-                                    model.activity.clone(),
-                                );
-                                output.announce(&warning, model.serial_verbosity);
-                            }
-                            Action::Reboot => {
-                                let action = model.log(
-                                    LogSource::Inst,
-                                    LogLevel::Info,
-                                    "Reboot requested".into(),
-                                );
-                                output.announce(&action, model.serial_verbosity);
-                                if let Err(error) = systemd::reboot() {
-                                    let failure =
-                                        model.fail(format!("Failed to reboot: {error:#}"), false);
-                                    output.announce(&failure, model.serial_verbosity);
-                                } else {
-                                    return Ok(());
-                                }
-                            }
-                            Action::Poweroff => {
-                                let action = model.log(
-                                    LogSource::Inst,
-                                    LogLevel::Info,
-                                    "Shutdown requested".into(),
-                                );
-                                output.announce(&action, model.serial_verbosity);
-                                if let Err(error) = systemd::poweroff() {
-                                    let failure = model
-                                        .fail(format!("Failed to shut down: {error:#}"), false);
-                                    output.announce(&failure, model.serial_verbosity);
-                                } else {
-                                    return Ok(());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        tokio::select! {
-            _ = time::sleep(FRAME_INTERVAL) => {}
-            signal = interrupts.recv() => {
-                if signal.is_none() {
-                    return Err(anyhow!("Installer interrupt handler closed"));
-                }
-                model.screen = if worker.is_some() { Screen::Menu } else { Screen::Recovery };
-                model.selected = 0;
-            }
-            _ = termination.recv() => return Err(anyhow!("Installer stopped; servicing may continue in Trident")),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    use std::fs::{self, File};
-
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use tempfile::TempDir;
-    use tokio::sync::oneshot;
-
-    use trident_client::{
-        Completion as ClientCompletion, LogRecord, RebootDisposition, RemoteError,
-        RemoteErrorCategory, ServicingKind,
-    };
-
-    use super::model::MenuItem;
-
-    /// Bounds scheduler coordination so a broken worker test cannot hang the suite.
-    const WORKER_TEST_TIMEOUT: Duration = Duration::from_secs(1);
-
-    /// Creates an unmodified Enter press for navigation tests.
-    fn enter() -> KeyEvent {
-        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
-    }
-
-    /// Trident's COSI-loading messages must not expose signed URLs on any installer output.
-    #[test]
-    fn daemon_image_urls_are_redacted_before_recording_or_mirroring() {
-        let root = TempDir::new().unwrap();
-        let diagnostic = root.path().join("installer.log");
-        let serial = root.path().join("serial.log");
-        let mut mirrors = crate::serial::SerialMirrors::default();
-        mirrors.push(&serial, File::create(&serial).unwrap());
-        let mut output = Output {
-            log: Some(File::create(&diagnostic).unwrap()),
-            mirrors,
+            None
         };
         let mut model = Model::new();
-        for message in [
-            "Attempting to load COSI file from 'https://user:password@example.test/image.cosi?sig=secret#fragment'",
-            "Loaded COSI file from 'https://user:password@example.test/image.cosi?sig=secret#fragment' with hash 'abc'",
-        ] {
-            let event = redact_event(Event::Response(ServicingEvent::Log(LogRecord {
-                timestamp: None,
-                level: LogLevel::Info,
-                message: message.into(),
-                module: String::new(),
-                target: String::new(),
-                location: None,
-            })));
-            output.record(&event).unwrap();
-            let entry = model.event(event);
-            output.announce(&entry, model.serial_verbosity);
-            assert!(entry.message.contains("https://example.test/image.cosi"));
-            for secret in ["user", "password", "sig=secret", "fragment"] {
-                assert!(!entry.message.contains(secret), "{entry:?}");
-            }
-        }
-        for text in [
-            fs::read_to_string(diagnostic).unwrap(),
-            fs::read_to_string(serial).unwrap(),
-        ] {
-            assert!(text.contains("https://example.test/image.cosi"), "{text}");
-            for secret in ["user", "password", "sig=secret", "fragment"] {
-                assert!(!text.contains(secret), "{text}");
-            }
-        }
-    }
-
-    /// Daemon failures cannot reintroduce a signed URL through structured error details.
-    #[test]
-    fn daemon_image_errors_redact_signed_urls() {
-        let event = redact_event(Event::Response(ServicingEvent::Completed(Err(
-            RemoteError {
-                category: RemoteErrorCategory::Servicing,
-                message: "Failed to load 'https://user:password@example.test/image.cosi?sig=secret#fragment'".into(),
-                error_message: "HTTP failure at https://user:password@example.test/image.cosi?sig=secret#fragment".into(),
-                subkind: "image-load-failed".into(),
-                location: None,
-            },
-        ))));
-        let mut model = Model::new();
-        let entry = model.event(event);
-        assert!(model.details.contains("https://example.test/image.cosi"));
-        for secret in ["user", "password", "sig=secret", "fragment"] {
-            assert!(!model.details.contains(secret), "{}", model.details);
-            assert!(!entry.plain().contains(secret));
-        }
-    }
-
-    /// A failed recovery shell cannot erase a successful servicing result or its reboot.
-    #[test]
-    fn shell_exit_failure_is_only_a_warning() {
-        let mut model = Model::new();
-        model.event(Event::Response(ServicingEvent::Completed(Ok(
-            ClientCompletion {
-                reboot: RebootDisposition::Required,
-                servicing_kind: Some(ServicingKind::CleanInstall),
-                image_hash: None,
-            },
-        ))));
-        let reboot_at = model.reboot_at;
-        assert!(reboot_at.is_some());
-        assert!(shell_result_event(Ok(Ok(()))).is_none());
-        let warning = model.event(shell_result_event(Ok(Err(anyhow!("exit 1")))).unwrap());
-        assert_eq!(warning.level, LogLevel::Warn);
-        assert!(warning.plain().contains("Recovery shell failed: exit 1"));
-        assert_eq!(model.screen, Screen::Success);
-        assert!(!model.failed);
-        assert_eq!(model.reboot_at, reboot_at);
-    }
-
-    /// An enqueued completion must be handled before the worker stops blocking power actions.
-    #[tokio::test]
-    async fn pending_completion_keeps_worker_active() {
-        let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
-        let worker = task::spawn(async move {
-            tx.send(Event::Response(ServicingEvent::Completed(Ok(
-                ClientCompletion {
-                    reboot: RebootDisposition::NotRequired,
-                    servicing_kind: Some(ServicingKind::CleanInstall),
-                    image_hash: None,
-                },
-            ))))
-            .await
-            .unwrap();
-            Ok::<(), Error>(())
-        });
-        time::timeout(WORKER_TEST_TIMEOUT, async {
-            while !worker.is_finished() {
-                task::yield_now().await;
-            }
+        model.linux_vt = linux_vt;
+        Ok(Self {
+            model,
+            display,
+            interactive,
+            suspended: false,
+            printed_screen: None,
         })
-        .await
-        .unwrap();
+    }
+}
 
-        let mut model = Model::new();
-        model.screen = Screen::Recovery;
-        model.select(MenuItem::Shutdown);
-        assert!(!rx.is_empty());
-        assert_eq!(
-            model.key(enter(), !(rx.is_empty() && worker.is_finished())),
-            Some(Action::BlockedPower)
-        );
-        model.event(rx.recv().await.unwrap());
-        assert!(rx.is_empty());
-        assert_eq!(model.screen, Screen::Success);
-        worker.await.unwrap().unwrap();
+impl Frontend for Console {
+    /// Headless sessions cannot supply recovery commands.
+    fn interactive(&self) -> bool {
+        self.interactive
     }
 
-    /// An uncertain terminal event queued behind a full batch must block shutdown.
-    #[tokio::test]
-    async fn pending_disconnect_cannot_release_power_guard() {
-        let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
-        let worker = task::spawn(async move {
-            for _ in 0..EVENT_CAPACITY {
-                tx.send(Event::Preparing("Still writing".into()))
-                    .await
-                    .unwrap();
+    /// Observe engine output without changing its state; filters affect only this display.
+    fn update(&mut self, state: &State, update: Update) {
+        self.model.state = state.clone();
+        match update {
+            Update::Record(record) => {
+                if self.display.is_none()
+                    && !self.suspended
+                    && diagnostics::log_visible(record.level, self.model.verbosity)
+                {
+                    println!("{}", record.plain());
+                }
+                self.model.record(state, record);
             }
-            tx.send(Event::Error {
-                details: "gRPC stream disconnected".into(),
-                uncertain: true,
-            })
-            .await
-            .unwrap();
-            Ok::<(), Error>(())
-        });
-        for _ in 0..EVENT_CAPACITY {
-            rx.recv().await.unwrap();
+            Update::AttemptStarted => self.model.begin_attempt(),
+            Update::Interrupted { active } => self.model.interrupt(active),
         }
-        time::timeout(WORKER_TEST_TIMEOUT, async {
-            while !worker.is_finished() {
-                task::yield_now().await;
-            }
-        })
-        .await
-        .unwrap();
-
-        let mut model = Model::new();
-        model.screen = Screen::Recovery;
-        model.select(MenuItem::Shutdown);
-        assert!(!rx.is_empty());
-        assert_eq!(
-            model.key(enter(), !(rx.is_empty() && worker.is_finished())),
-            Some(Action::BlockedPower)
-        );
-        model.event(rx.recv().await.unwrap());
-        assert!(model.uncertain);
-        model.screen = Screen::Recovery;
-        assert!(!model.choices().contains(&MenuItem::Shutdown));
-        model.selected = model.choices().len();
-        assert!(model.key(enter(), false).is_none());
-        worker.await.unwrap().unwrap();
     }
 
-    /// Rechecking an empty queue before worker completion misses a late disconnect.
-    #[tokio::test]
-    async fn disconnect_between_worker_and_queue_checks_stays_guarded() {
-        let (tx, mut rx) = mpsc::channel(EVENT_CAPACITY);
-        let (release, ready) = oneshot::channel::<()>();
-        let worker = task::spawn(async move {
-            ready.await.unwrap();
-            tx.send(Event::Error {
-                details: "gRPC stream disconnected".into(),
-                uncertain: true,
-            })
-            .await
-            .unwrap();
-            Ok::<(), Error>(())
-        });
-        let previously_empty = rx.is_empty();
-        release.send(()).unwrap();
-        time::timeout(WORKER_TEST_TIMEOUT, async {
-            while !worker.is_finished() {
-                task::yield_now().await;
+    /// Paint the snapshot or print a changed line-oriented menu.
+    fn draw(&mut self, state: &State) -> Result<(), Error> {
+        self.model.state = state.clone();
+        if let Some(display) = &mut self.display {
+            display
+                .terminal
+                .draw(|frame| render::render(frame, &self.model))?;
+        } else if self.printed_screen != Some((self.model.screen, self.model.verbosity_open)) {
+            if self.model.verbosity_open {
+                println!("\nLOG VERBOSITY (display only)");
+                for (index, level) in VERBOSITY_LEVELS.iter().enumerate() {
+                    println!("{}: {level}", index + 1);
+                }
+                println!("Number + Enter: apply; Esc: cancel");
+            } else {
+                println!(
+                    "\n{}\n{}",
+                    render::title(self.model.screen),
+                    diagnostics::display_text(&state.details)
+                );
+                for (index, choice) in self.model.choices().iter().enumerate() {
+                    println!("{}: {}", index + 1, choice.label());
+                }
+                if matches!(self.model.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
+                    println!("Enter an http:// or https:// URL, then press Enter");
+                }
+                println!("Number + Enter: select; S + Enter: shell; Esc: menu; V: verbosity");
             }
-        })
-        .await
-        .unwrap();
-        assert!(previously_empty && worker.is_finished());
-        assert!(!rx.is_empty());
+            self.printed_screen = Some((self.model.screen, self.model.verbosity_open));
+        }
+        Ok(())
+    }
 
-        let mut model = Model::new();
-        model.screen = Screen::Recovery;
-        model.select(MenuItem::Shutdown);
-        assert_eq!(
-            model.key(enter(), !(worker.is_finished() && rx.is_empty())),
-            Some(Action::BlockedPower)
-        );
-        model.event(rx.recv().await.unwrap());
-        assert!(model.uncertain);
-        model.screen = Screen::Recovery;
-        assert!(!model.choices().contains(&MenuItem::Shutdown));
-        model.selected = model.choices().len();
-        assert!(model.key(enter(), false).is_none());
-        worker.await.unwrap().unwrap();
+    /// Consume ready keys until one command is requested; navigation has no side effects.
+    fn poll(&mut self, state: &State, active: bool) -> Result<Option<Command>, Error> {
+        self.model.state = state.clone();
+        for _ in 0..INPUT_EVENTS_PER_FRAME {
+            if !event::poll(Duration::ZERO)? {
+                break;
+            }
+            if let TerminalEvent::Key(key) = event::read()? {
+                if let Some(command) = self.model.key(key, active) {
+                    return Ok(Some(command));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Release drawing while the engine runs the recovery shell.
+    fn suspend(&mut self) -> Result<(), Error> {
+        if let Some(display) = &mut self.display {
+            display.suspend()?;
+        }
+        self.suspended = true;
+        println!("\nShell: type exit to return. Installation continues; automatic reboot waits.");
+        Ok(())
+    }
+
+    /// Resume the latest presentation; servicing may have finished while the shell was open.
+    fn resume(&mut self) -> Result<(), Error> {
+        if let Some(display) = &mut self.display {
+            display.resume()?;
+        }
+        self.suspended = false;
+        self.printed_screen = None;
+        Ok(())
     }
 }

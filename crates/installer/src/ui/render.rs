@@ -12,7 +12,7 @@ use ratatui::{
 };
 use textwrap::{self, Options, WordSeparator, WordSplitter, WrapAlgorithm};
 
-use crate::APPLICATION_NAME;
+use crate::{diagnostics, APPLICATION_NAME};
 
 use super::{
     model::{self, Model, Screen},
@@ -135,7 +135,7 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
     };
     if header_lines > 0 {
         lines.push(Line::from(Span::styled(
-            model.activity.clone(),
+            model.state.activity.clone(),
             Style::default().fg(theme::theme_color(COLOR_BRAND, model.linux_vt)),
         )));
         lines.push(Line::default());
@@ -144,18 +144,18 @@ fn log_panel(model: &Model, area: Rect) -> Paragraph<'_> {
         .logs
         .iter()
         .filter(|entry| {
-            entry.result_color.is_some() || model::log_visible(entry.level, model.verbosity)
+            entry.result.is_some() || diagnostics::log_visible(entry.level, model.verbosity)
         })
         .collect::<Vec<_>>();
     if matches!(model.screen, Screen::Success | Screen::Error) {
-        if let Some(index) = logs.iter().rposition(|entry| entry.result_color.is_some()) {
+        if let Some(index) = logs.iter().rposition(|entry| entry.result.is_some()) {
             let result = logs.remove(index);
             logs.push(result);
         }
     }
     lines.extend(
         logs.into_iter()
-            .flat_map(|entry| entry.styled(model.linux_vt).lines),
+            .flat_map(|entry| model::styled(entry, model.linux_vt).lines),
     );
     let block = Block::default()
         .borders(Borders::ALL)
@@ -322,7 +322,8 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         let operation =
             Layout::horizontal([Constraint::Min(0), Constraint::Length(21)]).split(areas[1]);
         frame.render_widget(
-            Paragraph::new(model::display_text(&model.source)).wrap(Wrap { trim: false }),
+            Paragraph::new(diagnostics::display_text(&model.state.source))
+                .wrap(Wrap { trim: false }),
             operation[0],
         );
         frame.render_widget(
@@ -333,7 +334,8 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         );
     } else {
         frame.render_widget(
-            Paragraph::new(model::display_text(&model.source)).wrap(Wrap { trim: false }),
+            Paragraph::new(diagnostics::display_text(&model.state.source))
+                .wrap(Wrap { trim: false }),
             areas[1],
         );
     }
@@ -341,11 +343,11 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         _ if model.showing_logs() => log_panel(model, areas[2]),
         Screen::StreamUrl | Screen::HostConfigUrl => Paragraph::new(format!(
             "Enter an http:// or https:// URL:\n\n{}\n\nEnter: start   Esc: back",
-            model::display_text(&model.url)
+            diagnostics::display_text(&model.url)
         ))
         .block(block("Remote source", model.linux_vt))
         .wrap(Wrap { trim: false }),
-        _ => Paragraph::new(model::display_text(&model.details))
+        _ => Paragraph::new(diagnostics::display_text(&model.state.details))
             .block(block("Result", model.linux_vt))
             .wrap(Wrap { trim: false }),
     };
@@ -373,6 +375,7 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
         areas[3],
     );
     let countdown = model
+        .state
         .reboot_at
         .map(|deadline| {
             format!(
@@ -380,7 +383,7 @@ pub(super) fn render(frame: &mut Frame, model: &Model) {
                 deadline.saturating_duration_since(Instant::now()).as_secs()
             )
         })
-        .unwrap_or_else(|| format!("Elapsed {}s", model.started.elapsed().as_secs()));
+        .unwrap_or_else(|| format!("Elapsed {}s", model.state.started.elapsed().as_secs()));
     let controls = if matches!(model.screen, Screen::StreamUrl | Screen::HostConfigUrl) {
         "Enter: start   Esc: return to recovery"
     } else {
@@ -454,12 +457,13 @@ mod tests {
         RemoteErrorCategory, ServicingEvent, ServicingKind,
     };
 
-    use crate::{client::Event, APPLICATION_NAME};
-
-    use super::super::{
-        model::LogSource,
-        theme::{COLOR_DEBUG, COLOR_INFO, COLOR_TRACE},
+    use crate::{
+        client::Event,
+        diagnostics::{ResultKind, Source},
+        APPLICATION_NAME,
     };
+
+    use super::super::theme::{COLOR_DEBUG, COLOR_INFO, COLOR_TRACE};
 
     /// The full-size header and background keep their intended colors and spacing.
     #[test]
@@ -510,7 +514,7 @@ mod tests {
             (LogLevel::Trace, "trace-line", Color::Rgb(99, 115, 129)),
         ];
         for (level, text, _) in records {
-            model.log(LogSource::Trident, level, text.into());
+            model.log(Source::Trident, level, text.into());
         }
         let mut terminal = Terminal::new(TestBackend::new(80, 32)).unwrap();
         terminal.draw(|frame| render(frame, &model)).unwrap();
@@ -557,7 +561,7 @@ mod tests {
             (LogLevel::Debug, "debug-vt"),
             (LogLevel::Trace, "trace-vt"),
         ] {
-            model.log(LogSource::Trident, level, message.into());
+            model.log(Source::Trident, level, message.into());
         }
         let mut terminal = Terminal::new(TestBackend::new(80, 32)).unwrap();
         terminal.draw(|frame| render(frame, &model)).unwrap();
@@ -586,7 +590,7 @@ mod tests {
     #[test]
     fn operation_and_verbosity_share_one_line() {
         let mut model = Model::new();
-        model.source = "StreamDisk from file:///media/cosi/payload.cosi".into();
+        model.state.source = "StreamDisk from file:///media/cosi/payload.cosi".into();
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal.draw(|frame| render(frame, &model)).unwrap();
         let row = terminal.backend().buffer().content[12 * 80..13 * 80]
@@ -602,7 +606,7 @@ mod tests {
     fn success_keeps_prior_logs_and_highlights_the_final_record() {
         let mut model = Model::new();
         model.log(
-            LogSource::Trident,
+            Source::Trident,
             LogLevel::Debug,
             "Earlier disk action".into(),
         );
@@ -613,7 +617,7 @@ mod tests {
                 image_hash: None,
             },
         ))));
-        assert_eq!(result.result_color, Some(Color::Rgb(93, 200, 148)));
+        assert_eq!(result.result, Some(ResultKind::Success));
         assert_eq!(
             result.plain(),
             "00:00 [INST:INFO] SUCCESS: Installation completed successfully.\n\
@@ -679,7 +683,7 @@ mod tests {
 
         let mut model = Model::new();
         model.log(
-            LogSource::Trident,
+            Source::Trident,
             LogLevel::Info,
             "Long preceding diagnostic ".repeat(40),
         );
@@ -718,8 +722,8 @@ mod tests {
         assert!(visible_text(&terminal).contains("SUCCESS: Installation"));
 
         model.screen = Screen::Progress;
-        model.activity = "Scanning media ".repeat(60);
-        model.log(LogSource::Inst, LogLevel::Info, "Latest activity".into());
+        model.state.activity = "Scanning media ".repeat(60);
+        model.log(Source::Inst, LogLevel::Info, "Latest activity".into());
         terminal.draw(|frame| render(frame, &model)).unwrap();
         assert!(visible_text(&terminal).contains("Latest activity"));
     }
@@ -728,12 +732,12 @@ mod tests {
     #[test]
     fn failure_shows_logs_and_full_diagnostics_together() {
         let mut model = Model::new();
-        model.log(LogSource::Trident, LogLevel::Warn, "Earlier warning".into());
+        model.log(Source::Trident, LogLevel::Warn, "Earlier warning".into());
         let result = model.event(Event::Error {
             details: "Network timeout\nUnderlying transport failure".into(),
             uncertain: false,
         });
-        assert_eq!(result.result_color, Some(Color::Rgb(255, 107, 115)));
+        assert_eq!(result.result, Some(ResultKind::Failure));
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
         terminal.draw(|frame| render(frame, &model)).unwrap();
         let text = terminal
@@ -801,7 +805,7 @@ mod tests {
         assert!(record
             .plain()
             .contains("[INST:ERROR]     5: No such file or directory"));
-        assert!(model.details.contains(details));
+        assert!(model.state.details.contains(details));
 
         for (width, height) in [(40, 16), (80, 24), (160, 50)] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -861,7 +865,7 @@ mod tests {
         for index in 0..HISTORY_RECORDS {
             let first_line = if index == 0 { "oldest record\n" } else { "" };
             model.log(
-                LogSource::Trident,
+                Source::Trident,
                 LogLevel::Info,
                 format!("{first_line}{}", "x\n".repeat(LINES_PER_RECORD)),
             );
@@ -946,7 +950,7 @@ mod tests {
         for screen in [Screen::Recovery, Screen::Success, Screen::Error] {
             let mut model = Model::new();
             model.screen = screen;
-            model.details = "Diagnostic or result details".into();
+            model.state.details = "Diagnostic or result details".into();
             let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
             terminal.draw(|frame| render(frame, &model)).unwrap();
             let text = terminal

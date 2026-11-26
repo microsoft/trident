@@ -15,7 +15,7 @@ use crate::{
     source::{self, Plan, Request},
 };
 
-/// Messages passed from source preparation and the gRPC worker to the UI.
+/// Events passed from source preparation and the gRPC worker to the installer engine.
 #[derive(Debug)]
 pub(super) enum Event {
     /// Installer or dependency log, before display and serial filtering.
@@ -105,7 +105,7 @@ pub(super) fn completion(
     }
 }
 
-/// Classifies a daemon completion using the same rules that drive the result screen.
+/// Classifies completion with the same contract used by the engine's result policy.
 fn attempt_outcome(completion_result: &Result<ClientCompletion, RemoteError>) -> AttemptOutcome {
     match completion(completion_result.clone()) {
         Ok(Completion::Success { .. }) => AttemptOutcome::Completed,
@@ -186,7 +186,7 @@ fn request_description(settings: &Config, request: &Request) -> String {
     }
 }
 
-/// Prepares a source, checks stream safety, and forwards Trident's domain events to the UI.
+/// Prepares a source, checks stream safety, and forwards Trident's events to the engine.
 ///
 /// After an uncertain previous operation, `require_idle` prevents a new write until the daemon
 /// answers a status request. Ambiguous RPC failures are reported as uncertain instead of retrying.
