@@ -167,6 +167,65 @@ mod tests {
     }
 
     #[test]
+    fn selected_library_content_and_explicit_library_dependency_invalidate() {
+        let root = tempfile::tempdir().unwrap();
+        let library = root.path().join("library.yaml");
+        std::fs::write(
+            root.path().join("image.yaml"),
+            r"
+name: library
+base: { path: base.vhdx }
+outputs: [{ format: qcow2 }]
+extraDependencies: [library.yaml]
+config:
+  scripts:
+    postCustomization:
+      - content: { $include: library.yaml#/used }
+",
+        )
+        .unwrap();
+        let image = tailor_config::load_image(root.path().join("image.yaml")).unwrap();
+        let base = base();
+        let render = || {
+            tailor_config::render_image(&image, root.path())
+                .unwrap()
+                .remove(0)
+                .ic_config
+        };
+        std::fs::write(&library, "used: first\nunused: a\n").unwrap();
+        let first = render();
+        let first_hash = fingerprint(&inputs("cell", &first, &base));
+        std::fs::write(&library, "used: second\nunused: a\n").unwrap();
+        let second = render();
+        assert_ne!(first_hash, fingerprint(&inputs("cell", &second, &base)));
+        let hashes_before = crate::deps::hash_dependencies(
+            &image.extra_dependencies,
+            root.path(),
+            None,
+            None,
+            "library",
+        )
+        .unwrap();
+        let mut before = inputs("cell", &second, &base);
+        before.extra_dependency_hashes = &hashes_before;
+        let before = fingerprint(&before);
+        std::fs::write(&library, "used: second\nunused: b\n").unwrap();
+        let unchanged = render();
+        assert_eq!(second, unchanged);
+        let hashes_after = crate::deps::hash_dependencies(
+            &image.extra_dependencies,
+            root.path(),
+            None,
+            None,
+            "library",
+        )
+        .unwrap();
+        let mut after = inputs("cell", &unchanged, &base);
+        after.extra_dependency_hashes = &hashes_after;
+        assert_ne!(before, fingerprint(&after));
+    }
+
+    #[test]
     fn config_change_changes_fingerprint() {
         let base = base();
         let cfg_a: Value = serde_yaml_ng::from_str("os:\n  hostname: a\n").unwrap();

@@ -52,6 +52,8 @@ pub(crate) struct Fragment {
     pub(crate) skip: Option<bool>,
     #[serde(default)]
     pub(crate) config: Option<Value>,
+    #[serde(default)]
+    fragments: Vec<Value>,
 }
 
 /// A boolean condition over a cell's axis values and the image's enabled features
@@ -86,6 +88,24 @@ impl Match {
     }
 }
 
+fn inline_pins(condition: &Match) -> Vec<(String, String)> {
+    match condition {
+        Match::All { all } => all.iter().flat_map(inline_pins).collect(),
+        Match::Leaf(axes) => axes
+            .iter()
+            .filter(|(axis, _)| axis.as_str() != FEATURE_AXIS)
+            .flat_map(|(axis, values)| {
+                let values = match values {
+                    MatchValue::One(value) => std::slice::from_ref(value),
+                    MatchValue::Many(values) => values.as_slice(),
+                };
+                values.iter().map(|value| (axis.clone(), value.clone()))
+            })
+            .collect(),
+        Match::Any { .. } | Match::Not { .. } => Vec::new(),
+    }
+}
+
 fn leaf_matches(
     key: &str,
     value: &MatchValue,
@@ -114,6 +134,7 @@ fn leaf_matches(
 #[derive(Debug, Clone)]
 enum Predicate {
     Always,
+    Inline { index: usize },
     Conjunction(Vec<AxisClause>),
     Feature { name: String },
 }
@@ -159,7 +180,7 @@ impl LoadedFragment {
     /// Whether this fragment applies to a cell: its path predicate AND any inline `match`.
     pub(crate) fn applies(&self, axes: &BTreeMap<String, String>, features: &[String]) -> bool {
         let path_ok = match &self.predicate {
-            Predicate::Always => true,
+            Predicate::Always | Predicate::Inline { .. } => true,
             Predicate::Conjunction(clauses) => clauses.iter().all(|clause| {
                 axes.get(&clause.axis)
                     .is_some_and(|actual| clause.values.iter().any(|v| v == actual))
@@ -176,7 +197,7 @@ impl LoadedFragment {
 
     /// The `(axis, value)` equality coordinates of this fragment's path predicate — the coordinates a
     /// `-s` selector must pin to "specifically request" a `skip`ped cell this fragment applies to
-    /// (`meta/docs/2026-07-22-fragment-skip.md`). Feature/`match`-only fragments yield none.
+    /// (`meta/docs/2026-07-22-fragment-skip.md`). In-file fragments expose positive axis matches.
     pub(crate) fn pins(&self) -> Vec<(String, String)> {
         match &self.predicate {
             Predicate::Conjunction(clauses) => clauses
@@ -188,6 +209,12 @@ impl LoadedFragment {
                         .map(|value| (clause.axis.clone(), value.clone()))
                 })
                 .collect(),
+            Predicate::Inline { .. } => self
+                .doc
+                .match_expr
+                .as_ref()
+                .map(inline_pins)
+                .unwrap_or_default(),
             Predicate::Always | Predicate::Feature { .. } => Vec::new(),
         }
     }
@@ -196,6 +223,7 @@ impl LoadedFragment {
     pub(crate) fn reason(&self) -> String {
         match &self.predicate {
             Predicate::Always => "base".to_owned(),
+            Predicate::Inline { index } => format!("inline fragment {}", index + 1),
             Predicate::Feature { name } => format!("feature {name}"),
             Predicate::Conjunction(clauses) => clauses
                 .iter()
@@ -213,7 +241,7 @@ impl LoadedFragment {
 }
 
 /// Discover the base document and every `by-*/<value>.yaml` fragment for an image, in apply order:
-/// the base document first, then fragments sorted by [`Order`] — single-axis fragments in
+/// the base document first, then in-file fragments in declaration order, then [`Order`]-sorted files:
 /// matrix axis-declaration order (broader disjunctions before narrower ones), then multi-axis
 /// composites, then feature fragments. Apply order is merge precedence, so authors control it by
 /// ordering axes in the matrix. Validates that every fragment axis/value is declared (closed-axis
@@ -223,11 +251,67 @@ pub(crate) fn discover(
     matrix: Option<&AxisValues>,
     features: &[String],
 ) -> Result<Vec<LoadedFragment>, ConfigError> {
+    let base_path = image_dir.join(BASE_DOCUMENT);
+    let mut base = parse_fragment(&base_path)?;
+    let inline = std::mem::take(&mut base.fragments);
     let mut fragments = vec![LoadedFragment {
         label: BASE_DOCUMENT.to_owned(),
         predicate: Predicate::Always,
-        doc: parse_fragment(&image_dir.join(BASE_DOCUMENT))?,
+        doc: base,
     }];
+    for (index, value) in inline.into_iter().enumerate() {
+        let label = format!("{BASE_DOCUMENT} fragments[{}]", index + 1);
+        if let Some(mapping) = value.as_mapping() {
+            for key in mapping.keys() {
+                if !matches!(
+                    key.as_str(),
+                    Some(
+                        "match"
+                            | "base"
+                            | "outputs"
+                            | "params"
+                            | "rpmSources"
+                            | "extraParams"
+                            | "skip"
+                            | "config"
+                    )
+                ) {
+                    return Err(ConfigError::InvalidField {
+                        slug: label,
+                        field: "fragments",
+                        detail: format!("unknown inline fragment field {key:?}"),
+                    });
+                }
+            }
+        }
+        let doc: Fragment =
+            serde_yaml_ng::from_value(value).map_err(|source| ConfigError::Parse {
+                path: base_path.clone(),
+                source,
+            })?;
+        if let Some(condition) = &doc.match_expr {
+            validate_inline_match(condition, matrix, features, &label)?;
+        }
+        if doc.skip == Some(true)
+            && doc
+                .match_expr
+                .as_ref()
+                .map(inline_pins)
+                .is_none_or(|pins| pins.is_empty())
+        {
+            return Err(ConfigError::InvalidField {
+                slug: label,
+                field: "fragments",
+                detail: "inline skip requires a positive matrix-axis match; use image-level skip for the whole image".to_owned(),
+            });
+        }
+        fragments.push(LoadedFragment {
+            // The physical file remains the dependency and diagnostic source.
+            label: BASE_DOCUMENT.to_owned(),
+            predicate: Predicate::Inline { index },
+            doc,
+        });
+    }
 
     let mut local = Vec::new();
     for axis_dir in read_dir_sorted(image_dir)? {
@@ -270,6 +354,47 @@ pub(crate) fn discover(
             }),
     );
     Ok(fragments)
+}
+
+fn validate_inline_match(
+    condition: &Match,
+    matrix: Option<&AxisValues>,
+    features: &[String],
+    file: &str,
+) -> Result<(), ConfigError> {
+    match condition {
+        Match::All { all } | Match::Any { any: all } => {
+            for child in all {
+                validate_inline_match(child, matrix, features, file)?;
+            }
+        }
+        Match::Not { not } => validate_inline_match(not, matrix, features, file)?,
+        Match::Leaf(axes) => {
+            for (axis, values) in axes {
+                let declared = if axis == FEATURE_AXIS {
+                    features
+                } else {
+                    matrix
+                        .and_then(|m| m.get(axis))
+                        .ok_or_else(|| ConfigError::UnknownFragmentAxis { axis: axis.clone() })?
+                };
+                let values = match values {
+                    MatchValue::One(value) => std::slice::from_ref(value),
+                    MatchValue::Many(values) => values.as_slice(),
+                };
+                for value in values {
+                    if !declared.contains(value) {
+                        return Err(ConfigError::UnknownFragmentValue {
+                            axis: axis.clone(),
+                            value: value.clone(),
+                            file: file.to_owned(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Parse and validate one `by-<dir_token>/<stem>.yaml` fragment path into its predicate and [`Order`].
@@ -452,6 +577,71 @@ fn read_dir_sorted(dir: &Path) -> Result<Vec<PathBuf>, ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn inline_fragments_preserve_order_and_external_precedence() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join(BASE_DOCUMENT),
+            r"
+name: inline
+matrix:
+  distro: [azl3, azl4]
+base: { path: base.vhdx }
+outputs: [{ format: qcow2 }]
+config:
+  os: { hostname: base }
+fragments:
+  - match: { distro: azl4 }
+    config:
+      os: { hostname: { $set: first } }
+  - match: { all: [{ distro: azl4 }] }
+    config:
+      os: { hostname: { $set: second } }
+",
+        )
+        .unwrap();
+        let model = crate::load_image(dir.path().join(BASE_DOCUMENT)).unwrap();
+        let cells = crate::render_image(&model, dir.path()).unwrap();
+        assert_eq!(cells[0].ic_config["os"]["hostname"].as_str(), Some("base"));
+        assert_eq!(
+            cells[1].ic_config["os"]["hostname"].as_str(),
+            Some("second")
+        );
+        fs::create_dir(dir.path().join("by-distro")).unwrap();
+        fs::write(
+            dir.path().join("by-distro/azl4.yaml"),
+            "config:\n  os:\n    hostname: { $set: external }\n",
+        )
+        .unwrap();
+        let cells = crate::render_image(&model, dir.path()).unwrap();
+        assert_eq!(
+            cells[1].ic_config["os"]["hostname"].as_str(),
+            Some("external")
+        );
+    }
+
+    #[test]
+    fn inline_fragments_reject_unknown_fields_and_match_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let matrix = axisvals("distro: [azl3, azl4]\n");
+        for (fragment, field) in [
+            ("match: { distro: azl5 }\n    config: {}", false),
+            ("fragments: []", true),
+        ] {
+            fs::write(
+                dir.path().join(BASE_DOCUMENT),
+                format!("config: {{}}\nfragments:\n  - {fragment}\n"),
+            )
+            .unwrap();
+            let error = discover(dir.path(), Some(&matrix), &[]).unwrap_err();
+            if field {
+                assert!(matches!(error, ConfigError::InvalidField { .. }));
+            } else {
+                assert!(matches!(error, ConfigError::UnknownFragmentValue { .. }));
+            }
+        }
+    }
 
     fn axes(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs
