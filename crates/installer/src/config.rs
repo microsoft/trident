@@ -115,6 +115,7 @@ impl Default for Media {
     }
 }
 
+/// Match the COSI directory used by the packaged installer media layout.
 fn default_cosi_directory() -> PathBuf {
     "cosi".into()
 }
@@ -145,6 +146,7 @@ impl Default for Autorun {
     }
 }
 
+/// Normally hand boot control to the installed OS after work requiring a reboot.
 fn default_reboot() -> bool {
     true
 }
