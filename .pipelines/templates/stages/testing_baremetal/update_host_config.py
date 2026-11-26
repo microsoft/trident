@@ -23,7 +23,7 @@ def update_trident_host_config(
     os = host_configuration.setdefault("os", {})
 
     main_interface = {
-        "addresses": [f"{interface_ip}/23"],
+        "addresses": [f"{interface_ip}/25"],
         "dhcp4": use_dhcp,
         "set-name": interface_name,
     }
