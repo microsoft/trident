@@ -1,0 +1,62 @@
+name: Temporary runner UMI login diagnostic (read only)
+
+on:
+  push:
+    branches:
+      - user/britel/vm-e2e-umi-diagnostic-20261125
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vm-e2e-umi-diagnostic-20261125
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    if: github.ref == 'refs/heads/user/britel/vm-e2e-umi-diagnostic-20261125'
+    runs-on: trident-github-runner-ubuntu2204-amd64
+    timeout-minutes: 10
+    steps:
+      - name: Checkout reviewed diagnostic
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: validation
+          persist-credentials: false
+
+      - name: Prepare bounded report
+        working-directory: validation
+        run: |
+          umask 077
+          python3 scripts/cloud-agent/diagnose_runner_umi.py \
+            --prepare-publication --scratch "$RUNNER_TEMP" \
+            --output "$RUNNER_TEMP/runner-umi-report/diagnostic.json" \
+            >/dev/null 2>&1
+
+      - name: Observe one login in the matching private root context
+        timeout-minutes: 6
+        working-directory: validation
+        run: |
+          umask 077
+          extension_root="${AZURE_EXTENSION_DIR:-${AZURE_CONFIG_DIR:-$HOME/.azure}/cliextensions}"
+          status=0
+          sudo -n env "PATH=$PATH" "AZURE_EXTENSION_DIR=$extension_root" \
+            EXCLUSIVE_DISPOSABLE_1ES=true \
+            timeout --signal=INT --kill-after=30s 5m \
+              python3 scripts/cloud-agent/diagnose_runner_umi.py \
+              --publication-uid "$(id -u)" --publication-gid "$(id -g)" \
+              --scratch "$RUNNER_TEMP" \
+              --output "$RUNNER_TEMP/runner-umi-report/diagnostic.json" \
+              >/dev/null 2>&1 || status=$?
+          exit "$status"
+
+      - name: Upload only bounded sanitized diagnostic facts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: umi-login-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/runner-umi-report/diagnostic.json
+          if-no-files-found: error
+          retention-days: 7
