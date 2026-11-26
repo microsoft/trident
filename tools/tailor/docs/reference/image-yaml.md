@@ -14,6 +14,7 @@ An image definition lives in an `image.yaml`. The top level belongs to tailor. T
 | `base` | one of `path`, `oci`, `azureLinux`, `ref`, `image` | conditional | Exactly one base resolves per cell. `ref: <name>` references a `baseImages:` slot; `image: <name>` bases on another workspace image's output (see [Inter-image dependencies](#inter-image-dependencies)). |
 | `features` | string list | no | Enables matching `by-feature/<name>.yaml` fragments. Does not multiply cells. |
 | `params` | scalar map | no | Values interpolated into `config:` strings with `${name}`. Params may reference other params. |
+| `fragments` | fragment list | no | In-file deltas with optional `match`. Applied in declaration order after the base and before `by-*` files. |
 | `rpmSources` | path list | no | Each path is a directory of RPMs or a `.repo` file; passed as IC `--rpm-source`. |
 | `operation` | `customize` or `convert` | no | Default: `customize`. |
 | `signing` | `true` or profile id | no | Opt in to the signed-image pipeline. `true` ⇒ the workspace `signing.default` profile; a string ⇒ that named profile; omitted ⇒ unsigned. See [Sign an image](../how-to/sign-an-image.md). |
@@ -130,6 +131,31 @@ never the host arch, so a workspace builds the same set everywhere. See
 and [Cross-arch building](../how-to/cross-arch-building.md).
 
 ## Fragments
+
+Keep related variants in the same `image.yaml` when separate files would only add indirection:
+
+```yaml
+fragments:
+  - match: { distro: azl4 }
+    config:
+      os:
+        packages:
+          install: [dnf5]
+  - match: { all: [{ distro: azl4 }, { runtime: container }] }
+    config:
+      os:
+        services:
+          enable: [trident-container]
+```
+
+Each entry accepts `match`, `base`, `outputs`, `params`, `rpmSources`, `extraParams`,
+`skip` and `config`, with the existing merge rules. Match axes/values must be declared.
+In-file fragments apply in declaration order; existing external fragments apply afterward
+with their existing precedence. `tailor explain` reports each in-file step against its
+physical `image.yaml` source. Fragments cannot contain nested `fragments` lists.
+An in-file `skip: true` requires a positive matrix-axis match, so explicitly
+pinning that value keeps the cells while a non-pinning selector does not.
+Use image-level `skip` for the whole image.
 
 Per-cell deltas live in `by-*/` files whose **path** is the condition — no inline `match:` needed. A
 fragment applies to a cell when its path predicate holds:

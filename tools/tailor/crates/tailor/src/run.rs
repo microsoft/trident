@@ -1386,6 +1386,7 @@ fn convert_cell(input: &Path, dir: &Path, arch: Arch, format: OutputFormat, slug
         base: None,
         features: Vec::new(),
         params: IndexMap::new(),
+        fragments: Vec::new(),
         rpm_sources: Vec::new(),
         operation: Some(Operation::Convert),
         output_artifacts: None,

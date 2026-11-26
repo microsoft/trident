@@ -572,6 +572,9 @@ pub struct ImageDefinition {
     pub features: Vec<String>,
     #[serde(default)]
     pub params: IndexMap<String, ParamValue>,
+    /// In-file fragments apply in declaration order after the base, before `by-*` files.
+    #[serde(default)]
+    pub fragments: Vec<Value>,
     #[serde(default)]
     pub rpm_sources: Vec<PathBuf>,
     #[serde(default)]
