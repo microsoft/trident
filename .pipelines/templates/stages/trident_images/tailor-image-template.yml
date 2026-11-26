@@ -122,7 +122,8 @@ steps:
       mapfile -t rpms < <(find artifacts/tailor-inputs/rpms -type f -name "*.${DISTRO}.*.rpm")
       [[ "${#rpms[@]}" -gt 0 ]]
       cp -- "${rpms[@]}" "$SOURCE_DIRECTORY/bin/RPMS/"
-      cp artifacts/tailor-inputs/ssh/id_rsa.pub tests/images/tailor/trident-vm-testimage/files/id_rsa.pub
+      install -D -m 644 artifacts/tailor-inputs/ssh/id_rsa.pub \
+        "$SOURCE_DIRECTORY/tests/images/tailor/trident-vm-testimage/files/id_rsa.pub"
       private_key="$OUTPUT_DIRECTORY/key_${IMAGE_NAME}_private.pem"
       cp artifacts/tailor-inputs/ssh/id_rsa "$private_key"
       chmod 600 "$private_key"
