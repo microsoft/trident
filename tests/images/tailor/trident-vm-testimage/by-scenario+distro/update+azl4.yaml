@@ -1,5 +1,0 @@
-params:
-  espSize: 16M
-
-config:
-  $include: ./azl4/update.yaml
