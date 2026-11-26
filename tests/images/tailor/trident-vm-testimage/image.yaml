@@ -1,20 +1,364 @@
 name: vm
-
 matrix:
-  arch: [amd64]
-  # Apply the scenario layout before distro substitutions.
-  scenario: [base, update]
-  distro: [azl3, azl4]
-
+  arch:
+  - amd64
+  scenario:
+  - base
+  - update
+  distro:
+  - azl3
+  - azl4
 base:
   path: ../../../../artifacts/qemu_guest.vhdx
-
 rpmSources:
-  - ../../../../bin/RPMS
-
+- ../../../../bin/RPMS
 params:
-  # Preserve shell ${...} expressions through Tailor interpolation.
-  shellDollar: "$"
-
+  shellDollar: $
 outputs:
-  - format: cosi
+- format: qcow2
+config:
+  storage:
+    disks:
+    - partitionTableType: gpt
+      maxSize: 10G
+      partitions:
+      - id: esp
+        type: esp
+        size: 16M
+      - id: root-a
+        size: 4G
+      - id: root-b
+        size: 4G
+      - id: trident
+        size: 1G
+      - id: srv
+        size: grow
+    bootType: efi
+    filesystems:
+    - &vm_shared_1
+      deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: root-a
+      type: ext4
+      mountPoint: /
+    - deviceId: trident
+      type: ext4
+      mountPoint: /var/lib/trident
+    - deviceId: srv
+      type: ext4
+      mountPoint: /srv
+  os:
+    bootloader:
+      resetType: hard-reset
+    hostname: trident-vm-testimg
+    selinux:
+      mode: disabled
+    kernelCommandLine:
+      extraCommandLine:
+      - console=tty0
+      - console=tty1
+      - console=ttyS0
+      - rd.debug
+      - loglevel=6
+      - log_buf_len=1M
+      - systemd.journald.forward_to_console=1
+    packages:
+      install:
+      - dnf
+      - efibootmgr
+      - grub2-efi-binary
+      - iproute
+      - iptables
+      - jq
+      - openssh-server
+      - trident-service
+      - vim
+      - netplan
+    services:
+      enable:
+      - tridentd.socket
+    additionalFiles:
+    - source: ../common/files/sshd-keygen.service
+      destination: /usr/lib/systemd/system/sshd-keygen.service
+    - source: ../common/files/99-dhcp-eth0.network
+      destination: /etc/systemd/network/99-dhcp-eth0.network
+    - source: ../common/files/sudoers-wheel
+      destination: /etc/sudoers.d/wheel
+    users:
+    - name: testuser
+      sshPublicKeyPaths:
+      - files/id_rsa.pub
+      secondaryGroups:
+      - wheel
+  scripts:
+    postCustomization:
+    - content:
+        $include: ../common/scripts.yaml#/audit-directory
+      interpreter: /bin/bash
+    - content:
+        $include: ../common/scripts.yaml#/offline-initialize
+      interpreter: /bin/bash
+    - content:
+        $include: ../common/scripts.yaml#/vm-prepare-update-config
+      interpreter: /bin/bash
+    - content:
+        $include: ../common/scripts.yaml#/ssh-configure-host-keys
+      interpreter: /bin/bash
+    - content:
+        $include: ../common/scripts.yaml#/ssh-create-host-key-directory
+      interpreter: /bin/bash
+    - content:
+        $include: ../common/scripts.yaml#/network-duid-link-layer
+      interpreter: /bin/bash
+extraDependencies:
+- image.yaml
+- ../common/scripts.yaml
+- ../common/files
+- files/id_rsa.pub
+fragments:
+- match:
+    scenario: update
+    distro: azl3
+  config:
+    storage:
+      disks:
+        $set:
+        - maxSize: 5G
+          partitionTableType: gpt
+          partitions:
+          - id: esp
+            size: 8M
+            type: esp
+          - id: root
+            size: 4G
+      filesystems: &vm_shared_2
+        $set:
+        - *vm_shared_1
+        - deviceId: root
+          mountPoint: /
+          type: ext4
+    os:
+      packages:
+        install:
+          $set:
+          - curl
+          - dnf
+          - efibootmgr
+          - grub2-efi-binary-noprefix
+          - iproute
+          - iptables
+          - jq
+          - lsof
+          - netplan
+          - openssh-server
+          - trident-service
+          - vim
+          - netplan
+        remove:
+        - grub2-efi-binary
+      services:
+        enable:
+          $set:
+          - trident
+          - tridentd.socket
+      additionalFiles:
+        $set:
+        - source: ../common/files/sudoers-wheel
+          destination: /etc/sudoers.d/wheel
+        - source: ../common/files/99-dhcp-eth0.network
+          destination: /etc/systemd/network/99-dhcp-eth0.network
+        - source: ../common/files/use-grpc-client-commit.conf
+          destination: /etc/systemd/system/trident.service.d/override.conf
+    scripts:
+      postCustomization:
+        $set:
+        - content:
+            $include: ../common/scripts.yaml#/audit-directory
+          interpreter: /bin/bash
+        - content:
+            $include: ../common/scripts.yaml#/ssh-configure-host-keys
+          interpreter: /bin/bash
+        - content:
+            $include: ../common/scripts.yaml#/network-duid-link-layer
+          interpreter: /bin/bash
+        - content:
+            $include: ../common/scripts.yaml#/test-update-os-release-date
+          interpreter: /bin/bash
+  outputs:
+    $set:
+    - format: cosi
+- match:
+    scenario: base
+    distro: azl4
+  config:
+    storage:
+      disks:
+        $set:
+        - partitionTableType: gpt
+          maxSize: 10G
+          partitions:
+          - id: esp
+            type: esp
+            size: 32M
+          - id: root-a
+            size: 4G
+          - id: root-b
+            size: 4G
+          - id: trident
+            size: 1G
+          - id: srv
+            size: grow
+    os:
+      kernelCommandLine:
+        extraCommandLine:
+          $set:
+          - console=tty0
+          - console=tty1
+          - console=ttyS0
+          - net.ifnames=0
+          - rd.debug
+          - loglevel=6
+          - log_buf_len=1M
+          - systemd.journald.forward_to_console=1
+      packages: &vm_shared_3
+        install:
+          $set:
+          - attr
+          - cryptsetup
+          - curl
+          - dnf5
+          - efibootmgr
+          - grub2-efi-x64
+          - grub2-efi-x64-modules
+          - grub2-tools
+          - grub2-tools-efi
+          - iproute
+          - iptables-nft
+          - jq
+          - lsof
+          - netplan
+          - netplan-default-backend-networkd
+          - openssh-clients
+          - openssh-server
+          - policycoreutils
+          - selinux-policy
+          - shim
+          - sudo
+          - systemd-networkd
+          - systemd-resolved
+          - vim
+          - systemd-sysext
+          - systemd-confext
+          - systemd-dissect
+          - trident-service
+      services: &vm_shared_4
+        enable:
+          $set:
+          - sshd
+          - systemd-networkd
+          - systemd-resolved
+          - netplan-configure.service
+          - trident
+          - tridentd.socket
+      additionalFiles: &vm_shared_5
+        $set:
+        - source: ../common/files/hostname-shim.sh
+          destination: /usr/local/bin/hostname
+          permissions: '755'
+        - source: ../common/files/sudoers-wheel
+          destination: /etc/sudoers.d/wheel
+        - source: ../common/files/99-dhcp-eth0.network
+          destination: /etc/systemd/network/99-dhcp-eth0.network
+        - source: ../common/files/regen-sshd-keys.service
+          destination: /etc/systemd/system/regen-sshd-keys.service
+    scripts:
+      postCustomization:
+        $set:
+        - content:
+            $include: ../common/scripts.yaml#/audit-directory
+          interpreter: /bin/bash
+        - content:
+            $include: ../common/scripts.yaml#/offline-initialize
+          interpreter: /bin/bash
+        - content:
+            $include: ../common/scripts.yaml#/azl4-enable-trident-service
+          interpreter: /bin/bash
+        - content:
+            $include: ../common/scripts.yaml#/vm-prepare-update-config
+          interpreter: /bin/bash
+        - interpreter: /bin/bash
+          content:
+            $include: ../common/scripts.yaml#/azl4-move-host-keys
+        - interpreter: /bin/bash
+          content:
+            $include: ../common/scripts.yaml#/azl4-enable-regen-sshd-keys
+        - interpreter: /bin/bash
+          content:
+            $include: ../common/scripts.yaml#/azl4-rebuild-initrd
+        - interpreter: /bin/bash
+          content:
+            $include: ../common/scripts.yaml#/azl4-strip-selinux-xattrs
+    previewFeatures:
+    - preview-distro-version
+  base:
+    $set:
+      path: ../../../../artifacts/azl4_minimal_os.vhdx
+- match:
+    scenario: update
+    distro: azl4
+  config:
+    storage:
+      disks:
+        $set:
+        - maxSize: 5G
+          partitionTableType: gpt
+          partitions:
+          - id: esp
+            size: 16M
+            type: esp
+          - id: root
+            size: 4G
+      filesystems: *vm_shared_2
+    os:
+      packages: *vm_shared_3
+      kernelCommandLine:
+        extraCommandLine:
+          $set:
+          - console=tty0
+          - console=ttyS0
+          - net.ifnames=0
+          - rd.debug
+          - loglevel=6
+          - log_buf_len=1M
+          - systemd.journald.forward_to_console=1
+      services: *vm_shared_4
+      additionalFiles: *vm_shared_5
+    scripts:
+      postCustomization:
+        $set:
+        - content:
+            $include: ../common/scripts.yaml#/audit-directory
+          interpreter: /bin/bash
+        - interpreter: /bin/bash
+          content:
+            $include: ../common/scripts.yaml#/azl4-move-host-keys
+        - interpreter: /bin/bash
+          content:
+            $include: ../common/scripts.yaml#/azl4-enable-regen-sshd-keys
+        - interpreter: /bin/bash
+          content:
+            $include: ../common/scripts.yaml#/azl4-rebuild-initrd
+        - interpreter: /bin/bash
+          content:
+            $include: ../common/scripts.yaml#/azl4-strip-selinux-xattrs
+    previewFeatures:
+    - preview-distro-version
+  outputs:
+    $set:
+    - format: cosi
+  base:
+    $set:
+      path: ../../../../artifacts/azl4_minimal_os.vhdx

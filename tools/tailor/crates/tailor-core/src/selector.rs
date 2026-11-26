@@ -129,6 +129,7 @@ mod tests {
             base: None,
             features: vec![],
             params: IndexMap::new(),
+            fragments: vec![],
             rpm_sources: vec![],
             tools_dir: None,
             operation: None,

@@ -1,6 +1,6 @@
 # Merge directives reference
 
-Fragments apply after `image.yaml`. Local `by-<axis>/<value>.yaml` fragments apply in **matrix axis-declaration order**; the axis declared later has later precedence. This is not alphabetical and not directory-name order.
+In-file `fragments:` apply after the base in declaration order. Local `by-<axis>/<value>.yaml` fragments apply afterward in **matrix axis-declaration order**; the axis declared later has later precedence. This is not alphabetical and not directory-name order.
 
 ## Rules
 
@@ -112,3 +112,24 @@ config:
 The include path is relative to the image directory in user-facing examples. The included file is substituted as the value at that position. If `$include` is a list item and the included file is a list, the elements are spliced into the surrounding list.
 
 `$include` must be the sole key in its mapping. To tweak included content, layer a later fragment with normal merge rules or directives.
+
+Select a subtree with a JSON pointer suffix, so one library can hold several shared values:
+
+```yaml
+config:
+  scripts:
+    postCustomization:
+      - interpreter: /bin/bash
+        content:
+          $include: ../common/scripts.yaml#/audit-directory
+```
+
+Pointers use `/`-separated keys or sequence indices; `~1` escapes `/` and `~0`
+escapes `~`. A trailing `#` selects the document root. Missing nodes, invalid
+escapes and noncanonical sequence indices fail. Only the selected subtree is
+expanded, so unrelated library entries need not resolve. Different nodes in the
+same library may include each other; repeated selected-node cycles are rejected.
+
+Selected contents are part of the rendered-config fingerprint. To invalidate on
+any edit to the containing library, declare its physical path in `extraDependencies`
+(for example `../common/scripts.yaml`), never a path containing `#/...`.
