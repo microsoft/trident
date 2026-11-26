@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 
-from contextlib import ExitStack, contextmanager, redirect_stderr
+from contextlib import ExitStack, contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -49,8 +49,12 @@ class UmiDiagnosticTests(unittest.TestCase):
                     "exitCode": login,
                     "exceptionClass": None,
                 },
-                b"fixture-private ignored stdout",
-                b"ERROR: (InvalidAuthenticationTokenTenant) fixture-private\nStatus Code: 401\n",
+                b"fixture-private ignored stdout" if login else b"",
+                (
+                    b"ERROR: (InvalidAuthenticationTokenTenant) fixture-private\nStatus Code: 401\n"
+                    if login
+                    else b"cli.azure.cli.core._profile: Managed identity: token was retrieved. Now trying to initialize local accounts...\n"
+                ),
             ),
         ]
 
@@ -97,6 +101,7 @@ class UmiDiagnosticTests(unittest.TestCase):
                 "--allow-no-subscriptions",
                 "--output",
                 "none",
+                "--debug",
             ],
         )
         self.assertEqual(report["cliVersion"], "2.75.0")
@@ -189,6 +194,18 @@ class UmiDiagnosticTests(unittest.TestCase):
             },
         )
 
+    def test_partial_version_and_help_remain_unknown_not_compatibility_proof(self):
+        rows = self.fixture()
+        for index in (0, 1):
+            rows[index] = (
+                rows[index][0],
+                rows[index][1] + b" " * diagnostic.PRIVATE_LIMIT,
+                b"",
+            )
+        _, report, _ = self.execute(rows)
+        self.assertIsNone(report["cliVersion"])
+        self.assertIsNone(report["argumentSupport"])
+
     def test_literal_provider_markers_and_http_status_never_copy_payloads(self):
         for raw, marker, status in (
             (
@@ -228,10 +245,11 @@ class UmiDiagnosticTests(unittest.TestCase):
             ),
         ):
             with self.subTest(marker=marker):
-                markers, actual = diagnostic.login_observations(raw)
-                self.assertIn(marker, markers)
-                self.assertEqual(actual, status)
-                self.assertNotIn("fixture-private", json.dumps([markers, actual]))
+                report = diagnostic.new_report()
+                diagnostic.observe_login(report, None, raw)
+                self.assertIn(marker, report["loginFailureMarkers"])
+                self.assertEqual(report["reportedHttpStatus"], status)
+                self.assertNotIn("fixture-private", json.dumps(report))
         for raw in (
             None,
             b"HTTP 503 fixture-private",
@@ -240,13 +258,211 @@ class UmiDiagnosticTests(unittest.TestCase):
             b'{"error":' + b"[" * 2000,
             b"x" * (diagnostic.PRIVATE_LIMIT + 1),
         ):
-            self.assertEqual(
-                diagnostic.login_observations(raw), (["unclassified"], None)
-            )
-        self.assertEqual(
-            diagnostic.login_observations(b"Status Code: 401\nStatus Code: 403")[1],
-            None,
+            report = diagnostic.new_report()
+            diagnostic.observe_login(report, None, raw)
+            self.assertEqual(report["loginFailureMarkers"], ["unclassified"])
+            self.assertIsNone(report["reportedHttpStatus"])
+        report = diagnostic.new_report()
+        diagnostic.observe_login(report, b"Status Code: 401", b"Status Code: 403")
+        self.assertIsNone(report["reportedHttpStatus"])
+        self.assertTrue(report["httpStatusConflict"])
+
+    def test_public_msal_debug_shape_and_imds_boundary_on_stdout(self):
+        raw = (
+            b"msal.managed_identity: Obtaining token via managed identity on Azure VM\n"
+            b'urllib3.connectionpool: http://169.254.169.254:80 "GET /metadata/identity/oauth2/token?client_id=fixture-private HTTP/1.1" 400 123\n'
+            b"cli.azure.cli.core.auth.util: MSAL error: {'error': 'invalid_request', "
+            b"'error_description': 'Identity not found', 'access_token': 'fixture-private', "
+            b"'headers': {'Authorization': 'fixture-private'}}\n"
         )
+        rows = self.fixture()
+        rows[2] = (rows[2][0], raw, b"fixture-private")
+        code, report, capture = self.execute(rows)
+        self.assertEqual(code, 1)
+        self.assertEqual(capture.call_count, 3)
+        self.assertEqual(report["loginOutput"]["stdout"]["coverage"], "recognized")
+        self.assertEqual(report["loginOutput"]["stdout"]["msalRecord"], "parsed")
+        evidence = report["loginEvidence"]
+        self.assertTrue(evidence["imdsPathSelected"])
+        self.assertFalse(evidence["tokenAcquiredCheckpoint"])
+        self.assertEqual(evidence["imdsHttpStatus"], 400)
+        self.assertEqual(evidence["errorCodes"], ["invalid_request"])
+        self.assertIn("identity-not-found", report["loginFailureMarkers"])
+        self.assertNotIn("fixture-private", self.output.read_text())
+        self.assertNotIn("169.254", self.output.read_text())
+
+    def test_wrapped_stderr_after_token_checkpoint_and_dependency_exceptions(self):
+        raw = (
+            b"INFO: cli.azure.cli.core._profile: Managed identity: token was retrieved. Now trying to initialize local accounts...\n"
+            b"ERROR: cli.azure.cli.core.azclierror: The command failed with an unexpected error. Here is the traceback:\n"
+            b"ERROR: cli.azure.cli.core.azclierror: Traceback (most recent call last):\n"
+            b"  File 'fixture-private', line 1\n"
+            b"    \x1b[91mModuleNotFoundError: No module named 'fixture-private'\x1b[0m\n"
+        )
+        report = diagnostic.new_report()
+        diagnostic.observe_login(report, b"", raw)
+        self.assertTrue(report["loginEvidence"]["tokenAcquiredCheckpoint"])
+        self.assertFalse(report["loginEvidence"]["imdsPathSelected"])
+        self.assertEqual(
+            report["loginEvidence"]["exceptionClasses"], ["ModuleNotFoundError"]
+        )
+        self.assertIn("dependency-import-error", report["loginFailureMarkers"])
+        self.assertIn("traceback-present", report["loginFailureMarkers"])
+        self.assertEqual(report["loginOutput"]["stderr"]["coverage"], "mixed")
+        self.assertNotIn("fixture-private", json.dumps(report))
+        for exception, marker in diagnostic.EXCEPTION_MARKERS.items():
+            with self.subTest(exception=exception):
+                row = diagnostic.login_observations(
+                    (exception + ": fixture-private").encode()
+                )
+                self.assertIn(marker, row["markers"])
+                self.assertIn(exception, row["exceptionClasses"])
+        for qualified in (
+            "msal.managed_identity.ManagedIdentityError",
+            "azure.core.exceptions.ServiceRequestError",
+            "requests.exceptions.ReadTimeout",
+            "azure.cli.core.azclierror.AuthenticationError",
+            "jwt.exceptions.DecodeError",
+        ):
+            row = diagnostic.login_observations(
+                (qualified + ": fixture-private").encode()
+            )
+            self.assertIn(qualified.rsplit(".", 1)[1], row["exceptionClasses"])
+
+    def test_capture_availability_utf8_partial_and_unknown_coverage(self):
+        cases = (
+            (None, "unavailable", None, "unavailable"),
+            (b"", "empty", True, "empty"),
+            (b"fixture-private", "complete", True, "unrecognized"),
+            (b"\xfffixture-private", "complete", False, "unrecognized"),
+            (b"x" * (diagnostic.PRIVATE_LIMIT + 1), "over-limit", True, "partial"),
+        )
+        for raw, availability, utf8, coverage in cases:
+            with self.subTest(availability=availability, utf8=utf8):
+                row = diagnostic.login_observations(raw)
+                self.assertEqual(row["stream"]["availability"], availability)
+                self.assertIs(row["stream"]["sampleUtf8Valid"], utf8)
+                self.assertEqual(row["stream"]["coverage"], coverage)
+                self.assertLessEqual(
+                    row["stream"]["sampleBytes"] or 0, diagnostic.PRIVATE_LIMIT
+                )
+        prefix = b"ERROR: Code: AuthenticationFailed\n"
+        raw = prefix + b"x" * diagnostic.PRIVATE_LIMIT + b"\nAADSTS700016: private"
+        row = diagnostic.login_observations(raw)
+        self.assertIn("authentication-failed", row["markers"])
+        self.assertEqual(row["stream"]["coverage"], "partial")
+        self.assertEqual(row["stream"]["sampleBytes"], len(prefix))
+        self.assertNotIn("entra-application-not-found", row["markers"])
+        # A partial final record is not interpreted as a complete provider error.
+        row = diagnostic.login_observations(
+            b" " * (diagnostic.PRIVATE_LIMIT - 13) + b"AADSTS700016: x"
+        )
+        self.assertFalse(row["markers"])
+        self.assertEqual(row["stream"]["sampleBytes"], 0)
+
+    def test_structured_codes_unknown_malformed_and_no_literal_execution(self):
+        records = (
+            (
+                "{'error': 'invalid_client', 'error_codes': [700016, 53003]}",
+                "parsed",
+                False,
+            ),
+            (
+                "{'error': 'fixture-private', 'error_codes': [123456, True, 'private']}",
+                "parsed",
+                True,
+            ),
+            ("{'error_codes': 'fixture-private'}", "parsed", True),
+            ("['fixture-private']", "malformed", False),
+            ("{'error':", "malformed", False),
+            ("[" * 2000, "malformed", False),
+            ("__import__('os').environ.clear()", "malformed", False),
+        )
+        for body, state, unknown in records:
+            with self.subTest(state=state, unknown=unknown):
+                report = diagnostic.new_report()
+                diagnostic.observe_login(
+                    report,
+                    None,
+                    ("cli.azure.cli.core.auth.util: MSAL error: " + body).encode(),
+                )
+                self.assertEqual(report["loginOutput"]["stderr"]["msalRecord"], state)
+                self.assertEqual(report["loginEvidence"]["unknownCodeSeen"], unknown)
+                self.assertNotIn("fixture-private", json.dumps(report))
+                self.assertNotIn("123456", json.dumps(report))
+                if "700016" in body:
+                    self.assertEqual(
+                        report["loginEvidence"]["aadstsCodes"], ["53003", "700016"]
+                    )
+        self.assertTrue(os.environ)
+        report = diagnostic.new_report()
+        diagnostic.observe_login(report, b"AADSTS123456: fixture-private", b"")
+        self.assertTrue(report["loginEvidence"]["unknownCodeSeen"])
+        self.assertEqual(report["loginEvidence"]["aadstsCodes"], [])
+        row = diagnostic.login_observations(
+            b"cli.azure.cli.core.auth.util: MSAL error: {'error_description': 'fixture-private'}"
+        )
+        self.assertEqual(row["stream"]["msalRecord"], "parsed")
+        self.assertEqual(row["stream"]["coverage"], "mixed")
+        self.assertTrue(row["stream"]["unclassifiedLines"])
+
+    def test_private_values_cannot_inject_exported_fields_or_checkpoints(self):
+        payload = json.dumps(
+            {
+                "access_token": "fixture-private AADSTS700016: private",
+                "url": "https://fixture-private/Status Code: 403",
+                "headers": {"Authorization": "fixture-private"},
+                "tokenAcquiredCheckpoint": True,
+                "imdsPathSelected": True,
+                "status": "login-succeeded-not-guest-execution",
+            }
+        ).encode()
+        report = diagnostic.new_report()
+        diagnostic.observe_login(report, payload, b"fixture-private: MSAL error: {}")
+        self.assertFalse(report["loginEvidence"]["tokenAcquiredCheckpoint"])
+        self.assertFalse(report["loginEvidence"]["imdsPathSelected"])
+        self.assertEqual(report["loginEvidence"]["aadstsCodes"], [])
+        self.assertEqual(report["loginFailureMarkers"], ["unclassified"])
+        self.assertIsNone(report["reportedHttpStatus"])
+        self.assertNotIn("fixture-private", json.dumps(report))
+
+    def test_login_cancel_retains_partial_debug_evidence_without_later_commands(self):
+        rows = self.fixture()
+        rows[2] = (
+            {
+                "state": "cancelled",
+                "exitCode": 130,
+                "exceptionClass": "KeyboardInterrupt",
+            },
+            b"msal.managed_identity: Obtaining token via managed identity on Azure VM\n",
+            b"fixture-private",
+        )
+        code, report, capture = self.execute(rows)
+        self.assertEqual(code, 130)
+        self.assertEqual(report["status"], "cancelled")
+        self.assertEqual(capture.call_count, 3)
+        self.assertTrue(report["loginEvidence"]["imdsPathSelected"])
+        self.assertFalse(report["loginEvidence"]["tokenAcquiredCheckpoint"])
+        self.assertNotIn("fixture-private", self.output.read_text())
+
+    def test_parser_error_cannot_replace_initiating_login_timeout_or_cancel(self):
+        for state, code in (("timeout", 124), ("cancelled", 130)):
+            for error in (PermissionError("fixture-private"), KeyboardInterrupt()):
+                self.report = diagnostic.new_report()
+                rows = self.fixture()
+                rows[2] = (
+                    {"state": state, "exitCode": code, "exceptionClass": None},
+                    b"",
+                    b"",
+                )
+                with patch.object(diagnostic, "observe_login", side_effect=error):
+                    actual, report, capture = self.execute(rows)
+                self.assertEqual(actual, code)
+                self.assertEqual(report["status"], state)
+                self.assertEqual(report["exceptionClass"], type(error).__name__)
+                self.assertEqual(capture.call_count, 3)
+                self.assertIsNone(report["loginOutput"])
+                self.assertNotIn("fixture-private", self.output.read_text())
 
     def test_timeout_and_cancellation_stop_all_later_commands(self):
         for index in range(3):
@@ -358,6 +574,7 @@ class UmiDiagnosticTests(unittest.TestCase):
         self.assertEqual(report["status"], "failed")
         self.assertEqual(report["publicationFailure"], "cancelled-context")
         self.assertEqual(report["commands"]["login"]["state"], "ok")
+        self.assertTrue(report["loginEvidence"]["tokenAcquiredCheckpoint"])
         self.assertTrue(homes)
         self.assertTrue(all(not home.exists() for home in homes))
         self.assertNotIn("fixture-private", output.read_text())
@@ -374,13 +591,57 @@ class UmiDiagnosticTests(unittest.TestCase):
             )
             self.assertEqual(row["exitCode"], 7)
             self.assertIn(b"fixture-private", stdout)
-            self.assertIsNone(stderr)
+            self.assertEqual(len(stderr), diagnostic.PRIVATE_LIMIT + 1)
+            self.assertEqual(
+                diagnostic.login_observations(stderr)["stream"]["availability"],
+                "over-limit",
+            )
             row, stdout, stderr = diagnostic.capture(
                 [str(self.root / "missing-executable")], 5
             )
         self.assertEqual(row["exceptionClass"], "FileNotFoundError")
         self.assertIsNone(stdout)
         self.assertIsNone(stderr)
+
+    def test_native_private_debug_capture_never_inherits_console_or_exports_payload(
+        self,
+    ):
+        private = (
+            "cli.azure.cli.core.auth.util: MSAL error: "
+            "{'error': 'invalid_client', 'access_token': 'fixture-private', "
+            "'error_description': 'AADSTS700016: fixture-private'}"
+        )
+        popen = diagnostic.subprocess.Popen
+
+        def spawn(*args, **kwargs):
+            for name in ("stdout", "stderr"):
+                self.assertEqual(
+                    stat.S_IMODE(os.fstat(kwargs[name].fileno()).st_mode), 0o600
+                )
+            return popen(*args, **kwargs)
+
+        console = io.StringIO()
+        with (
+            patch.dict(os.environ, self.environment()),
+            patch.object(diagnostic.subprocess, "Popen", side_effect=spawn),
+            redirect_stdout(console),
+            redirect_stderr(console),
+        ):
+            row, stdout, stderr = diagnostic.capture(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print(" + repr(private) + "); "
+                    "sys.stderr.write('fixture-private'); sys.exit(1)",
+                ],
+                5,
+            )
+            diagnostic.observe_login(self.report, stdout, stderr)
+            diagnostic.publish(self.output, self.report)
+        self.assertEqual(row["exitCode"], 1)
+        self.assertEqual(console.getvalue(), "")
+        self.assertEqual(self.report["loginEvidence"]["aadstsCodes"], ["700016"])
+        self.assertNotIn("fixture-private", self.output.read_text())
 
     def test_native_timeout_and_cancel_reap_before_returning(self):
         popen = diagnostic.subprocess.Popen
@@ -391,6 +652,7 @@ class UmiDiagnosticTests(unittest.TestCase):
 
             def spawn(*args, **kwargs):
                 self.assertEqual(kwargs["env"]["PYTHONDONTWRITEBYTECODE"], "1")
+                self.assertEqual(kwargs["env"]["AZURE_CORE_COLLECT_TELEMETRY"], "false")
                 self.assertEqual(kwargs["env"]["IDENTITY_ENDPOINT"], "fixture-private")
                 process = popen(*args, **kwargs)
                 processes.append(process)
@@ -511,6 +773,34 @@ class UmiDiagnosticTests(unittest.TestCase):
             cliVersion="999.999.999",
             publicationFailure="publication-finalize-failed",
         )
+        debug = "\n".join(
+            [f"Code: {code}" for code in diagnostic.ERROR_CODES]
+            + [f"AADSTS{code}: fixture-private" for code in diagnostic.AADSTS]
+            + [f"{name}: fixture-private" for name in diagnostic.EXCEPTION_MARKERS]
+            + [
+                "msal.managed_identity: Obtaining token via managed identity on Azure VM",
+                "cli.azure.cli.core._profile: Managed identity: token was retrieved. Now trying to initialize local accounts...",
+                "cli.azure.cli.core.auth.util: MSAL error: {'error': 'fixture-private'}",
+                "cli.azure.cli.core.auth.util: MSAL error: {",
+                "Traceback (most recent call last):",
+                "The command failed with an unexpected error.",
+                "Status Code: 400",
+                "Status Code: 403",
+                'urllib3.connectionpool: http://169.254.169.254:80 "GET /metadata/identity/oauth2/token?private HTTP/1.1" 400 1',
+                'urllib3.connectionpool: http://169.254.169.254:80 "GET /metadata/identity/oauth2/token?private HTTP/1.1" 403 1',
+            ]
+        ).encode()
+        diagnostic.observe_login(report, debug, debug)
+        report["loginFailureMarkers"] = sorted(
+            set(report["loginFailureMarkers"]) | set(diagnostic.MARKERS)
+        )
+        for row in report["loginOutput"].values():
+            row.update(
+                availability="unavailable",
+                sampleBytes=diagnostic.PRIVATE_LIMIT,
+                sampleUtf8Valid=False,
+                coverage="unrecognized",
+            )
         diagnostic.publish(self.output, report)
         self.assertLess(self.output.stat().st_size, diagnostic.REPORT_LIMIT)
         raw = self.output.read_bytes()

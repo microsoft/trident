@@ -3,6 +3,7 @@
 """One bounded UMI login observation, never publish native output or credentials."""
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -27,6 +28,7 @@ LOGIN = [
     "--allow-no-subscriptions",
     "--output",
     "none",
+    "--debug",
 ]
 PRIVATE_LIMIT = 64 * 1024
 REPORT_LIMIT = 8192
@@ -85,7 +87,56 @@ AADSTS = {
     "700016": "entra-application-not-found",
     "90002": "entra-tenant-not-found",
     "500011": "entra-resource-not-found",
+    "50020": "entra-tenant-user-mismatch",
+    "53003": "entra-conditional-access-blocked",
+    "7000215": "entra-invalid-client-secret",
+    "7000222": "entra-expired-client-secret",
+    "700024": "entra-assertion-time-invalid",
 }
+EXCEPTION_MARKERS = {
+    **dict.fromkeys(("ImportError", "ModuleNotFoundError"), "dependency-import-error"),
+    **dict.fromkeys(("DecodeError", "InvalidTokenError"), "decode-error"),
+    "JSONDecodeError": "json-decode-error",
+    **dict.fromkeys(("PermissionError", "FileNotFoundError", "OSError"), "os-io-error"),
+    **dict.fromkeys(
+        (
+            "ConnectionError",
+            "ConnectTimeout",
+            "ReadTimeout",
+            "MaxRetryError",
+            "NewConnectionError",
+            "NameResolutionError",
+            "ServiceRequestError",
+            "ServiceResponseError",
+            "AzureConnectionError",
+        ),
+        "connection-error",
+    ),
+    "ProxyError": "proxy-error",
+    "SSLError": "tls-error",
+    **dict.fromkeys(
+        ("ManagedIdentityError", "ClientAuthenticationError", "AuthenticationError"),
+        "authentication-error",
+    ),
+    "HttpResponseError": "http-response-error",
+    "HTTPError": "http-response-error",
+    "CLIError": "cli-error",
+    **dict.fromkeys(
+        ("AttributeError", "TypeError", "KeyError", "ValueError"),
+        "python-runtime-error",
+    ),
+}
+LOGGERS = (
+    "cli.azure.cli.core.auth.util",
+    "azure.cli.core.auth.util",
+    "cli.azure.cli.core._profile",
+    "azure.cli.core._profile",
+    "cli.azure.cli.core.azclierror",
+    "azure.cli.core.azclierror",
+    "msal.managed_identity",
+    "urllib3.connectionpool",
+    "azure.core.pipeline.policies.http_logging_policy",
+)
 
 
 def new_report():
@@ -108,6 +159,9 @@ def new_report():
         },
         "loginFailureMarkers": [],
         "reportedHttpStatus": None,
+        "httpStatusConflict": False,
+        "loginOutput": None,
+        "loginEvidence": None,
         "publicationFailure": None,
         "exceptionClass": None,
         "hostDisposition": "dispose-required",
@@ -147,7 +201,11 @@ def capture(argv, timeout):
                 stdout=stdout,
                 stderr=stderr,
                 start_new_session=True,
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                env={
+                    **os.environ,
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "AZURE_CORE_COLLECT_TELEMETRY": "false",
+                },
             )
         except OSError as error:
             name = type(error).__name__
@@ -172,27 +230,86 @@ def capture(argv, timeout):
         for stream in (stdout, stderr):
             stream.seek(0)
             raw = stream.read(PRIVATE_LIMIT + 1)
-            samples.append(raw if len(raw) <= PRIVATE_LIMIT else None)
+            samples.append(raw)
         return result, *samples
 
 
 def login_observations(raw):
-    if raw is None or len(raw) > PRIVATE_LIMIT:
-        return ["unclassified"], None
-    text = raw.decode("utf-8", errors="replace")
-    markers = set()
-    statuses = set()
-    for line in text.splitlines():
-        line = re.sub(r"^ERROR:\s*", "", line)
+    result = {
+        "stream": {
+            "availability": "unavailable",
+            "sampleBytes": None,
+            "sampleUtf8Valid": None,
+            "coverage": "unavailable",
+            "debugPrefixSeen": False,
+            "msalRecord": "absent",
+            "unclassifiedLines": False,
+        },
+        **{
+            key: set()
+            for key in (
+                "markers",
+                "statuses",
+                "aadstsCodes",
+                "errorCodes",
+                "exceptionClasses",
+                "imdsStatuses",
+            )
+        },
+        "unknownCodeSeen": False,
+        "imdsPathSelected": False,
+        "tokenAcquiredCheckpoint": False,
+    }
+    stream = result["stream"]
+    if raw is None:
+        return result
+    oversized = len(raw) > PRIVATE_LIMIT
+    stream["availability"] = (
+        "over-limit" if oversized else "complete" if raw else "empty"
+    )
+    sample = raw[:PRIVATE_LIMIT]
+    if oversized:
+        # Never interpret a record cut by the sample boundary.
+        sample = sample[: sample.rfind(b"\n") + 1]
+    stream["sampleBytes"] = len(sample)
+    try:
+        text = sample.decode("utf-8")
+        stream["sampleUtf8Valid"] = True
+    except UnicodeDecodeError:
+        text = sample.decode("utf-8", errors="replace")
+        stream["sampleUtf8Valid"] = False
+    recognized = False
+
+    def literal(line):
+        matched = False
         for label, pattern in MARKERS.items():
             if re.match(pattern, line):
-                markers.add(label)
+                result["markers"].add(label)
+                matched = True
         code = re.match(r"^(?:Code:\s*|\()([A-Za-z_]+)(?:\)|\s*$)", line)
-        if code and code[1] in ERROR_CODES:
-            markers.add(ERROR_CODES[code[1]])
+        if code:
+            record_code(code[1])
+            matched = True
         aad = re.match(r"^AADSTS([0-9]+):", line)
-        if aad and aad[1] in AADSTS:
-            markers.add(AADSTS[aad[1]])
+        if aad:
+            record_aadsts(aad[1])
+            matched = True
+        exception = re.match(
+            r"^(?:(?:requests\.exceptions|urllib3\.exceptions|azure\.core\.exceptions|"
+            r"azure\.cli\.core\.azclierror|msal\.managed_identity|knack\.util|"
+            r"json\.decoder|jwt\.exceptions|builtins)\.)?([A-Za-z]+(?:Error|Exception|Timeout)):",
+            line,
+        )
+        if exception and exception[1] in EXCEPTION_MARKERS:
+            result["exceptionClasses"].add(exception[1])
+            result["markers"].add(EXCEPTION_MARKERS[exception[1]])
+            matched = True
+        if line == "Traceback (most recent call last):":
+            result["markers"].add("traceback-present")
+            matched = True
+        if line.startswith("The command failed with an unexpected error."):
+            result["markers"].add("cli-unexpected-error")
+            matched = True
         status = re.match(
             r"^(?:(?:Status Code|Status code|HTTP status|Response status):\s*"
             r"|Get Token request returned http error:\s*"
@@ -200,29 +317,143 @@ def login_observations(raw):
             line,
         )
         if status and int(status[1]) in facts.HTTP_STATUSES:
-            statuses.add(int(status[1]))
+            result["statuses"].add(int(status[1]))
+            matched = True
+        return matched
+
+    def record_code(code):
+        if isinstance(code, str) and code in ERROR_CODES:
+            result["errorCodes"].add(code)
+            result["markers"].add(ERROR_CODES[code])
+        else:
+            result["unknownCodeSeen"] = True
+
+    def record_aadsts(code):
+        if code in AADSTS:
+            result["aadstsCodes"].add(code)
+            result["markers"].add(AADSTS[code])
+        else:
+            result["unknownCodeSeen"] = True
+
+    def record_body(body):
+        if not isinstance(body, dict):
+            return False
+        if "error" in body:
+            error = body["error"]
+            record_code(error.get("code") if isinstance(error, dict) else error)
+        if "error_codes" in body:
+            codes = body["error_codes"]
+            if isinstance(codes, list):
+                for code in codes:
+                    record_aadsts(str(code) if type(code) is int else "")
+            else:
+                result["unknownCodeSeen"] = True
+        description = body.get("error_description")
+        if isinstance(description, str):
+            for line in description.splitlines():
+                matched = literal(line.strip())
+                stream["unclassifiedLines"] |= bool(line.strip()) and not matched
+        elif "error_description" in body:
+            stream["unclassifiedLines"] = True
+        return any(key in body for key in ("error", "error_codes", "error_description"))
+
+    for line in text.splitlines():
+        line = re.sub(r"\x1b\[[0-9;]{0,20}m", "", line).strip()
+        line = re.sub(r"^(?:ERROR|WARNING|DEBUG|INFO):\s*", "", line)
+        logger = next((name for name in LOGGERS if line.startswith(name + ": ")), None)
+        if logger:
+            stream["debugPrefixSeen"] = True
+            line = line[len(logger) + 2 :]
+        matched = literal(line)
+        if logger in LOGGERS[:2] and line.startswith("MSAL error: "):
+            try:
+                body = ast.literal_eval(line[len("MSAL error: ") :])
+                parsed = record_body(body)
+            except (ValueError, SyntaxError, RecursionError):
+                parsed = False
+            if not parsed:
+                stream["msalRecord"] = "malformed"
+            elif stream["msalRecord"] == "absent":
+                stream["msalRecord"] = "parsed"
+            matched = True
+        if logger == "msal.managed_identity" and line == (
+            "Obtaining token via managed identity on Azure VM"
+        ):
+            result["imdsPathSelected"] = True
+            matched = True
+        if logger in LOGGERS[2:4] and line == (
+            "Managed identity: token was retrieved. Now trying to initialize local accounts..."
+        ):
+            result["tokenAcquiredCheckpoint"] = True
+            matched = True
+        if logger == "urllib3.connectionpool":
+            status = re.match(
+                r'^http://169\.254\.169\.254(?::80)? "GET '
+                r'/metadata/identity/oauth2/token\?[^"\r\n ]* HTTP/1\.[01]" '
+                r"([0-9]{3})(?: |$)",
+                line,
+            )
+            if status and int(status[1]) in facts.HTTP_STATUSES:
+                result["imdsStatuses"].add(int(status[1]))
+                result["statuses"].add(int(status[1]))
+                matched = True
         if line.startswith("{"):
             try:
-                body = json.loads(line)
+                matched = record_body(json.loads(line)) or matched
             except (ValueError, RecursionError):
-                continue
-            if isinstance(body, dict):
-                error = body.get("error")
-                if isinstance(error, dict):
-                    error = error.get("code")
-                if isinstance(error, str) and error in ERROR_CODES:
-                    markers.add(ERROR_CODES[error])
-                description = body.get("error_description")
-                if isinstance(description, str):
-                    for label, pattern in MARKERS.items():
-                        if re.match(pattern, description):
-                            markers.add(label)
-                    aad = re.match(r"^AADSTS([0-9]+):", description)
-                    if aad and aad[1] in AADSTS:
-                        markers.add(AADSTS[aad[1]])
-    return sorted(markers) or ["unclassified"], (
-        next(iter(statuses)) if len(statuses) == 1 else None
+                matched = False
+        recognized = recognized or matched
+        stream["unclassifiedLines"] |= bool(line) and not matched
+    if oversized:
+        stream["coverage"] = "partial"
+    elif not raw:
+        stream["coverage"] = "empty"
+    elif recognized:
+        stream["coverage"] = "mixed" if stream["unclassifiedLines"] else "recognized"
+    else:
+        stream["coverage"] = "unrecognized"
+    return result
+
+
+def observe_login(report, stdout, stderr):
+    observations = [login_observations(raw) for raw in (stdout, stderr)]
+    report["loginOutput"] = dict(
+        zip(("stdout", "stderr"), (row["stream"] for row in observations))
     )
+    sets = {
+        key: set.union(*(row[key] for row in observations))
+        for key in (
+            "markers",
+            "statuses",
+            "aadstsCodes",
+            "errorCodes",
+            "exceptionClasses",
+            "imdsStatuses",
+        )
+    }
+    report["loginFailureMarkers"] = sorted(sets["markers"]) or ["unclassified"]
+    report["reportedHttpStatus"] = (
+        next(iter(sets["statuses"])) if len(sets["statuses"]) == 1 else None
+    )
+    report["httpStatusConflict"] = len(sets["statuses"]) > 1
+    report["loginEvidence"] = {
+        **{
+            key: sorted(sets[key])
+            for key in ("aadstsCodes", "errorCodes", "exceptionClasses")
+        },
+        **{
+            key: any(row[key] for row in observations)
+            for key in (
+                "unknownCodeSeen",
+                "imdsPathSelected",
+                "tokenAcquiredCheckpoint",
+            )
+        },
+        "imdsHttpStatus": (
+            next(iter(sets["imdsStatuses"])) if len(sets["imdsStatuses"]) == 1 else None
+        ),
+        "imdsHttpStatusConflict": len(sets["imdsStatuses"]) > 1,
+    }
 
 
 def execute(output, scratch, report):
@@ -256,7 +487,15 @@ def execute(output, scratch, report):
             publish(output, report)
             row, stdout, stderr = capture(argv, timeout)
             report["commands"][name] = row
-            if name == "version" and row["state"] == "ok" and stdout is not None:
+            if row["state"] in ("timeout", "cancelled"):
+                code = row["exitCode"]
+                report["status"] = row["state"]
+            if (
+                name == "version"
+                and row["state"] == "ok"
+                and stdout is not None
+                and len(stdout) <= PRIVATE_LIMIT
+            ):
                 try:
                     version = json.loads(stdout).get("azure-cli")
                     if isinstance(version, str) and re.fullmatch(
@@ -265,7 +504,12 @@ def execute(output, scratch, report):
                         report["cliVersion"] = version
                 except (ValueError, AttributeError, RecursionError):
                     report["cliVersion"] = None
-            if name == "help" and row["state"] == "ok" and stdout is not None:
+            if (
+                name == "help"
+                and row["state"] == "ok"
+                and stdout is not None
+                and len(stdout) <= PRIVATE_LIMIT
+            ):
                 report["argumentSupport"] = {
                     flag: bool(
                         re.search(
@@ -275,9 +519,11 @@ def execute(output, scratch, report):
                     )
                     for flag in ARGUMENTS
                 }
+            if name == "login":
+                observe_login(report, stdout, stderr)
+                if row["state"] == "ok":
+                    report["loginFailureMarkers"] = []
             if row["state"] in ("timeout", "cancelled"):
-                code = row["exitCode"]
-                report["status"] = row["state"]
                 break
             if row["exitCode"] is None:
                 break
@@ -285,16 +531,15 @@ def execute(output, scratch, report):
                 if row["state"] == "ok":
                     report["status"] = "login-succeeded-not-guest-execution"
                     code = 0
-                else:
-                    report["loginFailureMarkers"], report["reportedHttpStatus"] = (
-                        login_observations(stderr)
-                    )
             publish(output, report)
     except KeyboardInterrupt:
-        report["status"] = "cancelled"
-        code = 130
+        if report["status"] not in ("timeout", "cancelled"):
+            report["status"] = "cancelled"
+            code = 130
+        report["exceptionClass"] = "KeyboardInterrupt"
     except Exception as error:
-        report["status"] = "failed"
+        if report["status"] not in ("timeout", "cancelled"):
+            report["status"] = "failed"
         code = code or 1
         name = type(error).__name__
         report["exceptionClass"] = name if name in facts.EXCEPTIONS else None
