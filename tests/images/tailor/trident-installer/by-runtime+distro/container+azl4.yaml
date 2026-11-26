@@ -18,6 +18,8 @@ config:
           destination: /root/.profile
         - source: runtime/container/files/trident-container.service
           destination: /usr/lib/systemd/system/trident-container.service
+        - source: ../common/files/10-live-ethernet-dhcp.network
+          destination: /usr/lib/systemd/network/10-live-ethernet-dhcp.network
   scripts:
     postCustomization:
       $set:

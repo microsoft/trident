@@ -8,3 +8,6 @@ config:
       enable:
         $set:
           $include: ./azl4/host-services.yaml
+    additionalFiles:
+      - source: ../common/files/10-live-ethernet-dhcp.network
+        destination: /usr/lib/systemd/network/10-live-ethernet-dhcp.network
