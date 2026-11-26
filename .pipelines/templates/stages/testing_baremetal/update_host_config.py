@@ -18,6 +18,8 @@ def update_trident_host_config(
     network_gateway: Optional[str] = None,
     use_dhcp: bool = False,
     https_proxy: Optional[str] = None,
+    os_disk: str = "/dev/nvme0n1",
+    secondary_disk: str = "/dev/nvme1n1",
 ):
     logging.info("Updating Host Configuration section of trident.yaml")
     os = host_configuration.setdefault("os", {})
@@ -90,12 +92,13 @@ def update_trident_host_config(
             }
         )
 
-    logging.info("Configuring disk selectors in trident.yaml")
+    logging.info("Configuring disk devices in trident.yaml")
     disks = host_configuration.get("storage").get("disks")
+    disk_devices = {"os": os_disk, "disk2": secondary_disk}
     for disk in disks:
-        if disk["id"] in ("os", "disk2"):
-            disk.pop("device", None)
-            disk["selector"] = {"strategy": "tiered-smallest-fit"}
+        if disk["id"] in disk_devices:
+            disk.pop("selector", None)
+            disk["device"] = disk_devices[disk["id"]]
 
     # If this is root-verity, we need to set an internal param to be able to
     # configure the network.
@@ -200,6 +203,16 @@ def main():
         help="HTTPS proxy URL to inject into the trident systemd service environment.",
     )
     parser.add_argument(
+        "--os-disk",
+        default="/dev/nvme0n1",
+        help="Device path for the os disk. Default: /dev/nvme0n1",
+    )
+    parser.add_argument(
+        "--secondary-disk",
+        default="/dev/nvme1n1",
+        help="Device path for the disk2 disk. Default: /dev/nvme1n1",
+    )
+    parser.add_argument(
         "-o",
         "--output",
         default=None,
@@ -222,6 +235,8 @@ def main():
         network_gateway=args.oam_gateway,
         use_dhcp=args.use_dhcp,
         https_proxy=args.https_proxy,
+        os_disk=args.os_disk,
+        secondary_disk=args.secondary_disk,
     )
 
     output_path = args.output or args.trident_yaml
