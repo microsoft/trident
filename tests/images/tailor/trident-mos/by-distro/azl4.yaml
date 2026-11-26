@@ -18,6 +18,9 @@ config:
             - id: rootfs
               start: 33M
   os:
+    additionalFiles:
+      - source: ../common/files/10-live-ethernet-dhcp.network
+        destination: /usr/lib/systemd/network/10-live-ethernet-dhcp.network
     packages:
       install:
         $set:

@@ -97,6 +97,9 @@ base does not include the live-boot initramfs modules.
 The containerd SELinux mmap backport remains AZL3-only: its refpolicy symbols
 do not resolve on AZL4. The AZL4 container recipe retains its native policy
 instead of loading the AZL3 module; ISO enforcing-mode choices are unchanged.
+AZL4 live images also include a shared Ethernet DHCP configuration: the minimal
+catalog base supplies no persistent Ethernet configuration. Matching by link
+type avoids depending on `eth*` versus `enp*` names; AZL3 networking is unchanged.
 
 The build-only layer keeps legacy installer stages and artifacts in place.
 Native artifacts have a `tailor-` prefix, while their contained ISO filenames
