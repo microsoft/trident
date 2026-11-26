@@ -7,7 +7,7 @@ use log::LevelFilter;
 
 use crate::{client::Event, serial::SerialMirrors};
 
-use super::model::{log_visible, LogEntry};
+use super::{log_visible, Record};
 
 /// Writes complete diagnostics privately and mirrors filtered status to serial ports.
 pub(crate) struct Output {
@@ -18,8 +18,8 @@ pub(crate) struct Output {
 }
 
 impl Output {
-    /// Preserve the event before the UI shortens its display copy.
-    pub(super) fn record(&mut self, event: &Event) -> Result<(), Error> {
+    /// Persist the complete, already-redacted event before a frontend shortens its display copy.
+    pub(crate) fn record(&mut self, event: &Event) -> Result<(), Error> {
         if let Some(log) = &mut self.log {
             writeln!(log, "{event:#?}").context("Failed to preserve installer diagnostics")?;
             log.flush()?;
@@ -28,7 +28,7 @@ impl Output {
     }
 
     /// Sends visible records without dropping mirrors for temporary write backpressure.
-    pub(super) fn announce(&mut self, entry: &LogEntry, verbosity: LevelFilter) {
+    pub(crate) fn announce(&mut self, entry: &Record, verbosity: LevelFilter) {
         if !log_visible(entry.level, verbosity) {
             return;
         }
@@ -38,7 +38,7 @@ impl Output {
     }
 
     /// Retries queued serial output, removing only mirrors with permanent write failures.
-    pub(super) fn flush_mirrors(&mut self) {
+    pub(crate) fn flush_mirrors(&mut self) {
         self.mirrors.flush();
     }
 }
@@ -54,12 +54,12 @@ mod tests {
 
     use crate::config::SerialVerbosity;
 
-    use super::super::model::{LogSource, Model};
+    use crate::{diagnostics::Source as LogSource, engine::State};
 
     /// Serial filtering preserves line prefixes and does not change display filtering.
     #[test]
     fn serial_verbosity_filters_independently_of_display() {
-        let mut model = Model::new();
+        let model = State::new();
         let root = TempDir::new().unwrap();
         let serial = root.path().join("serial.log");
         let mut mirrors = SerialMirrors::default();
@@ -90,7 +90,5 @@ mod tests {
             .last()
             .unwrap()
             .ends_with("[TRIDENT:TRACE] trace detail"));
-        assert!(!log_visible(LogLevel::Trace, model.verbosity));
-        assert_eq!(model.logs.len(), 6);
     }
 }

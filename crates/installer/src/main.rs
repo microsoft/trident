@@ -15,10 +15,12 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use osutils::systemd;
 
-use crate::{client::Event, config::DEFAULT_CONFIG, serial::SerialMirrors, ui::Output};
+use crate::{client::Event, config::DEFAULT_CONFIG, diagnostics::Output, serial::SerialMirrors};
 
 mod client;
 mod config;
+mod diagnostics;
+mod engine;
 mod ipmi;
 mod serial;
 mod source;
@@ -33,7 +35,7 @@ const PRIVATE_FILE_MODE: u32 = 0o600;
 const WORKER_THREADS: usize = 2;
 /// One name for the command help and console header.
 const APPLICATION_NAME: &str = "Trident Linux Installer";
-/// The logger forwards records here after the UI starts; earlier records use stderr.
+/// The logger forwards records after the engine starts; earlier records use stderr.
 static INSTALLER_LOG_TX: OnceLock<UnboundedSender<Event>> = OnceLock::new();
 
 /// Bootstrap options; installation details come from installer TOML and the Host Configuration.
@@ -149,7 +151,8 @@ async fn run(args: Args) -> Result<(), Error> {
             }
         }
     }
-    ui::run(args.config, args.plain, linux_vt, output).await
+    let mut console = ui::Console::new(args.plain, linux_vt)?;
+    engine::run(args.config, &mut console, output).await
 }
 
 #[cfg(test)]
