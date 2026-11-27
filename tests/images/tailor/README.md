@@ -44,3 +44,16 @@ Image jobs reset canonical tailor.yaml from Git, select an existing dev containe
 only when requested, and archive the effective manifest in logs/tailor.yaml.
 No alternate manifest is used. Future producers extend the existing library and
 place new assets directly in common instead of moving them between image models.
+
+
+## Host test-image model
+
+trident-testimage/image.yaml contains the AMD64/base/AZL4 host recipe and COSI
+output. It reuses the existing audit-directory and AZL4 script-library entries,
+common assets, staged AZL4 base and RPMs. Its source dependencies include the
+model, containing library and common files.
+
+The native host job publishes two clones under the existing
+trident-azl4-testimage artifact name. It does not stage VM SSH keys: the installer
+and Host Configuration create the test user. Production remains separate from
+test selection/adoption; adding this model does not change consumer defaults.

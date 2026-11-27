@@ -194,6 +194,13 @@ stages:
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
+  - template: stages/trident_images/tailor-host-image.yml
+    parameters:
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      dependsOnTrident: ${{ ne(parameters.tridentBuildOptions, 'prebuilt') }}
+
   # Build Trident test image (container)
   - template: stages/build_image/build-image.yml
     parameters:

@@ -1,0 +1,49 @@
+parameters:
+  - name: micBuildType
+    type: string
+    default: release
+    values: [dev, preview, release]
+  - name: micVersion
+    type: string
+    default: "*.*.*"
+  - name: dependsOnStage
+    type: string
+    default: ""
+  - name: dependsOnTrident
+    type: boolean
+    default: true
+
+stages:
+  - stage: TridentTestImg_trident_azl4_testimage
+    displayName: Build Tailor AZL4 GRUB E2E host image
+    dependsOn:
+      - BuildingTools
+      - ${{ if parameters.dependsOnTrident }}:
+          - GetTridentBinaries_rpms_amd64
+      - ${{ if ne(parameters.dependsOnStage, '') }}:
+          - ${{ parameters.dependsOnStage }}
+    jobs:
+      - job: BuildTridentTestImg
+        timeoutInMinutes: 30
+        pool:
+          type: linux
+          name: trident-ubuntu-1es-pool-eastus2
+          hostArchitecture: amd64
+        variables:
+          ob_outputDirectory: /tmp/tailor-host-output
+          ob_artifactBaseName: trident-azl4-testimage
+        steps:
+          - template: ../common_tasks/checkout_trident.yml
+          - template: ../common_tasks/avoid-pypi-usage.yml
+          - template: tailor-image-template.yml
+            parameters:
+              tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+              outputDirectory: $(ob_outputDirectory)
+              imageName: trident-azl4-testimage
+              tailorImage: trident-testimage
+              stageSshKeys: false
+              distro: azl4
+              scenario: base
+              clones: 2
+              micBuildType: ${{ parameters.micBuildType }}
+              micVersion: ${{ parameters.micVersion }}

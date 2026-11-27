@@ -5,6 +5,12 @@ parameters:
     type: string
   - name: imageName
     type: string
+  - name: tailorImage
+    type: string
+    default: vm
+  - name: stageSshKeys
+    type: boolean
+    default: true
   - name: distro
     type: string
     values: [azl3, azl4]
@@ -51,12 +57,13 @@ steps:
       targetPath: ${{ parameters.tridentSourceDirectory }}/artifacts/tailor-inputs/rpms
     displayName: Download Trident RPMs
 
-  - task: DownloadPipelineArtifact@2
-    inputs:
-      buildType: current
-      artifactName: ssh-keys
-      targetPath: ${{ parameters.tridentSourceDirectory }}/artifacts/tailor-inputs/ssh
-    displayName: Download shared VM SSH keys
+  - ${{ if parameters.stageSshKeys }}:
+      - task: DownloadPipelineArtifact@2
+        inputs:
+          buildType: current
+          artifactName: ssh-keys
+          targetPath: ${{ parameters.tridentSourceDirectory }}/artifacts/tailor-inputs/ssh
+        displayName: Download shared VM SSH keys
 
   - template: common/mic-download-template.yaml@platform-pipelines
     parameters:
@@ -122,12 +129,14 @@ steps:
       mapfile -t rpms < <(find artifacts/tailor-inputs/rpms -type f -name "*.${DISTRO}.*.rpm")
       [[ "${#rpms[@]}" -gt 0 ]]
       cp -- "${rpms[@]}" "$SOURCE_DIRECTORY/bin/RPMS/"
-      install -D -m 644 artifacts/tailor-inputs/ssh/id_rsa.pub \
-        "$SOURCE_DIRECTORY/tests/images/tailor/trident-vm-testimage/files/id_rsa.pub"
-      private_key="$OUTPUT_DIRECTORY/key_${IMAGE_NAME}_private.pem"
-      cp artifacts/tailor-inputs/ssh/id_rsa "$private_key"
-      chmod 600 "$private_key"
-      cp artifacts/tailor-inputs/ssh/id_rsa.pub "$OUTPUT_DIRECTORY/key_${IMAGE_NAME}_public.pub"
+      if [[ "${STAGE_SSH_KEYS,,}" == true ]]; then
+        install -D -m 644 artifacts/tailor-inputs/ssh/id_rsa.pub \
+          "$SOURCE_DIRECTORY/tests/images/tailor/trident-vm-testimage/files/id_rsa.pub"
+        private_key="$OUTPUT_DIRECTORY/key_${IMAGE_NAME}_private.pem"
+        cp artifacts/tailor-inputs/ssh/id_rsa "$private_key"
+        chmod 600 "$private_key"
+        cp artifacts/tailor-inputs/ssh/id_rsa.pub "$OUTPUT_DIRECTORY/key_${IMAGE_NAME}_public.pub"
+      fi
 
       tailor="$SOURCE_DIRECTORY/artifacts/tailor-tool/tailor"
       chmod +x "$tailor"
@@ -148,7 +157,7 @@ steps:
       cp -- "$manifest" "$OUTPUT_DIRECTORY/logs/tailor.yaml"
 
       selection="arch=amd64,scenario=${SCENARIO},distro=${DISTRO}"
-      matrix=$("$tailor" --manifest "$manifest" matrix vm -s "$selection" --format json)
+      matrix=$("$tailor" --manifest "$manifest" matrix "$TAILOR_IMAGE" -s "$selection" --format json)
       jq -e 'length == 1' <<< "$matrix" >/dev/null
       slug=$(jq -r '.[0].slug' <<< "$matrix")
       format=$(jq -r '.[0].format' <<< "$matrix")
@@ -156,7 +165,7 @@ steps:
       [[ "$format" == qcow2 || "$format" == cosi ]]
       build_output="$SOURCE_DIRECTORY/artifacts/tailor-output"
       "$tailor" --manifest "$manifest" --log-dir "$OUTPUT_DIRECTORY/logs" \
-        build vm --cell "$slug" --clones "$CLONES" --output-dir "$build_output"
+        build "$TAILOR_IMAGE" --cell "$slug" --clones "$CLONES" --output-dir "$build_output"
 
       if [[ "$CLONES" -eq 1 ]]; then
         cp -- "$build_output/$slug.$format" "$OUTPUT_DIRECTORY/$IMAGE_NAME.$format"
@@ -170,6 +179,8 @@ steps:
       SOURCE_DIRECTORY: ${{ parameters.tridentSourceDirectory }}
       OUTPUT_DIRECTORY: ${{ parameters.outputDirectory }}
       IMAGE_NAME: ${{ parameters.imageName }}
+      TAILOR_IMAGE: ${{ parameters.tailorImage }}
+      STAGE_SSH_KEYS: ${{ parameters.stageSshKeys }}
       DISTRO: ${{ parameters.distro }}
       SCENARIO: ${{ parameters.scenario }}
       CLONES: ${{ parameters.clones }}
