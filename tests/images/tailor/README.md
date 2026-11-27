@@ -95,3 +95,5 @@ machine-ID-aware version. /usr-verity and its UKI signing/output contract will
 extend this same manifest in a separate producer/adoption step.
 AZL3 retains dracut-overlayfs; AZL4's dracut package owns its overlayfs and
 systemd-veritysetup modules, with no separate overlayfs subpackage.
+The AZL4 host installs selinux-policy so bootloader reset can read its config;
+the image profile still disables SELinux.

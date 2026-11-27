@@ -249,6 +249,7 @@ fragments:
           - systemd-udev
           - tpm2-tools
           - trident-service
+          - selinux-policy
           - veritysetup
           - vim
           - attr
