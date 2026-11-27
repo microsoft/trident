@@ -40,6 +40,7 @@ parameters:
     displayName: Image flavor
     type: string
     values:
+      - grubazl4
       - qemu
       - azure
       - uki
@@ -93,23 +94,47 @@ jobs:
           - task: DownloadPipelineArtifact@2
             inputs:
               buildType: current
-              artifactName: image-${{ parameters.flavor }}-base
+              ${{ if eq(parameters.flavor, 'grubazl4') }}:
+                artifactName: image-trident-vm-grub-azl4-testimage-qcow2
+              ${{ else }}:
+                artifactName: image-${{ parameters.flavor }}-base
               targetPath: "$(Build.ArtifactStagingDirectory)/"
             displayName: Download Base Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: image-${{ parameters.flavor }}-update-a
+          ${{ if eq(parameters.flavor, 'grubazl4') }}:
+            artifactName: trident-vm-grub-azl4-testimage
+            patterns: "*_0.cosi"
+          ${{ else }}:
+            artifactName: image-${{ parameters.flavor }}-update-a
           targetPath: "$(Build.ArtifactStagingDirectory)/update-a"
         displayName: Download Update Image A
 
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: image-${{ parameters.flavor }}-update-b
+          ${{ if eq(parameters.flavor, 'grubazl4') }}:
+            artifactName: trident-vm-grub-azl4-testimage
+            patterns: "*_1.cosi"
+          ${{ else }}:
+            artifactName: image-${{ parameters.flavor }}-update-b
           targetPath: "$(Build.ArtifactStagingDirectory)/update-b"
         displayName: Download Update Image B
+
+      - ${{ if eq(parameters.flavor, 'grubazl4') }}:
+          - bash: |
+              set -euo pipefail
+              # Storm uses one basename for both update-server URLs.
+              name=trident-vm-grub-azl4-testimage
+              mv -- "$ARTIFACT_DIRECTORY/update-a/${name}_0.cosi" \
+                "$ARTIFACT_DIRECTORY/update-a/$name.cosi"
+              mv -- "$ARTIFACT_DIRECTORY/update-b/${name}_1.cosi" \
+                "$ARTIFACT_DIRECTORY/update-b/$name.cosi"
+            env:
+              ARTIFACT_DIRECTORY: $(Build.ArtifactStagingDirectory)
+            displayName: Preserve the shared servicing COSI basename
 
       - task: DownloadPipelineArtifact@2
         inputs:
@@ -167,7 +192,10 @@ jobs:
           fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
             if [[ "${{ parameters.testSecureBoot }}" == 'True' ]]; then
-              FLAGS="$FLAGS --secure-boot"
+              # grubazl4 is skipped: its base image does not support secure boot yet.
+              if [[ "${{ parameters.flavor }}" != 'grubazl4' ]]; then
+                FLAGS="$FLAGS --secure-boot"
+              fi
             fi
           fi
           if [ "${{ parameters.rollbackTesting }}" == "True" ]; then

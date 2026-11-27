@@ -1,6 +1,7 @@
 package config
 
 type TestConfig struct {
+	Distro                    string `help:"Distro of the test image" enum:"azl3,azl4" default:"azl3"`
 	ArtifactsDir              string `help:"Directory containing artifacts for the VM" default:"/tmp"`
 	OutputPath                string `help:"Path to the output directory for logs and artifacts" default:"./output"`
 	Verbose                   bool   `help:"Enable verbose logging" default:"false"`

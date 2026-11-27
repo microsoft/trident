@@ -51,6 +51,11 @@ parameters:
     type: boolean
     default: false
 
+  - name: includeAzl4
+    displayName: "Include qemu azl4 testing"
+    type: boolean
+    default: false
+
   - name: includeAzure
     displayName: "Include Azure testing"
     type: boolean
@@ -225,6 +230,8 @@ stages:
               - BuildImagesAzure
           - ${{ if eq(parameters.includeUKI, true) }}:
               - BuildImagesUKI
+          - ${{ if eq(parameters.includeAzl4, true) }}:
+              - BuildTailorVMImages
 
     variables:
       - group: servicing_testing_params
@@ -236,6 +243,20 @@ stages:
         value: "trident-vm-grub-verity-testimage-$(System.DefinitionId)"
 
     jobs:
+      - ${{ if eq(parameters.includeAzl4, true) }}:
+          - ${{ each batch in parameters.workerBatches }}:
+              - template: testing-template.yml
+                parameters:
+                  updateIterationCount: ${{ parameters.updateIterationCount }}
+                  rollbackTesting: ${{ parameters.rollbackTesting }}
+                  workers: ${{ batch.size }}
+                  batchId: ${{ batch.id }}
+                  updateCheckTimeoutInMinutes: ${{ parameters.updateCheckTimeoutInMinutes }}
+                  verboseLogging: ${{ parameters.verboseLogging }}
+                  platform: qemu
+                  flavor: grubazl4
+                  testSecureBoot: ${{ parameters.testSecureBoot }}
+
       - ${{ if eq(parameters.includeQemu, true) }}:
           - ${{ each batch in parameters.workerBatches }}:
               - template: testing-template.yml

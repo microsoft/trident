@@ -25,6 +25,7 @@ parameters:
     type: string
     values:
       - qemu-grub
+      - grubazl4
       - qemu
       - uki
 
@@ -98,14 +99,21 @@ jobs:
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: image-${{ parameters.flavor }}-base
+          ${{ if eq(parameters.flavor, 'grubazl4') }}:
+            artifactName: image-trident-vm-grub-azl4-testimage-qcow2
+          ${{ else }}:
+            artifactName: image-${{ parameters.flavor }}-base
           targetPath: "$(Build.ArtifactStagingDirectory)/"
         displayName: Download Base Image
 
       - task: DownloadPipelineArtifact@2
         inputs:
           buildType: current
-          artifactName: image-${{ parameters.flavor }}-update-a
+          ${{ if eq(parameters.flavor, 'grubazl4') }}:
+            artifactName: trident-vm-grub-azl4-testimage
+            patterns: "*_0.cosi"
+          ${{ else }}:
+            artifactName: image-${{ parameters.flavor }}-update-a
           targetPath: "$(Build.ArtifactStagingDirectory)"
         displayName: Download Update Image
 
@@ -158,9 +166,15 @@ jobs:
           if [ "${{ parameters.verboseLogging }}" == "True" ]; then
             STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --verbose"
           fi
+          if [[ "${{ parameters.flavor }}" == "grubazl4" ]]; then
+            STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --distro azl4"
+          fi
           if [ "${{ parameters.flavor }}" != "uki" ]; then
             if [[ "${{ parameters.testSecureBoot }}" == 'True' ]]; then
-              STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
+              # grubazl4 is skipped: its base image does not support secure boot yet.
+              if [[ "${{ parameters.flavor }}" != 'grubazl4' ]]; then
+                STORM_DYNAMIC_FLAGS="$STORM_DYNAMIC_FLAGS --secure-boot"
+              fi
             fi
           fi
           if [ "${{ parameters.skipManualRollbackTesting }}" == "true" ]; then
@@ -195,7 +209,7 @@ jobs:
             --force-cleanup
         displayName: "Rollback test (${{ parameters.platform }})"
         workingDirectory: $(TRIDENT_SOURCE_DIR)
-        timeoutInMinutes: 5
+        timeoutInMinutes: 10
 
       - bash: |
           set -eux

@@ -120,12 +120,12 @@ stages:
         # Run CodeQL for this in CI only
         runCodeql: true
 
-  - ${{ if and(or(eq(parameters.stageType, 'pr-e2e'), eq(parameters.stageType, 'ci')), ne(parameters.tridentBuildOptions, 'prebuilt')) }}:
-      - template: stages/trident_images/tailor-vm-images.yml
-        parameters:
-          micBuildType: ${{ parameters.micBuildType }}
-          micVersion: ${{ parameters.micVersion }}
-          dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+  - template: stages/trident_images/tailor-vm-images.yml
+    parameters:
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      dependsOnTrident: ${{ ne(parameters.tridentBuildOptions, 'prebuilt') }}
 
   # E2E Test Matrix Definition
   - template: stages/testing_e2e/storm_e2e.yml
@@ -258,6 +258,7 @@ stages:
   # Test Runtime Updates and Rollback on VMs
   - template: stages/testing_rollback/vm-testing.yml
     parameters:
+      includeAzl4: true
       includeQemu: true
       includeUKI: true
       micBuildType: ${{ parameters.micBuildType }}
@@ -273,6 +274,7 @@ stages:
   # Test Servicing on VMs
   - template: stages/testing_servicing/vm-testing.yml
     parameters:
+      includeAzl4: true
       includeQemu: true
       includeUKI: true
       includeAzure: ${{ parameters.includeAzure }}

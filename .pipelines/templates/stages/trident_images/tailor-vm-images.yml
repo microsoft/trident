@@ -9,6 +9,9 @@ parameters:
   - name: dependsOnStage
     type: string
     default: ""
+  - name: dependsOnTrident
+    type: boolean
+    default: true
   - name: distros
     type: object
     default: [azl3, azl4]
@@ -21,7 +24,8 @@ stages:
     displayName: Build Tailor AZL3 and AZL4 VM images
     dependsOn:
       - BuildingTools
-      - GetTridentBinaries_rpms_amd64
+      - ${{ if parameters.dependsOnTrident }}:
+          - GetTridentBinaries_rpms_amd64
       - PrepareSSHKeys
       - ${{ if ne(parameters.dependsOnStage, '') }}:
           - ${{ parameters.dependsOnStage }}
