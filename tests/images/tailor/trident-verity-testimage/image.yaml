@@ -237,7 +237,7 @@ fragments:
           - curl
           - device-mapper
           - dosfstools
-          - dracut-overlayfs
+          - dracut
           - efibootmgr
           - iproute
           - iptables-nft
@@ -347,7 +347,7 @@ fragments:
           - dnf5
           - docker-cli
           - dosfstools
-          - dracut-overlayfs
+          - dracut
           - efibootmgr
           - iproute
           - iptables-nft

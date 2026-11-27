@@ -93,3 +93,5 @@ Image-owned overlay assets use common/files and shell bodies extend the existing
 common/scripts.yaml. The verity etc-mount script remains distinct from the VM
 machine-ID-aware version. /usr-verity and its UKI signing/output contract will
 extend this same manifest in a separate producer/adoption step.
+AZL3 retains dracut-overlayfs; AZL4's dracut package owns its overlayfs and
+systemd-veritysetup modules, with no separate overlayfs subpackage.
