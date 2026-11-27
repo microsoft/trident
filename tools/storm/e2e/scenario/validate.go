@@ -47,6 +47,9 @@ func (s *TridentE2EScenario) validateHostState(tc storm.TestCase) error {
 	}
 
 	var sa validate.SoftAsserter
+	if s.Distro() == "azl4" {
+		validate.ValidateAzureLinuxVersion(&sa, s.sshClient, "4.0")
+	}
 
 	if validate.HasRollbackIntent(s.validationConfig) {
 		// Health-check rollback scenarios (e.g. health-checks-install) replace
