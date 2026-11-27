@@ -1,0 +1,84 @@
+parameters:
+- name: micBuildType
+  type: string
+  default: release
+  values:
+  - dev
+  - preview
+  - release
+- name: micVersion
+  type: string
+  default: '*.*.*'
+- name: stagePrefix
+  type: string
+  default: BuildTailorRootVerity
+- name: artifactPrefix
+  type: string
+  default: tailor-
+- name: dependsOnStage
+  type: string
+  default: ''
+- name: dependsOnTrident
+  type: boolean
+  default: true
+- name: images
+  type: object
+  default:
+  - name: trident-verity-testimage
+    runtime: host
+    distro: azl3
+  - name: trident-container-verity-testimage
+    runtime: container
+    distro: azl3
+  - name: trident-verity-testimage-azl4
+    runtime: host
+    distro: azl4
+  - name: trident-container-verity-testimage-azl4
+    runtime: container
+    distro: azl4
+stages:
+- ${{ each image in parameters.images }}:
+  - stage: ${{ parameters.stagePrefix }}_${{ replace(image.name, '-', '_') }}
+    displayName: Build Tailor ${{ image.distro }} ${{ image.runtime }} root-verity COSI
+    dependsOn:
+    - BuildingTools
+    - ${{ if and(eq(image.runtime, 'host'), parameters.dependsOnTrident) }}:
+      - GetTridentBinaries_rpms_amd64
+    - ${{ if ne(parameters.dependsOnStage, '') }}:
+      - ${{ parameters.dependsOnStage }}
+    jobs:
+    - job: BuildTridentTestImg
+      timeoutInMinutes: 30
+      pool:
+        type: linux
+        name: trident-ubuntu-1es-pool-eastus2
+        hostArchitecture: amd64
+      variables:
+        ob_outputDirectory: /tmp/tailor-installer-output
+        ob_artifactBaseName: ${{ format('{0}{1}', parameters.artifactPrefix, image.name) }}
+      steps:
+      - template: ../common_tasks/checkout_trident.yml
+      - template: ../common_tasks/avoid-pypi-usage.yml
+      - ${{ if eq(image.distro, 'azl3') }}:
+        - template: ../common_tasks/find-base-image-version.yml
+          parameters:
+            tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+            architecture: amd64
+      - template: tailor-image-template.yml
+        parameters:
+          tridentSourceDirectory: $(TRIDENT_SOURCE_DIR)
+          outputDirectory: $(ob_outputDirectory)
+          imageName: ${{ image.name }}
+          tailorImage: trident-verity-testimage
+          stageSshKeys: false
+          stageTridentRpms: ${{ eq(image.runtime, 'host') }}
+          baseImageType: baremetal
+          runtimeEnv: ${{ image.runtime }}
+          distro: ${{ image.distro }}
+          scenario: base
+          clones: 2
+          ${{ if eq(image.distro, 'azl3') }}:
+            baseimgBuildType: $(BASEIMG_BUILD_TYPE)
+            baseimgVersion: $(BASEIMG_VERSION)
+          micBuildType: ${{ parameters.micBuildType }}
+          micVersion: ${{ parameters.micVersion }}
