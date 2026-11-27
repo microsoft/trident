@@ -160,6 +160,13 @@ stages:
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
+  # Build-only root-verity artifacts; legacy consumers remain unchanged.
+  - template: stages/trident_images/tailor-root-verity-images.yml
+    parameters:
+      micBuildType: ${{ parameters.micBuildType }}
+      micVersion: ${{ parameters.micVersion }}
+      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+
   # Adopt native ISOs under the existing installer stage/artifact contracts.
   - template: stages/trident_images/tailor-installer-images.yml
     parameters:

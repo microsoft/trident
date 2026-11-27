@@ -331,3 +331,10 @@ mos-post-install: |-
   cd /usr/share/selinux/packages/trident
   make -f /usr/share/selinux/devel/Makefile trident.pp
   semodule -i trident.pp
+verity-debug-trident-service: |-
+  #!/bin/bash
+
+  sed -i 's/--verbosity INFO/--verbosity DEBUG/' /usr/lib/systemd/system/trident.service
+verity-create-web-directory: |-
+  # Create the web directory for testing
+  mkdir -p /web
