@@ -1,0 +1,209 @@
+name: trident-mos
+matrix:
+  arch:
+  - amd64
+  scenario:
+  - base
+  distro:
+  - azl3
+  - azl4
+base:
+  path: ../../../../artifacts/baremetal.vhdx
+outputs:
+- format: iso
+config:
+  storage:
+    bootType: efi
+    disks:
+    - partitionTableType: gpt
+      maxSize: 4G
+      partitions:
+      - id: esp
+        type: esp
+        start: 1M
+        end: 9M
+      - id: rootfs
+        start: 9M
+    filesystems:
+    - deviceId: esp
+      type: fat32
+      mountPoint:
+        path: /boot/efi
+        options: umask=0077
+    - deviceId: rootfs
+      type: ext4
+      mountPoint:
+        path: /
+  os:
+    bootloader:
+      resetType: hard-reset
+    hostname: trident-mos-testimage
+    packages:
+      update:
+      - systemd
+      install:
+      - binutils
+      - curl
+      - device-mapper
+      - dnf
+      - dosfstools
+      - efibootmgr
+      - iproute
+      - iptables
+      - lsof
+      - mdadm
+      - netplan
+      - ntfs-3g
+      - ntfsprogs
+      - openssh-server
+      - squashfs-tools
+      - tar
+      - tpm2-tools
+      - veritysetup
+      - vim
+      - selinux-policy-devel
+      - setools-console
+    additionalDirs:
+    - source: ../common/files/mos/static-pcrlock-files/
+      destination: /var/lib/pcrlock.d/
+    additionalFiles:
+    - source: ../common/files/live-getty@.service
+      destination: /usr/lib/systemd/system/getty@.service
+    - source: ../common/files/live-serial-getty@.service
+      destination: /usr/lib/systemd/system/serial-getty@.service
+    - source: ../common/files/mos-root.profile
+      destination: /root/.profile
+    - source: ../common/files/mos/systemd/trident-install.service
+      destination: /usr/lib/systemd/system/trident-install.service
+    - source: ../common/files/mos/selinux-policy/trident.if
+      destination: /usr/share/selinux/packages/trident/trident.if
+    - source: ../common/files/mos/selinux-policy/trident.fc
+      destination: /usr/share/selinux/packages/trident/trident.fc
+    - source: ../common/files/mos/selinux-policy/trident.te
+      destination: /usr/share/selinux/packages/trident/trident.te
+    - source: ../common/files/mos/systemd/tridentd.socket
+      destination: /usr/lib/systemd/system/tridentd.socket
+    - source: ../common/files/mos/systemd/tridentd.service
+      destination: /usr/lib/systemd/system/tridentd.service
+    - source: files/rcp-agent
+      destination: /usr/bin/rcp-agent
+    - source: ../common/files/mos/systemd/rcp-agent.service
+      destination: /usr/lib/systemd/system/rcp-agent.service
+    services:
+      enable:
+      - rcp-agent
+      - tridentd.socket
+      disable:
+      - trident-install
+  scripts:
+    postCustomization:
+    - content:
+        $include: ../common/scripts.yaml#/mos-post-install
+      interpreter: /bin/bash
+  iso:
+    additionalFiles:
+    - source: ../common/files/live-config-placeholder.yaml
+      destination: /trident-config.yaml
+    - source: ../common/files/live-pre-trident-script.sh
+      destination: /pre-trident-script.sh
+    - source: ../common/files/live-rcp-agent.yaml
+      destination: /rcp-agent.yaml
+    kernelCommandLine:
+      extraCommandLine:
+      - console=tty0
+      - console=ttyS0
+      - rd.luks=0
+      - selinux=1
+      - enforcing=0
+params:
+  shellDollar: $
+extraDependencies:
+- image.yaml
+- ../common/scripts.yaml
+- ../common/files
+- files
+fragments:
+- match:
+    distro: azl4
+  config:
+    storage:
+      disks:
+        $set:
+        - partitionTableType: gpt
+          maxSize: 4G
+          partitions:
+          - id: esp
+            type: esp
+            start: 1M
+            end: 33M
+          - id: rootfs
+            start: 33M
+    os:
+      packages:
+        install:
+          $set:
+          - binutils
+          - curl
+          - device-mapper
+          - dnf5
+          - dracut-live
+          - dosfstools
+          - efibootmgr
+          - iproute
+          - iptables-nft
+          - lsof
+          - mdadm
+          - netplan
+          - netplan-default-backend-networkd
+          - ntfs-3g
+          - ntfsprogs
+          - openssh-server
+          - squashfs-tools
+          - tar
+          - tpm2-tools
+          - veritysetup
+          - vim
+          - selinux-policy-devel
+          - setools-console
+          - policycoreutils
+          - systemd-networkd
+          - systemd-resolved
+      additionalFiles:
+        $set:
+        - source: ../common/files/live-getty@.service
+          destination: /usr/lib/systemd/system/getty@.service
+        - source: ../common/files/live-serial-getty@.service
+          destination: /usr/lib/systemd/system/serial-getty@.service
+        - source: ../common/files/mos-root.profile
+          destination: /root/.profile
+        - source: ../common/files/mos/systemd/trident-install.service
+          destination: /usr/lib/systemd/system/trident-install.service
+        - source: ../common/files/mos/selinux-policy/trident.if
+          destination: /usr/share/selinux/packages/trident/trident.if
+        - source: ../common/files/mos/selinux-policy/trident.fc
+          destination: /usr/share/selinux/packages/trident/trident.fc
+        - source: ../common/files/mos/selinux-policy/trident.te
+          destination: /usr/share/selinux/packages/trident/trident.te
+        - source: ../common/files/mos/systemd/tridentd.socket
+          destination: /usr/lib/systemd/system/tridentd.socket
+        - source: ../common/files/mos/systemd/tridentd.service
+          destination: /usr/lib/systemd/system/tridentd.service
+        - source: files/rcp-agent
+          destination: /usr/bin/rcp-agent
+        - source: ../common/files/mos/systemd/rcp-agent.service
+          destination: /usr/lib/systemd/system/rcp-agent.service
+        - source: ../common/files/10-live-ethernet-dhcp.network
+          destination: /usr/lib/systemd/network/10-live-ethernet-dhcp.network
+      services:
+        enable:
+          $set:
+          - rcp-agent
+          - tridentd.socket
+          - systemd-networkd
+          - systemd-resolved
+          - netplan-configure.service
+    previewFeatures:
+    - preview-distro-version
+  base:
+    $set:
+      path: ../../../../artifacts/azl4_minimal_os.vhdx

@@ -57,3 +57,23 @@ The native host job publishes two clones under the existing
 trident-azl4-testimage artifact name. It does not stage VM SSH keys: the installer
 and Host Configuration create the test user. Production remains separate from
 test selection/adoption; adding this model does not change consumer defaults.
+
+
+## Installer and MOS models
+
+trident-installer/image.yaml declares runtime=host/container and distro=azl3/azl4.
+trident-mos/image.yaml declares distro=azl3/azl4. All six AMD64/base cells produce
+ISOs; packages, services, storage and script differences stay in those manifests.
+Script bodies extend common/scripts.yaml; live console/config assets live in
+common/files. Distinct root profiles and services keep role-specific names.
+
+Generated MOS policy, systemd, PCR and RCP inputs remain in ignored staging paths,
+not source copies. Model/library/common files are declared cache dependencies.
+AZL3 keeps its containerd policy module; AZL4 keeps explicit Ethernet DHCP.
+Producer artifacts remain separate from installer selection and adoption.
+
+The build-only layer keeps legacy installer stages and artifacts in place.
+Native artifacts have a `tailor-` prefix, while their contained ISO filenames
+retain the legacy names. Adoption is a separate pipeline change.
+Split/direct-streaming installers, ARM64 images and azl-installer remain on
+their existing build paths.
