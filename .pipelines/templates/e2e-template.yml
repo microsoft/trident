@@ -132,6 +132,7 @@ stages:
     parameters:
       stageType: ${{ parameters.stageType }}
       includeAzl4: true
+      useDistroInstaller: true
       acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
   # Makefile validation, only for CI
@@ -159,18 +160,11 @@ stages:
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Keep legacy installer consumers unchanged while native ISO builds are validated.
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-installer
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      clones: 1
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
-  # Native ISO artifacts use distinct names until the adoption layer.
+  # Adopt native ISOs under the existing installer stage/artifact contracts.
   - template: stages/trident_images/tailor-installer-images.yml
     parameters:
+      stagePrefix: TridentTestImg
+      artifactPrefix: ""
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
@@ -178,6 +172,7 @@ stages:
 
   - template: stages/trident_images/tailor-mos-images.yml
     parameters:
+      artifactPrefix: ""
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
@@ -186,15 +181,6 @@ stages:
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-split-installer
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      clones: 1
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-installer
-      runtimeEnv: container
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       clones: 1
@@ -333,6 +319,7 @@ stages:
             buildPurpose: "weekly"
           runtimeEnv: "host"
           distro: azl4
+          useDistroInstaller: true
           stageSuffix: "_azl4"
           testSecureBoot: false
 

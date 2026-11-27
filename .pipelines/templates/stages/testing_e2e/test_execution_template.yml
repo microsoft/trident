@@ -18,6 +18,9 @@ parameters:
     type: string
     default: azl3
     values: [azl3, azl4]
+  - name: useDistroInstaller
+    type: boolean
+    default: false
   - name: stageSuffix
     type: string
     default: ""
@@ -44,7 +47,10 @@ stages:
       - ${{ else }}:
           - BuildingTools
           - ${{ if eq(parameters.distro, 'azl4') }}:
-              - TridentTestImg_trident_installer
+              - ${{ if parameters.useDistroInstaller }}:
+                  - TridentTestImg_trident_azl4_installer
+              - ${{ else }}:
+                  - TridentTestImg_trident_installer
               - TridentTestImg_trident_azl4_testimage
           - ${{ elseif eq(parameters.runtimeType, 'CONTAINER') }}:
               - BuildTridentContainerImage
@@ -96,6 +102,11 @@ stages:
             value: /tmp/output
           - name: ob_artifactBaseName
             value: $(SCENARIO)_$(System.JobAttempt)
+          - name: selectedInstallerISOName
+            ${{ if and(eq(parameters.distro, 'azl4'), parameters.useDistroInstaller) }}:
+              value: trident-azl4-installer
+            ${{ else }}:
+              value: $(installerISOName)
           - ${{ if eq(parameters.distro, 'azl4') }}:
               - name: testImageName
                 value: trident-azl4-testimage
@@ -130,7 +141,7 @@ stages:
 
           - template: ../testing_common/download-test-images.yml
             parameters:
-              installerISO: $(installerISOName)
+              installerISO: $(selectedInstallerISOName)
               tridentTestImage: ${{ variables.testImageName }}
               tridentTestImageVerity: ${{ variables.verityTestImageName }}
               downloadTridentContainer: ${{ variables.downloadTridentContainer }}
@@ -203,7 +214,7 @@ stages:
                   -j "$(ob_outputDirectory)/storm-e2e.junit.xml" \
                   -- \
                   --pipeline-run \
-                  --iso "./artifacts/iso/$(installerISOName).iso" \
+                  --iso "./artifacts/iso/$(selectedInstallerISOName).iso" \
                   --signing-cert "$(System.ArtifactsDirectory)/usrverity-testimage/ca_cert.pem" \
                   --sysext-acr "$(ACR_NAME)" \
                   --oci-image-url "$(OCI_IMAGE_URL)" \

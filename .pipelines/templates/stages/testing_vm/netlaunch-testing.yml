@@ -45,6 +45,9 @@ parameters:
     values:
       - azl3
       - azl4
+  - name: useDistroInstaller
+    type: boolean
+    default: false
 
   - name: stageSuffix
     type: string
@@ -94,7 +97,10 @@ stages:
                 - TridentTestImg_trident_container_verity_testimage
                 - TridentTestImg_trident_container_usrverity_testimage
             - ${{ else }}:
-                - TridentTestImg_trident_installer
+                - ${{ if parameters.useDistroInstaller }}:
+                    - TridentTestImg_trident_azl4_installer
+                - ${{ else }}:
+                    - TridentTestImg_trident_installer
                 - TridentTestImg_trident_azl4_testimage
                 # TODO: the following are placeholders until the verity
                 # and usrverity test images are built for AZL4
@@ -159,7 +165,10 @@ stages:
                   value: true
             - ${{ else }}:
                 - name: installerISOName
-                  value: trident-installer
+                  ${{ if parameters.useDistroInstaller }}:
+                    value: trident-azl4-installer
+                  ${{ else }}:
+                    value: trident-installer
                 - name: testImageName
                   value: trident-azl4-testimage
                 # TODO: the following variables are placeholders until the verity
