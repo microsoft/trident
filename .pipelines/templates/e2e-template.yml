@@ -160,12 +160,15 @@ stages:
     parameters:
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
 
-  # Build-only root-verity artifacts; legacy consumers remain unchanged.
+  # Adopt native root-verity images under existing stage/artifact contracts.
   - template: stages/trident_images/tailor-root-verity-images.yml
     parameters:
+      stagePrefix: TridentTestImg
+      artifactPrefix: ""
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
       dependsOnStage: ${{ parameters.baseImageArtifactStage }}
+      dependsOnTrident: ${{ ne(parameters.tridentBuildOptions, 'prebuilt') }}
 
   # Adopt native ISOs under the existing installer stage/artifact contracts.
   - template: stages/trident_images/tailor-installer-images.yml
@@ -212,23 +215,6 @@ stages:
   - template: stages/build_image/build-image.yml
     parameters:
       imageName: trident-container-testimage
-      runtimeEnv: "container"
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
-  # Build Trident test image for root-verity (host)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-verity-testimage
-      micBuildType: ${{ parameters.micBuildType }}
-      micVersion: ${{ parameters.micVersion }}
-      dependsOnStage: ${{ parameters.baseImageArtifactStage }}
-
-  # Build Trident test image for root-verity (container)
-  - template: stages/build_image/build-image.yml
-    parameters:
-      imageName: trident-container-verity-testimage
       runtimeEnv: "container"
       micBuildType: ${{ parameters.micBuildType }}
       micVersion: ${{ parameters.micVersion }}
