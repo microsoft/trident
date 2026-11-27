@@ -1,0 +1,9 @@
+schemaVersion: 1
+
+toolchains:
+  default: imagecustomizer
+  entries:
+    - name: imagecustomizer
+      container: mcr.microsoft.com/azurelinux/imagecustomizer
+      tag: latest
+      pull: missing
