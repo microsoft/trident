@@ -86,8 +86,9 @@ their existing build paths.
 
 trident-verity-testimage/image.yaml starts the root/usr family at its final path.
 Current cells are AMD64/base, runtime=host/container, verity=root, distro=azl3/azl4.
-The pipeline builds two COSI clones under comparison-prefixed tailor- artifacts;
-existing legacy verity producers and consumer choices are unchanged.
+The pipeline builds two COSI clones per cell under unprefixed artifacts.
+AZL3 root host/container consumers use native producers under existing stage
+and filename contracts. AZL4 root runtime activation follows separately.
 
 Image-owned overlay assets use common/files and shell bodies extend the existing
 common/scripts.yaml. The verity etc-mount script remains distinct from the VM
