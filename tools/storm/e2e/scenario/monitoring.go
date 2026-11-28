@@ -170,6 +170,20 @@ func waitForVmSerialLogLoginLibvirt(ctx context.Context, lv *libvirt.Libvirt, do
 }
 
 func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Writer, ringSize int) error {
+	// A silent console blocks ReadRune, so checking ctx only between reads
+	// cannot cancel it. Close the owned pipe to release an in-flight read.
+	if closer, ok := in.(io.ReadCloser); ok {
+		finished := make(chan struct{})
+		defer close(finished)
+		go func() {
+			select {
+			case <-ctx.Done():
+				_ = closer.Close()
+			case <-finished:
+			}
+		}()
+	}
+
 	// Create a ring buffer to hold the last N lines of the serial log
 	ring := ring.New(ringSize)
 
@@ -221,6 +235,8 @@ func readerLoop(ctx context.Context, in io.Reader, errCh <-chan error, out io.Wr
 		if errors.Is(err, io.EOF) {
 			// Wait for new serial output
 			time.Sleep(100 * time.Millisecond)
+			continue
+		} else if ctx.Err() != nil {
 			continue
 		} else if err != nil {
 			return fmt.Errorf("failed to read from serial log file: %w", err)
