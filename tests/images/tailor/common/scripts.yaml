@@ -355,3 +355,15 @@ azl4-live-docker-vfs: |
     }
   }
   JSON
+
+azl4-label-verity-files: |
+  #!/bin/bash
+  set -euxo pipefail
+
+  # Runtime relabeling cannot repair executable labels on a verity root.
+  # Label the writable image before its hash tree is produced.
+  policy=$(find /etc/selinux/targeted/policy -maxdepth 1 -type f -name 'policy.*' -print | sort -V | tail -n 1)
+  test -n "$policy"
+  setfiles -F -m -c "$policy" \
+      -e /dev -e /proc -e /sys -e /run -e /boot/efi \
+      /etc/selinux/targeted/contexts/files/file_contexts /

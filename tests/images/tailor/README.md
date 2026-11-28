@@ -105,3 +105,8 @@ The AZL4 container installer uses Docker's legacy VFS store on its temporary
 live filesystem, where the overlay snapshotter cannot create OCI whiteouts.
 Installed container test images retain their normal Docker storage defaults;
 SELinux mode/policy and all AZL3 recipes are unchanged.
+
+AZL4 verity roots are labeled while still writable, before their hash trees are
+created, so the existing permissive Host Configuration can use correctly
+labeled executables. The shared Ethernet DHCP rule excludes bridge/veth links
+owned by Docker; physical NIC names remain unrestricted.

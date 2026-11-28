@@ -1,5 +1,6 @@
 [Match]
 Type=ether
+Kind=!bridge veth
 
 [Network]
 DHCP=yes

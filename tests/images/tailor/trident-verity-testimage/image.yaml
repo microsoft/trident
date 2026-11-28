@@ -297,7 +297,7 @@ fragments:
             $include: ../common/scripts.yaml#/azl4-rebuild-initrd
         - interpreter: /bin/bash
           content:
-            $include: ../common/scripts.yaml#/azl4-strip-selinux-xattrs
+            $include: ../common/scripts.yaml#/azl4-label-verity-files
     previewFeatures:
     - preview-distro-version
   rpmSources:
@@ -402,7 +402,7 @@ fragments:
             $include: ../common/scripts.yaml#/azl4-rebuild-initrd
         - interpreter: /bin/bash
           content:
-            $include: ../common/scripts.yaml#/azl4-strip-selinux-xattrs
+            $include: ../common/scripts.yaml#/azl4-label-verity-files
     previewFeatures:
     - preview-distro-version
   base:
