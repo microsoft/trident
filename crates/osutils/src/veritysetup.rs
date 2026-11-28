@@ -340,6 +340,18 @@ fn parse_veritysetup_status_output(output: &str) -> Result<VeritySetupStatus, Er
         })
         .collect::<Result<HashMap<_, _>, Error>>()?;
 
+    // Newer cryptsetup annotates block sizes with their byte unit.
+    let parse_block_size = |field: &str| -> Result<u64, Error> {
+        let value = key_values
+            .get(field)
+            .with_context(|| format!("Missing '{field}' in the output of veritysetup status"))?;
+        value
+            .strip_suffix(" [bytes]")
+            .unwrap_or(value)
+            .parse()
+            .with_context(|| format!("Unable to parse '{field}' value '{value}'"))
+    };
+
     let verity_setup_status = VeritySetupStatus {
         type_: key_values
             .get("type")
@@ -359,26 +371,8 @@ fn parse_veritysetup_status_output(output: &str) -> Result<VeritySetupStatus, Er
                     .get("hash type")
                     .context("Missing 'hash type' in the output of veritysetup status")?
             ))?,
-        data_block_size: key_values
-            .get("data block")
-            .context("Missing 'data block' in the output of veritysetup status")?
-            .parse()
-            .context(format!(
-                "Unable to parse 'data block' value '{}'",
-                key_values
-                    .get("data block")
-                    .context("Missing 'data block' in the output of veritysetup status")?
-            ))?,
-        hash_block_size: key_values
-            .get("hash block")
-            .context("Missing 'hash block' in the output of veritysetup status")?
-            .parse()
-            .context(format!(
-                "Unable to parse 'hash block' value '{}'",
-                key_values
-                    .get("hash block")
-                    .context("Missing 'hash block' in the output of veritysetup status")?
-            ))?,
+        data_block_size: parse_block_size("data block")?,
+        hash_block_size: parse_block_size("hash block")?,
         hash_name: key_values
             .get("hash name")
             .context("Missing 'hash name' in the output of veritysetup status")?
@@ -614,6 +608,18 @@ mod tests {
         );
 
         let status = parse_veritysetup_status_output(output).unwrap();
+
+        let annotated = output
+            .replace("data block:  4096", "data block:  4096 [bytes]")
+            .replace("hash block:  4096", "hash block:  4096 [bytes]");
+        assert_eq!(parse_veritysetup_status_output(&annotated).unwrap(), status);
+        for field in ["data block", "hash block"] {
+            for invalid in ["4096.5 [bytes]", "4096 [sectors]"] {
+                let invalid_output =
+                    output.replace(&format!("{field}:  4096"), &format!("{field}:  {invalid}"));
+                assert!(parse_veritysetup_status_output(&invalid_output).is_err());
+            }
+        }
 
         assert_eq!(status.type_, "VERITY");
         assert_eq!(status.status, "verified");

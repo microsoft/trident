@@ -100,3 +100,8 @@ AZL3 retains dracut-overlayfs; AZL4's dracut package owns its overlayfs and
 systemd-veritysetup modules, with no separate overlayfs subpackage.
 The AZL4 host installs selinux-policy so bootloader reset can read its config;
 the image profile still disables SELinux.
+
+The AZL4 container installer uses Docker's legacy VFS store on its temporary
+live filesystem, where the overlay snapshotter cannot create OCI whiteouts.
+Installed container test images retain their normal Docker storage defaults;
+SELinux mode/policy and all AZL3 recipes are unchanged.

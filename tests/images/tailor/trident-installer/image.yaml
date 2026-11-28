@@ -300,6 +300,9 @@ fragments:
         - content:
             $include: ../common/scripts.yaml#/installer-container-post-install
           interpreter: /bin/bash
+        - content:
+            $include: ../common/scripts.yaml#/azl4-live-docker-vfs
+          interpreter: /bin/bash
     previewFeatures:
     - preview-distro-version
   base:

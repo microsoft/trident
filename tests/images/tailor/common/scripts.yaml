@@ -338,3 +338,20 @@ verity-debug-trident-service: |-
 verity-create-web-directory: |-
   # Create the web directory for testing
   mkdir -p /web
+
+azl4-live-docker-vfs: |
+  #!/bin/bash
+  set -euxo pipefail
+
+  # The live ISO cannot unpack overlay snapshotter whiteouts.
+  # Use VFS only for this temporary installer, without changing SELinux.
+  mkdir -p /etc/docker
+  test ! -e /etc/docker/daemon.json
+  cat > /etc/docker/daemon.json <<'JSON'
+  {
+    "storage-driver": "vfs",
+    "features": {
+      "containerd-snapshotter": false
+    }
+  }
+  JSON
