@@ -297,6 +297,9 @@ fragments:
             $include: ../common/scripts.yaml#/azl4-rebuild-initrd
         - interpreter: /bin/bash
           content:
+            $include: ../common/scripts.yaml#/azl4-separate-boot-bls
+        - interpreter: /bin/bash
+          content:
             $include: ../common/scripts.yaml#/azl4-label-verity-files
     previewFeatures:
     - preview-distro-version
@@ -400,6 +403,9 @@ fragments:
         - interpreter: /bin/bash
           content:
             $include: ../common/scripts.yaml#/azl4-rebuild-initrd
+        - interpreter: /bin/bash
+          content:
+            $include: ../common/scripts.yaml#/azl4-separate-boot-bls
         - interpreter: /bin/bash
           content:
             $include: ../common/scripts.yaml#/azl4-label-verity-files

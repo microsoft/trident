@@ -458,6 +458,15 @@ allow trident_t efivarfs_t:dir search;
 allow trident_t etc_runtime_t:file { getattr open read relabelto relabelfrom rename setattr unlink };
 allow trident_t etc_t:file { create execute execute_no_trans link relabelfrom relabelto rename setattr unlink write append };
 allow trident_t etc_t:dir { mounton relabelfrom };
+
+# Fedora labels machine-id separately from refpolicy's etc_t.
+# Keep the existing replacement operation without changing AZL3 permissions.
+ifdef(`raid_manage_mdadm_runtime_files',`',`
+    gen_require(`
+        type machineid_t;
+    ')
+    allow trident_t machineid_t:file unlink;
+')
 allow trident_t faillog_t:file relabelto;
 allow trident_t fs_t:filesystem { mount unmount };
 allow trident_t fsadm_t:process { siginh rlimitinh noatsecure transition };

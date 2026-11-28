@@ -110,3 +110,8 @@ AZL4 verity roots are labeled while still writable, before their hash trees are
 created, so the existing permissive Host Configuration can use correctly
 labeled executables. The shared Ethernet DHCP rule excludes bridge/veth links
 owned by Docker; physical NIC names remain unrestricted.
+
+The AZL4 GRUB root-verity model uses a separate /boot filesystem, so its BLS
+kernel/initrd paths are normalized to that filesystem's root. The runtime
+SELinux module permits replacing Fedora's machineid_t file only on AZL4;
+the refpolicy branch's permissions remain unchanged.

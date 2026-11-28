@@ -367,3 +367,26 @@ azl4-label-verity-files: |
   setfiles -F -m -c "$policy" \
       -e /dev -e /proc -e /sys -e /run -e /boot/efi \
       /etc/selinux/targeted/contexts/files/file_contexts /
+
+azl4-separate-boot-bls: |
+  #!/bin/bash
+  set -euxo pipefail
+
+  # /boot is a separate filesystem: GRUB paths are relative to its root.
+  boot=/boot
+  found=false
+  for entry in "$boot"/loader/entries/*.conf; do
+      test -f "$entry"
+      found=true
+      sed -E -i '/^[[:space:]]*(linux|initrd)[[:space:]]/s@([[:space:]])/boot/@\1/@g' "$entry"
+      while read -r key paths; do
+          case "$key" in
+              linux|initrd)
+                  for path in $paths; do
+                      test -f "$boot$path"
+                  done
+                  ;;
+          esac
+      done < "$entry"
+  done
+  test "$found" = true
