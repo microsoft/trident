@@ -145,8 +145,8 @@ func NewTridentE2EScenario(
 		return nil, fmt.Errorf("unsupported E2E distro %q", configParams.Distro)
 	}
 	if configParams.Distro == "azl4" &&
-		(hardware != HardwareTypeVM || runtime != trident.RuntimeTypeHost || configParams.IsUki) {
-		return nil, fmt.Errorf("AZL4 E2E currently supports GRUB VM host scenarios only")
+		(hardware != HardwareTypeVM || (runtime != trident.RuntimeTypeHost && runtime != trident.RuntimeTypeContainer) || configParams.IsUki) {
+		return nil, fmt.Errorf("AZL4 E2E currently supports GRUB VM scenarios only")
 	}
 	configClone, err := config.Clone()
 	if err != nil {

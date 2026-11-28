@@ -89,6 +89,12 @@ root-verity:
   vm:
     host: pr-e2e
     container: pr-e2e
+root-verity-azl4:
+  vm:
+    host: pr-e2e
+    container: pr-e2e
+  distro: azl4
+  secureBoot: false
 simple:
   vm:
     host: pr-e2e

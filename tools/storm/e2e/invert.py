@@ -35,8 +35,8 @@ header = """\
 # Scenarios not listed in this file will not be run in any ring.
 """
 
-# Configurations enabled for the storm-based E2E flow. AZL4 currently covers
-# the regular GRUB VM host scenario only.
+# Configurations enabled for the storm-based E2E flow. AZL4 covers regular
+# GRUB VM host and root-verity GRUB VM host/container scenarios.
 #
 # Runtime note: the encryption+UKI configs (combined, memory-constraint-combined,
 # rerun) seal to PCR 7, which Trident forbids under a containerized runtime. On
@@ -64,6 +64,7 @@ ALLOWED_CONFIGS = [
     "encrypted-raid",
     "encrypted-swap",
     "root-verity",
+    "root-verity-azl4",
     "health-checks-install",
     "usr-verity",
     "usr-verity-raid",
@@ -77,6 +78,7 @@ ALLOWED_RUNTIMES = ["host", "container"]
 
 # Special settings to merge into specific configurations
 SPECIAL_SETTINGS = {
+    "root-verity-azl4": {"distro": "azl4", "secureBoot": False},
     "base-azl4": {
         "distro": "azl4",
         "secureBoot": False,

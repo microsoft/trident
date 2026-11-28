@@ -298,7 +298,7 @@ stages:
       micVersion: ${{ parameters.micVersion }}
 
   # TESTING stages for PRERELEASE
-  # AZL4 currently supports the regular GRUB host scenario only.
+  # AZL4 covers regular host and root-verity host/container GRUB scenarios.
   - ${{ if in(parameters.stageType, 'pr-e2e', 'ci', 'pre', 'full-validation') }}:
       - template: stages/testing_vm/netlaunch-testing.yml
         parameters:
@@ -311,6 +311,22 @@ stages:
           ${{ else }}:
             buildPurpose: "weekly"
           runtimeEnv: "host"
+          distro: azl4
+          useDistroInstaller: true
+          stageSuffix: "_azl4"
+          testSecureBoot: false
+
+      - template: stages/testing_vm/netlaunch-testing.yml
+        parameters:
+          ${{ if eq(parameters.stageType, 'pr-e2e') }}:
+            buildPurpose: "pullrequest"
+          ${{ elseif eq(parameters.stageType, 'ci') }}:
+            buildPurpose: "post_merge"
+          ${{ elseif eq(parameters.stageType, 'pre') }}:
+            buildPurpose: "daily"
+          ${{ else }}:
+            buildPurpose: "weekly"
+          runtimeEnv: "container"
           distro: azl4
           useDistroInstaller: true
           stageSuffix: "_azl4"

@@ -47,11 +47,21 @@ stages:
       - ${{ else }}:
           - BuildingTools
           - ${{ if eq(parameters.distro, 'azl4') }}:
-              - ${{ if parameters.useDistroInstaller }}:
-                  - TridentTestImg_trident_azl4_installer
+              - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
+                  - BuildTridentContainerImage
+                  - ${{ if parameters.useDistroInstaller }}:
+                      - TridentTestImg_trident_container_azl4_installer
+                  - ${{ else }}:
+                      - TridentTestImg_trident_container_installer
+                  - TridentTestImg_trident_container_testimage
+                  - TridentTestImg_trident_container_verity_testimage_azl4
               - ${{ else }}:
-                  - TridentTestImg_trident_installer
-              - TridentTestImg_trident_azl4_testimage
+                  - ${{ if parameters.useDistroInstaller }}:
+                      - TridentTestImg_trident_azl4_installer
+                  - ${{ else }}:
+                      - TridentTestImg_trident_installer
+                  - TridentTestImg_trident_azl4_testimage
+                  - TridentTestImg_trident_verity_testimage_azl4
           - ${{ elseif eq(parameters.runtimeType, 'CONTAINER') }}:
               - BuildTridentContainerImage
               - TridentTestImg_trident_container_installer
@@ -104,18 +114,29 @@ stages:
             value: $(SCENARIO)_$(System.JobAttempt)
           - name: selectedInstallerISOName
             ${{ if and(eq(parameters.distro, 'azl4'), parameters.useDistroInstaller) }}:
-              value: trident-azl4-installer
+              ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
+                value: trident-container-azl4-installer
+              ${{ else }}:
+                value: trident-azl4-installer
             ${{ else }}:
               value: $(installerISOName)
           - ${{ if eq(parameters.distro, 'azl4') }}:
-              - name: testImageName
-                value: trident-azl4-testimage
-              - name: verityTestImageName
-                value: skip
+              - ${{ if eq(parameters.runtimeType, 'CONTAINER') }}:
+                  - name: testImageName
+                    value: trident-container-testimage
+                  - name: verityTestImageName
+                    value: trident-container-verity-testimage-azl4
+                  - name: downloadTridentContainer
+                    value: true
+              - ${{ else }}:
+                  - name: testImageName
+                    value: trident-azl4-testimage
+                  - name: verityTestImageName
+                    value: trident-verity-testimage-azl4
+                  - name: downloadTridentContainer
+                    value: false
               - name: usrVerityTestImageName
                 value: skip
-              - name: downloadTridentContainer
-                value: false
           - ${{ elseif eq(parameters.runtimeType, 'CONTAINER') }}:
               - name: testImageName
                 value: trident-container-testimage

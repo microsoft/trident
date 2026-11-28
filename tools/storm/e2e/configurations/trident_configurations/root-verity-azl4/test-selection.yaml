@@ -1,0 +1,5 @@
+compatible:
+- azl4
+- base
+- root_verity
+- extensions

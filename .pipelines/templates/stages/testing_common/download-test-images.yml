@@ -37,6 +37,8 @@ parameters:
     values:
       - trident-verity-testimage
       - trident-container-verity-testimage
+      - trident-verity-testimage-azl4
+      - trident-container-verity-testimage-azl4
       - skip
 
   - name: tridentTestImageUsrVerity

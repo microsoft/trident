@@ -90,11 +90,14 @@ stages:
                 - TridentTestImg_trident_usrverity_testimage
           - ${{ if eq(parameters.distro, 'azl4') }}:
             - ${{ if eq(parameters.runtimeEnv, 'container') }}:
-                # TODO: the following are placeholders until container supported for AZL4
+                # Regular and /usr container profiles remain unchanged; root uses AZL4.
                 - BuildTridentContainerImage
-                - TridentTestImg_trident_container_installer
+                - ${{ if parameters.useDistroInstaller }}:
+                    - TridentTestImg_trident_container_azl4_installer
+                - ${{ else }}:
+                    - TridentTestImg_trident_container_installer
                 - TridentTestImg_trident_container_testimage
-                - TridentTestImg_trident_container_verity_testimage
+                - TridentTestImg_trident_container_verity_testimage_azl4
                 - TridentTestImg_trident_container_usrverity_testimage
             - ${{ else }}:
                 - ${{ if parameters.useDistroInstaller }}:
@@ -102,10 +105,9 @@ stages:
                 - ${{ else }}:
                     - TridentTestImg_trident_installer
                 - TridentTestImg_trident_azl4_testimage
-                # TODO: the following are placeholders until the verity
-                # and usrverity test images are built for AZL4
+                # Split and /usr profiles retain their existing producers.
                 - TridentTestImg_trident_split_installer
-                - TridentTestImg_trident_verity_testimage
+                - TridentTestImg_trident_verity_testimage_azl4
                 - TridentTestImg_trident_usrverity_testimage
 
     jobs:
@@ -152,13 +154,16 @@ stages:
                   value: false
           - ${{ if eq(parameters.distro, 'azl4') }}:
             - ${{ if eq(parameters.runtimeEnv, 'container') }}:
-                # TODO: the following variables are placeholders until container supported for AZL4
+                # Only root-verity container scenarios are enabled for AZL4.
                 - name: installerISOName
-                  value: trident-container-installer
+                  ${{ if parameters.useDistroInstaller }}:
+                    value: trident-container-azl4-installer
+                  ${{ else }}:
+                    value: trident-container-installer
                 - name: testImageName
                   value: trident-container-testimage
                 - name: verityTestImageName
-                  value: trident-container-verity-testimage
+                  value: trident-container-verity-testimage-azl4
                 - name: usrVerityTestImageName
                   value: trident-container-usrverity-testimage
                 - name: downloadTridentContainer
@@ -171,10 +176,9 @@ stages:
                     value: trident-installer
                 - name: testImageName
                   value: trident-azl4-testimage
-                # TODO: the following variables are placeholders until the verity
-                # and usrverity test images are built for AZL4
+                # /usr-verity activation follows its signing-preserving producer.
                 - name: verityTestImageName
-                  value: trident-verity-testimage
+                  value: trident-verity-testimage-azl4
                 - name: usrVerityTestImageName
                   value: trident-usrverity-testimage
                 - name: downloadTridentContainer

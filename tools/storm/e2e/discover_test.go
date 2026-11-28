@@ -13,33 +13,36 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func TestDiscoverAzl4HostScenario(t *testing.T) {
+func TestDiscoverAzl4GrubVmScenarios(t *testing.T) {
 	scenarios, err := DiscoverTridentScenarios(logrus.New())
 	if err != nil {
 		t.Fatal(err)
 	}
-	count := 0
+	expected := map[string]trident.RuntimeType{
+		"base-azl4_vm-host":             trident.RuntimeTypeHost,
+		"root-verity-azl4_vm-host":      trident.RuntimeTypeHost,
+		"root-verity-azl4_vm-container": trident.RuntimeTypeContainer,
+	}
 	for _, s := range scenarios {
 		if s.Distro() != "azl4" {
 			continue
 		}
-		count++
-		if s.Name() != "base-azl4_vm-host" ||
-			s.HardwareType() != scenario.HardwareTypeVM ||
-			s.RuntimeType() != trident.RuntimeTypeHost {
+		runtime, found := expected[s.Name()]
+		if !found || s.HardwareType() != scenario.HardwareTypeVM || s.RuntimeType() != runtime {
 			t.Fatalf("unexpected AZL4 scenario: %s", s.Name())
 		}
+		delete(expected, s.Name())
 		for _, ring := range []testrings.TestRing{
 			testrings.TestRingPrE2e, testrings.TestRingCi,
 			testrings.TestRingPre, testrings.TestRingFullValidation,
 		} {
 			if !s.TestRings().Contains(ring) {
-				t.Errorf("AZL4 host scenario missing from %s", ring)
+				t.Errorf("AZL4 scenario missing from %s", ring)
 			}
 		}
 	}
-	if count != 1 {
-		t.Fatalf("expected one AZL4 host scenario, got %d", count)
+	if len(expected) != 0 {
+		t.Fatalf("missing AZL4 scenarios: %v", expected)
 	}
 }
 
@@ -81,17 +84,18 @@ func TestMatrixSelectionDoesNotMixDistros(t *testing.T) {
 	}
 	azl4 := GetScenariosByHardwareAndRuntime(suite, scenario.HardwareTypeVM,
 		trident.RuntimeTypeHost, testrings.TestRingPrE2e, "azl4")
-	if !slices.Equal(azl4, []string{"base-azl4_vm-host"}) {
+	slices.Sort(azl4)
+	if !slices.Equal(azl4, []string{"base-azl4_vm-host", "root-verity-azl4_vm-host"}) {
 		t.Fatalf("AZL4 matrix contains wrong scenarios: %v", azl4)
 	}
 	azl3 := GetScenariosByHardwareAndRuntime(suite, scenario.HardwareTypeVM,
 		trident.RuntimeTypeHost, testrings.TestRingPrE2e, "azl3")
-	if !slices.Contains(azl3, "base_vm-host") || slices.Contains(azl3, "base-azl4_vm-host") {
+	if !slices.Contains(azl3, "base_vm-host") || slices.Contains(azl3, "base-azl4_vm-host") || slices.Contains(azl3, "root-verity-azl4_vm-host") {
 		t.Fatalf("legacy AZL3 matrix changed: %v", azl3)
 	}
 	unsupported := GetScenariosByHardwareAndRuntime(suite, scenario.HardwareTypeVM,
 		trident.RuntimeTypeContainer, testrings.TestRingPrE2e, "azl4")
-	if len(unsupported) != 0 {
-		t.Fatalf("unsupported AZL4 container scenarios selected: %v", unsupported)
+	if !slices.Equal(unsupported, []string{"root-verity-azl4_vm-container"}) {
+		t.Fatalf("incorrect AZL4 container scenarios selected: %v", unsupported)
 	}
 }

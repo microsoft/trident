@@ -48,7 +48,7 @@ func TestRejectUnsupportedDistroCoverage(t *testing.T) {
 		runtime  trident.RuntimeType
 	}{
 		{"unknown", TridentE2EHostConfigParams{Distro: "typo"}, HardwareTypeVM, trident.RuntimeTypeHost},
-		{"azl4-container", TridentE2EHostConfigParams{Distro: "azl4"}, HardwareTypeVM, trident.RuntimeTypeContainer},
+		{"azl4-container-uki", TridentE2EHostConfigParams{Distro: "azl4", IsUki: true}, HardwareTypeVM, trident.RuntimeTypeContainer},
 		{"azl4-baremetal", TridentE2EHostConfigParams{Distro: "azl4"}, HardwareTypeBM, trident.RuntimeTypeHost},
 		{"azl4-uki", TridentE2EHostConfigParams{Distro: "azl4", IsUki: true}, HardwareTypeVM, trident.RuntimeTypeHost},
 	} {
@@ -58,5 +58,22 @@ func TestRejectUnsupportedDistroCoverage(t *testing.T) {
 				t.Fatal("unsupported distro coverage accepted")
 			}
 		})
+	}
+}
+
+func TestAzl4GrubVmContainerAccepted(t *testing.T) {
+	hc, err := hostconfig.NewHostConfigFromYaml([]byte("storage: {}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	s, err := NewTridentE2EScenario("root-verity-azl4", nil, hc,
+		TridentE2EHostConfigParams{Distro: "azl4", SecureBoot: &disabled},
+		HardwareTypeVM, trident.RuntimeTypeContainer, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Distro() != "azl4" || s.RuntimeType() != trident.RuntimeTypeContainer || s.secureBootEnabled() {
+		t.Fatal("incorrect AZL4 GRUB container defaults")
 	}
 }

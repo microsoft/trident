@@ -82,6 +82,16 @@ stages:
           testingRun: ${{ parameters.testingRun }}
           acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
 
+      - template: test_execution_template.yml
+        parameters:
+          hardwareType: "VM"
+          runtimeType: "CONTAINER"
+          distro: azl4
+          useDistroInstaller: ${{ parameters.useDistroInstaller }}
+          stageSuffix: "_AZL4"
+          testingRun: ${{ parameters.testingRun }}
+          acrServiceConnectionName: ${{ parameters.acrServiceConnectionName }}
+
   # TODO: enable once bare-metal host setup is supported in storm
   # - template: test_execution_template.yml
   #   parameters:
